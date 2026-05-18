@@ -23,10 +23,10 @@
 //   level:          Output level trim (1.0 = unity)
 
 define_fx("telephone")
-    .param("muffled_amount", 0.5)
-    .param("sat_amount", 0.4)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("muffled_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Muffled Amount; higher values apply more of that modulation or effect.
+    .param("sat_amount", 0.4) // units: normalized, range: 0..1, default: 0.4. Sat Amount; higher values apply more of that modulation or effect.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, muffled_amount, sat_amount, mix, level| {
         // Voice band: nominal 300 Hz - 3000 Hz. center = sqrt(300*3000) ≈ 949 Hz,
         // bandwidth = log2(3000/300) ≈ 3.32 octaves. muffled_amount narrows the
@@ -59,3 +59,18 @@ define_fx("telephone")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: telephone
+//
+// ```rhai
+// import "stdlib/effects/character/telephone.vibe" as telephone;
+//
+// let doc_telephone = fx("doc_telephone")
+//     .synth("telephone")
+//     .param("muffled_amount", 0.5)
+//     .param("sat_amount", 0.4)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

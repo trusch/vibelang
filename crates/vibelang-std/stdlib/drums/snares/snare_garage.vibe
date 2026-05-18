@@ -1,7 +1,7 @@
 // Genre: UK Garage, 2-Step | Character: Snappy UK garage snare
 define_synthdef("snare_garage")
-    .param("freq", 210.0)
-    .param("amp", 0.85)
+    .param("freq", 210.0) // units: Hz, range: 20..20000, default: 210.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, snappy decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("snare_garage")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_garage
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_garage.vibe" as snare_garage;
+//
+// let doc_snare_garage = voice("doc_snare_garage")
+//     .synth("snare_garage")
+//     .set_param("freq", 210.0)
+//     .set_param("amp", 0.85)
+//     ;
+// doc_snare_garage.output("out").to_main();
+// doc_snare_garage.run();
+// ```

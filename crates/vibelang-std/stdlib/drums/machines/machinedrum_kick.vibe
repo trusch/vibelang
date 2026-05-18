@@ -1,8 +1,8 @@
 // Genre: IDM, Techno, Experimental | Character: Elektron Machinedrum-style kick - digital, versatile
 define_synthdef("machinedrum_kick")
-    .param("freq", 50.0)
-    .param("amp", 1.0)
-    .param("shape", 0.5)
+    .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("shape", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
     .body(|freq, amp, shape| {
         // Adjustable decay
         let decay = 0.3 + shape * 0.2;
@@ -31,3 +31,19 @@ define_synthdef("machinedrum_kick")
 
         (body + click) * amp_env * amp
     });
+
+//
+// # Usage: machinedrum_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/machinedrum_kick.vibe" as machinedrum_kick;
+//
+// let doc_machinedrum_kick = voice("doc_machinedrum_kick")
+//     .synth("machinedrum_kick")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     .set_param("shape", 0.5)
+//     ;
+// doc_machinedrum_kick.output("out").to_main();
+// doc_machinedrum_kick.run();
+// ```

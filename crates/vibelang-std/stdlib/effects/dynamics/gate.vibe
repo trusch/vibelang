@@ -21,11 +21,11 @@
 //   level:     Final output trim (1.0 = unity)
 
 define_fx("gate")
-    .param("threshold", 0.1)
-    .param("attack", 0.01)
-    .param("release", 0.1)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("threshold", 0.1) // units: linear, range: 0..1, default: 0.1. Detection threshold; higher values require a stronger signal before processing opens.
+    .param("attack", 0.01) // units: seconds, range: 0..10, default: 0.01. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("release", 0.1) // units: seconds, range: 0..10, default: 0.1. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, threshold, attack, release, mix, level| {
         // Use Compander as a gate (expansion below threshold)
         let gated_left = compander_ar(input[0], input[0], threshold, 10.0, 1.0, attack, release);
@@ -39,3 +39,18 @@ define_fx("gate")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: gate
+//
+// ```rhai
+// import "stdlib/effects/dynamics/gate.vibe" as gate;
+//
+// let doc_gate = fx("doc_gate")
+//     .synth("gate")
+//     .param("threshold", 0.1)
+//     .param("attack", 0.01)
+//     .param("release", 0.1)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

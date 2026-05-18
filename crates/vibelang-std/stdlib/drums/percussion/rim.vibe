@@ -1,7 +1,7 @@
 // Genre: All | Character: Rim click/shot, sharp and metallic
 define_synthdef("rim", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Very short, sharp envelope
             let env = envelope()
@@ -22,3 +22,16 @@ define_synthdef("rim", |builder| {
         })
 });
 
+//
+// # Usage: rim
+//
+// ```rhai
+// import "stdlib/drums/percussion/rim.vibe" as rim;
+//
+// let doc_rim = voice("doc_rim")
+//     .synth("rim")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_rim.output("out").to_main();
+// doc_rim.run();
+// ```

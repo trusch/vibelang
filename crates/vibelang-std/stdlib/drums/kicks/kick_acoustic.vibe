@@ -1,8 +1,8 @@
 // Genre: Jazz, Acoustic | Character: Natural-sounding, warm
 define_synthdef("kick_acoustic", |builder| {
     builder
-        .param("freq", 80.0)
-        .param("amp", 1.0)
+        .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Natural decay curve
             let amp_env = envelope()
@@ -31,3 +31,17 @@ define_synthdef("kick_acoustic", |builder| {
         })
 });
 
+//
+// # Usage: kick_acoustic
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_acoustic.vibe" as kick_acoustic;
+//
+// let doc_kick_acoustic = voice("doc_kick_acoustic")
+//     .synth("kick_acoustic")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_acoustic.output("out").to_main();
+// doc_kick_acoustic.run();
+// ```

@@ -4,8 +4,8 @@
 // Simple metronome click for timing reference.
 
 define_synthdef("metronome")
-    .param("freq", 1000.0)
-    .param("amp", 0.5)
+    .param("freq", 1000.0) // units: Hz, range: 0..20000, default: 1000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Very short click envelope
         let env = envelope()
@@ -27,8 +27,8 @@ define_synthdef("metronome")
 
 // Accented metronome click (for downbeats)
 define_synthdef("metronome_accent")
-    .param("freq", 1500.0)
-    .param("amp", 0.6)
+    .param("freq", 1500.0) // units: Hz, range: 0..20000, default: 1500.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short click envelope
         let env = envelope()
@@ -42,3 +42,34 @@ define_synthdef("metronome_accent")
 
         (click + click2) * env * amp
     });
+
+//
+// # Usage: `metronome`
+//
+// ```rhai
+// import "stdlib/utility/metronome.vibe" as metronome;
+//
+// let metronome = voice("doc_metronome")
+//     .synth("metronome")
+//     .set_param("freq", 220.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0)
+//     .set_param("amp", 0.5);
+// metronome.output("out").to_main();
+// metronome.run();
+// ```
+//
+// # Usage: `metronome_accent`
+//
+// ```rhai
+// import "stdlib/utility/metronome.vibe" as metronome;
+//
+// let metronome_accent = voice("doc_metronome_accent")
+//     .synth("metronome_accent")
+//     .set_param("freq", 220.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0)
+//     .set_param("amp", 0.5);
+// metronome_accent.output("out").to_main();
+// metronome_accent.run();
+// ```

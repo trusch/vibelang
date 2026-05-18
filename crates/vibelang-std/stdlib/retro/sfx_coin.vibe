@@ -1,7 +1,7 @@
 // Genre: Video Game, Chiptune | Character: Coin collect sound effect
 define_synthdef("sfx_coin")
-    .param("freq", 1200.0)
-    .param("amp", 0.5)
+    .param("freq", 1200.0) // units: Hz, range: 20..20000, default: 1200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         let amp_env = envelope()
             .perc(0.001, 0.15)
@@ -17,3 +17,17 @@ define_synthdef("sfx_coin")
 
         (tone1 + tone2) * amp_env * amp
     });
+
+//
+// # Usage: `sfx_coin`
+//
+// ```rhai
+// import "stdlib/retro/sfx_coin.vibe" as sfx_coin;
+//
+// let sfx_coin = voice("doc_sfx_coin")
+//     .synth("sfx_coin")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// sfx_coin.output("out").to_main();
+// sfx_coin.run();
+// ```

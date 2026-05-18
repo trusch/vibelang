@@ -5,9 +5,9 @@
 
 define_synthdef("pizzicato", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Short pluck envelope (gate-controlled for poly)
             let env = envelope()
@@ -43,3 +43,18 @@ define_synthdef("pizzicato", |builder| {
             filtered * env * decay_env * amp
         })
 });
+
+//
+// # Usage: `pizzicato`
+//
+// ```rhai
+// import "stdlib/strings/pizzicato.vibe" as pizzicato;
+//
+// let pizzicato = voice("doc_pizzicato")
+//     .synth("pizzicato")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pizzicato.output("out").to_main();
+// pizzicato.run();
+// ```

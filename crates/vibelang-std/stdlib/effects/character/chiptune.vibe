@@ -24,10 +24,10 @@
 //   level:       Output level trim (1.0 = unity)
 
 define_fx("chiptune")
-    .param("pulse_width", 0.5)
-    .param("decimation", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("pulse_width", 0.5) // units: normalized, range: 0..1, default: 0.5. Pulse width or duty cycle; higher values widen the high portion of the wave.
+    .param("decimation", 0.5) // units: ratio, range: 0..1, default: 0.5. Decimation amount; higher values emphasize that named musical or electrical behavior.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, pulse_width, decimation, mix, level| {
         // Mono sum drives the trackers — pitch / amplitude follow are mono.
         let mono = (input[0] + input[1]) * 0.5;
@@ -58,3 +58,18 @@ define_fx("chiptune")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: chiptune
+//
+// ```rhai
+// import "stdlib/effects/character/chiptune.vibe" as chiptune;
+//
+// let doc_chiptune = fx("doc_chiptune")
+//     .synth("chiptune")
+//     .param("pulse_width", 0.5)
+//     .param("decimation", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

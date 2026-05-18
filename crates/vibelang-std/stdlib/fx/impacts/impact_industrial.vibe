@@ -1,7 +1,7 @@
 // Genre: Industrial, Dark Techno | Character: Harsh industrial impact
 define_synthdef("impact_industrial", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.001, 1.0)
@@ -37,3 +37,17 @@ define_synthdef("impact_industrial", |builder| {
             mix * env * amp * 0.7
         })
 });
+
+//
+// # Usage: impact_industrial
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_industrial.vibe" as impact_industrial;
+//
+// let doc_impact_industrial = voice("doc_impact_industrial")
+//     .synth("impact_industrial")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_impact_industrial.output("out").to_main();
+// doc_impact_industrial.run();
+// ```

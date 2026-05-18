@@ -22,8 +22,8 @@
 // never exceeds 0.3, so the clip is a safeguard.
 
 define_synthdef("cv_voct_calib")
-    .param("step_secs", 3.0)
-    .param("gate", 1.0)
+    .param("step_secs", 3.0) // units: seconds, range: 0.05..60, default: 3.0. Cycle time in seconds; higher values make the calibration sequence slower.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|step_secs, gate| {
         let trig = impulse_kr(1.0 / step_secs);
         let step = stepper_kr(trig, 0.0, 0.0, 3.0, 1.0, 0.0);
@@ -31,3 +31,17 @@ define_synthdef("cv_voct_calib")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_voct_calib`
+//
+// ```rhai
+// import "stdlib/cv/calibration/cv_voct_calib.vibe" as cv_voct_calib;
+//
+// let cv_voct_calib = voice("doc_cv_voct_calib")
+//     .synth("cv_voct_calib")
+//     .set_param("gate", 1.0)
+//     .set_param("step_secs", 0.5);
+// cv_voct_calib.output("out").to_main();
+// cv_voct_calib.run();
+// ```

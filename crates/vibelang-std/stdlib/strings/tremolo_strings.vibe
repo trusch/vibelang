@@ -5,10 +5,10 @@
 
 define_synthdef("tremolo_strings", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("speed", 8.0) // Tremolo speed in Hz
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("speed", 8.0) // units: Hz, range: 0..20, default: 8.0. Modulation speed in Hz; higher values create faster tremolo or movement.
         .body(|freq, amp, gate, speed| {
             // String envelope
             let env = envelope()
@@ -36,3 +36,19 @@ define_synthdef("tremolo_strings", |builder| {
             body * trem * env * amp * vib
         })
 });
+
+//
+// # Usage: `tremolo_strings`
+//
+// ```rhai
+// import "stdlib/strings/tremolo_strings.vibe" as tremolo_strings;
+//
+// let tremolo_strings = voice("doc_tremolo_strings")
+//     .synth("tremolo_strings")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("speed", 8.0);
+// tremolo_strings.output("out").to_main();
+// tremolo_strings.run();
+// ```

@@ -4,10 +4,10 @@
 define_synthdef("lfo_tri", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (triangle LFO)
-        .param("rate", 1.0)   // LFO rate in Hz
-        .param("lo", 0.0)     // Minimum output value
-        .param("hi", 1.0)     // Maximum output value
-        .param("phase", 0.0)  // Initial phase offset (0-4)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("phase", 0.0) // units: cycles, range: 0..1, default: 0.0. Oscillator phase offset; higher values shift the waveform start point.
         .body_map(|p| {
             // Generate triangle wave at control rate (-1 to 1)
             let osc = lf_tri_kr(p.rate, p.phase);
@@ -16,3 +16,19 @@ define_synthdef("lfo_tri", |builder| {
             [normalized * (p.hi - p.lo) + p.lo] // Map to lo-hi range
         })
 });
+
+//
+// # Usage: `lfo_tri`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_tri.vibe" as lfo_tri;
+//
+// let lfo_tri = voice("doc_lfo_tri")
+//     .synth("lfo_tri")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5)
+//     .set_param("phase", 0.5);
+// lfo_tri.outputs(["out"]).mute();
+// lfo_tri.run();
+// ```

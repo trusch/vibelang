@@ -21,21 +21,21 @@ define_synthdef("erica_bass_drum", |builder| {
     builder
         .output("out")
         .output("noise")
-        .param("trig", 0.0)                 // 0/1 trigger input that fires the kick envelope
-        .param("gate", 0.0)                 // 0/1 gate input that fires and can hold a sustained tail
-        .param("accent", 0.0)               // 0..1 level and pitch emphasis for accented hits
-        .param("pitch", 55.0)               // base body frequency in Hz before CV and accent
-        .param("pitch_cv", 0.0)             // bipolar pitch CV scaled by pitch_cv_amt up to +/-2 octaves
-        .param("pitch_cv_amt", 0.0)         // 0..1 attenuator for pitch_cv depth
-        .param("tune_depth", 12.0)          // pitch-sweep depth in semitones
-        .param("tune_decay", 0.05)          // pitch-sweep decay time in seconds
-        .param("attack", 0.55)              // 0..1 beater click brightness and length
-        .param("decay", 0.5)                // amp decay time in seconds before decay CV
-        .param("decay_cv", 0.0)             // bipolar decay CV scaled by decay_cv_amt up to +/-2 octaves
-        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv depth
-        .param("drive", 0.25)               // 0..1 soft saturation amount before accent gain
-        .param("drive_cv", 0.0)             // bipolar CV summed into drive through drive_cv_amt
-        .param("drive_cv_amt", 0.0)         // 0..1 attenuator for drive_cv depth
+        .param("trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("accent", 0.0) // units: normalized, range: 0..1, default: 0.0. Accent strength; higher values make the hit louder and brighter.
+        .param("pitch", 55.0) // units: Hz, range: 20..220, default: 55.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("pitch_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch CV input; bipolar values modulate the matching panel control.
+        .param("pitch_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. PITCH CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("tune_depth", 12.0) // units: semitones, range: 0..36, default: 12.0. Modulation depth; higher values make the movement more pronounced.
+        .param("tune_decay", 0.05) // units: normalized, range: 0..1, default: 0.05. Pitch tuning or sweep amount; higher values raise the drum pitch movement.
+        .param("attack", 0.55) // units: seconds, range: 0..60, default: 0.55. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("decay", 0.5) // units: seconds, range: 0..60, default: 0.5. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("decay_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Decay CV input; bipolar values modulate the matching panel control.
+        .param("decay_cv_amt", 0.0) // units: seconds, range: 0..60, default: 0.0. DECAY CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("drive", 0.25) // units: normalized, range: 0..1, default: 0.25. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("drive_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Drive CV input; bipolar values modulate the matching panel control.
+        .param("drive_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. DRIVE CV AMT attenuator; higher makes the matching CV modulation stronger.
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let attack = clip(p.attack, 0.0, 1.0);
@@ -86,3 +86,19 @@ define_synthdef("erica_bass_drum", |builder| {
             [out, noise]
         })
 });
+
+//
+// # Usage: `erica_bass_drum`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_bass_drum.vibe" as erica_bass_drum;
+//
+// let erica_bass_drum = voice("doc_erica_bass_drum")
+//     .synth("erica_bass_drum")
+//     .set_param("gate", 1.0)
+//     .set_param("attack", 0.02)
+//     .set_param("tune_decay", 0.5)
+//     .set_param("trig", 1.0);
+// erica_bass_drum.output("out").to_main();
+// erica_bass_drum.run();
+// ```

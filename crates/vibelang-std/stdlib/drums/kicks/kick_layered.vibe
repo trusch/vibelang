@@ -1,9 +1,9 @@
 // Genre: Modern Production | Character: Pre-layered kick stack with sub, mid, and click
 define_synthdef("kick_layered")
-    .param("freq", 50.0)
-    .param("amp", 1.0)
-    .param("sub_level", 0.6)
-    .param("click_level", 0.5)
+    .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("sub_level", 0.6) // units: linear, range: 0..1, default: 0.6. Sub oscillator level; higher values add more low fundamental.
+    .param("click_level", 0.5) // units: linear, range: 0..1, default: 0.5. Click Level amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, sub_level, click_level| {
         // Main body envelope
         let amp_env = envelope()
@@ -32,3 +32,20 @@ define_synthdef("kick_layered")
 
         (sub + punch + click) * amp_env * amp
     });
+
+//
+// # Usage: kick_layered
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_layered.vibe" as kick_layered;
+//
+// let doc_kick_layered = voice("doc_kick_layered")
+//     .synth("kick_layered")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     .set_param("sub_level", 0.6)
+//     .set_param("click_level", 0.5)
+//     ;
+// doc_kick_layered.output("out").to_main();
+// doc_kick_layered.run();
+// ```

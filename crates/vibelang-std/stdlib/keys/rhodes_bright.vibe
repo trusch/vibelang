@@ -1,8 +1,8 @@
 // Genre: Jazz, R&B, Soul | Character: Bright Rhodes electric piano
 define_synthdef("rhodes_bright")
-    .param("freq", 440.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.005, 1.0, 0.2)
@@ -29,3 +29,18 @@ define_synthdef("rhodes_bright")
 
         sig * env * amp
     });
+
+//
+// # Usage: `rhodes_bright`
+//
+// ```rhai
+// import "stdlib/keys/rhodes_bright.vibe" as rhodes_bright;
+//
+// let rhodes_bright = voice("doc_rhodes_bright")
+//     .synth("rhodes_bright")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// rhodes_bright.output("out").to_main();
+// rhodes_bright.run();
+// ```

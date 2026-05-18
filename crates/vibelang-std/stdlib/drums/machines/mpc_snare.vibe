@@ -1,7 +1,7 @@
 // Genre: Hip-hop, R&B, Production | Character: MPC-style snare - versatile, balanced
 define_synthdef("mpc_snare")
-    .param("freq", 200.0)
-    .param("amp", 0.9)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Balanced decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("mpc_snare")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: mpc_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/mpc_snare.vibe" as mpc_snare;
+//
+// let doc_mpc_snare = voice("doc_mpc_snare")
+//     .synth("mpc_snare")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_mpc_snare.output("out").to_main();
+// doc_mpc_snare.run();
+// ```

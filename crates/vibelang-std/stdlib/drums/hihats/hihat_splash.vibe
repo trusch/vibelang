@@ -1,7 +1,7 @@
 // Genre: Rock, Jazz | Character: Splash cymbal, bright and long
 define_synthdef("hihat_splash", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long, complex envelope
             let env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("hihat_splash", |builder| {
         })
 });
 
+//
+// # Usage: hihat_splash
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_splash.vibe" as hihat_splash;
+//
+// let doc_hihat_splash = voice("doc_hihat_splash")
+//     .synth("hihat_splash")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_splash.output("out").to_main();
+// doc_hihat_splash.run();
+// ```

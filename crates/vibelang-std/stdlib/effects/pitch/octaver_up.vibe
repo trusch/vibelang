@@ -29,10 +29,10 @@
 
 define_fx("octaver_up", |builder| {
     builder
-        .param("amount", 0.8)
-        .param("lp_freq", 4000.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("amount", 0.8) // units: normalized, range: 0..1, default: 0.8. Amount; higher values apply more of that modulation or effect.
+        .param("lp_freq", 4000.0) // units: Hz, range: 20..20000, default: 4000.0. Lp Freq in Hz; higher values move that tone or filter point upward.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, amount, lp_freq, mix, level| {
             let shifted_l = pitch_shift_ar(input[0], 0.1, 2.0, 0.0, 0.004);
             let shifted_r = pitch_shift_ar(input[1], 0.1, 2.0, 0.0, 0.004);
@@ -49,3 +49,18 @@ define_fx("octaver_up", |builder| {
             ]
         })
 });
+
+//
+// # Usage: octaver_up
+//
+// ```rhai
+// import "stdlib/effects/pitch/octaver_up.vibe" as octaver_up;
+//
+// let doc_octaver_up = fx("doc_octaver_up")
+//     .synth("octaver_up")
+//     .param("amount", 0.8)
+//     .param("lp_freq", 4000.0)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

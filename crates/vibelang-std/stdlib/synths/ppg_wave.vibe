@@ -4,10 +4,10 @@
 // PPG Wave Pad - Digital wavetable pad
 define_synthdef("ppg_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
-        .param("table_pos", 0.5)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("table_pos", 0.5) // units: normalized, range: 0..1, default: 0.5. Wavetable position; higher values scan toward later, brighter table frames.
         .body(|freq, amp, gate, table_pos| {
             let env = envelope()
                 .asr(0.3, 1.0, 0.5)
@@ -36,9 +36,9 @@ define_synthdef("ppg_pad", |builder| {
 // PPG Wave Lead - Digital metallic lead
 define_synthdef("ppg_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.2)
@@ -62,9 +62,9 @@ define_synthdef("ppg_lead", |builder| {
 // PPG Wave Bass - Digital bass
 define_synthdef("ppg_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -90,3 +90,47 @@ define_synthdef("ppg_bass", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `ppg_pad`
+//
+// ```rhai
+// import "stdlib/synths/ppg_wave.vibe" as ppg_wave;
+//
+// let ppg_pad = voice("doc_ppg_pad")
+//     .synth("ppg_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("table_pos", 0.5);
+// ppg_pad.output("out").to_main();
+// ppg_pad.run();
+// ```
+//
+// # Usage: `ppg_lead`
+//
+// ```rhai
+// import "stdlib/synths/ppg_wave.vibe" as ppg_wave;
+//
+// let ppg_lead = voice("doc_ppg_lead")
+//     .synth("ppg_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// ppg_lead.output("out").to_main();
+// ppg_lead.run();
+// ```
+//
+// # Usage: `ppg_bass`
+//
+// ```rhai
+// import "stdlib/synths/ppg_wave.vibe" as ppg_wave;
+//
+// let ppg_bass = voice("doc_ppg_bass")
+//     .synth("ppg_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// ppg_bass.output("out").to_main();
+// ppg_bass.run();
+// ```

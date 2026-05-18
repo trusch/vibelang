@@ -1,7 +1,7 @@
 // Genre: Dubstep, EDM | Character: Bass drop impact
 define_synthdef("impact_bass_drop", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.001, 1.5)
@@ -36,3 +36,17 @@ define_synthdef("impact_bass_drop", |builder| {
             mix * amp * 0.6
         })
 });
+
+//
+// # Usage: impact_bass_drop
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_bass_drop.vibe" as impact_bass_drop;
+//
+// let doc_impact_bass_drop = voice("doc_impact_bass_drop")
+//     .synth("impact_bass_drop")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_impact_bass_drop.output("out").to_main();
+// doc_impact_bass_drop.run();
+// ```

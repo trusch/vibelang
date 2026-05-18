@@ -1,9 +1,9 @@
 // Genre: Ambient, Space Music | Character: Spacious, atmospheric pad
 define_synthdef("pad_space", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.35)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Very long attack and release
@@ -39,3 +39,17 @@ define_synthdef("pad_space", |builder| {
         })
 });
 
+//
+// # Usage: `pad_space`
+//
+// ```rhai
+// import "stdlib/pads/ambient/pad_space.vibe" as pad_space;
+//
+// let pad_space = voice("doc_pad_space")
+//     .synth("pad_space")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_space.output("out").to_main();
+// pad_space.run();
+// ```

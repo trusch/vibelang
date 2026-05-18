@@ -1,10 +1,10 @@
 // Genre: Electro, Synthwave | Character: Classic FM bass with complex harmonics
 define_synthdef("fm_bass_classic", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("fm_amount", 2.5)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("fm_amount", 2.5) // units: ratio, range: 0..10, default: 2.5. FM modulation depth; higher values add stronger sidebands and brightness.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, fm_amount, amp, gate| {
 
             // Envelope
@@ -31,3 +31,19 @@ define_synthdef("fm_bass_classic", |builder| {
         })
 });
 
+//
+// # Usage: fm_bass_classic
+//
+// ```rhai
+// import "stdlib/bass/fm/fm_bass_classic.vibe" as fm_bass_classic;
+//
+// let doc_fm_bass_classic = voice("doc_fm_bass_classic")
+//     .synth("fm_bass_classic")
+//     .set_param("freq", 110.0)
+//     .set_param("fm_amount", 2.5)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_fm_bass_classic.output("out").to_main();
+// doc_fm_bass_classic.run();
+// ```

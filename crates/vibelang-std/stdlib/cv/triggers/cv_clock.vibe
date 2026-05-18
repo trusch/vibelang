@@ -8,8 +8,8 @@
 
 define_synthdef("cv_clock")
     .output_kr("out")     // 1ch — kr CV (clock pulse train)
-    .param("bpm", 120.0)
-    .param("division", 1.0)
+    .param("bpm", 120.0) // units: BPM, range: 20..300, default: 120.0. Clock tempo in beats per minute; higher values make the pulse faster.
+    .param("division", 1.0) // units: normalized, range: 0..1, default: 1.0. Clock division; higher values make the derived pulse slower.
     .body(|bpm, division| {
         // Pulse rate in Hz = beats/min * subdivisions/beat / 60 s.
         let freq = bpm * division / 60.0;
@@ -23,3 +23,17 @@ define_synthdef("cv_clock")
         // Scale 1.0 -> 0.5 audio (= +5V), hard clip to +/-1.0.
         [clip_kr(pulse * 0.5, -1.0, 1.0)]
     });
+
+//
+// # Usage: `cv_clock`
+//
+// ```rhai
+// import "stdlib/cv/triggers/cv_clock.vibe" as cv_clock;
+//
+// let cv_clock = voice("doc_cv_clock")
+//     .synth("cv_clock")
+//     .set_param("bpm", 96.0)
+//     .set_param("division", 0.5);
+// cv_clock.outputs(["out"]).mute();
+// cv_clock.run();
+// ```

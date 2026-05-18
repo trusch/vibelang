@@ -11,10 +11,24 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_diff")
-    .param("a", 0.0)
-    .param("b", 0.0)
+    .param("a", 0.0) // units: normalized, range: 0..1, default: 0.0. A macro; higher moves that model axis toward its brighter or more open setting.
+    .param("b", 0.0) // units: normalized, range: 0..1, default: 0.0. B macro; higher moves that model axis toward its brighter or more open setting.
     .body(|a, b| {
         let out = a - b;
         let clipped = clip_ar(out, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_diff`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_diff.vibe" as cv_diff;
+//
+// let cv_diff = voice("doc_cv_diff")
+//     .synth("cv_diff")
+//     .set_param("a", 0.5)
+//     .set_param("b", 0.5);
+// cv_diff.output("out").to_main();
+// cv_diff.run();
+// ```

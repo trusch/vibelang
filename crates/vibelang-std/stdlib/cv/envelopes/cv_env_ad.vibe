@@ -26,10 +26,10 @@
 // no leak_dc / soft-sat. See kb/stdlib-cv-spec.md.
 
 define_synthdef("cv_env_ad")
-    .param("gate", 0.0)
-    .param("attack_ms", 5.0)
-    .param("decay_ms", 200.0)
-    .param("peak_v", 8.0)
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("attack_ms", 5.0) // units: ms, range: 0..10000, default: 5.0. Attack Ms in milliseconds; higher values make that time interval longer.
+    .param("decay_ms", 200.0) // units: ms, range: 0..10000, default: 200.0. Decay Ms in milliseconds; higher values make that time interval longer.
+    .param("peak_v", 8.0) // units: volts, range: -10..10, default: 8.0. Envelope peak voltage; higher values raise the CV output level.
     .body(|gate, attack_ms, decay_ms, peak_v| {
         let attack_s = attack_ms * 0.001;
         let decay_s = decay_ms * 0.001;
@@ -50,3 +50,19 @@ define_synthdef("cv_env_ad")
         let clipped = clip_ar(cv * watchdog, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_env_ad`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/cv_env_ad.vibe" as cv_env_ad;
+//
+// let cv_env_ad = voice("doc_cv_env_ad")
+//     .synth("cv_env_ad")
+//     .set_param("gate", 1.0)
+//     .set_param("attack_ms", 80.0)
+//     .set_param("decay_ms", 80.0)
+//     .set_param("peak_v", 4.0);
+// cv_env_ad.output("out").to_main();
+// cv_env_ad.run();
+// ```

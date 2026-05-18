@@ -5,10 +5,10 @@
 
 define_synthdef("wurlitzer", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("drive", 0.3) // Overdrive amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("drive", 0.3) // units: normalized, range: 0..1, default: 0.3. Nonlinear drive amount; higher adds harmonic distortion and compression.
         .body(|freq, amp, gate, drive| {
             // Envelope with punchy attack
             let env = envelope()
@@ -40,3 +40,19 @@ define_synthdef("wurlitzer", |builder| {
             filtered * env * amp * 0.5
         })
 });
+
+//
+// # Usage: `wurlitzer`
+//
+// ```rhai
+// import "stdlib/keys/wurlitzer.vibe" as wurlitzer;
+//
+// let wurlitzer = voice("doc_wurlitzer")
+//     .synth("wurlitzer")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("drive", 0.3);
+// wurlitzer.output("out").to_main();
+// wurlitzer.run();
+// ```

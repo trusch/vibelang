@@ -1,8 +1,8 @@
 // Genre: Trance, Progressive | Character: Synth-based melodic riser
 define_synthdef("riser_synth", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 4.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 4.0) // units: seconds, range: 0..60, default: 4.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.1, 1.0)
@@ -32,3 +32,18 @@ define_synthdef("riser_synth", |builder| {
             (filtered + shimmer) * env * amp
         })
 });
+
+//
+// # Usage: riser_synth
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_synth.vibe" as riser_synth;
+//
+// let doc_riser_synth = voice("doc_riser_synth")
+//     .synth("riser_synth")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 4.0)
+//     ;
+// doc_riser_synth.output("out").to_main();
+// doc_riser_synth.run();
+// ```

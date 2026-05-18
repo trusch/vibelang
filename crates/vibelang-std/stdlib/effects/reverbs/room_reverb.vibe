@@ -14,10 +14,10 @@
 
 define_fx("room_reverb", |builder| {
     builder
-        .param("size", 0.4)
-        .param("brightness", 0.5)
-        .param("mix", 0.25)
-        .param("level", 1.0)
+        .param("size", 0.4) // units: ratio, range: 0..1, default: 0.4. Size; higher values use a larger buffer, room, or grain window.
+        .param("brightness", 0.5) // units: ratio, range: 0..1, default: 0.5. Tone brightness; higher values add more high-frequency content.
+        .param("mix", 0.25) // units: ratio, range: 0..1, default: 0.25. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, size, brightness, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -55,3 +55,18 @@ define_fx("room_reverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: room_reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/room_reverb.vibe" as room_reverb;
+//
+// let doc_room_reverb = fx("doc_room_reverb")
+//     .synth("room_reverb")
+//     .param("size", 0.4)
+//     .param("brightness", 0.5)
+//     .param("mix", 0.25)
+//     .param("level", 1.0)
+//     .apply();
+// ```

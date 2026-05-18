@@ -25,12 +25,12 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("multi_tap_delay")
-    .param("time", 0.375)
-    .param("feedback", 0.4)
-    .param("spread", 0.7)
-    .param("filter", 0.6)
-    .param("mix", 0.4)
-    .param("level", 1.0)
+    .param("time", 0.375) // units: seconds, range: 0..10, default: 0.375. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.4) // units: ratio, range: 0..1, default: 0.4. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("spread", 0.7) // units: ratio, range: 0..1, default: 0.7. Spread width; higher values distribute energy across a wider range.
+    .param("filter", 0.6) // units: selector, range: 0..N, default: 0.6. Selects filter mode.
+    .param("mix", 0.4) // units: ratio, range: 0..1, default: 0.4. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, spread, filter, mix, level| {
         let mono = (input[0] + input[1]) * 0.5;
 
@@ -71,3 +71,18 @@ define_fx("multi_tap_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: multi_tap_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/multi_tap_delay.vibe" as multi_tap_delay;
+//
+// let doc_multi_tap_delay = fx("doc_multi_tap_delay")
+//     .synth("multi_tap_delay")
+//     .param("time", 0.375)
+//     .param("feedback", 0.4)
+//     .param("spread", 0.7)
+//     .param("filter", 0.6)
+//     .apply();
+// ```

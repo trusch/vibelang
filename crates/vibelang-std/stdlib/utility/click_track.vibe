@@ -2,7 +2,7 @@
 
 // Click high - Downbeat marker
 define_synthdef("click_high")
-    .param("amp", 0.6)
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|amp| {        let env = envelope()
             .perc(0.001, 0.03)
             .cleanup_on_finish()
@@ -13,7 +13,7 @@ define_synthdef("click_high")
 
 // Click low - Off-beat marker
 define_synthdef("click_low")
-    .param("amp", 0.5)
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|amp| {        let env = envelope()
             .perc(0.001, 0.025)
             .cleanup_on_finish()
@@ -24,7 +24,7 @@ define_synthdef("click_low")
 
 // Click wood - Natural sounding click
 define_synthdef("click_wood")
-    .param("amp", 0.55)
+    .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
     .body(|amp| {        let env = envelope()
             .perc(0.001, 0.02)
             .cleanup_on_finish()
@@ -35,3 +35,46 @@ define_synthdef("click_wood")
 
         (noise * 0.7 + body) * env * amp
     });
+
+//
+// # Usage: `click_high`
+//
+// ```rhai
+// import "stdlib/utility/click_track.vibe" as click_track;
+//
+// let click_high = voice("doc_click_high")
+//     .synth("click_high")
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// click_high.output("out").to_main();
+// click_high.run();
+// ```
+//
+// # Usage: `click_low`
+//
+// ```rhai
+// import "stdlib/utility/click_track.vibe" as click_track;
+//
+// let click_low = voice("doc_click_low")
+//     .synth("click_low")
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// click_low.output("out").to_main();
+// click_low.run();
+// ```
+//
+// # Usage: `click_wood`
+//
+// ```rhai
+// import "stdlib/utility/click_track.vibe" as click_track;
+//
+// let click_wood = voice("doc_click_wood")
+//     .synth("click_wood")
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// click_wood.output("out").to_main();
+// click_wood.run();
+// ```

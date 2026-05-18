@@ -7,10 +7,24 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_min")
-    .param("a", 0.0)
-    .param("b", 0.0)
+    .param("a", 0.0) // units: normalized, range: 0..1, default: 0.0. A macro; higher moves that model axis toward its brighter or more open setting.
+    .param("b", 0.0) // units: normalized, range: 0..1, default: 0.0. B macro; higher moves that model axis toward its brighter or more open setting.
     .body(|a, b| {
         let out = min(a, b);
         let clipped = clip_ar(out, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_min`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_min.vibe" as cv_min;
+//
+// let cv_min = voice("doc_cv_min")
+//     .synth("cv_min")
+//     .set_param("a", 0.5)
+//     .set_param("b", 0.5);
+// cv_min.output("out").to_main();
+// cv_min.run();
+// ```

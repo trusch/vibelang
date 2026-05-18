@@ -6,10 +6,10 @@
 // ARP 2600 Lead - Classic modular lead
 define_synthdef("arp_2600_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("filter_freq", 3000.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_freq", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. Filter Freq in Hz; higher values move that tone or filter point upward.
         .body(|freq, amp, gate, filter_freq| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -34,9 +34,9 @@ define_synthdef("arp_2600_lead", |builder| {
 // ARP Odyssey Bass - Punchy duophonic bass
 define_synthdef("arp_odyssey_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -66,9 +66,9 @@ define_synthdef("arp_odyssey_bass", |builder| {
 // ARP String Ensemble - Classic string machine
 define_synthdef("arp_strings", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.2, 1.0, 0.3)
@@ -94,9 +94,9 @@ define_synthdef("arp_strings", |builder| {
 // ARP Solina - The string ensemble sound
 define_synthdef("arp_solina", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.15, 1.0, 0.25)
@@ -122,3 +122,61 @@ define_synthdef("arp_solina", |builder| {
             filtered * env * amp * mod_osc
         })
 });
+
+//
+// # Usage: `arp_2600_lead`
+//
+// ```rhai
+// import "stdlib/synths/arp.vibe" as arp;
+//
+// let arp_2600_lead = voice("doc_arp_2600_lead")
+//     .synth("arp_2600_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_freq", 1200.0);
+// arp_2600_lead.output("out").to_main();
+// arp_2600_lead.run();
+// ```
+//
+// # Usage: `arp_odyssey_bass`
+//
+// ```rhai
+// import "stdlib/synths/arp.vibe" as arp;
+//
+// let arp_odyssey_bass = voice("doc_arp_odyssey_bass")
+//     .synth("arp_odyssey_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// arp_odyssey_bass.output("out").to_main();
+// arp_odyssey_bass.run();
+// ```
+//
+// # Usage: `arp_strings`
+//
+// ```rhai
+// import "stdlib/synths/arp.vibe" as arp;
+//
+// let arp_strings = voice("doc_arp_strings")
+//     .synth("arp_strings")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// arp_strings.output("out").to_main();
+// arp_strings.run();
+// ```
+//
+// # Usage: `arp_solina`
+//
+// ```rhai
+// import "stdlib/synths/arp.vibe" as arp;
+//
+// let arp_solina = voice("doc_arp_solina")
+//     .synth("arp_solina")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// arp_solina.output("out").to_main();
+// arp_solina.run();
+// ```

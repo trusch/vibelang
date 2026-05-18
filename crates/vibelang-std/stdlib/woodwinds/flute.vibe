@@ -6,10 +6,10 @@
 
 define_synthdef("flute", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("breath", 0.3)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("breath", 0.3) // units: normalized, range: 0..1, default: 0.3. Breath-noise amount; higher adds more airy turbulence.
         .body(|freq, amp, gate, breath| {
             let env = envelope()
                 .asr(0.08, 1.0, 0.1)
@@ -44,9 +44,9 @@ define_synthdef("flute", |builder| {
 // Piccolo
 define_synthdef("piccolo", |builder| {
     builder
-        .param("freq", 1760.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 1760.0) // units: Hz, range: 20..20000, default: 1760.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.08)
@@ -71,3 +71,33 @@ define_synthdef("piccolo", |builder| {
             (tone + breath) * env * amp * 0.6
         })
 });
+
+//
+// # Usage: `flute`
+//
+// ```rhai
+// import "stdlib/woodwinds/flute.vibe" as flute;
+//
+// let flute = voice("doc_flute")
+//     .synth("flute")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("breath", 0.3);
+// flute.output("out").to_main();
+// flute.run();
+// ```
+//
+// # Usage: `piccolo`
+//
+// ```rhai
+// import "stdlib/woodwinds/flute.vibe" as flute;
+//
+// let piccolo = voice("doc_piccolo")
+//     .synth("piccolo")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// piccolo.output("out").to_main();
+// piccolo.run();
+// ```

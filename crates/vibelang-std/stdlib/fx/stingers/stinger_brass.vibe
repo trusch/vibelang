@@ -1,8 +1,8 @@
 // Genre: Trailer, Cinematic | Character: Brass stinger hit
 define_synthdef("stinger_brass", |builder| {
     builder
-        .param("amp", 0.8)
-        .param("note", 60.0)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("note", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
         .body(|amp, note| {
             let env = envelope()
                 .perc(0.01, 0.8)
@@ -28,3 +28,18 @@ define_synthdef("stinger_brass", |builder| {
             filtered * env * amp * 0.4
         })
 });
+
+//
+// # Usage: stinger_brass
+//
+// ```rhai
+// import "stdlib/fx/stingers/stinger_brass.vibe" as stinger_brass;
+//
+// let doc_stinger_brass = voice("doc_stinger_brass")
+//     .synth("stinger_brass")
+//     .set_param("amp", 0.8)
+//     .set_param("note", 60.0)
+//     ;
+// doc_stinger_brass.output("out").to_main();
+// doc_stinger_brass.run();
+// ```

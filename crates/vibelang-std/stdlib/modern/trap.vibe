@@ -6,10 +6,10 @@
 // Trap 808 Long - Extended 808 bass
 define_synthdef("trap_808_long", |builder| {
     builder
-        .param("freq", 40.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
-        .param("decay", 2.0) // Long decay time
+        .param("freq", 40.0) // units: Hz, range: 20..20000, default: 40.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("decay", 2.0) // units: seconds, range: 0..10, default: 2.0. Envelope time or level; higher values make that stage last longer or sustain higher.
         .body(|freq, amp, gate, decay| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.1)
@@ -42,10 +42,10 @@ define_synthdef("trap_808_long", |builder| {
 // Trap 808 Distorted - Heavy distorted 808
 define_synthdef("trap_808_dist", |builder| {
     builder
-        .param("freq", 40.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
-        .param("drive", 0.6)
+        .param("freq", 40.0) // units: Hz, range: 20..20000, default: 40.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("drive", 0.6) // units: normalized, range: 0..1, default: 0.6. Nonlinear drive amount; higher adds harmonic distortion and compression.
         .body(|freq, amp, gate, drive| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.1)
@@ -80,8 +80,8 @@ define_synthdef("trap_808_dist", |builder| {
 // Trap Hihat - Fast trap hats
 define_synthdef("trap_hat", |builder| {
     builder
-        .param("freq", 8000.0)
-        .param("amp", 0.4)
+        .param("freq", 8000.0) // units: Hz, range: 20..20000, default: 8000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Very short envelope
             let env = envelope()
@@ -103,8 +103,8 @@ define_synthdef("trap_hat", |builder| {
 // Trap Hihat Roll - Rapid-fire hats
 define_synthdef("trap_hat_roll", |builder| {
     builder
-        .param("freq", 9000.0)
-        .param("amp", 0.3)
+        .param("freq", 9000.0) // units: Hz, range: 20..20000, default: 9000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Extra short for rolls
             let env = envelope()
@@ -123,9 +123,9 @@ define_synthdef("trap_hat_roll", |builder| {
 // Trap Lead - Dark melodic lead
 define_synthdef("trap_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -149,9 +149,9 @@ define_synthdef("trap_lead", |builder| {
 // Trap Bell - Melodic bell lead
 define_synthdef("trap_bell", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.2)
@@ -177,3 +177,88 @@ define_synthdef("trap_bell", |builder| {
             bell * env * decay_env * amp * 0.5
         })
 });
+
+//
+// # Usage: `trap_808_long`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_808_long = voice("doc_trap_808_long")
+//     .synth("trap_808_long")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("decay", 2.0);
+// trap_808_long.output("out").to_main();
+// trap_808_long.run();
+// ```
+//
+// # Usage: `trap_808_dist`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_808_dist = voice("doc_trap_808_dist")
+//     .synth("trap_808_dist")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("drive", 0.6);
+// trap_808_dist.output("out").to_main();
+// trap_808_dist.run();
+// ```
+//
+// # Usage: `trap_hat`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_hat = voice("doc_trap_hat")
+//     .synth("trap_hat")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// trap_hat.output("out").to_main();
+// trap_hat.run();
+// ```
+//
+// # Usage: `trap_hat_roll`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_hat_roll = voice("doc_trap_hat_roll")
+//     .synth("trap_hat_roll")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// trap_hat_roll.output("out").to_main();
+// trap_hat_roll.run();
+// ```
+//
+// # Usage: `trap_lead`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_lead = voice("doc_trap_lead")
+//     .synth("trap_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// trap_lead.output("out").to_main();
+// trap_lead.run();
+// ```
+//
+// # Usage: `trap_bell`
+//
+// ```rhai
+// import "stdlib/modern/trap.vibe" as trap;
+//
+// let trap_bell = voice("doc_trap_bell")
+//     .synth("trap_bell")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// trap_bell.output("out").to_main();
+// trap_bell.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: All | Character: Mid tom, punchy
 define_synthdef("tom_mid", |builder| {
     builder
-        .param("freq", 140.0)
-        .param("amp", 1.0)
+        .param("freq", 140.0) // units: Hz, range: 20..20000, default: 140.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Medium decay
             let amp_env = envelope()
@@ -34,3 +34,17 @@ define_synthdef("tom_mid", |builder| {
         })
 });
 
+//
+// # Usage: tom_mid
+//
+// ```rhai
+// import "stdlib/drums/percussion/tom_mid.vibe" as tom_mid;
+//
+// let doc_tom_mid = voice("doc_tom_mid")
+//     .synth("tom_mid")
+//     .set_param("freq", 140.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_tom_mid.output("out").to_main();
+// doc_tom_mid.run();
+// ```

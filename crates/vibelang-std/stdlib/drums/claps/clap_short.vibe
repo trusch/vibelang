@@ -1,7 +1,7 @@
 // Genre: Techno, House | Character: Tight, short clap
 define_synthdef("clap_short", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Two quick bursts for tight character
             let burst1_env = envelope()
@@ -23,3 +23,16 @@ define_synthdef("clap_short", |builder| {
         })
 });
 
+//
+// # Usage: clap_short
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_short.vibe" as clap_short;
+//
+// let doc_clap_short = voice("doc_clap_short")
+//     .synth("clap_short")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_clap_short.output("out").to_main();
+// doc_clap_short.run();
+// ```

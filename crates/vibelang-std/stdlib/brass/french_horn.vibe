@@ -5,9 +5,9 @@
 
 define_synthdef("french_horn", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Slow swell envelope
             let env = envelope()
@@ -38,3 +38,18 @@ define_synthdef("french_horn", |builder| {
             mellow * env * amp * vib * 0.8
         })
 });
+
+//
+// # Usage: `french_horn`
+//
+// ```rhai
+// import "stdlib/brass/french_horn.vibe" as french_horn;
+//
+// let french_horn = voice("doc_french_horn")
+//     .synth("french_horn")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// french_horn.output("out").to_main();
+// french_horn.run();
+// ```

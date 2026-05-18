@@ -1,7 +1,7 @@
 // Genre: Tech House, Minimal | Character: Punchy click kick for driving rhythms
 define_synthdef("kick_click")
-    .param("freq", 55.0)
-    .param("amp", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Tight decay
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("kick_click")
 
         (body + click) * amp_env * amp
     });
+
+//
+// # Usage: kick_click
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_click.vibe" as kick_click;
+//
+// let doc_kick_click = voice("doc_kick_click")
+//     .synth("kick_click")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_click.output("out").to_main();
+// doc_kick_click.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Flamenco, Latin, Acoustic | Character: Wooden box drum bass tone
 define_synthdef("cajon")
-    .param("freq", 80.0)
-    .param("amp", 0.8)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Wood resonance decay
         let amp_env = envelope()
@@ -33,3 +33,18 @@ define_synthdef("cajon")
 
         (body + sub + wood + attack) * amp_env * amp
     });
+
+//
+// # Usage: cajon
+//
+// ```rhai
+// import "stdlib/drums/latin/cajon.vibe" as cajon;
+//
+// let doc_cajon = voice("doc_cajon")
+//     .synth("cajon")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_cajon.output("out").to_main();
+// doc_cajon.run();
+// ```

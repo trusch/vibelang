@@ -38,10 +38,10 @@
 
 define_fx("shepherd_tone_fx", |builder| {
     builder
-        .param("rate", 0.25)
-        .param("num_voices", 4.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("rate", 0.25) // units: Hz, range: 0..100, default: 0.25. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("num_voices", 4.0) // units: count, range: 1..16, default: 4.0. Voice count; higher values add more modulation voices.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, num_voices, mix, level| {
             // Master phase ramp: lf_saw_ar is -1..1, normalise to 0..1.
             let saw = lf_saw_ar(rate, 0.0);
@@ -102,3 +102,18 @@ define_fx("shepherd_tone_fx", |builder| {
             ]
         })
 });
+
+//
+// # Usage: shepherd_tone_fx
+//
+// ```rhai
+// import "stdlib/effects/pitch/shepherd_tone_fx.vibe" as shepherd_tone_fx;
+//
+// let doc_shepherd_tone_fx = fx("doc_shepherd_tone_fx")
+//     .synth("shepherd_tone_fx")
+//     .param("rate", 0.25)
+//     .param("num_voices", 4.0)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

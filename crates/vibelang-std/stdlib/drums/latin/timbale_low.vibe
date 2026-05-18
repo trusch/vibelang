@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Mambo | Character: Deeper timbale with warm metallic ring
 define_synthdef("timbale_low")
-    .param("freq", 280.0)
-    .param("amp", 0.8)
+    .param("freq", 280.0) // units: Hz, range: 20..20000, default: 280.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Long ringing decay
         let amp_env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("timbale_low")
 
         (body + ring1 + ring2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: timbale_low
+//
+// ```rhai
+// import "stdlib/drums/latin/timbale_low.vibe" as timbale_low;
+//
+// let doc_timbale_low = voice("doc_timbale_low")
+//     .synth("timbale_low")
+//     .set_param("freq", 280.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_timbale_low.output("out").to_main();
+// doc_timbale_low.run();
+// ```

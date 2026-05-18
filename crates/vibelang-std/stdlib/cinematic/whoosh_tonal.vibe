@@ -1,8 +1,8 @@
 // Genre: Sound Design, Trailer | Character: Tonal whoosh/flyby
 define_synthdef("whoosh_tonal")
-    .param("freq", 200.0)
-    .param("amp", 0.7)
-    .param("length", 0.5)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("length", 0.5) // units: seconds, range: 0..30, default: 0.5. Step count or loop length; higher values increase quantization or memory resolution.
     .body(|freq, amp, length| {
         // Whoosh envelope
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("whoosh_tonal")
 
         (tone + noise) * amp_env * amp
     });
+
+//
+// # Usage: `whoosh_tonal`
+//
+// ```rhai
+// import "stdlib/cinematic/whoosh_tonal.vibe" as whoosh_tonal;
+//
+// let whoosh_tonal = voice("doc_whoosh_tonal")
+//     .synth("whoosh_tonal")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("length", 0.5);
+// whoosh_tonal.output("out").to_main();
+// whoosh_tonal.run();
+// ```

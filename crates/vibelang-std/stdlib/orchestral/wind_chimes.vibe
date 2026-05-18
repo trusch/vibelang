@@ -1,8 +1,8 @@
 // Genre: Orchestral, Ambient | Character: Metal wind chimes
 define_synthdef("wind_chimes")
-    .param("freq", 2000.0)
-    .param("amp", 0.4)
-    .param("density", 0.5)
+    .param("freq", 2000.0) // units: Hz, range: 20..20000, default: 2000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+    .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
     .body(|freq, amp, density| {
         // Overall envelope
         let amp_env = envelope()
@@ -21,3 +21,18 @@ define_synthdef("wind_chimes")
 
         mix * amp_env * amp
     });
+
+//
+// # Usage: `wind_chimes`
+//
+// ```rhai
+// import "stdlib/orchestral/wind_chimes.vibe" as wind_chimes;
+//
+// let wind_chimes = voice("doc_wind_chimes")
+//     .synth("wind_chimes")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("density", 0.5);
+// wind_chimes.output("out").to_main();
+// wind_chimes.run();
+// ```

@@ -32,46 +32,46 @@ define_synthdef("verbos_harmonic_osc", |builder| {
         .output("partial6", 1)
         .output("partial7", 1)
         .output("partial8", 1)
-        .param("freq", 110.0)               // fundamental frequency in Hz before FM
-        .param("amp", 0.5)                  // final audio gain after the ASR gate envelope
-        .param("gate", 1.0)                 // 0/1 ASR envelope gate for output gain
-        .param("fm_lin", 0.0)               // linear Hz offset before oscillator generation
-        .param("fm_lin_scale", 1.0)         // scale factor for linear FM input
-        .param("fm_exp", 0.0)               // exponential octave offset before oscillator generation
-        .param("fm_exp_scale", 1.0)         // scale factor for exponential FM input
-        .param("harm1", 1.0)                // base level for harmonic partial 1
-        .param("harm2", 0.0)                // base level for harmonic partial 2
-        .param("harm3", 0.0)                // base level for harmonic partial 3
-        .param("harm4", 0.0)                // base level for harmonic partial 4
-        .param("harm5", 0.0)                // base level for harmonic partial 5
-        .param("harm6", 0.0)                // base level for harmonic partial 6
-        .param("harm7", 0.0)                // base level for harmonic partial 7
-        .param("harm8", 0.0)                // base level for harmonic partial 8
-        .param("harm1_cv", 0.0)             // bipolar CV added to harmonic partial 1 level
-        .param("harm2_cv", 0.0)             // bipolar CV added to harmonic partial 2 level
-        .param("harm3_cv", 0.0)             // bipolar CV added to harmonic partial 3 level
-        .param("harm4_cv", 0.0)             // bipolar CV added to harmonic partial 4 level
-        .param("harm5_cv", 0.0)             // bipolar CV added to harmonic partial 5 level
-        .param("harm6_cv", 0.0)             // bipolar CV added to harmonic partial 6 level
-        .param("harm7_cv", 0.0)             // bipolar CV added to harmonic partial 7 level
-        .param("harm8_cv", 0.0)             // bipolar CV added to harmonic partial 8 level
-        .param("harm1_cv_scale", 1.0)       // CV scale for harmonic partial 1 level
-        .param("harm2_cv_scale", 1.0)       // CV scale for harmonic partial 2 level
-        .param("harm3_cv_scale", 1.0)       // CV scale for harmonic partial 3 level
-        .param("harm4_cv_scale", 1.0)       // CV scale for harmonic partial 4 level
-        .param("harm5_cv_scale", 1.0)       // CV scale for harmonic partial 5 level
-        .param("harm6_cv_scale", 1.0)       // CV scale for harmonic partial 6 level
-        .param("harm7_cv_scale", 1.0)       // CV scale for harmonic partial 7 level
-        .param("harm8_cv_scale", 1.0)       // CV scale for harmonic partial 8 level
-        .param("center", 4.5)               // 1..8 spectral focus center before CV
-        .param("center_cv", 0.0)            // bipolar CV for spectral focus center
-        .param("center_cv_scale", 1.0)      // scale factor for center_cv
-        .param("width", 1.0)                // 0 narrow focus, 1 broad harmonic spread
-        .param("width_cv", 0.0)             // bipolar CV for harmonic spread width
-        .param("width_cv_scale", 1.0)       // scale factor for width_cv
-        .param("tilt", 0.0)                 // -1 low emphasis to +1 high emphasis
-        .param("tilt_cv", 0.0)              // bipolar CV for spectral tilt
-        .param("tilt_cv_scale", 1.0)        // scale factor for tilt_cv
+        .param("freq", 110.0) // units: Hz, range: 0..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("fm_lin", 0.0) // units: normalized, range: 0..1, default: 0.0. Fm Lin amount; higher values emphasize that named musical or electrical behavior.
+        .param("fm_lin_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Fm Lin Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("fm_exp", 0.0) // units: normalized, range: 0..1, default: 0.0. Fm Exp amount; higher values emphasize that named musical or electrical behavior.
+        .param("fm_exp_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Fm Exp Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm1", 1.0) // units: normalized, range: 0..1, default: 1.0. Harmonic 1 level; higher makes that partial louder.
+        .param("harm2", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 2 level; higher makes that partial louder.
+        .param("harm3", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 3 level; higher makes that partial louder.
+        .param("harm4", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 4 level; higher makes that partial louder.
+        .param("harm5", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 5 level; higher makes that partial louder.
+        .param("harm6", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 6 level; higher makes that partial louder.
+        .param("harm7", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 7 level; higher makes that partial louder.
+        .param("harm8", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 8 level; higher makes that partial louder.
+        .param("harm1_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 1 CV input; adds modulation to that partial level.
+        .param("harm2_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 2 CV input; adds modulation to that partial level.
+        .param("harm3_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 3 CV input; adds modulation to that partial level.
+        .param("harm4_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 4 CV input; adds modulation to that partial level.
+        .param("harm5_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 5 CV input; adds modulation to that partial level.
+        .param("harm6_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 6 CV input; adds modulation to that partial level.
+        .param("harm7_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 7 CV input; adds modulation to that partial level.
+        .param("harm8_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Harmonic 8 CV input; adds modulation to that partial level.
+        .param("harm1_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm1 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm2_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm2 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm3_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm3 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm4_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm4 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm5_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm5 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm6_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm6 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm7_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm7 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("harm8_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Harm8 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("center", 4.5) // units: harmonic, range: 1..8, default: 4.5. Focus center for the band or harmonic bank; higher moves emphasis upward.
+        .param("center_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Center CV input; bipolar values modulate the matching panel control.
+        .param("center_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Center Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("width", 1.0) // units: ratio, range: 0..1, default: 1.0. Spread width; higher values distribute energy across a wider range.
+        .param("width_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Width CV input; bipolar values modulate the matching panel control.
+        .param("width_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Width Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("tilt", 0.0) // units: normalized, range: 0..1, default: 0.0. Spectral tilt; negative favors lows and positive favors highs.
+        .param("tilt_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Tilt CV input; bipolar values modulate the matching panel control.
+        .param("tilt_cv_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Tilt Cv Scale amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let env = envelope()
                 .asr(0.002, 1.0, 0.05)
@@ -150,3 +150,19 @@ define_synthdef("verbos_harmonic_osc", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `verbos_harmonic_osc`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/verbos_harmonic_osc.vibe" as verbos_harmonic_osc;
+//
+// let verbos_harmonic_osc = voice("doc_verbos_harmonic_osc")
+//     .synth("verbos_harmonic_osc")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("fm_lin", 0.5);
+// verbos_harmonic_osc.output("mix").to_main();
+// verbos_harmonic_osc.run();
+// ```

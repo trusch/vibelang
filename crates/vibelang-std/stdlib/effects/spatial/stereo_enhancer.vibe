@@ -18,11 +18,11 @@
 
 define_fx("stereo_enhancer", |builder| {
     builder
-        .param("width", 1.2)
-        .param("center", 0.0)
-        .param("bass_mono", 100.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("width", 1.2) // units: ratio, range: 0..2, default: 1.2. Spread width; higher values distribute energy across a wider range.
+        .param("center", 0.0) // units: pan, range: -1..1, default: 0.0. Focus center for the band or harmonic bank; higher moves emphasis upward.
+        .param("bass_mono", 100.0) // units: Hz, range: 20..500, default: 100.0. Bass Mono amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, width, center, bass_mono, mix, level| {
             // Encode to Mid/Side
             let mid = (input[0] + input[1]) * 0.5;
@@ -59,3 +59,18 @@ define_fx("stereo_enhancer", |builder| {
             ]
         })
 });
+
+//
+// # Usage: stereo_enhancer
+//
+// ```rhai
+// import "stdlib/effects/spatial/stereo_enhancer.vibe" as stereo_enhancer;
+//
+// let doc_stereo_enhancer = fx("doc_stereo_enhancer")
+//     .synth("stereo_enhancer")
+//     .param("width", 1.2)
+//     .param("center", 0.0)
+//     .param("bass_mono", 100.0)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

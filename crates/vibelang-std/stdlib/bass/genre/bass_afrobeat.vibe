@@ -1,8 +1,8 @@
 // Genre: Afrobeat, Afrobeats | Character: Groovy afrobeat bass - warm and rhythmic
 define_synthdef("bass_afrobeat")
-    .param("freq", 65.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 65.0) // units: Hz, range: 20..20000, default: 65.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.1)
@@ -25,3 +25,19 @@ define_synthdef("bass_afrobeat")
 
         lpf_ar(sig, 2500.0) * env * amp
     });
+
+//
+// # Usage: bass_afrobeat
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_afrobeat.vibe" as bass_afrobeat;
+//
+// let doc_bass_afrobeat = voice("doc_bass_afrobeat")
+//     .synth("bass_afrobeat")
+//     .set_param("freq", 65.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_afrobeat.output("out").to_main();
+// doc_bass_afrobeat.run();
+// ```

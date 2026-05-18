@@ -1,9 +1,9 @@
 // Genre: Experimental, IDM | Character: FM-style harmonics, metallic
 define_synthdef("kick_fm", |builder| {
     builder
-        .param("freq", 60.0)
-        .param("amp", 1.0)
-        .param("fm_amount", 3.0)
+        .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("fm_amount", 3.0) // units: ratio, range: 0..10, default: 3.0. FM modulation depth; higher values add stronger sidebands and brightness.
         .body(|freq, amp, fm_amount| {
             // Medium envelope
             let amp_env = envelope()
@@ -36,3 +36,18 @@ define_synthdef("kick_fm", |builder| {
         })
 });
 
+//
+// # Usage: kick_fm
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_fm.vibe" as kick_fm;
+//
+// let doc_kick_fm = voice("doc_kick_fm")
+//     .synth("kick_fm")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 1.0)
+//     .set_param("fm_amount", 3.0)
+//     ;
+// doc_kick_fm.output("out").to_main();
+// doc_kick_fm.run();
+// ```

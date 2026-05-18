@@ -31,11 +31,11 @@
 
 define_fx("ensemble_chorus", |builder| {
     builder
-        .param("rate", 0.6)
-        .param("depth", 0.004)
-        .param("voices", 1.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("rate", 0.6) // units: Hz, range: 0..100, default: 0.6. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.004) // units: ratio, range: 0..1, default: 0.004. Modulation depth; higher values make the movement more pronounced.
+        .param("voices", 1.0) // units: count, range: 1..16, default: 1.0. Voices amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, voices, mix, level| {
             // Six LFOs evenly spaced around the cycle.
             let lfo1 = sin_osc_kr(rate, 0.0);
@@ -72,3 +72,18 @@ define_fx("ensemble_chorus", |builder| {
             ]
         })
 });
+
+//
+// # Usage: ensemble_chorus
+//
+// ```rhai
+// import "stdlib/effects/modulation/ensemble_chorus.vibe" as ensemble_chorus;
+//
+// let doc_ensemble_chorus = fx("doc_ensemble_chorus")
+//     .synth("ensemble_chorus")
+//     .param("rate", 0.6)
+//     .param("depth", 0.004)
+//     .param("voices", 1.0)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

@@ -7,11 +7,11 @@
 // Serum Growl Bass - The dubstep staple
 define_synthdef("serum_growl", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("growl_rate", 8.0) // LFO rate for growl
-        .param("intensity", 0.7)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("growl_rate", 8.0) // units: Hz, range: 0..100, default: 8.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("intensity", 0.7) // units: normalized, range: 0..1, default: 0.7. Intensity macro; higher makes the patch louder, brighter, and more saturated.
         .body(|freq, amp, gate, growl_rate, intensity| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -46,10 +46,10 @@ define_synthdef("serum_growl", |builder| {
 // Serum Reese Bass - Modern reese
 define_synthdef("serum_reese", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("detune", 0.5)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("detune", 0.5) // units: semitones, range: -12..12, default: 0.5. Oscillator detune amount; higher spreads voices farther apart in pitch.
         .body(|freq, amp, gate, detune| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.15)
@@ -80,10 +80,10 @@ define_synthdef("serum_reese", |builder| {
 // Serum Supersaw - Ultra-wide lead
 define_synthdef("serum_supersaw", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("width", 0.7)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("width", 0.7) // units: normalized, range: 0..1, default: 0.7. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, width| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -113,9 +113,9 @@ define_synthdef("serum_supersaw", |builder| {
 // Serum Pluck - Modern pluck lead
 define_synthdef("serum_pluck", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.1)
@@ -145,9 +145,9 @@ define_synthdef("serum_pluck", |builder| {
 // Serum Hoover - Classic rave hoover updated
 define_synthdef("serum_hoover", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.2)
@@ -173,3 +173,77 @@ define_synthdef("serum_hoover", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `serum_growl`
+//
+// ```rhai
+// import "stdlib/modern/serum_style.vibe" as serum_style;
+//
+// let serum_growl = voice("doc_serum_growl")
+//     .synth("serum_growl")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("growl_rate", 8.0);
+// serum_growl.output("out").to_main();
+// serum_growl.run();
+// ```
+//
+// # Usage: `serum_reese`
+//
+// ```rhai
+// import "stdlib/modern/serum_style.vibe" as serum_style;
+//
+// let serum_reese = voice("doc_serum_reese")
+//     .synth("serum_reese")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("detune", 0.5);
+// serum_reese.output("out").to_main();
+// serum_reese.run();
+// ```
+//
+// # Usage: `serum_supersaw`
+//
+// ```rhai
+// import "stdlib/modern/serum_style.vibe" as serum_style;
+//
+// let serum_supersaw = voice("doc_serum_supersaw")
+//     .synth("serum_supersaw")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("width", 0.7);
+// serum_supersaw.output("out").to_main();
+// serum_supersaw.run();
+// ```
+//
+// # Usage: `serum_pluck`
+//
+// ```rhai
+// import "stdlib/modern/serum_style.vibe" as serum_style;
+//
+// let serum_pluck = voice("doc_serum_pluck")
+//     .synth("serum_pluck")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// serum_pluck.output("out").to_main();
+// serum_pluck.run();
+// ```
+//
+// # Usage: `serum_hoover`
+//
+// ```rhai
+// import "stdlib/modern/serum_style.vibe" as serum_style;
+//
+// let serum_hoover = voice("doc_serum_hoover")
+//     .synth("serum_hoover")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// serum_hoover.output("out").to_main();
+// serum_hoover.run();
+// ```

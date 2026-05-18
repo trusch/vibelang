@@ -1,8 +1,8 @@
 // Genre: Dubstep, Bass Music | Character: Very deep, chest-hitting sub
 define_synthdef("sub_deep")
-    .param("freq", 45.0)
-    .param("amp", 0.9)
-        .param("gate", 1.0)
+    .param("freq", 45.0) // units: Hz, range: 20..20000, default: 45.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
 
         // Long envelope for sustained sub
@@ -22,3 +22,18 @@ define_synthdef("sub_deep")
         (sig + deep) * env * amp
     });
 
+//
+// # Usage: sub_deep
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_deep.vibe" as sub_deep;
+//
+// let doc_sub_deep = voice("doc_sub_deep")
+//     .synth("sub_deep")
+//     .set_param("freq", 45.0)
+//     .set_param("amp", 0.9)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_deep.output("out").to_main();
+// doc_sub_deep.run();
+// ```

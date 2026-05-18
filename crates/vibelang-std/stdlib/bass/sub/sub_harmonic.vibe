@@ -1,9 +1,9 @@
 // Genre: Techno, House | Character: Sub with rich harmonic series
 define_synthdef("sub_harmonic", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -30,3 +30,18 @@ define_synthdef("sub_harmonic", |builder| {
         })
 });
 
+//
+// # Usage: sub_harmonic
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_harmonic.vibe" as sub_harmonic;
+//
+// let doc_sub_harmonic = voice("doc_sub_harmonic")
+//     .synth("sub_harmonic")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_harmonic.output("out").to_main();
+// doc_sub_harmonic.run();
+// ```

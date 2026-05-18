@@ -24,10 +24,10 @@
 
 define_fx("granular_time_stretch", |builder| {
     builder
-        .param("rate", 1.0)
-        .param("grain_size", 0.15)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("grain_size", 0.15) // units: seconds, range: 0..1, default: 0.15. Grain Size; higher values use a larger buffer, room, or grain window.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, grain_size, mix, level| {
             // ~2s circular buffers, one per channel.
             let buf_l = local_buf_ir(1, 96000);
@@ -59,3 +59,18 @@ define_fx("granular_time_stretch", |builder| {
             ]
         })
 });
+
+//
+// # Usage: granular_time_stretch
+//
+// ```rhai
+// import "stdlib/effects/granular/granular_time_stretch.vibe" as granular_time_stretch;
+//
+// let doc_granular_time_stretch = fx("doc_granular_time_stretch")
+//     .synth("granular_time_stretch")
+//     .param("rate", 1.0)
+//     .param("grain_size", 0.15)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

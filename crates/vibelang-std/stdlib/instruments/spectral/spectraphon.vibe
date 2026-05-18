@@ -49,20 +49,20 @@ define_synthdef("spectraphon", |builder| {
         .output("sub")
         .output("odd")
         .output("even")
-        .param("freq", 220.0)
-        .param("v_oct", 0.0)
-        .param("partials", 1.0)
-        .param("slide", 0.5)
-        .param("focus", 0.5)
-        .param("amp", 0.3)
-        .param("gate", 1.0)
-        .param("mode", 0.0)
-        .param("array_idx", 0.0)
-        .param("f0_analyze", 200.0)
-        .param("fft_buf", 0.0)
-        .param("mag_buf", 0.0)
-        .param("array_buf", 0.0)
-        .param("active", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 0..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("v_oct", 0.0) // units: volts, range: -10..10, default: 0.0. Adds calibrated pitch voltage.
+        .param("partials", 1.0) // units: normalized, range: 0..1, default: 1.0. Partials amount; higher values emphasize that named musical or electrical behavior.
+        .param("slide", 0.5) // units: seconds, range: 0..60, default: 0.5. Trombone slide position; higher values lower the tube resonance.
+        .param("focus", 0.5) // units: normalized, range: 0..1, default: 0.5. Focus amount; higher values emphasize that named musical or electrical behavior.
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("array_idx", 0.0) // units: normalized, range: 0..1, default: 0.0. Array Idx amount; higher values emphasize that named musical or electrical behavior.
+        .param("f0_analyze", 200.0) // units: Hz, range: 0..20000, default: 200.0. F0 Analyze amount; higher values emphasize that named musical or electrical behavior.
+        .param("fft_buf", 0.0) // units: bus/buffer id, range: 0..N, default: 0.0. Selects runtime bus or buffer.
+        .param("mag_buf", 0.0) // units: bus/buffer id, range: 0..N, default: 0.0. Selects runtime bus or buffer.
+        .param("array_buf", 0.0) // units: bus/buffer id, range: 0..N, default: 0.0. Selects runtime bus or buffer.
+        .param("active", 1.0) // units: normalized, range: 0..1, default: 1.0. Active amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let analyze_in = p.inputs["analyze"];
             // `freq` is the base/tuning frequency in Hz. `v_oct` is a
@@ -224,3 +224,19 @@ define_synthdef("spectraphon", |builder| {
             [sine_out, sub_out, odd_out, even_out]
         })
 });
+
+//
+// # Usage: `spectraphon`
+//
+// ```rhai
+// import "stdlib/instruments/spectral/spectraphon.vibe" as spectraphon;
+//
+// let spectraphon = voice("doc_spectraphon")
+//     .synth("spectraphon")
+//     .set_param("freq", 330.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("mode", 1.0);
+// spectraphon.output("sine").to_main();
+// spectraphon.run();
+// ```

@@ -20,10 +20,10 @@
 
 define_fx("pitch_shift", |builder| {
     builder
-        .param("ratio", 1.5)
-        .param("window", 0.2)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("ratio", 1.5) // units: ratio, range: 1..100, default: 1.5. Frequency ratio; higher values tune the related oscillator or clock upward.
+        .param("window", 0.2) // units: ratio, range: 0..1, default: 0.2. Window amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, ratio, window, mix, level| {
             // Apply pitch shifting to both channels
             let shifted_left = pitch_shift_ar(input[0], window, ratio, 0.0, 0.0);
@@ -38,3 +38,18 @@ define_fx("pitch_shift", |builder| {
             ]
         })
 });
+
+//
+// # Usage: pitch_shift
+//
+// ```rhai
+// import "stdlib/effects/modulation/pitch_shift.vibe" as pitch_shift;
+//
+// let doc_pitch_shift = fx("doc_pitch_shift")
+//     .synth("pitch_shift")
+//     .param("ratio", 1.5)
+//     .param("window", 0.2)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

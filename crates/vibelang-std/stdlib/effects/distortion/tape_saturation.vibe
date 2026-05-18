@@ -15,11 +15,11 @@
 
 define_fx("tape_saturation", |builder| {
     builder
-        .param("drive", 0.4)
-        .param("bias", 0.5)
-        .param("speed", 0.7)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("drive", 0.4) // units: normalized, range: 0..1, default: 0.4. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("bias", 0.5) // units: normalized, range: 0..1, default: 0.5. Bias offset; higher values shift the distribution or VCA opening upward.
+        .param("speed", 0.7) // units: normalized, range: 0..1, default: 0.7. Modulation speed in Hz; higher values create faster tremolo or movement.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, drive, bias, speed, mix, level| {
             // Input gain (drive into saturation)
             let driven_l = input[0] * (1.0 + drive * 3.0);
@@ -56,3 +56,18 @@ define_fx("tape_saturation", |builder| {
             ]
         })
 });
+
+//
+// # Usage: tape_saturation
+//
+// ```rhai
+// import "stdlib/effects/distortion/tape_saturation.vibe" as tape_saturation;
+//
+// let doc_tape_saturation = fx("doc_tape_saturation")
+//     .synth("tape_saturation")
+//     .param("drive", 0.4)
+//     .param("bias", 0.5)
+//     .param("speed", 0.7)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

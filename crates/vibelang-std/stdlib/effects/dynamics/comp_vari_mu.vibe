@@ -28,13 +28,13 @@
 //   level:     Output level trim (1.0 = unity)
 
 define_fx("comp_vari_mu")
-    .param("threshold", 0.25)
-    .param("ratio", 3.0)
-    .param("attack", 0.05)
-    .param("release", 0.6)
-    .param("drive", 1.0)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("threshold", 0.25) // units: linear, range: 0..1, default: 0.25. Detection threshold; higher values require a stronger signal before processing opens.
+    .param("ratio", 3.0) // units: ratio, range: 1..100, default: 3.0. Frequency ratio; higher values tune the related oscillator or clock upward.
+    .param("attack", 0.05) // units: seconds, range: 0..10, default: 0.05. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("release", 0.6) // units: seconds, range: 0..10, default: 0.6. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("drive", 1.0) // units: normalized, range: 0..1, default: 1.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, threshold, ratio, attack, release, drive, mix, level| {
         // Program-dependent release — Fairchild's time-constant network gets
         // longer the harder you push it. Approximate with a slow envelope of
@@ -71,3 +71,18 @@ define_fx("comp_vari_mu")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: comp_vari_mu
+//
+// ```rhai
+// import "stdlib/effects/dynamics/comp_vari_mu.vibe" as comp_vari_mu;
+//
+// let doc_comp_vari_mu = fx("doc_comp_vari_mu")
+//     .synth("comp_vari_mu")
+//     .param("threshold", 0.25)
+//     .param("ratio", 3.0)
+//     .param("attack", 0.05)
+//     .param("release", 0.6)
+//     .apply();
+// ```

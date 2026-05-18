@@ -7,8 +7,8 @@
 // Djembe Bass (center hit)
 define_synthdef("djembe_bass", |builder| {
     builder
-        .param("freq", 80.0)
-        .param("amp", 0.7)
+        .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.35)
@@ -34,8 +34,8 @@ define_synthdef("djembe_bass", |builder| {
 // Djembe Tone (edge hit)
 define_synthdef("djembe_tone", |builder| {
     builder
-        .param("freq", 200.0)
-        .param("amp", 0.6)
+        .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.2)
@@ -62,8 +62,8 @@ define_synthdef("djembe_tone", |builder| {
 // Djembe Slap (sharp rim hit)
 define_synthdef("djembe_slap", |builder| {
     builder
-        .param("freq", 400.0)
-        .param("amp", 0.6)
+        .param("freq", 400.0) // units: Hz, range: 20..20000, default: 400.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.0001, 0.1)
@@ -85,3 +85,43 @@ define_synthdef("djembe_slap", |builder| {
             (mix + hpf_ar(attack, 3000.0)) * env * amp
         })
 });
+
+//
+// # Usage: `djembe_bass`
+//
+// ```rhai
+// import "stdlib/world/djembe.vibe" as djembe;
+//
+// let djembe_bass = voice("doc_djembe_bass")
+//     .synth("djembe_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// djembe_bass.output("out").to_main();
+// djembe_bass.run();
+// ```
+//
+// # Usage: `djembe_tone`
+//
+// ```rhai
+// import "stdlib/world/djembe.vibe" as djembe;
+//
+// let djembe_tone = voice("doc_djembe_tone")
+//     .synth("djembe_tone")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// djembe_tone.output("out").to_main();
+// djembe_tone.run();
+// ```
+//
+// # Usage: `djembe_slap`
+//
+// ```rhai
+// import "stdlib/world/djembe.vibe" as djembe;
+//
+// let djembe_slap = voice("doc_djembe_slap")
+//     .synth("djembe_slap")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// djembe_slap.output("out").to_main();
+// djembe_slap.run();
+// ```

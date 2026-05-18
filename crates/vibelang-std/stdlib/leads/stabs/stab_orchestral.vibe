@@ -1,9 +1,9 @@
 // Genre: Cinematic, Orchestral | Character: Orchestral string stab
 define_synthdef("stab_orchestral", |builder| {
     builder
-        .param("freq", 330.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 330.0) // units: Hz, range: 20..20000, default: 330.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // String-like envelope with bow attack
@@ -38,3 +38,17 @@ define_synthdef("stab_orchestral", |builder| {
         })
 });
 
+//
+// # Usage: `stab_orchestral`
+//
+// ```rhai
+// import "stdlib/leads/stabs/stab_orchestral.vibe" as stab_orchestral;
+//
+// let stab_orchestral = voice("doc_stab_orchestral")
+//     .synth("stab_orchestral")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// stab_orchestral.output("out").to_main();
+// stab_orchestral.run();
+// ```

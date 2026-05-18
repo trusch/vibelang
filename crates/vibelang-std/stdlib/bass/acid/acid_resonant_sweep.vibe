@@ -1,9 +1,9 @@
 // Genre: Acid Techno | Character: Extreme resonance sweep
 define_synthdef("acid_resonant_sweep", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -31,3 +31,18 @@ define_synthdef("acid_resonant_sweep", |builder| {
         })
 });
 
+//
+// # Usage: acid_resonant_sweep
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_resonant_sweep.vibe" as acid_resonant_sweep;
+//
+// let doc_acid_resonant_sweep = voice("doc_acid_resonant_sweep")
+//     .synth("acid_resonant_sweep")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_acid_resonant_sweep.output("out").to_main();
+// doc_acid_resonant_sweep.run();
+// ```

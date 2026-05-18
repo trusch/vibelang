@@ -25,11 +25,11 @@
 //   level: Output level trim (1.0 = unity)
 
 define_fx("eq_pultec_low")
-    .param("freq", 100.0)
-    .param("boost", 4.0)
-    .param("cut", 3.0)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("freq", 100.0) // units: Hz, range: 20..20000, default: 100.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("boost", 4.0) // units: dB, range: 0..24, default: 4.0. Boost amount; higher values emphasize that named musical or electrical behavior.
+    .param("cut", 3.0) // units: dB, range: 0..24, default: 3.0. Cut amount; higher values emphasize that named musical or electrical behavior.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, freq, boost, cut, mix, level| {
         // Low shelf boost
         let boosted_l = b_low_shelf_ar(input[0], freq, 1.0, boost);
@@ -48,3 +48,18 @@ define_fx("eq_pultec_low")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: eq_pultec_low
+//
+// ```rhai
+// import "stdlib/effects/filters/eq_pultec_low.vibe" as eq_pultec_low;
+//
+// let doc_eq_pultec_low = fx("doc_eq_pultec_low")
+//     .synth("eq_pultec_low")
+//     .param("freq", 100.0)
+//     .param("boost", 4.0)
+//     .param("cut", 3.0)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

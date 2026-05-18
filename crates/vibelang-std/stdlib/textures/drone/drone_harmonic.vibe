@@ -1,8 +1,8 @@
 // Genre: Ambient, Drone | Character: Harmonic, spectral drone
 define_synthdef("drone_harmonic", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.35)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Long sustain
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("drone_harmonic", |builder| {
         })
 });
 
+//
+// # Usage: `drone_harmonic`
+//
+// ```rhai
+// import "stdlib/textures/drone/drone_harmonic.vibe" as drone_harmonic;
+//
+// let drone_harmonic = voice("doc_drone_harmonic")
+//     .synth("drone_harmonic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// drone_harmonic.output("out").to_main();
+// drone_harmonic.run();
+// ```

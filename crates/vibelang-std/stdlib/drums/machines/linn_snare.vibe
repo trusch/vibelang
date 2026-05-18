@@ -1,7 +1,7 @@
 // Genre: 80s Pop, R&B, Hip-hop | Character: LinnDrum snare - bright, crisp, sampled feel
 define_synthdef("linn_snare")
-    .param("freq", 200.0)
-    .param("amp", 0.9)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Medium decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("linn_snare")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: linn_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/linn_snare.vibe" as linn_snare;
+//
+// let doc_linn_snare = voice("doc_linn_snare")
+//     .synth("linn_snare")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_linn_snare.output("out").to_main();
+// doc_linn_snare.run();
+// ```

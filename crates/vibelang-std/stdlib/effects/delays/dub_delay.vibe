@@ -23,11 +23,11 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("dub_delay")
-    .param("time", 0.375)
-    .param("feedback", 0.7)
-    .param("cutoff", 2000.0)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.375) // units: seconds, range: 0..10, default: 0.375. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.7) // units: ratio, range: 0..1, default: 0.7. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("cutoff", 2000.0) // units: Hz, range: 20..20000, default: 2000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, cutoff, mix, level| {
         // Comb filter delay with filtering in feedback path
         let delayed_left = comb_c_ar(input[0], 2.0, time, feedback * 4.0);
@@ -49,3 +49,18 @@ define_fx("dub_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: dub_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/dub_delay.vibe" as dub_delay;
+//
+// let doc_dub_delay = fx("doc_dub_delay")
+//     .synth("dub_delay")
+//     .param("time", 0.375)
+//     .param("feedback", 0.7)
+//     .param("cutoff", 2000.0)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

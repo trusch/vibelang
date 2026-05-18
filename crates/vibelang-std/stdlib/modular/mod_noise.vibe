@@ -1,8 +1,8 @@
 // Genre: Modular, Experimental | Character: Noise source module
 define_synthdef("mod_noise")
-    .param("amp", 0.5)
-    .param("gate", 1.0)
-    .param("color", 0.5) // 0=white, 1=pink
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("color", 0.5) // units: normalized, range: 0..1, default: 0.5. Color macro; higher values move the model toward its brighter or more complex side.
     .body(|amp, gate, color| {
         let env = envelope()
             .asr(0.001, 1.0, 0.001)
@@ -16,3 +16,18 @@ define_synthdef("mod_noise")
 
         (white + pink) * env * amp
     });
+
+//
+// # Usage: `mod_noise`
+//
+// ```rhai
+// import "stdlib/modular/mod_noise.vibe" as mod_noise;
+//
+// let mod_noise = voice("doc_mod_noise")
+//     .synth("mod_noise")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("color", 0.6);
+// mod_noise.output("out").to_main();
+// mod_noise.run();
+// ```

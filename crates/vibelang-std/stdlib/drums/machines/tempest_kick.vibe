@@ -1,8 +1,8 @@
 // Genre: Electronic, Techno | Character: DSI Tempest-style kick - modern analog, deep
 define_synthdef("tempest_kick")
-    .param("freq", 48.0)
-    .param("amp", 1.0)
-    .param("punch", 0.7)
+    .param("freq", 48.0) // units: Hz, range: 20..20000, default: 48.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("punch", 0.7) // units: ratio, range: 0..1, default: 0.7. Punch amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, punch| {
         // Deep decay
         let amp_env = envelope()
@@ -29,3 +29,19 @@ define_synthdef("tempest_kick")
 
         (body + sub + click) * amp_env * amp
     });
+
+//
+// # Usage: tempest_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/tempest_kick.vibe" as tempest_kick;
+//
+// let doc_tempest_kick = voice("doc_tempest_kick")
+//     .synth("tempest_kick")
+//     .set_param("freq", 48.0)
+//     .set_param("amp", 1.0)
+//     .set_param("punch", 0.7)
+//     ;
+// doc_tempest_kick.output("out").to_main();
+// doc_tempest_kick.run();
+// ```

@@ -48,11 +48,11 @@
 
 define_fx("barber_phaser", |builder| {
     builder
-        .param("rate", 0.2)
-        .param("depth", 1.0)
-        .param("num_voices", 1.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("rate", 0.2) // units: Hz, range: 0..100, default: 0.2. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 1.0) // units: ratio, range: 0..1, default: 1.0. Modulation depth; higher values make the movement more pronounced.
+        .param("num_voices", 1.0) // units: count, range: 1..16, default: 1.0. Voice count; higher values add more modulation voices.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, num_voices, mix, level| {
             // Four sawtooth ramps spaced 1/4 cycle apart. LFSaw `iphase`
             // is 0..2 over one full cycle, so a 1/4-cycle offset is 0.5.
@@ -142,3 +142,18 @@ define_fx("barber_phaser", |builder| {
             ]
         })
 });
+
+//
+// # Usage: barber_phaser
+//
+// ```rhai
+// import "stdlib/effects/modulation/barber_phaser.vibe" as barber_phaser;
+//
+// let doc_barber_phaser = fx("doc_barber_phaser")
+//     .synth("barber_phaser")
+//     .param("rate", 0.2)
+//     .param("depth", 1.0)
+//     .param("num_voices", 1.0)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

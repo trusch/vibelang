@@ -1,9 +1,9 @@
 // Genre: Trance, EDM | Character: Massive supersaw, wide and powerful
 define_synthdef("lead_supersaw", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -36,3 +36,17 @@ define_synthdef("lead_supersaw", |builder| {
         })
 });
 
+//
+// # Usage: `lead_supersaw`
+//
+// ```rhai
+// import "stdlib/leads/synth/lead_supersaw.vibe" as lead_supersaw;
+//
+// let lead_supersaw = voice("doc_lead_supersaw")
+//     .synth("lead_supersaw")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_supersaw.output("out").to_main();
+// lead_supersaw.run();
+// ```

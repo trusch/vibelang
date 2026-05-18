@@ -1,8 +1,8 @@
 // Genre: UK Garage, 2-Step | Character: UK garage bass - bouncy and warm
 define_synthdef("bass_garage")
-    .param("freq", 55.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.008, 1.0, 0.1)
@@ -26,3 +26,19 @@ define_synthdef("bass_garage")
         let cutoff = 600.0 + filt_env * 1500.0;
         lpf_ar(mix, cutoff) * env * amp
     });
+
+//
+// # Usage: bass_garage
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_garage.vibe" as bass_garage;
+//
+// let doc_bass_garage = voice("doc_bass_garage")
+//     .synth("bass_garage")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_garage.output("out").to_main();
+// doc_bass_garage.run();
+// ```

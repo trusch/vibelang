@@ -20,10 +20,10 @@
 
 define_fx("bitcrush", |builder| {
     builder
-        .param("bits", 8.0)
-        .param("sample_rate", 8000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("bits", 8.0) // units: bits, range: 1..24, default: 8.0. Random shift-register bit depth; higher values make stepped CV less coarse.
+        .param("sample_rate", 8000.0) // units: Hz, range: 1000..48000, default: 8000.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, bits, sample_rate, mix, level| {
             // Map bits (1..16) to a gentle drive factor.
             // We avoid using a true power function here to keep the graph stable.
@@ -47,3 +47,18 @@ define_fx("bitcrush", |builder| {
             ]
         })
 });
+
+//
+// # Usage: bitcrush
+//
+// ```rhai
+// import "stdlib/effects/distortion/bitcrush.vibe" as bitcrush;
+//
+// let doc_bitcrush = fx("doc_bitcrush")
+//     .synth("bitcrush")
+//     .param("bits", 8.0)
+//     .param("sample_rate", 8000.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

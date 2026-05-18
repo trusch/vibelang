@@ -36,9 +36,9 @@
 
 define_fx("vocoder_pv", |builder| {
     builder
-        .param("bands_count", 32.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("bands_count", 32.0) // units: count, range: 1..64, default: 32.0. Bands Count amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, bands_count, mix, level| {
             // Per-path FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_mod = local_buf_ir(1.0, 2048.0);
@@ -69,3 +69,17 @@ define_fx("vocoder_pv", |builder| {
             ]
         })
 });
+
+//
+// # Usage: vocoder_pv
+//
+// ```rhai
+// import "stdlib/effects/spectral/vocoder_pv.vibe" as vocoder_pv;
+//
+// let doc_vocoder_pv = fx("doc_vocoder_pv")
+//     .synth("vocoder_pv")
+//     .param("bands_count", 32.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

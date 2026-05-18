@@ -1,8 +1,8 @@
 // Genre: Ambient, Cinematic | Character: Glass/crystalline pad - bright and delicate
 define_synthdef("pad_glass")
-    .param("freq", 440.0)
-    .param("amp", 0.45)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.3, 1.0, 0.4)
@@ -25,3 +25,18 @@ define_synthdef("pad_glass")
 
         sig * env * amp
     });
+
+//
+// # Usage: `pad_glass`
+//
+// ```rhai
+// import "stdlib/pads/textural/pad_glass.vibe" as pad_glass;
+//
+// let pad_glass = voice("doc_pad_glass")
+//     .synth("pad_glass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_glass.output("out").to_main();
+// pad_glass.run();
+// ```

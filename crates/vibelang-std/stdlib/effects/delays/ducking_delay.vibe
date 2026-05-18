@@ -26,12 +26,12 @@
 //   level:       Final output trim (1.0 = unity)
 
 define_fx("ducking_delay")
-    .param("time", 0.4)
-    .param("feedback", 0.4)
-    .param("duck_amount", 0.7)
-    .param("duck_speed", 0.5)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.4) // units: seconds, range: 0..10, default: 0.4. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.4) // units: ratio, range: 0..1, default: 0.4. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("duck_amount", 0.7) // units: ratio, range: 0..1, default: 0.7. Duck Amount; higher values apply more of that modulation or effect.
+    .param("duck_speed", 0.5) // units: Hz, range: 0..100, default: 0.5. Duck Speed amount; higher values emphasize that named musical or electrical behavior.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, duck_amount, duck_speed, mix, level| {
         // Envelope follower for ducking
         let mono_in = (input[0] + input[1]) * 0.5;
@@ -63,3 +63,18 @@ define_fx("ducking_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: ducking_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/ducking_delay.vibe" as ducking_delay;
+//
+// let doc_ducking_delay = fx("doc_ducking_delay")
+//     .synth("ducking_delay")
+//     .param("time", 0.4)
+//     .param("feedback", 0.4)
+//     .param("duck_amount", 0.7)
+//     .param("duck_speed", 0.5)
+//     .apply();
+// ```

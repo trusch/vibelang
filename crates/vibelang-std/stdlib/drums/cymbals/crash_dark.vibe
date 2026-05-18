@@ -1,7 +1,7 @@
 // Genre: Jazz, Ambient | Character: Dark, trashy crash cymbal
 define_synthdef("crash_dark", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long, sustained decay
             let env = envelope()
@@ -32,3 +32,16 @@ define_synthdef("crash_dark", |builder| {
         })
 });
 
+//
+// # Usage: crash_dark
+//
+// ```rhai
+// import "stdlib/drums/cymbals/crash_dark.vibe" as crash_dark;
+//
+// let doc_crash_dark = voice("doc_crash_dark")
+//     .synth("crash_dark")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_crash_dark.output("out").to_main();
+// doc_crash_dark.run();
+// ```

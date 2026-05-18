@@ -5,10 +5,10 @@
 
 define_synthdef("solo_cello", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("vibrato", 0.5) // Vibrato amount
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vibrato", 0.5) // units: normalized, range: 0..1, default: 0.5. Vibrato depth; higher values make pitch wobble wider.
         .body(|freq, amp, gate, vibrato| {
             // Smooth bowing envelope
             let env = envelope()
@@ -43,3 +43,19 @@ define_synthdef("solo_cello", |builder| {
             warm * env * amp * 0.8
         })
 });
+
+//
+// # Usage: `solo_cello`
+//
+// ```rhai
+// import "stdlib/strings/solo_cello.vibe" as solo_cello;
+//
+// let solo_cello = voice("doc_solo_cello")
+//     .synth("solo_cello")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("vibrato", 0.5);
+// solo_cello.output("out").to_main();
+// solo_cello.run();
+// ```

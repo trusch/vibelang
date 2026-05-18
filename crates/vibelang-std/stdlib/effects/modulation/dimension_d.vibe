@@ -34,9 +34,9 @@
 
 define_fx("dimension_d", |builder| {
     builder
-        .param("mode", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("mode", 0.5) // units: selector, range: 0..N, default: 0.5. Selects mode, table, or algorithm.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, mode, mix, level| {
             // Continuous mapping over [0, 1].
             // Rate: 0.4 Hz (mode~1) up to 1.1 Hz (mode~4).
@@ -78,3 +78,17 @@ define_fx("dimension_d", |builder| {
             ]
         })
 });
+
+//
+// # Usage: dimension_d
+//
+// ```rhai
+// import "stdlib/effects/modulation/dimension_d.vibe" as dimension_d;
+//
+// let doc_dimension_d = fx("doc_dimension_d")
+//     .synth("dimension_d")
+//     .param("mode", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

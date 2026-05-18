@@ -4,13 +4,13 @@
 // TB-303 Bass - Classic acid bass
 define_synthdef("tb303_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("cutoff", 1000.0)
-        .param("resonance", 0.7)
-        .param("env_mod", 0.5)
-        .param("decay", 0.3)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("env_mod", 0.5) // units: normalized, range: 0..1, default: 0.5. Env modulation input; bipolar values push that macro around its panel setting.
+        .param("decay", 0.3) // units: seconds, range: 0..10, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
         .body(|freq, amp, gate, cutoff, resonance, env_mod, decay| {
             let env = envelope()
                 .asr(0.003, 1.0, 0.05)
@@ -42,11 +42,11 @@ define_synthdef("tb303_bass", |builder| {
 // TB-303 Slide - Portamento acid line
 define_synthdef("tb303_slide", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("cutoff", 800.0)
-        .param("resonance", 0.75)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 800.0) // units: Hz, range: 20..20000, default: 800.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 0.75) // units: resonance, range: 0..1, default: 0.75. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, cutoff, resonance| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.08)
@@ -72,9 +72,9 @@ define_synthdef("tb303_slide", |builder| {
 // TB-303 Accent - Accented acid hit
 define_synthdef("tb303_accent", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.06)
@@ -97,3 +97,48 @@ define_synthdef("tb303_accent", |builder| {
             driven * env * amp
         })
 });
+
+//
+// # Usage: `tb303_bass`
+//
+// ```rhai
+// import "stdlib/synths/tb303.vibe" as tb303;
+//
+// let tb303_bass = voice("doc_tb303_bass")
+//     .synth("tb303_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0);
+// tb303_bass.output("out").to_main();
+// tb303_bass.run();
+// ```
+//
+// # Usage: `tb303_slide`
+//
+// ```rhai
+// import "stdlib/synths/tb303.vibe" as tb303;
+//
+// let tb303_slide = voice("doc_tb303_slide")
+//     .synth("tb303_slide")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0);
+// tb303_slide.output("out").to_main();
+// tb303_slide.run();
+// ```
+//
+// # Usage: `tb303_accent`
+//
+// ```rhai
+// import "stdlib/synths/tb303.vibe" as tb303;
+//
+// let tb303_accent = voice("doc_tb303_accent")
+//     .synth("tb303_accent")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// tb303_accent.output("out").to_main();
+// tb303_accent.run();
+// ```

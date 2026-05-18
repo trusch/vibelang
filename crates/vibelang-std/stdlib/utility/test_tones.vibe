@@ -6,9 +6,9 @@
 // Pure sine wave test tone
 define_synthdef("test_sine", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.01)
@@ -23,9 +23,9 @@ define_synthdef("test_sine", |builder| {
 // Sawtooth test tone (rich harmonics)
 define_synthdef("test_saw", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.2)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.2) // units: linear, range: 0..1, default: 0.2. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.01)
@@ -40,8 +40,8 @@ define_synthdef("test_saw", |builder| {
 // A440 Reference tone
 define_synthdef("a440", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.01)
@@ -56,8 +56,8 @@ define_synthdef("a440", |builder| {
 // 1kHz Reference tone (common audio test frequency)
 define_synthdef("test_1k", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.01)
@@ -71,7 +71,7 @@ define_synthdef("test_1k", |builder| {
 
 // Sweep tone (frequency sweep for testing)
 define_synthdef("test_sweep")
-    .param("amp", 0.2)
+    .param("amp", 0.2) // units: linear, range: 0..1, default: 0.2. Output level multiplier; higher is louder.
     .body(|amp| {
         // 3-second sweep envelope
         let env = envelope()
@@ -87,3 +87,79 @@ define_synthdef("test_sweep")
 
         sin_osc_ar(freq) * env * amp
     });
+
+//
+// # Usage: `test_sine`
+//
+// ```rhai
+// import "stdlib/utility/test_tones.vibe" as test_tones;
+//
+// let test_sine = voice("doc_test_sine")
+//     .synth("test_sine")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// test_sine.output("out").to_main();
+// test_sine.run();
+// ```
+//
+// # Usage: `test_saw`
+//
+// ```rhai
+// import "stdlib/utility/test_tones.vibe" as test_tones;
+//
+// let test_saw = voice("doc_test_saw")
+//     .synth("test_saw")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// test_saw.output("out").to_main();
+// test_saw.run();
+// ```
+//
+// # Usage: `a440`
+//
+// ```rhai
+// import "stdlib/utility/test_tones.vibe" as test_tones;
+//
+// let a440 = voice("doc_a440")
+//     .synth("a440")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// a440.output("out").to_main();
+// a440.run();
+// ```
+//
+// # Usage: `test_1k`
+//
+// ```rhai
+// import "stdlib/utility/test_tones.vibe" as test_tones;
+//
+// let test_1k = voice("doc_test_1k")
+//     .synth("test_1k")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// test_1k.output("out").to_main();
+// test_1k.run();
+// ```
+//
+// # Usage: `test_sweep`
+//
+// ```rhai
+// import "stdlib/utility/test_tones.vibe" as test_tones;
+//
+// let test_sweep = voice("doc_test_sweep")
+//     .synth("test_sweep")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// test_sweep.output("out").to_main();
+// test_sweep.run();
+// ```

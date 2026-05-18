@@ -1,10 +1,10 @@
 // Genre: House, Techno | Character: Filtered sine with slight movement
 define_synthdef("sub_filtered", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
-        .param("cutoff", 300.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 300.0) // units: Hz, range: 20..20000, default: 300.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|freq, amp, gate, cutoff| {
 
             // Envelope
@@ -27,3 +27,19 @@ define_synthdef("sub_filtered", |builder| {
         })
 });
 
+//
+// # Usage: sub_filtered
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_filtered.vibe" as sub_filtered;
+//
+// let doc_sub_filtered = voice("doc_sub_filtered")
+//     .synth("sub_filtered")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 300.0)
+//     ;
+// doc_sub_filtered.output("out").to_main();
+// doc_sub_filtered.run();
+// ```

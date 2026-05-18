@@ -1,8 +1,8 @@
 // Genre: Electronic, Cinematic | Character: Shepard tone illusion riser
 define_synthdef("riser_shepard", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 6.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 6.0) // units: seconds, range: 0..60, default: 6.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.1, 1.0)
@@ -37,3 +37,18 @@ define_synthdef("riser_shepard", |builder| {
             combined * env * amp
         })
 });
+
+//
+// # Usage: riser_shepard
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_shepard.vibe" as riser_shepard;
+//
+// let doc_riser_shepard = voice("doc_riser_shepard")
+//     .synth("riser_shepard")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 6.0)
+//     ;
+// doc_riser_shepard.output("out").to_main();
+// doc_riser_shepard.run();
+// ```

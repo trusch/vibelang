@@ -1,8 +1,8 @@
 // Genre: Electronic, Experimental | Character: Tunable synth snare with tonal body
 define_synthdef("snare_pitched")
-    .param("freq", 200.0)
-    .param("amp", 0.8)
-    .param("tone", 0.6)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("tone", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter cutoff or tone point; higher keeps more high-frequency brightness.
     .body(|freq, amp, tone| {
         // Decay
         let amp_env = envelope()
@@ -30,3 +30,19 @@ define_synthdef("snare_pitched")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_pitched
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_pitched.vibe" as snare_pitched;
+//
+// let doc_snare_pitched = voice("doc_snare_pitched")
+//     .synth("snare_pitched")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.8)
+//     .set_param("tone", 0.6)
+//     ;
+// doc_snare_pitched.output("out").to_main();
+// doc_snare_pitched.run();
+// ```

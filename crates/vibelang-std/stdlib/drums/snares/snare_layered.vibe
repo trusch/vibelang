@@ -1,7 +1,7 @@
 // Genre: EDM, Pop | Character: Big, layered snare with depth
 define_synthdef("snare_layered", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Top layer - bright noise
             let top_env = envelope()
@@ -32,3 +32,16 @@ define_synthdef("snare_layered", |builder| {
         })
 });
 
+//
+// # Usage: snare_layered
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_layered.vibe" as snare_layered;
+//
+// let doc_snare_layered = voice("doc_snare_layered")
+//     .synth("snare_layered")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_layered.output("out").to_main();
+// doc_snare_layered.run();
+// ```

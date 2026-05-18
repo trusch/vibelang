@@ -3,10 +3,10 @@
 define_synthdef("lowpass_mono")
     .input("in", 1)
     .output("out", 1)
-    .param("cutoff", 2000.0)
-    .param("resonance", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("cutoff", 2000.0) // units: Hz, range: 20..20000, default: 2000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let dry = p.inputs["in"];
         let wet = leak_dc_ar(rlpf_ar(dry, p.cutoff, p.resonance), 0.995);
@@ -14,3 +14,19 @@ define_synthdef("lowpass_mono")
 
         [((1.0 - mix) * dry + mix * wet) * p.level]
     });
+
+//
+// # Usage: `lowpass_mono`
+//
+// ```rhai
+// import "stdlib/processors/filters/lowpass_mono.vibe" as lowpass_mono;
+//
+// let lowpass_mono = voice("doc_lowpass_mono")
+//     .synth("lowpass_mono")
+//     .set_param("cutoff", 1800.0)
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45)
+//     .set_param("resonance", 0.35);
+// lowpass_mono.output("out").to_main();
+// lowpass_mono.run();
+// ```

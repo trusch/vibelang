@@ -123,48 +123,48 @@ define_synthdef("smr8", |builder| {
         .output_kr("env6")
         .output_kr("env7")
         .output_kr("env8")
-        .param("freq_root", 110.0)
-        .param("scale", 1.0)
-        .param("rotate", 0.0)
-        .param("spread", 2.0)
-        .param("morph", 0.3)
-        .param("q", 0.7)
-        .param("two_pass", 0.0)
-        .param("slew", 0.2)
-        .param("noise_norm", 0.0)
-        .param("amp", 1.0)
-        .param("level1", 1.0)
-        .param("level2", 1.0)
-        .param("level3", 1.0)
-        .param("level4", 1.0)
-        .param("level5", 1.0)
-        .param("level6", 1.0)
-        .param("level7", 1.0)
-        .param("level8", 1.0)
-        .param("lock1", 0.0)
-        .param("lock2", 0.0)
-        .param("lock3", 0.0)
-        .param("lock4", 0.0)
-        .param("lock5", 0.0)
-        .param("lock6", 0.0)
-        .param("lock7", 0.0)
-        .param("lock8", 0.0)
-        .param("fine1", 0.0)
-        .param("fine2", 0.0)
-        .param("fine3", 0.0)
-        .param("fine4", 0.0)
-        .param("fine5", 0.0)
-        .param("fine6", 0.0)
-        .param("fine7", 0.0)
-        .param("fine8", 0.0)
-        .param("transpose1", 0.0)
-        .param("transpose2", 0.0)
-        .param("transpose3", 0.0)
-        .param("transpose4", 0.0)
-        .param("transpose5", 0.0)
-        .param("transpose6", 0.0)
-        .param("transpose7", 0.0)
-        .param("transpose8", 0.0)
+        .param("freq_root", 110.0) // units: Hz, range: 20..8000, default: 110.0. Root resonator frequency in Hz; higher shifts the whole filter bank upward.
+        .param("scale", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("rotate", 0.0) // units: normalized, range: 0..1, default: 0.0. Rotation offset; higher values step the resonator or pattern around its cycle.
+        .param("spread", 2.0) // units: steps, range: 1..7, default: 2.0. Spread width; higher values distribute energy across a wider range.
+        .param("morph", 0.3) // units: normalized, range: 0..1, default: 0.3. Morph macro; higher values move the model toward its brighter or more complex side.
+        .param("q", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("two_pass", 0.0) // units: normalized, range: 0..1, default: 0.0. Two-pass filter switch; 1 sharpens each resonator band.
+        .param("slew", 0.2) // units: normalized, range: 0..1, default: 0.2. Slew smoothing time; higher values soften abrupt CV changes.
+        .param("noise_norm", 0.0) // units: normalized, range: 0..1, default: 0.0. Normalization-noise switch; 1 excites the resonator when no input is patched.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("level1", 1.0) // units: linear, range: 0..1, default: 1.0. Band 1 output level; higher makes that resonator louder.
+        .param("level2", 1.0) // units: linear, range: 0..1, default: 1.0. Band 2 output level; higher makes that resonator louder.
+        .param("level3", 1.0) // units: linear, range: 0..1, default: 1.0. Band 3 output level; higher makes that resonator louder.
+        .param("level4", 1.0) // units: linear, range: 0..1, default: 1.0. Band 4 output level; higher makes that resonator louder.
+        .param("level5", 1.0) // units: linear, range: 0..1, default: 1.0. Band 5 output level; higher makes that resonator louder.
+        .param("level6", 1.0) // units: linear, range: 0..1, default: 1.0. Band 6 output level; higher makes that resonator louder.
+        .param("level7", 1.0) // units: linear, range: 0..1, default: 1.0. Band 7 output level; higher makes that resonator louder.
+        .param("level8", 1.0) // units: linear, range: 0..1, default: 1.0. Band 8 output level; higher makes that resonator louder.
+        .param("lock1", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 1 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock2", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 2 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock3", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 3 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock4", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 4 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock5", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 5 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock6", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 6 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock7", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 7 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("lock8", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 8 lock switch; 1 keeps the band at its fixed index while rotating.
+        .param("fine1", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 1 fine tune in cents; nudges the resonator pitch.
+        .param("fine2", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 2 fine tune in cents; nudges the resonator pitch.
+        .param("fine3", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 3 fine tune in cents; nudges the resonator pitch.
+        .param("fine4", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 4 fine tune in cents; nudges the resonator pitch.
+        .param("fine5", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 5 fine tune in cents; nudges the resonator pitch.
+        .param("fine6", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 6 fine tune in cents; nudges the resonator pitch.
+        .param("fine7", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 7 fine tune in cents; nudges the resonator pitch.
+        .param("fine8", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 8 fine tune in cents; nudges the resonator pitch.
+        .param("transpose1", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 1 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose2", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 2 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose3", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 3 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose4", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 4 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose5", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 5 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose6", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 6 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose7", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 7 semitone transpose; shifts the resonator pitch by scale steps.
+        .param("transpose8", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 8 semitone transpose; shifts the resonator pitch by scale steps.
         .body_map(|p| {
             let in_l = p.inputs["in"][0];
             let in_r = p.inputs["in"][1];
@@ -249,3 +249,19 @@ define_synthdef("smr8", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `smr8`
+//
+// ```rhai
+// import "stdlib/processors/filters/smr8.vibe" as smr8;
+//
+// let smr8 = voice("doc_smr8")
+//     .synth("smr8")
+//     .set_param("freq_root", 0.5)
+//     .set_param("amp", 0.5)
+//     .set_param("level1", 0.5)
+//     .set_param("scale", 1.0);
+// smr8.output("mix").to_main();
+// smr8.run();
+// ```

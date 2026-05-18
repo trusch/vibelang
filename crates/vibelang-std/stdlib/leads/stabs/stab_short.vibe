@@ -1,9 +1,9 @@
 // Genre: Techno, Minimal | Character: Very short, percussive stab
 define_synthdef("stab_short", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.75)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.75) // units: linear, range: 0..1, default: 0.75. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Very short envelope
@@ -33,3 +33,17 @@ define_synthdef("stab_short", |builder| {
         })
 });
 
+//
+// # Usage: `stab_short`
+//
+// ```rhai
+// import "stdlib/leads/stabs/stab_short.vibe" as stab_short;
+//
+// let stab_short = voice("doc_stab_short")
+//     .synth("stab_short")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// stab_short.output("out").to_main();
+// stab_short.run();
+// ```

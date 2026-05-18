@@ -4,9 +4,9 @@
 // Memorymoog Pad - Lush poly pad
 define_synthdef("memorymoog_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -35,9 +35,9 @@ define_synthdef("memorymoog_pad", |builder| {
 // Memorymoog Brass - Poly brass section
 define_synthdef("memorymoog_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.08, 1.0, 0.2)
@@ -67,9 +67,9 @@ define_synthdef("memorymoog_brass", |builder| {
 // Memorymoog Lead - Fat poly lead
 define_synthdef("memorymoog_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.15)
@@ -95,3 +95,46 @@ define_synthdef("memorymoog_lead", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `memorymoog_pad`
+//
+// ```rhai
+// import "stdlib/synths/memorymoog.vibe" as memorymoog;
+//
+// let memorymoog_pad = voice("doc_memorymoog_pad")
+//     .synth("memorymoog_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// memorymoog_pad.output("out").to_main();
+// memorymoog_pad.run();
+// ```
+//
+// # Usage: `memorymoog_brass`
+//
+// ```rhai
+// import "stdlib/synths/memorymoog.vibe" as memorymoog;
+//
+// let memorymoog_brass = voice("doc_memorymoog_brass")
+//     .synth("memorymoog_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// memorymoog_brass.output("out").to_main();
+// memorymoog_brass.run();
+// ```
+//
+// # Usage: `memorymoog_lead`
+//
+// ```rhai
+// import "stdlib/synths/memorymoog.vibe" as memorymoog;
+//
+// let memorymoog_lead = voice("doc_memorymoog_lead")
+//     .synth("memorymoog_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// memorymoog_lead.output("out").to_main();
+// memorymoog_lead.run();
+// ```

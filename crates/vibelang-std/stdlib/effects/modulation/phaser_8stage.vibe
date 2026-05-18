@@ -30,11 +30,11 @@
 
 define_fx("phaser_8stage", |builder| {
     builder
-        .param("rate", 0.5)
-        .param("depth", 0.0008)
-        .param("feedback", 0.5)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.0008) // units: ratio, range: 0..1, default: 0.0008. Modulation depth; higher values make the movement more pronounced.
+        .param("feedback", 0.5) // units: ratio, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, feedback, mix, level| {
             // Stereo LFOs 90 degrees apart so the notches sweep out of phase
             // between channels — gives the phaser a wide, swirling field.
@@ -91,3 +91,18 @@ define_fx("phaser_8stage", |builder| {
             ]
         })
 });
+
+//
+// # Usage: phaser_8stage
+//
+// ```rhai
+// import "stdlib/effects/modulation/phaser_8stage.vibe" as phaser_8stage;
+//
+// let doc_phaser_8stage = fx("doc_phaser_8stage")
+//     .synth("phaser_8stage")
+//     .param("rate", 0.5)
+//     .param("depth", 0.0008)
+//     .param("feedback", 0.5)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

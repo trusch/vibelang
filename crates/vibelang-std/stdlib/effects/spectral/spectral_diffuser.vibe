@@ -20,9 +20,9 @@
 
 define_fx("spectral_diffuser", |builder| {
     builder
-        .param("trig", 0.0)
-        .param("mix", 0.6)
-        .param("level", 1.0)
+        .param("trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("mix", 0.6) // units: ratio, range: 0..1, default: 0.6. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, trig, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -50,3 +50,17 @@ define_fx("spectral_diffuser", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_diffuser
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_diffuser.vibe" as spectral_diffuser;
+//
+// let doc_spectral_diffuser = fx("doc_spectral_diffuser")
+//     .synth("spectral_diffuser")
+//     .param("trig", 0.0)
+//     .param("mix", 0.6)
+//     .param("level", 1.0)
+//     .apply();
+// ```

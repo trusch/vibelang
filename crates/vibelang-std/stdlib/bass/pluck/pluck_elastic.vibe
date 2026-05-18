@@ -1,9 +1,9 @@
 // Genre: Electro, Experimental | Character: Elastic, bouncy pluck
 define_synthdef("pluck_elastic", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Bouncy envelope
@@ -37,3 +37,18 @@ define_synthdef("pluck_elastic", |builder| {
         })
 });
 
+//
+// # Usage: pluck_elastic
+//
+// ```rhai
+// import "stdlib/bass/pluck/pluck_elastic.vibe" as pluck_elastic;
+//
+// let doc_pluck_elastic = voice("doc_pluck_elastic")
+//     .synth("pluck_elastic")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_pluck_elastic.output("out").to_main();
+// doc_pluck_elastic.run();
+// ```

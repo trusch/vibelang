@@ -15,8 +15,8 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_rectify")
-    .param("cv_in", 0.0)
-    .param("mode", 0.0)
+    .param("cv_in", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the incoming CV value.
+    .param("mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
     .body(|cv_in, mode| {
         let full = abs(cv_in);
         let half = max(cv_in, 0.0);
@@ -29,3 +29,17 @@ define_synthdef("cv_rectify")
         let clipped = clip_ar(out, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_rectify`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_rectify.vibe" as cv_rectify;
+//
+// let cv_rectify = voice("doc_cv_rectify")
+//     .synth("cv_rectify")
+//     .set_param("mode", 1.0)
+//     .set_param("cv_in", 0.5);
+// cv_rectify.output("out").to_main();
+// cv_rectify.run();
+// ```

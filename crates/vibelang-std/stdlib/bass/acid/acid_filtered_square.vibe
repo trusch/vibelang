@@ -1,9 +1,9 @@
 // Genre: Acid Techno | Character: Square wave with resonant filter
 define_synthdef("acid_filtered_square", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -31,3 +31,18 @@ define_synthdef("acid_filtered_square", |builder| {
         })
 });
 
+//
+// # Usage: acid_filtered_square
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_filtered_square.vibe" as acid_filtered_square;
+//
+// let doc_acid_filtered_square = voice("doc_acid_filtered_square")
+//     .synth("acid_filtered_square")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_acid_filtered_square.output("out").to_main();
+// doc_acid_filtered_square.run();
+// ```

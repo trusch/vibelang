@@ -1,7 +1,7 @@
 // Genre: Lo-fi, Indie | Character: Toy piano - bright and metallic
 define_synthdef("piano_toy")
-    .param("freq", 880.0)
-    .param("amp", 0.5)
+    .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, metallic decay
         let amp_env = envelope()
@@ -25,3 +25,17 @@ define_synthdef("piano_toy")
 
         sig * amp_env * amp
     });
+
+//
+// # Usage: `piano_toy`
+//
+// ```rhai
+// import "stdlib/keys/piano_toy.vibe" as piano_toy;
+//
+// let piano_toy = voice("doc_piano_toy")
+//     .synth("piano_toy")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// piano_toy.output("out").to_main();
+// piano_toy.run();
+// ```

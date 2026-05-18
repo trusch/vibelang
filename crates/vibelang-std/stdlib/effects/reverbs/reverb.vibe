@@ -13,10 +13,10 @@
 //   level: Final output trim (1.0 = unity)
 
 define_fx("reverb")
-    .param("room", 0.6)
-    .param("damp", 0.4)
-    .param("mix", 0.3)
-    .param("level", 1.0)
+    .param("room", 0.6) // units: ratio, range: 0..1, default: 0.6. Reverb room size; higher values make a larger, longer acoustic space.
+    .param("damp", 0.4) // units: ratio, range: 0..1, default: 0.4. Damping amount; higher values shorten and darken the decay.
+    .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, room, damp, mix, level| {
         // Collapse to mono, run FreeVerb fully wet, then duplicate.
         let mono = (input[0] + input[1]) * 0.5;
@@ -31,3 +31,18 @@ define_fx("reverb")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb.vibe" as reverb;
+//
+// let doc_reverb = fx("doc_reverb")
+//     .synth("reverb")
+//     .param("room", 0.6)
+//     .param("damp", 0.4)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

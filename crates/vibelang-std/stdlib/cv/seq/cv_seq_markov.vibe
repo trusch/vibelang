@@ -34,10 +34,10 @@
 //
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_seq_markov")
-    .param("clock_in", 0.0)
-    .param("bias", 0.0)
-    .param("density", 1.0)
-    .param("range_semis", 12.0)
+    .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("bias", 0.0) // units: normalized, range: 0..1, default: 0.0. Bias offset; higher values shift the distribution or VCA opening upward.
+    .param("density", 1.0) // units: normalized, range: 0..1, default: 1.0. Event density per second; higher values create more grains, dust, or impulses.
+    .param("range_semis", 12.0) // units: semitones, range: -60..60, default: 12.0. Range Semis amount; higher values emphasize that named musical or electrical behavior.
     .body(|clock_in, bias, density, range_semis| {
         // Two pitch sources, ±1 each.
         let uniform = white_noise_kr();
@@ -67,3 +67,19 @@ define_synthdef("cv_seq_markov")
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_seq_markov`
+//
+// ```rhai
+// import "stdlib/cv/seq/cv_seq_markov.vibe" as cv_seq_markov;
+//
+// let cv_seq_markov = voice("doc_cv_seq_markov")
+//     .synth("cv_seq_markov")
+//     .set_param("clock_in", 1.0)
+//     .set_param("bias", 0.6)
+//     .set_param("density", 0.6)
+//     .set_param("range_semis", 0.5);
+// cv_seq_markov.output("out").to_main();
+// cv_seq_markov.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: House, Techno | Character: Classic 909, tight and punchy
 define_synthdef("kick_909", |builder| {
     builder
-        .param("freq", 65.0)
-        .param("amp", 1.0)
+        .param("freq", 65.0) // units: Hz, range: 20..20000, default: 65.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Tight amplitude envelope
             let amp_env = envelope()
@@ -29,3 +29,17 @@ define_synthdef("kick_909", |builder| {
         })
 });
 
+//
+// # Usage: kick_909
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_909.vibe" as kick_909;
+//
+// let doc_kick_909 = voice("doc_kick_909")
+//     .synth("kick_909")
+//     .set_param("freq", 65.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_909.output("out").to_main();
+// doc_kick_909.run();
+// ```

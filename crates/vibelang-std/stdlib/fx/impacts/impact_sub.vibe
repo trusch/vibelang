@@ -1,7 +1,7 @@
 // Genre: Dubstep, Bass Music | Character: Deep sub impact
 define_synthdef("impact_sub", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Medium decay
             let env = envelope()
@@ -26,3 +26,16 @@ define_synthdef("impact_sub", |builder| {
         })
 });
 
+//
+// # Usage: impact_sub
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_sub.vibe" as impact_sub;
+//
+// let doc_impact_sub = voice("doc_impact_sub")
+//     .synth("impact_sub")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_impact_sub.output("out").to_main();
+// doc_impact_sub.run();
+// ```

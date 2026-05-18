@@ -1,8 +1,8 @@
 // Genre: Synth-pop, Electronic | Character: Prophet-5 style bass - punchy and rich
 define_synthdef("bass_prophet")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.005, 1.0, 0.1)
@@ -27,3 +27,19 @@ define_synthdef("bass_prophet")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_prophet
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_prophet.vibe" as bass_prophet;
+//
+// let doc_bass_prophet = voice("doc_bass_prophet")
+//     .synth("bass_prophet")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_prophet.output("out").to_main();
+// doc_bass_prophet.run();
+// ```

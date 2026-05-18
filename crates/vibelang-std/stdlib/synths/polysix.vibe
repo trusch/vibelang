@@ -4,9 +4,9 @@
 // Polysix Pad - Warm chorus pad
 define_synthdef("polysix_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -35,9 +35,9 @@ define_synthdef("polysix_pad", |builder| {
 // Polysix Strings - Classic string machine sound
 define_synthdef("polysix_strings", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.25, 1.0, 0.4)
@@ -62,9 +62,9 @@ define_synthdef("polysix_strings", |builder| {
 // Polysix Bass - Punchy poly bass
 define_synthdef("polysix_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.12)
@@ -88,3 +88,46 @@ define_synthdef("polysix_bass", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `polysix_pad`
+//
+// ```rhai
+// import "stdlib/synths/polysix.vibe" as polysix;
+//
+// let polysix_pad = voice("doc_polysix_pad")
+//     .synth("polysix_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// polysix_pad.output("out").to_main();
+// polysix_pad.run();
+// ```
+//
+// # Usage: `polysix_strings`
+//
+// ```rhai
+// import "stdlib/synths/polysix.vibe" as polysix;
+//
+// let polysix_strings = voice("doc_polysix_strings")
+//     .synth("polysix_strings")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// polysix_strings.output("out").to_main();
+// polysix_strings.run();
+// ```
+//
+// # Usage: `polysix_bass`
+//
+// ```rhai
+// import "stdlib/synths/polysix.vibe" as polysix;
+//
+// let polysix_bass = voice("doc_polysix_bass")
+//     .synth("polysix_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// polysix_bass.output("out").to_main();
+// polysix_bass.run();
+// ```

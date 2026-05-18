@@ -14,9 +14,9 @@
 // Crotales (antique cymbals) - very high, pure
 define_synthdef("crotales", |builder| {
     builder
-        .param("freq", 2093.0)   // C7
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 2093.0) // units: Hz, range: 20..20000, default: 2093.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let decay_time = 3.0;
             let env = envelope()
@@ -44,9 +44,9 @@ define_synthdef("crotales", |builder| {
 // Celesta - keyboard glockenspiel
 define_synthdef("celesta", |builder| {
     builder
-        .param("freq", 1046.5)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
+        .param("freq", 1046.5) // units: Hz, range: 20..20000, default: 1046.5. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let decay_time = 1.8;
             let env = envelope()
@@ -82,3 +82,32 @@ define_synthdef("celesta", |builder| {
             hpf_ar(tone, 300.0) * env * amp * 0.5
         })
 });
+
+//
+// # Usage: `crotales`
+//
+// ```rhai
+// import "stdlib/keys/mallet_instruments.vibe" as mallet_instruments;
+//
+// let crotales = voice("doc_crotales")
+//     .synth("crotales")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// crotales.output("out").to_main();
+// crotales.run();
+// ```
+//
+// # Usage: `celesta`
+//
+// ```rhai
+// import "stdlib/keys/mallet_instruments.vibe" as mallet_instruments;
+//
+// let celesta = voice("doc_celesta")
+//     .synth("celesta")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// celesta.output("out").to_main();
+// celesta.run();
+// ```

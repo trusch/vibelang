@@ -27,10 +27,10 @@
 
 define_fx("cab_simulator", |builder| {
     builder
-        .param("ir_buffer", 0.0)
-        .param("presence", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("ir_buffer", 0.0) // units: buffer id, range: 0..N, default: 0.0. Selects impulse response buffer.
+        .param("presence", 0.0) // units: ratio, range: 0..1, default: 0.0. Presence amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, ir_buffer, presence, mix, level| {
             // Reload the kernel whenever ir_buffer changes.
             let trig = changed_kr(ir_buffer, 0.0);
@@ -53,3 +53,18 @@ define_fx("cab_simulator", |builder| {
             ]
         })
 });
+
+//
+// # Usage: cab_simulator
+//
+// ```rhai
+// import "stdlib/effects/convolution/cab_simulator.vibe" as cab_simulator;
+//
+// let doc_cab_simulator = fx("doc_cab_simulator")
+//     .synth("cab_simulator")
+//     .param("ir_buffer", 0.0)
+//     .param("presence", 0.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

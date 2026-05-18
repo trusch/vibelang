@@ -1,9 +1,9 @@
 // Genre: Minimal, House | Character: Very short, staccato pluck
 define_synthdef("lead_pluck_short", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Very short envelope
@@ -34,3 +34,17 @@ define_synthdef("lead_pluck_short", |builder| {
         })
 });
 
+//
+// # Usage: `lead_pluck_short`
+//
+// ```rhai
+// import "stdlib/leads/pluck/pluck_short.vibe" as pluck_short;
+//
+// let lead_pluck_short = voice("doc_lead_pluck_short")
+//     .synth("lead_pluck_short")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_pluck_short.output("out").to_main();
+// lead_pluck_short.run();
+// ```

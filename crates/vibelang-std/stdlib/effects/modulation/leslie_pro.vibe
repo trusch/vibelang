@@ -32,11 +32,11 @@
 
 define_fx("leslie_pro", |builder| {
     builder
-        .param("speed", 1.0)
-        .param("depth", 1.0)
-        .param("brake", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("speed", 1.0) // units: normalized, range: 0..1, default: 1.0. Modulation speed in Hz; higher values create faster tremolo or movement.
+        .param("depth", 1.0) // units: ratio, range: 0..1, default: 1.0. Modulation depth; higher values make the movement more pronounced.
+        .param("brake", 0.0) // units: ratio, range: 0..1, default: 0.0. Brake amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, speed, depth, brake, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -95,3 +95,18 @@ define_fx("leslie_pro", |builder| {
             ]
         })
 });
+
+//
+// # Usage: leslie_pro
+//
+// ```rhai
+// import "stdlib/effects/modulation/leslie_pro.vibe" as leslie_pro;
+//
+// let doc_leslie_pro = fx("doc_leslie_pro")
+//     .synth("leslie_pro")
+//     .param("speed", 1.0)
+//     .param("depth", 1.0)
+//     .param("brake", 0.0)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

@@ -4,11 +4,11 @@
 // MS-20 Bass - Aggressive filter bass
 define_synthdef("ms20_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("filter_freq", 600.0)
-        .param("resonance", 0.5)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_freq", 600.0) // units: Hz, range: 20..20000, default: 600.0. Filter Freq in Hz; higher values move that tone or filter point upward.
+        .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, filter_freq, resonance| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -39,11 +39,11 @@ define_synthdef("ms20_bass", |builder| {
 // MS-20 Lead - Screaming acid lead
 define_synthdef("ms20_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("filter_freq", 1500.0)
-        .param("resonance", 0.6)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_freq", 1500.0) // units: Hz, range: 20..20000, default: 1500.0. Filter Freq in Hz; higher values move that tone or filter point upward.
+        .param("resonance", 0.6) // units: resonance, range: 0..1, default: 0.6. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, filter_freq, resonance| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.12)
@@ -73,10 +73,10 @@ define_synthdef("ms20_lead", |builder| {
 // MS-20 Sync - Oscillator sync sound
 define_synthdef("ms20_sync", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("sync_ratio", 2.5)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("sync_ratio", 2.5) // units: ratio, range: 0..8, default: 2.5. Frequency ratio; higher values tune the related oscillator or clock upward.
         .body(|freq, amp, gate, sync_ratio| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -96,3 +96,49 @@ define_synthdef("ms20_sync", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `ms20_bass`
+//
+// ```rhai
+// import "stdlib/synths/ms20.vibe" as ms20;
+//
+// let ms20_bass = voice("doc_ms20_bass")
+//     .synth("ms20_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_freq", 1200.0);
+// ms20_bass.output("out").to_main();
+// ms20_bass.run();
+// ```
+//
+// # Usage: `ms20_lead`
+//
+// ```rhai
+// import "stdlib/synths/ms20.vibe" as ms20;
+//
+// let ms20_lead = voice("doc_ms20_lead")
+//     .synth("ms20_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_freq", 1200.0);
+// ms20_lead.output("out").to_main();
+// ms20_lead.run();
+// ```
+//
+// # Usage: `ms20_sync`
+//
+// ```rhai
+// import "stdlib/synths/ms20.vibe" as ms20;
+//
+// let ms20_sync = voice("doc_ms20_sync")
+//     .synth("ms20_sync")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("sync_ratio", 2.5);
+// ms20_sync.output("out").to_main();
+// ms20_sync.run();
+// ```

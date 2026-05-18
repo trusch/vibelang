@@ -24,12 +24,12 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("granular_delay")
-    .param("time", 0.3)
-    .param("pitch", 1.0)
-    .param("density", 0.7)
-    .param("feedback", 0.4)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.3) // units: seconds, range: 0..10, default: 0.3. Delay or segment time; higher values make repeats arrive later.
+    .param("pitch", 1.0) // units: semitones, range: -48..48, default: 1.0. Pitch in MIDI-note units; higher values play higher notes.
+    .param("density", 0.7) // units: normalized, range: 0..1, default: 0.7. Event density per second; higher values create more grains, dust, or impulses.
+    .param("feedback", 0.4) // units: ratio, range: 0..1, default: 0.4. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, pitch, density, feedback, mix, level| {
         // Multiple delay taps with varying times for granular effect
         let grain_size = 0.05 + (1.0 - density) * 0.1;
@@ -68,3 +68,18 @@ define_fx("granular_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: granular_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/granular_delay.vibe" as granular_delay;
+//
+// let doc_granular_delay = fx("doc_granular_delay")
+//     .synth("granular_delay")
+//     .param("time", 0.3)
+//     .param("pitch", 1.0)
+//     .param("density", 0.7)
+//     .param("feedback", 0.4)
+//     .apply();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Rock, Punk, Metal | Character: Picked electric bass with bright attack
 define_synthdef("bass_picked")
-    .param("freq", 80.0)
-    .param("amp", 0.85)
-    .param("gate", 1.0)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Envelope with quick attack
         let env = envelope()
@@ -26,3 +26,19 @@ define_synthdef("bass_picked")
         let sig = body + harm1 + harm2 + harm3 + attack;
         lpf_ar(sig, 5000.0) * env * amp
     });
+
+//
+// # Usage: bass_picked
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_picked.vibe" as bass_picked;
+//
+// let doc_bass_picked = voice("doc_bass_picked")
+//     .synth("bass_picked")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.85)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_picked.output("out").to_main();
+// doc_bass_picked.run();
+// ```

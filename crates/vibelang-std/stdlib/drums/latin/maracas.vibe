@@ -1,7 +1,7 @@
 // Genre: Latin, Caribbean, World | Character: Shaking maracas with seed rattle
 define_synthdef("maracas")
-    .param("freq", 8000.0)
-    .param("amp", 0.5)
+    .param("freq", 8000.0) // units: Hz, range: 20..20000, default: 8000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Quick shake envelope
         let amp_env = envelope()
@@ -18,3 +18,18 @@ define_synthdef("maracas")
 
         (seeds + shell) * rattle * amp_env * amp
     });
+
+//
+// # Usage: maracas
+//
+// ```rhai
+// import "stdlib/drums/latin/maracas.vibe" as maracas;
+//
+// let doc_maracas = voice("doc_maracas")
+//     .synth("maracas")
+//     .set_param("freq", 8000.0)
+//     .set_param("amp", 0.5)
+//     ;
+// doc_maracas.output("out").to_main();
+// doc_maracas.run();
+// ```

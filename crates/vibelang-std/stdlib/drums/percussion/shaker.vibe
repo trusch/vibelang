@@ -1,7 +1,7 @@
 // Genre: Pop, Latin | Character: Shaker, bright and rattling
 define_synthdef("shaker", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Very short, crisp envelope
             let env = envelope()
@@ -20,3 +20,16 @@ define_synthdef("shaker", |builder| {
         })
 });
 
+//
+// # Usage: shaker
+//
+// ```rhai
+// import "stdlib/drums/percussion/shaker.vibe" as shaker;
+//
+// let doc_shaker = voice("doc_shaker")
+//     .synth("shaker")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_shaker.output("out").to_main();
+// doc_shaker.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Latin, Cuban, World | Character: Deeper bongo with warm tone
 define_synthdef("bongo_low")
-    .param("freq", 350.0)
-    .param("amp", 0.8)
+    .param("freq", 350.0) // units: Hz, range: 20..20000, default: 350.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Medium decay
         let amp_env = envelope()
@@ -27,3 +27,18 @@ define_synthdef("bongo_low")
 
         (body + overtone + attack) * amp_env * amp
     });
+
+//
+// # Usage: bongo_low
+//
+// ```rhai
+// import "stdlib/drums/latin/bongo_low.vibe" as bongo_low;
+//
+// let doc_bongo_low = voice("doc_bongo_low")
+//     .synth("bongo_low")
+//     .set_param("freq", 350.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_bongo_low.output("out").to_main();
+// doc_bongo_low.run();
+// ```

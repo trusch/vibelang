@@ -24,10 +24,10 @@
 
 define_fx("granular_pitch_shift", |builder| {
     builder
-        .param("pitch", 1.0)
-        .param("grain_size", 0.1)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("pitch", 1.0) // units: semitones, range: -48..48, default: 1.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("grain_size", 0.1) // units: seconds, range: 0..1, default: 0.1. Grain Size; higher values use a larger buffer, room, or grain window.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, pitch, grain_size, mix, level| {
             // ~2s circular buffers, one per channel for true-stereo shifting.
             let buf_l = local_buf_ir(1, 96000);
@@ -57,3 +57,18 @@ define_fx("granular_pitch_shift", |builder| {
             ]
         })
 });
+
+//
+// # Usage: granular_pitch_shift
+//
+// ```rhai
+// import "stdlib/effects/granular/granular_pitch_shift.vibe" as granular_pitch_shift;
+//
+// let doc_granular_pitch_shift = fx("doc_granular_pitch_shift")
+//     .synth("granular_pitch_shift")
+//     .param("pitch", 1.0)
+//     .param("grain_size", 0.1)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

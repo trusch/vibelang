@@ -1,9 +1,9 @@
 // Genre: Hard Techno, Industrial | Character: Aggressive, distorted lead
 define_synthdef("lead_aggressive", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Aggressive envelope
@@ -35,3 +35,17 @@ define_synthdef("lead_aggressive", |builder| {
         })
 });
 
+//
+// # Usage: `lead_aggressive`
+//
+// ```rhai
+// import "stdlib/leads/synth/lead_aggressive.vibe" as lead_aggressive;
+//
+// let lead_aggressive = voice("doc_lead_aggressive")
+//     .synth("lead_aggressive")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_aggressive.output("out").to_main();
+// lead_aggressive.run();
+// ```

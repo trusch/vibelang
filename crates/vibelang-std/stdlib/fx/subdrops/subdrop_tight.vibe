@@ -1,7 +1,7 @@
 // Genre: Techno, Minimal | Character: Tight controlled sub
 define_synthdef("subdrop_tight", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.001, 0.6)
@@ -27,3 +27,17 @@ define_synthdef("subdrop_tight", |builder| {
             (sub + click_filtered) * env * amp * 0.8
         })
 });
+
+//
+// # Usage: subdrop_tight
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_tight.vibe" as subdrop_tight;
+//
+// let doc_subdrop_tight = voice("doc_subdrop_tight")
+//     .synth("subdrop_tight")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_subdrop_tight.output("out").to_main();
+// doc_subdrop_tight.run();
+// ```

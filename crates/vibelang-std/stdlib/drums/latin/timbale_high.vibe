@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Mambo | Character: Bright, ringing timbale with metallic overtones
 define_synthdef("timbale_high")
-    .param("freq", 450.0)
-    .param("amp", 0.8)
+    .param("freq", 450.0) // units: Hz, range: 20..20000, default: 450.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Ringing decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("timbale_high")
 
         (body + ring1 + ring2 + ring3 + attack) * amp_env * amp
     });
+
+//
+// # Usage: timbale_high
+//
+// ```rhai
+// import "stdlib/drums/latin/timbale_high.vibe" as timbale_high;
+//
+// let doc_timbale_high = voice("doc_timbale_high")
+//     .synth("timbale_high")
+//     .set_param("freq", 450.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_timbale_high.output("out").to_main();
+// doc_timbale_high.run();
+// ```

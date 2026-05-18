@@ -1,8 +1,8 @@
 // Genre: Bass Music, Experimental | Character: Long, sustained sub drop
 define_synthdef("subdrop_long", |builder| {
     builder
-        .param("freq", 50.0)
-        .param("amp", 1.0)
+        .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Long decay
             let env = envelope()
@@ -23,3 +23,17 @@ define_synthdef("subdrop_long", |builder| {
         })
 });
 
+//
+// # Usage: subdrop_long
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_long.vibe" as subdrop_long;
+//
+// let doc_subdrop_long = voice("doc_subdrop_long")
+//     .synth("subdrop_long")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_subdrop_long.output("out").to_main();
+// doc_subdrop_long.run();
+// ```

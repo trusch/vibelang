@@ -5,10 +5,10 @@
 
 define_synthdef("whisper", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("breathiness", 0.7) // Noise amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("breathiness", 0.7) // units: normalized, range: 0..1, default: 0.7. Breathiness amount; higher values add more airy noise.
         .body(|freq, amp, gate, breathiness| {
             // Soft envelope
             let env = envelope()
@@ -36,3 +36,19 @@ define_synthdef("whisper", |builder| {
             shaped * env * amp
         })
 });
+
+//
+// # Usage: `whisper`
+//
+// ```rhai
+// import "stdlib/vocals/whisper.vibe" as whisper;
+//
+// let whisper = voice("doc_whisper")
+//     .synth("whisper")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("breathiness", 0.7);
+// whisper.output("out").to_main();
+// whisper.run();
+// ```

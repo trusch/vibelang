@@ -1,8 +1,8 @@
 // Genre: Techno, Deep House | Character: Deep, sub-heavy, long decay
 define_synthdef("kick_techno_deep", |builder| {
     builder
-        .param("freq", 45.0)
-        .param("amp", 1.0)
+        .param("freq", 45.0) // units: Hz, range: 20..20000, default: 45.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Longer envelope for techno groove
             let amp_env = envelope()
@@ -32,3 +32,17 @@ define_synthdef("kick_techno_deep", |builder| {
         })
 });
 
+//
+// # Usage: kick_techno_deep
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_techno_deep.vibe" as kick_techno_deep;
+//
+// let doc_kick_techno_deep = voice("doc_kick_techno_deep")
+//     .synth("kick_techno_deep")
+//     .set_param("freq", 45.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_techno_deep.output("out").to_main();
+// doc_kick_techno_deep.run();
+// ```

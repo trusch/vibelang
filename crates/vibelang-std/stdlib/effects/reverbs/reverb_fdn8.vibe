@@ -28,11 +28,11 @@
 
 define_fx("reverb_fdn8", |builder| {
     builder
-        .param("time", 2.5)
-        .param("damp", 0.4)
-        .param("modulation_amount", 0.3)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 2.5) // units: seconds, range: 0..10, default: 2.5. Delay or segment time; higher values make repeats arrive later.
+        .param("damp", 0.4) // units: ratio, range: 0..1, default: 0.4. Damping amount; higher values shorten and darken the decay.
+        .param("modulation_amount", 0.3) // units: ratio, range: 0..1, default: 0.3. Modulation Amount; higher values apply more of that modulation or effect.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, damp, modulation_amount, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -120,3 +120,18 @@ define_fx("reverb_fdn8", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_fdn8
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_fdn8.vibe" as reverb_fdn8;
+//
+// let doc_reverb_fdn8 = fx("doc_reverb_fdn8")
+//     .synth("reverb_fdn8")
+//     .param("time", 2.5)
+//     .param("damp", 0.4)
+//     .param("modulation_amount", 0.3)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

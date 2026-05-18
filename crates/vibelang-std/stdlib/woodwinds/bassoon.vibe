@@ -5,9 +5,9 @@
 
 define_synthdef("bassoon", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.06, 1.0, 0.12)
@@ -43,9 +43,9 @@ define_synthdef("bassoon", |builder| {
 // Contrabassoon
 define_synthdef("contrabassoon", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.1, 1.0, 0.15)
@@ -72,3 +72,32 @@ define_synthdef("contrabassoon", |builder| {
             body * env * amp * 0.7
         })
 });
+
+//
+// # Usage: `bassoon`
+//
+// ```rhai
+// import "stdlib/woodwinds/bassoon.vibe" as bassoon;
+//
+// let bassoon = voice("doc_bassoon")
+//     .synth("bassoon")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// bassoon.output("out").to_main();
+// bassoon.run();
+// ```
+//
+// # Usage: `contrabassoon`
+//
+// ```rhai
+// import "stdlib/woodwinds/bassoon.vibe" as bassoon;
+//
+// let contrabassoon = voice("doc_contrabassoon")
+//     .synth("contrabassoon")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// contrabassoon.output("out").to_main();
+// contrabassoon.run();
+// ```

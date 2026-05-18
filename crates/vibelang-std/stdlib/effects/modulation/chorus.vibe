@@ -20,10 +20,10 @@
 
 define_fx("chorus", |builder| {
     builder
-        .param("rate", 0.5)
-        .param("depth", 0.01)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.01) // units: ratio, range: 0..1, default: 0.01. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, mix, level| {
             // LFO for modulation
             let lfo_left = sin_osc_ar(rate, 0.0);
@@ -46,3 +46,18 @@ define_fx("chorus", |builder| {
             ]
         })
 });
+
+//
+// # Usage: chorus
+//
+// ```rhai
+// import "stdlib/effects/modulation/chorus.vibe" as chorus;
+//
+// let doc_chorus = fx("doc_chorus")
+//     .synth("chorus")
+//     .param("rate", 0.5)
+//     .param("depth", 0.01)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

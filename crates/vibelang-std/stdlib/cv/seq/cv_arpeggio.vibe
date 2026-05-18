@@ -26,12 +26,12 @@
 //
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_arpeggio")
-    .param("clock_in", 0.0)
-    .param("pattern", 0.0)
-    .param("note0", 60.0)
-    .param("note1", 64.0)
-    .param("note2", 67.0)
-    .param("note3", 72.0)
+    .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("pattern", 0.0) // units: normalized, range: 0..1, default: 0.0. Pattern amount; higher values emphasize that named musical or electrical behavior.
+    .param("note0", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
+    .param("note1", 64.0) // units: MIDI note, range: 0..127, default: 64.0. MIDI note value; higher values output a higher pitch.
+    .param("note2", 67.0) // units: MIDI note, range: 0..127, default: 67.0. MIDI note value; higher values output a higher pitch.
+    .param("note3", 72.0) // units: MIDI note, range: 0..127, default: 72.0. MIDI note value; higher values output a higher pitch.
     .body(|clock_in, pattern, note0, note1, note2, note3| {
         // Shared step counter, period 6 (covers the longest pattern, updown).
         let step6 = stepper_kr(clock_in, 0.0, 0.0, 5.0, 1.0, 0.0);
@@ -71,3 +71,19 @@ define_synthdef("cv_arpeggio")
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_arpeggio`
+//
+// ```rhai
+// import "stdlib/cv/seq/cv_arpeggio.vibe" as cv_arpeggio;
+//
+// let cv_arpeggio = voice("doc_cv_arpeggio")
+//     .synth("cv_arpeggio")
+//     .set_param("clock_in", 1.0)
+//     .set_param("pattern", 0.5)
+//     .set_param("note0", 60.0)
+//     .set_param("note1", 60.0);
+// cv_arpeggio.output("out").to_main();
+// cv_arpeggio.run();
+// ```

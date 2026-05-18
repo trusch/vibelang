@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Afro-Cuban | Character: Muted conga with short, dry attack
 define_synthdef("conga_muted")
-    .param("freq", 260.0)
-    .param("amp", 0.8)
+    .param("freq", 260.0) // units: Hz, range: 20..20000, default: 260.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Very short decay for muted sound
         let amp_env = envelope()
@@ -27,3 +27,18 @@ define_synthdef("conga_muted")
 
         (body + click + attack) * amp_env * amp
     });
+
+//
+// # Usage: conga_muted
+//
+// ```rhai
+// import "stdlib/drums/latin/conga_muted.vibe" as conga_muted;
+//
+// let doc_conga_muted = voice("doc_conga_muted")
+//     .synth("conga_muted")
+//     .set_param("freq", 260.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_conga_muted.output("out").to_main();
+// doc_conga_muted.run();
+// ```

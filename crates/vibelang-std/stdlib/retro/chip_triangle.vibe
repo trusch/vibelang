@@ -1,8 +1,8 @@
 // Genre: Chiptune, 8-bit | Character: NES-style triangle wave bass
 define_synthdef("chip_triangle")
-    .param("freq", 110.0)
-    .param("amp", 0.7)
-    .param("gate", 1.0)
+    .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.001, 1.0, 0.01)
@@ -15,3 +15,18 @@ define_synthdef("chip_triangle")
 
         osc * env * amp
     });
+
+//
+// # Usage: `chip_triangle`
+//
+// ```rhai
+// import "stdlib/retro/chip_triangle.vibe" as chip_triangle;
+//
+// let chip_triangle = voice("doc_chip_triangle")
+//     .synth("chip_triangle")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// chip_triangle.output("out").to_main();
+// chip_triangle.run();
+// ```

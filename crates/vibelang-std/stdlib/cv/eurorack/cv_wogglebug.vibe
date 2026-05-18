@@ -39,10 +39,10 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_wogglebug")
-    .param("rate", 4.0)
-    .param("mode", 1.0)
-    .param("depth_v", 5.0)
-    .param("bipolar", 1.0)
+    .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("mode", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, mode, depth_v, bipolar| {
         // Stepped staircase.
         let stepped = lf_noise0_kr(rate);
@@ -78,3 +78,19 @@ define_synthdef("cv_wogglebug")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_wogglebug`
+//
+// ```rhai
+// import "stdlib/cv/eurorack/cv_wogglebug.vibe" as cv_wogglebug;
+//
+// let cv_wogglebug = voice("doc_cv_wogglebug")
+//     .synth("cv_wogglebug")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_v", 4.0)
+//     .set_param("mode", 1.0)
+//     .set_param("bipolar", 0.5);
+// cv_wogglebug.output("out").to_main();
+// cv_wogglebug.run();
+// ```

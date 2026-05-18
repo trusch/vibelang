@@ -23,10 +23,10 @@
 
 define_fx("spectral_scrambler", |builder| {
     builder
-        .param("amount", 0.7)
-        .param("trig", 0.0)
-        .param("mix", 0.6)
-        .param("level", 1.0)
+        .param("amount", 0.7) // units: normalized, range: 0..1, default: 0.7. Amount; higher values apply more of that modulation or effect.
+        .param("trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("mix", 0.6) // units: ratio, range: 0..1, default: 0.6. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, amount, trig, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -55,3 +55,18 @@ define_fx("spectral_scrambler", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_scrambler
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_scrambler.vibe" as spectral_scrambler;
+//
+// let doc_spectral_scrambler = fx("doc_spectral_scrambler")
+//     .synth("spectral_scrambler")
+//     .param("amount", 0.7)
+//     .param("trig", 0.0)
+//     .param("mix", 0.6)
+//     .param("level", 1.0)
+//     .apply();
+// ```

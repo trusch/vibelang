@@ -1,9 +1,9 @@
 // Genre: Ambient, Choral | Character: Voice-like pad with formants
 define_synthdef("pad_voice", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Choir-like envelope
@@ -32,3 +32,17 @@ define_synthdef("pad_voice", |builder| {
         })
 });
 
+//
+// # Usage: `pad_voice`
+//
+// ```rhai
+// import "stdlib/pads/lush/pad_voice.vibe" as pad_voice;
+//
+// let pad_voice = voice("doc_pad_voice")
+//     .synth("pad_voice")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_voice.output("out").to_main();
+// pad_voice.run();
+// ```

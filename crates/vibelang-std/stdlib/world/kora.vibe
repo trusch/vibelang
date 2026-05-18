@@ -1,8 +1,8 @@
 // Genre: West African | Character: Kora - African harp-like instrument
 define_synthdef("kora")
-    .param("freq", 440.0)
-    .param("amp", 0.65)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.003, 1.0, 0.2)
@@ -26,3 +26,18 @@ define_synthdef("kora")
 
         sig * env * amp
     });
+
+//
+// # Usage: `kora`
+//
+// ```rhai
+// import "stdlib/world/kora.vibe" as kora;
+//
+// let kora = voice("doc_kora")
+//     .synth("kora")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// kora.output("out").to_main();
+// kora.run();
+// ```

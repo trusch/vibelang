@@ -1,7 +1,7 @@
 // Genre: Video Game, Chiptune | Character: Power-up ascending sound
 define_synthdef("sfx_powerup")
-    .param("freq", 200.0)
-    .param("amp", 0.5)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         let amp_env = envelope()
             .perc(0.001, 0.4)
@@ -19,3 +19,17 @@ define_synthdef("sfx_powerup")
 
         osc * amp_env * amp
     });
+
+//
+// # Usage: `sfx_powerup`
+//
+// ```rhai
+// import "stdlib/retro/sfx_powerup.vibe" as sfx_powerup;
+//
+// let sfx_powerup = voice("doc_sfx_powerup")
+//     .synth("sfx_powerup")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// sfx_powerup.output("out").to_main();
+// sfx_powerup.run();
+// ```

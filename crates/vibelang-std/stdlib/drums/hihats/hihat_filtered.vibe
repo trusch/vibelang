@@ -1,8 +1,8 @@
 // Genre: Lo-fi, Experimental | Character: Filtered, darker hihat
 define_synthdef("hihat_filtered", |builder| {
     builder
-        .param("amp", 1.0)
-        .param("cutoff", 5000.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("cutoff", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|amp, cutoff| {
             // Medium envelope
             let env = envelope()
@@ -23,3 +23,17 @@ define_synthdef("hihat_filtered", |builder| {
         })
 });
 
+//
+// # Usage: hihat_filtered
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_filtered.vibe" as hihat_filtered;
+//
+// let doc_hihat_filtered = voice("doc_hihat_filtered")
+//     .synth("hihat_filtered")
+//     .set_param("amp", 1.0)
+//     .set_param("cutoff", 5000.0)
+//     ;
+// doc_hihat_filtered.output("out").to_main();
+// doc_hihat_filtered.run();
+// ```

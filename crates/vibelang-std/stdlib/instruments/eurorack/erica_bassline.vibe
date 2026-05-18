@@ -31,25 +31,25 @@ define_synthdef("erica_bassline", |builder| {
         .output("tri")
         .output("square")
         .output("sub")
-        .param("gate", 0.0)                 // 0/1 note gate that triggers VCF and VCA envelopes
-        .param("accent", 0.0)               // 0..1 level and filter/pitch emphasis for the hit
-        .param("voct", 36.0)                // MIDI-note-style pitch source used when freq is zero
-        .param("freq", 0.0)                 // direct Hz override when >0, before FM
-        .param("wave", 1.0)                 // rounded oscillator selector: 0 triangle, 1 square
-        .param("sub_level", 0.3)            // 0..1 sub oscillator amount in the filter feed
-        .param("detune", 0.1)               // 0..1 short-delay thickening amount
-        .param("cutoff", 400.0)             // base filter cutoff in Hz before envelope and CV
-        .param("cutoff_cv", 0.0)            // bipolar cutoff CV scaled by cutoff_cv_amt
-        .param("resonance", 0.6)            // 0..0.99 filter resonance
-        .param("filter_mode", 0.0)          // rounded selector: 0 low-pass, 1 band-pass
-        .param("vcf_decay", 0.3)            // 0..1 filter envelope decay time control
-        .param("vcf_env_amt", 0.7)          // 0..1 depth of VCF envelope into cutoff
-        .param("vca_decay", 0.4)            // 0..1 amplifier envelope decay time control
-        .param("level", 0.8)                // 0..1 final output VCA level
-        .param("fm", 0.0)                   // 0..1 depth for fm_cv pitch modulation
-        .param("fm_cv", 0.0)                // bipolar FM CV, up to +/-12 semitones through fm
-        .param("cutoff_cv_amt", 0.0)        // 0..1 attenuator for cutoff_cv depth
-        .param("beef", 0.3)                 // 0..1 pre-filter drive and output weight
+        .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("accent", 0.0) // units: normalized, range: 0..1, default: 0.0. Accent strength; higher values make the hit louder and brighter.
+        .param("voct", 36.0) // units: MIDI note, range: 0..127, default: 36.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("freq", 0.0) // units: Hz, range: 0..20000, default: 0.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("wave", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("sub_level", 0.3) // units: linear, range: 0..1, default: 0.3. Sub oscillator level; higher values add more low fundamental.
+        .param("detune", 0.1) // units: normalized, range: 0..1, default: 0.1. Oscillator detune amount; higher spreads voices farther apart in pitch.
+        .param("cutoff", 400.0) // units: Hz, range: 20..20000, default: 400.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("cutoff_cv", 0.0) // units: semitones, range: -24..24, default: 0.0. Cutoff CV input; bipolar values modulate the matching panel control.
+        .param("resonance", 0.6) // units: resonance, range: 0..1, default: 0.6. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("filter_mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("vcf_decay", 0.3) // units: normalized, range: 0..1, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("vcf_env_amt", 0.7) // units: linear, range: -1..1, default: 0.7. Vcf Env Amt amount; higher values emphasize that named musical or electrical behavior.
+        .param("vca_decay", 0.4) // units: normalized, range: 0..1, default: 0.4. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("level", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("fm", 0.0) // units: normalized, range: 0..1, default: 0.0. FM macro; higher moves that model axis toward its brighter or more open setting.
+        .param("fm_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Fm CV input; bipolar values modulate the matching panel control.
+        .param("cutoff_cv_amt", 0.0) // units: linear, range: 0..1, default: 0.0. CUTOFF CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("beef", 0.3) // units: normalized, range: 0..1, default: 0.3. Beef amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let gate = clip(p.gate, 0.0, 1.0);
             let accent = clip(p.accent, 0.0, 1.0);
@@ -120,3 +120,19 @@ define_synthdef("erica_bassline", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `erica_bassline`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_bassline.vibe" as erica_bassline;
+//
+// let erica_bassline = voice("doc_erica_bassline")
+//     .synth("erica_bassline")
+//     .set_param("freq", 220.0)
+//     .set_param("cutoff", 1800.0)
+//     .set_param("gate", 1.0)
+//     .set_param("sub_level", 0.5);
+// erica_bassline.output("out").to_main();
+// erica_bassline.run();
+// ```

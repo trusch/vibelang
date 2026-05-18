@@ -1,11 +1,11 @@
 // Genre: Acid House, Techno | Character: Classic 303 with resonant filter sweep
 define_synthdef("acid_303_classic", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
-        .param("cutoff", 1200.0)
-        .param("res", 0.7)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 1200.0) // units: Hz, range: 20..20000, default: 1200.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("res", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher values emphasize the cutoff peak.
         .body(|freq, amp, gate, cutoff, res| {
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
             let env = envelope()
@@ -30,3 +30,19 @@ define_synthdef("acid_303_classic", |builder| {
         })
 });
 
+//
+// # Usage: acid_303_classic
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_303_classic.vibe" as acid_303_classic;
+//
+// let doc_acid_303_classic = voice("doc_acid_303_classic")
+//     .synth("acid_303_classic")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0)
+//     ;
+// doc_acid_303_classic.output("out").to_main();
+// doc_acid_303_classic.run();
+// ```

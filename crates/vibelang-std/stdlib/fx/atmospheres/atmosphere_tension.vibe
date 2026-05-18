@@ -1,8 +1,8 @@
 // Genre: Cinematic, Horror | Character: Tense building atmosphere
 define_synthdef("atmosphere_tension", |builder| {
     builder
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(1.0, 1.0, 1.0)
@@ -33,3 +33,18 @@ define_synthdef("atmosphere_tension", |builder| {
             mix * env * amp
         })
 });
+
+//
+// # Usage: atmosphere_tension
+//
+// ```rhai
+// import "stdlib/fx/atmospheres/atmosphere_tension.vibe" as atmosphere_tension;
+//
+// let doc_atmosphere_tension = voice("doc_atmosphere_tension")
+//     .synth("atmosphere_tension")
+//     .set_param("amp", 0.4)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_atmosphere_tension.output("out").to_main();
+// doc_atmosphere_tension.run();
+// ```

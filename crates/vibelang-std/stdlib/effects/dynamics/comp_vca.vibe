@@ -25,12 +25,12 @@
 //   level:     Output level trim (1.0 = unity)
 
 define_fx("comp_vca")
-    .param("threshold", 0.3)
-    .param("ratio", 4.0)
-    .param("attack", 0.005)
-    .param("release", 0.15)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("threshold", 0.3) // units: linear, range: 0..1, default: 0.3. Detection threshold; higher values require a stronger signal before processing opens.
+    .param("ratio", 4.0) // units: ratio, range: 1..100, default: 4.0. Frequency ratio; higher values tune the related oscillator or clock upward.
+    .param("attack", 0.005) // units: seconds, range: 0..10, default: 0.005. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("release", 0.15) // units: seconds, range: 0..10, default: 0.15. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, threshold, ratio, attack, release, mix, level| {
         // Linear-knee, transparent compander — no colour, just gain control.
         let comp_l = compander_ar(input[0], input[0], threshold, 1.0, 1.0 / ratio, attack, release);
@@ -49,3 +49,18 @@ define_fx("comp_vca")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: comp_vca
+//
+// ```rhai
+// import "stdlib/effects/dynamics/comp_vca.vibe" as comp_vca;
+//
+// let doc_comp_vca = fx("doc_comp_vca")
+//     .synth("comp_vca")
+//     .param("threshold", 0.3)
+//     .param("ratio", 4.0)
+//     .param("attack", 0.005)
+//     .param("release", 0.15)
+//     .apply();
+// ```

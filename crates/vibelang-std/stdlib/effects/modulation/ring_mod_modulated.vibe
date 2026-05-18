@@ -27,11 +27,11 @@
 
 define_fx("ring_mod_modulated", |builder| {
     builder
-        .param("carrier_min", 50.0)
-        .param("carrier_max", 800.0)
-        .param("sweep_rate", 0.3)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("carrier_min", 50.0) // units: Hz, range: 20..20000, default: 50.0. Carrier Min amount; higher values emphasize that named musical or electrical behavior.
+        .param("carrier_max", 800.0) // units: Hz, range: 20..20000, default: 800.0. Carrier Max amount; higher values emphasize that named musical or electrical behavior.
+        .param("sweep_rate", 0.3) // units: Hz, range: 0..100, default: 0.3. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, carrier_min, carrier_max, sweep_rate, mix, level| {
             // Slow LFO at kr maps to [carrier_min, carrier_max]. sin_osc_kr
             // sits in [-1, 1] so lin_lin handles the bipolar→unipolar mapping
@@ -51,3 +51,18 @@ define_fx("ring_mod_modulated", |builder| {
             ]
         })
 });
+
+//
+// # Usage: ring_mod_modulated
+//
+// ```rhai
+// import "stdlib/effects/modulation/ring_mod_modulated.vibe" as ring_mod_modulated;
+//
+// let doc_ring_mod_modulated = fx("doc_ring_mod_modulated")
+//     .synth("ring_mod_modulated")
+//     .param("carrier_min", 50.0)
+//     .param("carrier_max", 800.0)
+//     .param("sweep_rate", 0.3)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

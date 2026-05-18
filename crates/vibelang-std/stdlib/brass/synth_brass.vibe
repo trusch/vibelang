@@ -5,10 +5,10 @@
 
 define_synthdef("synth_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("detune", 0.5) // Detune amount
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("detune", 0.5) // units: semitones, range: -12..12, default: 0.5. Oscillator detune amount; higher spreads voices farther apart in pitch.
         .body(|freq, amp, gate, detune| {
             // Fast attack envelope
             let env = envelope()
@@ -39,3 +39,19 @@ define_synthdef("synth_brass", |builder| {
             brass * env * amp
         })
 });
+
+//
+// # Usage: `synth_brass`
+//
+// ```rhai
+// import "stdlib/brass/synth_brass.vibe" as synth_brass;
+//
+// let synth_brass = voice("doc_synth_brass")
+//     .synth("synth_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("detune", 0.5);
+// synth_brass.output("out").to_main();
+// synth_brass.run();
+// ```

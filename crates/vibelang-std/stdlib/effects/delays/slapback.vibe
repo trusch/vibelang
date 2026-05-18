@@ -17,9 +17,9 @@
 //   level: Final output trim (1.0 = unity)
 
 define_fx("slapback")
-    .param("time", 0.12)
-    .param("mix", 0.4)
-    .param("level", 1.0)
+    .param("time", 0.12) // units: seconds, range: 0..10, default: 0.12. Delay or segment time; higher values make repeats arrive later.
+    .param("mix", 0.4) // units: ratio, range: 0..1, default: 0.4. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, mix, level| {
         // Single delay tap, no feedback
         let delayed_left = delay_c_ar(input[0], 0.25, time);
@@ -33,3 +33,17 @@ define_fx("slapback")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: slapback
+//
+// ```rhai
+// import "stdlib/effects/delays/slapback.vibe" as slapback;
+//
+// let doc_slapback = fx("doc_slapback")
+//     .synth("slapback")
+//     .param("time", 0.12)
+//     .param("mix", 0.4)
+//     .param("level", 1.0)
+//     .apply();
+// ```

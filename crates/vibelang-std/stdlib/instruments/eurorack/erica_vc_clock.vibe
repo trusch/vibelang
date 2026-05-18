@@ -26,14 +26,14 @@ define_synthdef("erica_vc_clock", |builder| {
         .output_kr("shuffle")
         .output_kr("random")
         .output_kr("reset")
-        .param("bpm", 120.0)                // master tempo in beats per minute
-        .param("run", 1.0)                  // 0 stops all clock outputs, 1 runs
-        .param("division", 1.0)             // rounded divider selector for the div output
-        .param("shuffle", 0.0)              // 0..0.5 delay for alternating master pulses
-        .param("duty", 0.5)                 // gate duty cycle clipped to 0.05..0.95
-        .param("random_rate", 1.0)          // Hz rate for the independent random gate stream
-        .param("reset_in", 0.0)             // 0/1 reset trigger with Schmitt thresholding
-        .param("reset_mode", 0.0)           // 0 hard reset now, 1 queue reset to division edge
+        .param("bpm", 120.0) // units: BPM, range: 20..300, default: 120.0. Clock tempo in beats per minute; higher values make the pulse faster.
+        .param("run", 1.0) // units: trigger, range: 0..1, default: 1.0. Run switch; 1 lets the clocked process advance.
+        .param("division", 1.0) // units: normalized, range: 0..1, default: 1.0. Clock division; higher values make the derived pulse slower.
+        .param("shuffle", 0.0) // units: normalized, range: 0..1, default: 0.0. Shuffle amount; higher values emphasize that named musical or electrical behavior.
+        .param("duty", 0.5) // units: normalized, range: 0..1, default: 0.5. Pulse width or duty cycle; higher values widen the high portion of the wave.
+        .param("random_rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("reset_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Reset In amount; higher values emphasize that named musical or electrical behavior.
+        .param("reset_mode", 0.0) // units: trigger, range: 0..1, default: 0.0. Reset mode selector; rounded values choose how sync resets the oscillator.
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (clip_kr(p.bpm, 30.0, 300.0) / 60.0) * run;
@@ -86,3 +86,19 @@ define_synthdef("erica_vc_clock", |builder| {
             [clock, div, shuffled, random, reset_out]
         })
 });
+
+//
+// # Usage: `erica_vc_clock`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_vc_clock.vibe" as erica_vc_clock;
+//
+// let erica_vc_clock = voice("doc_erica_vc_clock")
+//     .synth("erica_vc_clock")
+//     .set_param("random_rate", 2.0)
+//     .set_param("bpm", 96.0)
+//     .set_param("reset_in", 0.35)
+//     .set_param("reset_mode", 0.35);
+// erica_vc_clock.outputs(["clock"]).mute();
+// erica_vc_clock.run();
+// ```

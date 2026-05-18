@@ -1,9 +1,9 @@
 // Genre: Funk, Experimental | Character: Talk box-style bass with vocal modulation
 define_synthdef("bass_talking")
-    .param("freq", 60.0)
-    .param("amp", 0.75)
-    .param("gate", 1.0)
-    .param("talk", 0.5)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.75) // units: linear, range: 0..1, default: 0.75. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("talk", 0.5) // units: ratio, range: 0..1, default: 0.5. Talk amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, gate, talk| {
         let env = envelope()
             .asr(0.01, 1.0, 0.1)
@@ -31,3 +31,20 @@ define_synthdef("bass_talking")
 
         sig * env * amp
     });
+
+//
+// # Usage: bass_talking
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_talking.vibe" as bass_talking;
+//
+// let doc_bass_talking = voice("doc_bass_talking")
+//     .synth("bass_talking")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.75)
+//     .set_param("gate", 1.0)
+//     .set_param("talk", 0.5)
+//     ;
+// doc_bass_talking.output("out").to_main();
+// doc_bass_talking.run();
+// ```

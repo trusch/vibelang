@@ -1,8 +1,8 @@
 // Genre: Brostep, Heavy Dubstep | Character: Distorted sub drop with grit
 define_synthdef("subdrop_distorted", |builder| {
     builder
-        .param("freq", 45.0)
-        .param("amp", 0.9)
+        .param("freq", 45.0) // units: Hz, range: 20..20000, default: 45.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Envelope
             let env = envelope()
@@ -24,3 +24,17 @@ define_synthdef("subdrop_distorted", |builder| {
         })
 });
 
+//
+// # Usage: subdrop_distorted
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_distorted.vibe" as subdrop_distorted;
+//
+// let doc_subdrop_distorted = voice("doc_subdrop_distorted")
+//     .synth("subdrop_distorted")
+//     .set_param("freq", 45.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_subdrop_distorted.output("out").to_main();
+// doc_subdrop_distorted.run();
+// ```

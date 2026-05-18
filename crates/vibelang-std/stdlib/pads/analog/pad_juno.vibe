@@ -1,8 +1,8 @@
 // Genre: House, Synthwave | Character: Roland Juno chorus pad - lush and warm
 define_synthdef("pad_juno")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.2, 1.0, 0.3)
@@ -27,3 +27,18 @@ define_synthdef("pad_juno")
 
         lpf_ar(chorused, 3000.0) * env * amp
     });
+
+//
+// # Usage: `pad_juno`
+//
+// ```rhai
+// import "stdlib/pads/analog/pad_juno.vibe" as pad_juno;
+//
+// let pad_juno = voice("doc_pad_juno")
+//     .synth("pad_juno")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_juno.output("out").to_main();
+// pad_juno.run();
+// ```

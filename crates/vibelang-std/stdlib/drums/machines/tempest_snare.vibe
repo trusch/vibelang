@@ -1,8 +1,8 @@
 // Genre: Electronic, Techno | Character: DSI Tempest-style snare - analog synthesis
 define_synthdef("tempest_snare")
-    .param("freq", 210.0)
-    .param("amp", 0.9)
-    .param("tone", 0.5)
+    .param("freq", 210.0) // units: Hz, range: 20..20000, default: 210.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("tone", 0.5) // units: normalized, range: 0..1, default: 0.5. Filter cutoff or tone point; higher keeps more high-frequency brightness.
     .body(|freq, amp, tone| {
         // Snappy decay
         let amp_env = envelope()
@@ -30,3 +30,19 @@ define_synthdef("tempest_snare")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: tempest_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/tempest_snare.vibe" as tempest_snare;
+//
+// let doc_tempest_snare = voice("doc_tempest_snare")
+//     .synth("tempest_snare")
+//     .set_param("freq", 210.0)
+//     .set_param("amp", 0.9)
+//     .set_param("tone", 0.5)
+//     ;
+// doc_tempest_snare.output("out").to_main();
+// doc_tempest_snare.run();
+// ```

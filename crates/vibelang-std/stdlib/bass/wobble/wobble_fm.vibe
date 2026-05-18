@@ -1,10 +1,10 @@
 // Genre: Experimental Dubstep | Character: FM wobble with complex harmonics
 define_synthdef("wobble_fm", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("wobble_rate", 5.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("wobble_rate", 5.0) // units: Hz, range: 0..100, default: 5.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, wobble_rate, amp, gate| {
 
             // Envelope
@@ -30,3 +30,19 @@ define_synthdef("wobble_fm", |builder| {
         })
 });
 
+//
+// # Usage: wobble_fm
+//
+// ```rhai
+// import "stdlib/bass/wobble/wobble_fm.vibe" as wobble_fm;
+//
+// let doc_wobble_fm = voice("doc_wobble_fm")
+//     .synth("wobble_fm")
+//     .set_param("freq", 110.0)
+//     .set_param("wobble_rate", 5.0)
+//     .set_param("amp", 0.6)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_wobble_fm.output("out").to_main();
+// doc_wobble_fm.run();
+// ```

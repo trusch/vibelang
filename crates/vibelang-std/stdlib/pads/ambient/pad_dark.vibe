@@ -1,9 +1,9 @@
 // Genre: Ambient, Dark Ambient | Character: Dark, brooding pad
 define_synthdef("pad_dark", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Slow attack, long release
@@ -28,3 +28,17 @@ define_synthdef("pad_dark", |builder| {
         })
 });
 
+//
+// # Usage: `pad_dark`
+//
+// ```rhai
+// import "stdlib/pads/ambient/pad_dark.vibe" as pad_dark;
+//
+// let pad_dark = voice("doc_pad_dark")
+//     .synth("pad_dark")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_dark.output("out").to_main();
+// pad_dark.run();
+// ```

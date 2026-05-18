@@ -6,9 +6,9 @@
 // Synthwave Bass - Pulsing retro bass
 define_synthdef("synthwave_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -39,9 +39,9 @@ define_synthdef("synthwave_bass", |builder| {
 // Synthwave Lead - Soaring lead
 define_synthdef("synthwave_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.2)
@@ -66,9 +66,9 @@ define_synthdef("synthwave_lead", |builder| {
 // Synthwave Pad - Lush retro pad
 define_synthdef("synthwave_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -96,9 +96,9 @@ define_synthdef("synthwave_pad", |builder| {
 // Synthwave Arp - Arpeggiated lead
 define_synthdef("synthwave_arp", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.08)
@@ -127,8 +127,8 @@ define_synthdef("synthwave_arp", |builder| {
 // Synthwave Drums - Gated reverb snare character
 define_synthdef("synthwave_snare", |builder| {
     builder
-        .param("freq", 200.0)
-        .param("amp", 0.6)
+        .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // 80s snare envelope
             let env = envelope()
@@ -149,3 +149,73 @@ define_synthdef("synthwave_snare", |builder| {
             snare * env * amp
         })
 });
+
+//
+// # Usage: `synthwave_bass`
+//
+// ```rhai
+// import "stdlib/modern/synthwave.vibe" as synthwave;
+//
+// let synthwave_bass = voice("doc_synthwave_bass")
+//     .synth("synthwave_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// synthwave_bass.output("out").to_main();
+// synthwave_bass.run();
+// ```
+//
+// # Usage: `synthwave_lead`
+//
+// ```rhai
+// import "stdlib/modern/synthwave.vibe" as synthwave;
+//
+// let synthwave_lead = voice("doc_synthwave_lead")
+//     .synth("synthwave_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// synthwave_lead.output("out").to_main();
+// synthwave_lead.run();
+// ```
+//
+// # Usage: `synthwave_pad`
+//
+// ```rhai
+// import "stdlib/modern/synthwave.vibe" as synthwave;
+//
+// let synthwave_pad = voice("doc_synthwave_pad")
+//     .synth("synthwave_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// synthwave_pad.output("out").to_main();
+// synthwave_pad.run();
+// ```
+//
+// # Usage: `synthwave_arp`
+//
+// ```rhai
+// import "stdlib/modern/synthwave.vibe" as synthwave;
+//
+// let synthwave_arp = voice("doc_synthwave_arp")
+//     .synth("synthwave_arp")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// synthwave_arp.output("out").to_main();
+// synthwave_arp.run();
+// ```
+//
+// # Usage: `synthwave_snare`
+//
+// ```rhai
+// import "stdlib/modern/synthwave.vibe" as synthwave;
+//
+// let synthwave_snare = voice("doc_synthwave_snare")
+//     .synth("synthwave_snare")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// synthwave_snare.output("out").to_main();
+// synthwave_snare.run();
+// ```

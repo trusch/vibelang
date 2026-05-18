@@ -17,9 +17,9 @@
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_burst")
-    .param("gate", 0.0)
-    .param("count", 3.0)
-    .param("rate_hz", 10.0)
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("count", 3.0) // units: count, range: 1..64, default: 3.0. Number of burst pulses; higher values emit more triggers per gate.
+    .param("rate_hz", 10.0) // units: Hz, range: 0.1..200, default: 10.0. Clock or modulation rate in Hz; higher values make motion faster.
     .body(|gate, count, rate_hz| {
         // Window length: just enough to cover `count` ticks at `rate_hz`.
         let window_dur = count / rate_hz;
@@ -43,3 +43,18 @@ define_synthdef("cv_burst")
 
         clip_ar(pulse * env * 0.5, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_burst`
+//
+// ```rhai
+// import "stdlib/cv/triggers/cv_burst.vibe" as cv_burst;
+//
+// let cv_burst = voice("doc_cv_burst")
+//     .synth("cv_burst")
+//     .set_param("rate_hz", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("count", 0.5);
+// cv_burst.output("out").to_main();
+// cv_burst.run();
+// ```

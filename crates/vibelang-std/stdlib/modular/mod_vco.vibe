@@ -1,9 +1,9 @@
 // Genre: Modular, Experimental | Character: Basic VCO module
 define_synthdef("mod_vco")
-    .param("freq", 440.0)
-    .param("amp", 0.7)
-    .param("gate", 1.0)
-    .param("wave", 0.0) // 0=saw, 0.5=pulse, 1.0=sine
+    .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("wave", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
     .body(|freq, amp, gate, wave| {
         let env = envelope()
             .asr(0.001, 1.0, 0.001)
@@ -20,3 +20,19 @@ define_synthdef("mod_vco")
 
         mix * env * amp
     });
+
+//
+// # Usage: `mod_vco`
+//
+// ```rhai
+// import "stdlib/modular/mod_vco.vibe" as mod_vco;
+//
+// let mod_vco = voice("doc_mod_vco")
+//     .synth("mod_vco")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("wave", 1.0);
+// mod_vco.output("out").to_main();
+// mod_vco.run();
+// ```

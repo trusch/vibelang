@@ -1,9 +1,9 @@
 // Genre: Acid Techno | Character: Squelchy, high resonance
 define_synthdef("acid_squelchy", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -31,3 +31,18 @@ define_synthdef("acid_squelchy", |builder| {
         })
 });
 
+//
+// # Usage: acid_squelchy
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_squelchy.vibe" as acid_squelchy;
+//
+// let doc_acid_squelchy = voice("doc_acid_squelchy")
+//     .synth("acid_squelchy")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.6)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_acid_squelchy.output("out").to_main();
+// doc_acid_squelchy.run();
+// ```

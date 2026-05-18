@@ -1,7 +1,7 @@
 // Genre: Vintage, New Wave, Synthpop | Character: Roland CR-78 snare - lo-fi, filtered
 define_synthdef("cr78_snare")
-    .param("freq", 180.0)
-    .param("amp", 0.8)
+    .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Vintage decay
         let amp_env = envelope()
@@ -23,3 +23,18 @@ define_synthdef("cr78_snare")
 
         (body + noise) * amp_env * amp
     });
+
+//
+// # Usage: cr78_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/cr78_snare.vibe" as cr78_snare;
+//
+// let doc_cr78_snare = voice("doc_cr78_snare")
+//     .synth("cr78_snare")
+//     .set_param("freq", 180.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_cr78_snare.output("out").to_main();
+// doc_cr78_snare.run();
+// ```

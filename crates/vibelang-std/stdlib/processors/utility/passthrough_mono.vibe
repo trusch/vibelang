@@ -3,7 +3,20 @@
 define_synthdef("passthrough_mono")
     .input("in", 1)
     .output("out", 1)
-    .param("level", 1.0)
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         [p.inputs["in"] * p.level]
     });
+
+//
+// # Usage: `passthrough_mono`
+//
+// ```rhai
+// import "stdlib/processors/utility/passthrough_mono.vibe" as passthrough_mono;
+//
+// let passthrough_mono = voice("doc_passthrough_mono")
+//     .synth("passthrough_mono")
+//     .set_param("level", 0.5);
+// passthrough_mono.output("out").to_main();
+// passthrough_mono.run();
+// ```

@@ -30,15 +30,15 @@
 
 define_fx("gverb", |builder| {
     builder
-        .param("roomsize", 50.0)
-        .param("revtime", 3.0)
-        .param("damping", 0.5)
-        .param("spread", 15.0)
-        .param("drylevel", 0.7)
-        .param("earlylevel", 0.7)
-        .param("taillevel", 0.5)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("roomsize", 50.0) // units: meters, range: 1..300, default: 50.0. Reverb room size; higher values make a larger, longer acoustic space.
+        .param("revtime", 3.0) // units: seconds, range: 0..60, default: 3.0. Reverb decay time in seconds; higher makes the tail last longer.
+        .param("damping", 0.5) // units: ratio, range: 0..1, default: 0.5. High-frequency damping; higher values darken and shorten resonant tails.
+        .param("spread", 15.0) // units: degrees, range: 0..45, default: 15.0. Spread width; higher values distribute energy across a wider range.
+        .param("drylevel", 0.7) // units: linear, range: 0..1, default: 0.7. Dry reverb path level; higher keeps more unprocessed signal.
+        .param("earlylevel", 0.7) // units: linear, range: 0..1, default: 0.7. Early-reflection level; higher makes the first room reflections louder.
+        .param("taillevel", 0.5) // units: linear, range: 0..1, default: 0.5. Late reverb tail level; higher makes the diffuse tail louder.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, roomsize, revtime, damping, spread, drylevel, earlylevel, taillevel, mix, level| {
             // Mix to mono for the reverb input
             let mono = (input[0] + input[1]) * 0.5;
@@ -58,3 +58,18 @@ define_fx("gverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: gverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/gverb.vibe" as gverb;
+//
+// let doc_gverb = fx("doc_gverb")
+//     .synth("gverb")
+//     .param("roomsize", 50.0)
+//     .param("revtime", 3.0)
+//     .param("damping", 0.5)
+//     .param("spread", 15.0)
+//     .apply();
+// ```

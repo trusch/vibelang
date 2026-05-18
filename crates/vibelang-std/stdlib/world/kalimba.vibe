@@ -6,9 +6,9 @@
 
 define_synthdef("kalimba", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.2)
@@ -41,3 +41,18 @@ define_synthdef("kalimba", |builder| {
             (body + pluck) * env * decay_env * amp * 0.6
         })
 });
+
+//
+// # Usage: `kalimba`
+//
+// ```rhai
+// import "stdlib/world/kalimba.vibe" as kalimba;
+//
+// let kalimba = voice("doc_kalimba")
+//     .synth("kalimba")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// kalimba.output("out").to_main();
+// kalimba.run();
+// ```

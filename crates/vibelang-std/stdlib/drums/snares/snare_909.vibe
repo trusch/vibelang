@@ -1,7 +1,7 @@
 // Genre: House, Techno | Character: Classic 909, crisp and bright
 define_synthdef("snare_909", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Noise component - filtered white noise
             let noise_env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("snare_909", |builder| {
         })
 });
 
+//
+// # Usage: snare_909
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_909.vibe" as snare_909;
+//
+// let doc_snare_909 = voice("doc_snare_909")
+//     .synth("snare_909")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_909.output("out").to_main();
+// doc_snare_909.run();
+// ```

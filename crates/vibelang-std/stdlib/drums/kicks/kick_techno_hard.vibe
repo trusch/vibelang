@@ -1,8 +1,8 @@
 // Genre: Hard Techno, Industrial | Character: Aggressive, distorted, punchy
 define_synthdef("kick_techno_hard", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Sharp, aggressive envelope
             let amp_env = envelope()
@@ -32,3 +32,17 @@ define_synthdef("kick_techno_hard", |builder| {
         })
 });
 
+//
+// # Usage: kick_techno_hard
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_techno_hard.vibe" as kick_techno_hard;
+//
+// let doc_kick_techno_hard = voice("doc_kick_techno_hard")
+//     .synth("kick_techno_hard")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_techno_hard.output("out").to_main();
+// doc_kick_techno_hard.run();
+// ```

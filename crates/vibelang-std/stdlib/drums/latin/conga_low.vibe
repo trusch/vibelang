@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Afro-Cuban | Character: Deep conga tone with warm resonance
 define_synthdef("conga_low")
-    .param("freq", 180.0)
-    .param("amp", 0.8)
+    .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Longer decay for low conga
         let amp_env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("conga_low")
 
         (body + sub + overtone + attack) * amp_env * amp
     });
+
+//
+// # Usage: conga_low
+//
+// ```rhai
+// import "stdlib/drums/latin/conga_low.vibe" as conga_low;
+//
+// let doc_conga_low = voice("doc_conga_low")
+//     .synth("conga_low")
+//     .set_param("freq", 180.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_conga_low.output("out").to_main();
+// doc_conga_low.run();
+// ```

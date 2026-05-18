@@ -1,7 +1,7 @@
 // Genre: Techno, Minimal | Character: Very tight, focused clap
 define_synthdef("clap_tight", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Just two very short bursts
             let burst1_env = envelope()
@@ -23,3 +23,16 @@ define_synthdef("clap_tight", |builder| {
         })
 });
 
+//
+// # Usage: clap_tight
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_tight.vibe" as clap_tight;
+//
+// let doc_clap_tight = voice("doc_clap_tight")
+//     .synth("clap_tight")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_clap_tight.output("out").to_main();
+// doc_clap_tight.run();
+// ```

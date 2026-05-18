@@ -10,17 +10,17 @@
 // parallel QPAS voices as LP/HP/BP peak taps until the builder supports that.
 define_synthdef("qpas")
     .input("in", 2)
-    .param("cutoff", 1200.0)
-    .param("q", 0.35)
-    .param("radiate", 0.25)
-    .param("smile", 0.5)
-    .param("frown", 0.5)
-    .param("q_plus", 0.0)
-    .param("q_minus", 0.0)
-    .param("mode", 0.0)
-    .param("input_gain", 0.8)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("cutoff", 1200.0) // units: Hz, range: 20..20000, default: 1200.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("q", 0.35) // units: resonance, range: 0..1, default: 0.35. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("radiate", 0.25) // units: normalized, range: 0..1, default: 0.25. QPAS radiate spread; higher offsets the filter cores for wider stereo motion.
+    .param("smile", 0.5) // units: normalized, range: 0..1, default: 0.5. QPAS smile response; higher emphasizes the upward spectral curve.
+    .param("frown", 0.5) // units: normalized, range: 0..1, default: 0.5. QPAS frown response; higher emphasizes the downward spectral curve.
+    .param("q_plus", 0.0) // units: normalized, range: 0..1, default: 0.0. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("q_minus", 0.0) // units: normalized, range: 0..1, default: 0.0. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+    .param("input_gain", 0.8) // units: linear, range: 0..1, default: 0.8. Input Gain trim; higher sends more of that input into the processor.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let dry_l = p.inputs["in"][0] * p.input_gain;
         let dry_r = p.inputs["in"][1] * p.input_gain;
@@ -110,3 +110,19 @@ define_synthdef("qpas")
             out_r
         ]
     });
+
+//
+// # Usage: `qpas`
+//
+// ```rhai
+// import "stdlib/processors/filters/qpas.vibe" as qpas;
+//
+// let qpas = voice("doc_qpas")
+//     .synth("qpas")
+//     .set_param("cutoff", 1800.0)
+//     .set_param("input_gain", 0.5)
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45);
+// qpas.output("out").to_main();
+// qpas.run();
+// ```

@@ -34,10 +34,10 @@
 
 define_fx("spectral_compressor", |builder| {
     builder
-        .param("threshold", 5.0)
-        .param("ratio", 4.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("threshold", 5.0) // units: linear, range: 0..20, default: 5.0. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("ratio", 4.0) // units: ratio, range: 1..100, default: 4.0. Frequency ratio; higher values tune the related oscillator or clock upward.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, threshold, ratio, mix, level| {
             // Four FFT buffers — pv_mag_clip_kr overwrites its input chain, so
             // the dry path needs its own pair of buffers to survive intact.
@@ -77,3 +77,18 @@ define_fx("spectral_compressor", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_compressor
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_compressor.vibe" as spectral_compressor;
+//
+// let doc_spectral_compressor = fx("doc_spectral_compressor")
+//     .synth("spectral_compressor")
+//     .param("threshold", 5.0)
+//     .param("ratio", 4.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

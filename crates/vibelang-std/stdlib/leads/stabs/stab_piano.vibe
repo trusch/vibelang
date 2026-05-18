@@ -1,9 +1,9 @@
 // Genre: House, Garage | Character: Piano-like chord stab
 define_synthdef("stab_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Piano-like envelope
@@ -38,3 +38,17 @@ define_synthdef("stab_piano", |builder| {
         })
 });
 
+//
+// # Usage: `stab_piano`
+//
+// ```rhai
+// import "stdlib/leads/stabs/stab_piano.vibe" as stab_piano;
+//
+// let stab_piano = voice("doc_stab_piano")
+//     .synth("stab_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// stab_piano.output("out").to_main();
+// stab_piano.run();
+// ```

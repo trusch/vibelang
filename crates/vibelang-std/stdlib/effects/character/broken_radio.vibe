@@ -26,12 +26,12 @@
 //   level:         Output level trim (1.0 = unity)
 
 define_fx("broken_radio")
-    .param("tune_drift", 0.5)
-    .param("dropout_rate", 0.3)
-    .param("am_amount", 0.4)
-    .param("noise_amount", 0.3)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("tune_drift", 0.5) // units: semitones, range: -12..12, default: 0.5. Tune Drift amount; higher values emphasize that named musical or electrical behavior.
+    .param("dropout_rate", 0.3) // units: Hz, range: 0..100, default: 0.3. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("am_amount", 0.4) // units: ratio, range: 0..1, default: 0.4. Am Amount; higher values apply more of that modulation or effect.
+    .param("noise_amount", 0.3) // units: linear, range: 0..1, default: 0.3. Noise Amount; higher values apply more of that modulation or effect.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, tune_drift, dropout_rate, am_amount, noise_amount, mix, level| {
         // Slowly drifting band-pass center: nominal 1100 Hz ± up to ~700 Hz
         let drift = lf_noise1_kr(0.3) * tune_drift * 700.0;
@@ -68,3 +68,18 @@ define_fx("broken_radio")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: broken_radio
+//
+// ```rhai
+// import "stdlib/effects/character/broken_radio.vibe" as broken_radio;
+//
+// let doc_broken_radio = fx("doc_broken_radio")
+//     .synth("broken_radio")
+//     .param("tune_drift", 0.5)
+//     .param("dropout_rate", 0.3)
+//     .param("am_amount", 0.4)
+//     .param("noise_amount", 0.3)
+//     .apply();
+// ```

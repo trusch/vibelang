@@ -7,10 +7,10 @@
 // Jupiter Pad - Massive warm pad
 define_synthdef("jupiter_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("spread", 0.6)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("spread", 0.6) // units: normalized, range: 0..1, default: 0.6. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, spread| {
             let env = envelope()
                 .asr(0.5, 1.0, 0.6)
@@ -38,10 +38,10 @@ define_synthdef("jupiter_pad", |builder| {
 // Jupiter Supersaw - The trance staple
 define_synthdef("jupiter_supersaw", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("detune", 0.5)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("detune", 0.5) // units: semitones, range: -12..12, default: 0.5. Oscillator detune amount; higher spreads voices farther apart in pitch.
         .body(|freq, amp, gate, detune| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.2)
@@ -71,9 +71,9 @@ define_synthdef("jupiter_supersaw", |builder| {
 // Jupiter Brass - Thick brass stab
 define_synthdef("jupiter_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.1)
@@ -105,9 +105,9 @@ define_synthdef("jupiter_brass", |builder| {
 // Jupiter Bass - Deep punchy bass
 define_synthdef("jupiter_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -134,3 +134,62 @@ define_synthdef("jupiter_bass", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `jupiter_pad`
+//
+// ```rhai
+// import "stdlib/synths/jupiter.vibe" as jupiter;
+//
+// let jupiter_pad = voice("doc_jupiter_pad")
+//     .synth("jupiter_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("spread", 0.6);
+// jupiter_pad.output("out").to_main();
+// jupiter_pad.run();
+// ```
+//
+// # Usage: `jupiter_supersaw`
+//
+// ```rhai
+// import "stdlib/synths/jupiter.vibe" as jupiter;
+//
+// let jupiter_supersaw = voice("doc_jupiter_supersaw")
+//     .synth("jupiter_supersaw")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("detune", 0.5);
+// jupiter_supersaw.output("out").to_main();
+// jupiter_supersaw.run();
+// ```
+//
+// # Usage: `jupiter_brass`
+//
+// ```rhai
+// import "stdlib/synths/jupiter.vibe" as jupiter;
+//
+// let jupiter_brass = voice("doc_jupiter_brass")
+//     .synth("jupiter_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// jupiter_brass.output("out").to_main();
+// jupiter_brass.run();
+// ```
+//
+// # Usage: `jupiter_bass`
+//
+// ```rhai
+// import "stdlib/synths/jupiter.vibe" as jupiter;
+//
+// let jupiter_bass = voice("doc_jupiter_bass")
+//     .synth("jupiter_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// jupiter_bass.output("out").to_main();
+// jupiter_bass.run();
+// ```

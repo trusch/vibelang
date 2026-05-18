@@ -1,7 +1,7 @@
 // Genre: Funk, Disco, R&B | Character: Slap bass with percussive attack
 define_synthdef("bass_slap")
-    .param("freq", 80.0)
-    .param("amp", 0.9)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Punchy envelope
         let amp_env = envelope()
@@ -30,3 +30,18 @@ define_synthdef("bass_slap")
         let sig = body + harm1 + harm2 + harm3 + slap + pop;
         sig * amp_env * amp
     });
+
+//
+// # Usage: bass_slap
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_slap.vibe" as bass_slap;
+//
+// let doc_bass_slap = voice("doc_bass_slap")
+//     .synth("bass_slap")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_bass_slap.output("out").to_main();
+// doc_bass_slap.run();
+// ```

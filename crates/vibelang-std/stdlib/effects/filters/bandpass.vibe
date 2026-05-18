@@ -20,10 +20,10 @@
 
 define_fx("bandpass", |builder| {
     builder
-        .param("freq", 1000.0)
-        .param("bandwidth", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("freq", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("bandwidth", 0.5) // units: normalized, range: 0..1, default: 0.5. Bandwidth amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freq, bandwidth, mix, level| {
             // BPF provides band pass filtering
             let filtered_left = bpf_ar(input[0], freq, bandwidth);
@@ -38,3 +38,18 @@ define_fx("bandpass", |builder| {
             ]
         })
 });
+
+//
+// # Usage: bandpass
+//
+// ```rhai
+// import "stdlib/effects/filters/bandpass.vibe" as bandpass;
+//
+// let doc_bandpass = fx("doc_bandpass")
+//     .synth("bandpass")
+//     .param("freq", 1000.0)
+//     .param("bandwidth", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

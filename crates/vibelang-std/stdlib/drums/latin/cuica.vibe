@@ -1,8 +1,8 @@
 // Genre: Brazilian, Samba | Character: Friction drum with squeaky voice-like quality
 define_synthdef("cuica")
-    .param("freq", 400.0)
-    .param("amp", 0.7)
-    .param("bend", 200.0)
+    .param("freq", 400.0) // units: Hz, range: 20..20000, default: 400.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("bend", 200.0) // units: Hz, range: -1000..1000, default: 200.0. Pitch bend offset in Hz; positive values sweep the drum voice upward.
     .body(|freq, amp, bend| {
         // Envelope
         let amp_env = envelope()
@@ -26,3 +26,19 @@ define_synthdef("cuica")
 
         (body + overtone + friction) * amp_env * amp
     });
+
+//
+// # Usage: cuica
+//
+// ```rhai
+// import "stdlib/drums/latin/cuica.vibe" as cuica;
+//
+// let doc_cuica = voice("doc_cuica")
+//     .synth("cuica")
+//     .set_param("freq", 400.0)
+//     .set_param("amp", 0.7)
+//     .set_param("bend", 200.0)
+//     ;
+// doc_cuica.output("out").to_main();
+// doc_cuica.run();
+// ```

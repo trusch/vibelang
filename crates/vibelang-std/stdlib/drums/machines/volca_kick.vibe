@@ -1,8 +1,8 @@
 // Genre: Electronic, Lo-fi | Character: Korg Volca Beats style kick - analog, characterful
 define_synthdef("volca_kick")
-    .param("freq", 55.0)
-    .param("amp", 1.0)
-    .param("click", 0.5)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("click", 0.5) // units: linear, range: 0..1, default: 0.5. Click amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, click| {
         // Analog-style decay
         let amp_env = envelope()
@@ -28,3 +28,19 @@ define_synthdef("volca_kick")
 
         (body + click_sound) * amp_env * amp
     });
+
+//
+// # Usage: volca_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/volca_kick.vibe" as volca_kick;
+//
+// let doc_volca_kick = voice("doc_volca_kick")
+//     .synth("volca_kick")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 1.0)
+//     .set_param("click", 0.5)
+//     ;
+// doc_volca_kick.output("out").to_main();
+// doc_volca_kick.run();
+// ```

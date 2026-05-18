@@ -1,8 +1,8 @@
 // Genre: Electronic, World | Character: Synth whistle - pure and expressive
 define_synthdef("lead_whistle")
-    .param("freq", 880.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.05, 1.0, 0.1)
@@ -23,3 +23,18 @@ define_synthdef("lead_whistle")
 
         sig * env * amp
     });
+
+//
+// # Usage: `lead_whistle`
+//
+// ```rhai
+// import "stdlib/leads/organic/lead_whistle.vibe" as lead_whistle;
+//
+// let lead_whistle = voice("doc_lead_whistle")
+//     .synth("lead_whistle")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_whistle.output("out").to_main();
+// lead_whistle.run();
+// ```

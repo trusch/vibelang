@@ -27,10 +27,10 @@
 
 define_fx("reverb_reverse", |builder| {
     builder
-        .param("time", 2.0)
-        .param("reverse_window", 1.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 2.0) // units: seconds, range: 0..10, default: 2.0. Delay or segment time; higher values make repeats arrive later.
+        .param("reverse_window", 1.0) // units: seconds, range: 0..10, default: 1.0. Reverse Window amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, reverse_window, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -68,3 +68,18 @@ define_fx("reverb_reverse", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_reverse
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_reverse.vibe" as reverb_reverse;
+//
+// let doc_reverb_reverse = fx("doc_reverb_reverse")
+//     .synth("reverb_reverse")
+//     .param("time", 2.0)
+//     .param("reverse_window", 1.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

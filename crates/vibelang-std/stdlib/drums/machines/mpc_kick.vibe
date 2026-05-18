@@ -1,7 +1,7 @@
 // Genre: Hip-hop, R&B, Production | Character: MPC-style kick - clean, punchy
 define_synthdef("mpc_kick")
-    .param("freq", 50.0)
-    .param("amp", 1.0)
+    .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Clean, tight decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("mpc_kick")
 
         (body + sub + click) * amp_env * amp
     });
+
+//
+// # Usage: mpc_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/mpc_kick.vibe" as mpc_kick;
+//
+// let doc_mpc_kick = voice("doc_mpc_kick")
+//     .synth("mpc_kick")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_mpc_kick.output("out").to_main();
+// doc_mpc_kick.run();
+// ```

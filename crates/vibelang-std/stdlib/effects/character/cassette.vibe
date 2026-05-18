@@ -25,12 +25,12 @@
 //   level:          Output level trim (1.0 = unity)
 
 define_fx("cassette")
-    .param("wow_amount", 0.5)
-    .param("flutter_amount", 0.4)
-    .param("hiss_amount", 0.5)
-    .param("sat_amount", 0.4)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("wow_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Wow Amount; higher values apply more of that modulation or effect.
+    .param("flutter_amount", 0.4) // units: ratio, range: 0..1, default: 0.4. Flutter Amount; higher values apply more of that modulation or effect.
+    .param("hiss_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Hiss Amount; higher values apply more of that modulation or effect.
+    .param("sat_amount", 0.4) // units: normalized, range: 0..1, default: 0.4. Sat Amount; higher values apply more of that modulation or effect.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, wow_amount, flutter_amount, hiss_amount, sat_amount, mix, level| {
         // Wow: ~0.5 Hz, up to ±5 ms pitch drift
         let wow_lfo = sin_osc_ar(0.5, 0.0) * wow_amount * 0.005;
@@ -67,3 +67,18 @@ define_fx("cassette")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: cassette
+//
+// ```rhai
+// import "stdlib/effects/character/cassette.vibe" as cassette;
+//
+// let doc_cassette = fx("doc_cassette")
+//     .synth("cassette")
+//     .param("wow_amount", 0.5)
+//     .param("flutter_amount", 0.4)
+//     .param("hiss_amount", 0.5)
+//     .param("sat_amount", 0.4)
+//     .apply();
+// ```

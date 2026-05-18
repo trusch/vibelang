@@ -20,10 +20,10 @@
 
 define_fx("overdrive", |builder| {
     builder
-        .param("drive", 5.0)
-        .param("tone", 3000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("drive", 5.0) // units: gain, range: 0..20, default: 5.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("tone", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, drive, tone, mix, level| {
             // Pre-emphasis (slight high pass to reduce mud)
             let emphasized_left = hpf_ar(input[0], 80.0);
@@ -54,3 +54,18 @@ define_fx("overdrive", |builder| {
             ]
         })
 });
+
+//
+// # Usage: overdrive
+//
+// ```rhai
+// import "stdlib/effects/distortion/overdrive.vibe" as overdrive;
+//
+// let doc_overdrive = fx("doc_overdrive")
+//     .synth("overdrive")
+//     .param("drive", 5.0)
+//     .param("tone", 3000.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

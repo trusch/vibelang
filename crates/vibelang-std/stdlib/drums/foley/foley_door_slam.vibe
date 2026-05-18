@@ -1,7 +1,7 @@
 // Genre: Experimental, Sound Design | Character: Door slam impact
 define_synthdef("foley_door_slam")
-    .param("freq", 80.0)
-    .param("amp", 0.9)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Impact decay
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("foley_door_slam")
 
         (body + wood + impact) * amp_env * amp
     });
+
+//
+// # Usage: foley_door_slam
+//
+// ```rhai
+// import "stdlib/drums/foley/foley_door_slam.vibe" as foley_door_slam;
+//
+// let doc_foley_door_slam = voice("doc_foley_door_slam")
+//     .synth("foley_door_slam")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_foley_door_slam.output("out").to_main();
+// doc_foley_door_slam.run();
+// ```

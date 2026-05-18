@@ -32,10 +32,10 @@
 
 define_fx("stutter_repeat", |builder| {
     builder
-        .param("subdivision", 0.125)
-        .param("gate_pattern", 0.5)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("subdivision", 0.125) // units: beats, range: 0..4, default: 0.125. Subdivision amount; higher values emphasize that named musical or electrical behavior.
+        .param("gate_pattern", 0.5) // units: normalized, range: 0..1, default: 0.5. Gate Pattern amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, subdivision, gate_pattern, mix, level| {
             // 1-second circular buffers (48000 frames @ 48 kHz).
             let buf_l = local_buf_ir(1, 48000);
@@ -68,3 +68,18 @@ define_fx("stutter_repeat", |builder| {
             ]
         })
 });
+
+//
+// # Usage: stutter_repeat
+//
+// ```rhai
+// import "stdlib/effects/glitch/stutter_repeat.vibe" as stutter_repeat;
+//
+// let doc_stutter_repeat = fx("doc_stutter_repeat")
+//     .synth("stutter_repeat")
+//     .param("subdivision", 0.125)
+//     .param("gate_pattern", 0.5)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

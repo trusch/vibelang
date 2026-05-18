@@ -16,16 +16,32 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_mixer4")
-    .param("in1", 0.0)
-    .param("in2", 0.0)
-    .param("in3", 0.0)
-    .param("in4", 0.0)
-    .param("gain1", 1.0)
-    .param("gain2", 1.0)
-    .param("gain3", 1.0)
-    .param("gain4", 1.0)
+    .param("in1", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 1 gain; higher values add more of that CV/audio input.
+    .param("in2", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 2 gain; higher values add more of that CV/audio input.
+    .param("in3", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 3 gain; higher values add more of that CV/audio input.
+    .param("in4", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 4 gain; higher values add more of that CV/audio input.
+    .param("gain1", 1.0) // units: linear, range: 0..1, default: 1.0. Gain 1 amount; higher values emphasize that named musical or electrical behavior.
+    .param("gain2", 1.0) // units: linear, range: 0..1, default: 1.0. Gain 2 amount; higher values emphasize that named musical or electrical behavior.
+    .param("gain3", 1.0) // units: linear, range: 0..1, default: 1.0. Gain 3 amount; higher values emphasize that named musical or electrical behavior.
+    .param("gain4", 1.0) // units: linear, range: 0..1, default: 1.0. Gain 4 amount; higher values emphasize that named musical or electrical behavior.
     .body(|in1, in2, in3, in4, gain1, gain2, gain3, gain4| {
         let sum = in1 * gain1 + in2 * gain2 + in3 * gain3 + in4 * gain4;
         let clipped = clip_ar(sum, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_mixer4`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_mixer4.vibe" as cv_mixer4;
+//
+// let cv_mixer4 = voice("doc_cv_mixer4")
+//     .synth("cv_mixer4")
+//     .set_param("gain1", 0.5)
+//     .set_param("in1", 0.5)
+//     .set_param("in2", 0.5)
+//     .set_param("in3", 0.5);
+// cv_mixer4.output("out").to_main();
+// cv_mixer4.run();
+// ```

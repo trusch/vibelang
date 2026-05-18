@@ -33,26 +33,26 @@ define_synthdef("verbos_mdp", |builder| {
         .output_kr("env6")
         .output_kr("env7")
         .output_kr("env8")
-        .param("delay_time", 80.0)
-        .param("delay_cv", 0.0)
-        .param("time_cv_amount", 0.0)
-        .param("input1_gain", 1.0)
-        .param("input2_gain", 0.5)
-        .param("input3_gain", 0.5)
-        .param("tap1_mix", 1.0)
-        .param("tap2_mix", 0.9)
-        .param("tap3_mix", 0.8)
-        .param("tap4_mix", 0.7)
-        .param("tap5_mix", 0.6)
-        .param("tap6_mix", 0.5)
-        .param("tap7_mix", 0.4)
-        .param("tap8_mix", 0.3)
-        .param("feedback", 0.3)
-        .param("reverb_feedback", 0.0)
-        .param("pitch_feedback", 12.0)
-        .param("manual_mix", 0.5)
-        .param("level", 1.0)
-        .param("env_decay", 0.05)
+        .param("delay_time", 80.0) // units: ms, range: 10..150, default: 80.0. Delay or segment time; higher values make repeats arrive later.
+        .param("delay_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Delay CV input; bipolar values modulate the matching panel control.
+        .param("time_cv_amount", 0.0) // units: normalized, range: 0..1, default: 0.0. TIME CV AMOUNT attenuator; higher makes the matching CV modulation stronger.
+        .param("input1_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Input1 Gain trim; higher sends more of that input into the processor.
+        .param("input2_gain", 0.5) // units: linear, range: 0..1, default: 0.5. Input2 Gain trim; higher sends more of that input into the processor.
+        .param("input3_gain", 0.5) // units: linear, range: 0..1, default: 0.5. Input3 Gain trim; higher sends more of that input into the processor.
+        .param("tap1_mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap2_mix", 0.9) // units: ratio, range: 0..1, default: 0.9. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap3_mix", 0.8) // units: ratio, range: 0..1, default: 0.8. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap4_mix", 0.7) // units: ratio, range: 0..1, default: 0.7. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap5_mix", 0.6) // units: ratio, range: 0..1, default: 0.6. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap6_mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap7_mix", 0.4) // units: ratio, range: 0..1, default: 0.4. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("tap8_mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("feedback", 0.3) // units: normalized, range: 0..1, default: 0.3. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("reverb_feedback", 0.0) // units: normalized, range: 0..1, default: 0.0. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("pitch_feedback", 12.0) // units: semitones, range: -24..24, default: 12.0. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("manual_mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("env_decay", 0.05) // units: normalized, range: 0..1, default: 0.05. Envelope time or level; higher values make that stage last longer or sustain higher.
         .body_map(|p| {
             let in1 = p.inputs["in1"] * clip(p.input1_gain, 0.0, 1.0);
             let in2 = p.inputs["in2"] * clip(p.input2_gain, 0.0, 1.0);
@@ -146,3 +146,19 @@ define_synthdef("verbos_mdp", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `verbos_mdp`
+//
+// ```rhai
+// import "stdlib/processors/delays/verbos_mdp.vibe" as verbos_mdp;
+//
+// let verbos_mdp = voice("doc_verbos_mdp")
+//     .synth("verbos_mdp")
+//     .set_param("input1_gain", 0.5)
+//     .set_param("level", 0.5)
+//     .set_param("tap1_mix", 0.45)
+//     .set_param("env_decay", 0.5);
+// verbos_mdp.output("mix").to_main();
+// verbos_mdp.run();
+// ```

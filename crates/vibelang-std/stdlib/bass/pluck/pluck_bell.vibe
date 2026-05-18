@@ -1,9 +1,9 @@
 // Genre: Ambient, Experimental | Character: Bell-like pluck bass
 define_synthdef("bass_pluck_bell", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Medium-long envelope for bell character
@@ -29,3 +29,18 @@ define_synthdef("bass_pluck_bell", |builder| {
         })
 });
 
+//
+// # Usage: bass_pluck_bell
+//
+// ```rhai
+// import "stdlib/bass/pluck/pluck_bell.vibe" as pluck_bell;
+//
+// let doc_bass_pluck_bell = voice("doc_bass_pluck_bell")
+//     .synth("bass_pluck_bell")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_pluck_bell.output("out").to_main();
+// doc_bass_pluck_bell.run();
+// ```

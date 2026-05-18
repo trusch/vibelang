@@ -1,7 +1,7 @@
 // Genre: Latin, Brazilian, Samba | Character: Metal beads against shell texture
 define_synthdef("cabasa")
-    .param("freq", 7000.0)
-    .param("amp", 0.5)
+    .param("freq", 7000.0) // units: Hz, range: 20..20000, default: 7000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, swishing envelope
         let amp_env = envelope()
@@ -19,3 +19,18 @@ define_synthdef("cabasa")
 
         (beads + body) * rattle * amp_env * amp
     });
+
+//
+// # Usage: cabasa
+//
+// ```rhai
+// import "stdlib/drums/latin/cabasa.vibe" as cabasa;
+//
+// let doc_cabasa = voice("doc_cabasa")
+//     .synth("cabasa")
+//     .set_param("freq", 7000.0)
+//     .set_param("amp", 0.5)
+//     ;
+// doc_cabasa.output("out").to_main();
+// doc_cabasa.run();
+// ```

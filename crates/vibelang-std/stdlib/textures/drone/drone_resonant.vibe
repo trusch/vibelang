@@ -1,8 +1,8 @@
 // Genre: Ambient, Experimental | Character: Resonant, metallic drone
 define_synthdef("drone_resonant", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.35)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Long sustain
             let env = envelope()
@@ -28,3 +28,16 @@ define_synthdef("drone_resonant", |builder| {
         })
 });
 
+//
+// # Usage: `drone_resonant`
+//
+// ```rhai
+// import "stdlib/textures/drone/drone_resonant.vibe" as drone_resonant;
+//
+// let drone_resonant = voice("doc_drone_resonant")
+//     .synth("drone_resonant")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// drone_resonant.output("out").to_main();
+// drone_resonant.run();
+// ```

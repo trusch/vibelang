@@ -24,9 +24,9 @@
 
 define_fx("spectral_brickwall", |builder| {
     builder
-        .param("width", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("width", 0.0) // units: ratio, range: 0..2, default: 0.0. Spread width; higher values distribute energy across a wider range.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, width, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -54,3 +54,17 @@ define_fx("spectral_brickwall", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_brickwall
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_brickwall.vibe" as spectral_brickwall;
+//
+// let doc_spectral_brickwall = fx("doc_spectral_brickwall")
+//     .synth("spectral_brickwall")
+//     .param("width", 0.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

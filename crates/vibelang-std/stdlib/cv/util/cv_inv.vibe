@@ -8,9 +8,22 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_inv")
-    .param("a", 0.0)
+    .param("a", 0.0) // units: normalized, range: 0..1, default: 0.0. A macro; higher moves that model axis toward its brighter or more open setting.
     .body(|a| {
         let out = a * -1.0;
         let clipped = clip_ar(out, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_inv`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_inv.vibe" as cv_inv;
+//
+// let cv_inv = voice("doc_cv_inv")
+//     .synth("cv_inv")
+//     .set_param("a", 0.5);
+// cv_inv.output("out").to_main();
+// cv_inv.run();
+// ```

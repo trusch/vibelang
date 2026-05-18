@@ -5,11 +5,11 @@ define_synthdef("mixer4_stereo")
     .input("ch2", 2)
     .input("ch3", 2)
     .input("ch4", 2)
-    .param("ch1_gain", 1.0)
-    .param("ch2_gain", 1.0)
-    .param("ch3_gain", 1.0)
-    .param("ch4_gain", 1.0)
-    .param("level", 1.0)
+    .param("ch1_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Channel 1 gain trim; higher sends more of that channel to the mix.
+    .param("ch2_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Channel 2 gain trim; higher sends more of that channel to the mix.
+    .param("ch3_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Channel 3 gain trim; higher sends more of that channel to the mix.
+    .param("ch4_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Channel 4 gain trim; higher sends more of that channel to the mix.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let left =
             p.inputs.ch1[0] * p.ch1_gain +
@@ -27,3 +27,19 @@ define_synthdef("mixer4_stereo")
             right * p.level
         ]
     });
+
+//
+// # Usage: `mixer4_stereo`
+//
+// ```rhai
+// import "stdlib/processors/mixers/mixer4_stereo.vibe" as mixer4_stereo;
+//
+// let mixer4_stereo = voice("doc_mixer4_stereo")
+//     .synth("mixer4_stereo")
+//     .set_param("ch1_gain", 0.5)
+//     .set_param("level", 0.5)
+//     .set_param("ch2_gain", 0.5)
+//     .set_param("ch3_gain", 0.5);
+// mixer4_stereo.output("out").to_main();
+// mixer4_stereo.run();
+// ```

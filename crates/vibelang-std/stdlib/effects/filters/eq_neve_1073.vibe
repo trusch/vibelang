@@ -32,15 +32,15 @@
 //   level:     Output level trim (1.0 = unity)
 
 define_fx("eq_neve_1073")
-    .param("low_freq", 110.0)
-    .param("low_gain", 0.0)
-    .param("mid_freq", 1600.0)
-    .param("mid_gain", 0.0)
-    .param("mid_q", 0.7)
-    .param("high_freq", 12000.0)
-    .param("high_gain", 0.0)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("low_freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Low Freq in Hz; higher values move that tone or filter point upward.
+    .param("low_gain", 0.0) // units: dB, range: -24..24, default: 0.0. Low Gain trim; higher sends more of that signal onward.
+    .param("mid_freq", 1600.0) // units: Hz, range: 20..20000, default: 1600.0. Mid Freq in Hz; higher values move that tone or filter point upward.
+    .param("mid_gain", 0.0) // units: dB, range: -24..24, default: 0.0. Mid Gain trim; higher sends more of that signal onward.
+    .param("mid_q", 0.7) // units: resonance, range: 0..10, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("high_freq", 12000.0) // units: Hz, range: 20..20000, default: 12000.0. High Freq in Hz; higher values move that tone or filter point upward.
+    .param("high_gain", 0.0) // units: dB, range: -24..24, default: 0.0. High Gain trim; higher sends more of that signal onward.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, low_freq, low_gain, mid_freq, mid_gain, mid_q, high_freq, high_gain, mix, level| {
         // Three-band EQ chain: low shelf -> mid peak -> high shelf
         let low_l = b_low_shelf_ar(input[0], low_freq, 1.0, low_gain);
@@ -67,3 +67,18 @@ define_fx("eq_neve_1073")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: eq_neve_1073
+//
+// ```rhai
+// import "stdlib/effects/filters/eq_neve_1073.vibe" as eq_neve_1073;
+//
+// let doc_eq_neve_1073 = fx("doc_eq_neve_1073")
+//     .synth("eq_neve_1073")
+//     .param("low_freq", 110.0)
+//     .param("low_gain", 0.0)
+//     .param("mid_freq", 1600.0)
+//     .param("mid_gain", 0.0)
+//     .apply();
+// ```

@@ -11,12 +11,12 @@
 // Realistic Trumpet with mute options
 define_synthdef("trumpet_realistic", |builder| {
     builder
-        .param("freq", 349.23)    // F4 - comfortable trumpet range
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("brightness", 0.6)    // Bell brightness
-        .param("lip_tension", 0.5)   // Affects attack and timbre
-        .param("air_pressure", 0.7)  // Dynamics
+        .param("freq", 349.23) // units: Hz, range: 20..20000, default: 349.23. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("brightness", 0.6) // units: normalized, range: 0..1, default: 0.6. Tone brightness; higher values add more high-frequency content.
+        .param("lip_tension", 0.5) // units: normalized, range: 0..1, default: 0.5. Lip tension; higher values raise and brighten the brass buzz.
+        .param("air_pressure", 0.7) // units: normalized, range: 0..1, default: 0.7. Air pressure; higher values drive the brass model harder.
         .body(|freq, amp, gate, brightness, lip_tension, air_pressure| {
             let env = envelope()
                 .asr(0.03, 1.0, 0.08)
@@ -75,10 +75,10 @@ define_synthdef("trumpet_realistic", |builder| {
 // Muted Trumpet - Harmon mute (wah-wah)
 define_synthdef("trumpet_harmon_mute", |builder| {
     builder
-        .param("freq", 349.23)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
-        .param("stem_in", 0.5)   // 0=stem out (bright), 1=stem in (dark)
+        .param("freq", 349.23) // units: Hz, range: 20..20000, default: 349.23. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("stem_in", 0.5) // units: normalized, range: 0..1, default: 0.5. Stem input amount; higher values feed more muted-brass resonance.
         .body(|freq, amp, gate, stem_in| {
             let env = envelope()
                 .asr(0.025, 1.0, 0.1)
@@ -122,9 +122,9 @@ define_synthdef("trumpet_harmon_mute", |builder| {
 // Cup Muted Trumpet - softer, warmer
 define_synthdef("trumpet_cup_mute", |builder| {
     builder
-        .param("freq", 349.23)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
+        .param("freq", 349.23) // units: Hz, range: 20..20000, default: 349.23. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.03, 1.0, 0.1)
@@ -157,10 +157,10 @@ define_synthdef("trumpet_cup_mute", |builder| {
 // Flugelhorn - dark, velvety brass
 define_synthdef("flugelhorn", |builder| {
     builder
-        .param("freq", 349.23)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("warmth", 0.7)
+        .param("freq", 349.23) // units: Hz, range: 20..20000, default: 349.23. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("warmth", 0.7) // units: normalized, range: 0..1, default: 0.7. Warmth amount; higher values emphasize low-mid body and soften brightness.
         .body(|freq, amp, gate, warmth| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.12)
@@ -208,11 +208,11 @@ define_synthdef("flugelhorn", |builder| {
 // Realistic Trombone with slide position simulation
 define_synthdef("trombone_realistic", |builder| {
     builder
-        .param("freq", 174.61)    // F3
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("slide_smoothness", 0.8)  // How smooth the pitch transitions are
-        .param("brightness", 0.5)
+        .param("freq", 174.61) // units: Hz, range: 20..20000, default: 174.61. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("slide_smoothness", 0.8) // units: normalized, range: 0..1, default: 0.8. Slide smoothing; higher values glide pitch changes more slowly.
+        .param("brightness", 0.5) // units: normalized, range: 0..1, default: 0.5. Tone brightness; higher values add more high-frequency content.
         .body(|freq, amp, gate, slide_smoothness, brightness| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.1)
@@ -263,9 +263,9 @@ define_synthdef("trombone_realistic", |builder| {
 // Bass Trombone - deeper, more powerful
 define_synthdef("bass_trombone", |builder| {
     builder
-        .param("freq", 116.54)   // Bb2
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 116.54) // units: Hz, range: 20..20000, default: 116.54. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.12)
@@ -307,10 +307,10 @@ define_synthdef("bass_trombone", |builder| {
 // French Horn - noble, warm, mellow
 define_synthdef("french_horn_realistic", |builder| {
     builder
-        .param("freq", 220.0)    // A3
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("stopped", 0.0)   // 0=open, 1=hand stopped
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("stopped", 0.0) // units: normalized, range: 0..1, default: 0.0. Stopped-horn amount; higher values make the brass tone more muted and nasal.
         .body(|freq, amp, gate, stopped| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.15)
@@ -361,10 +361,10 @@ define_synthdef("french_horn_realistic", |builder| {
 // Tuba - deep, fundamental bass brass
 define_synthdef("tuba_realistic", |builder| {
     builder
-        .param("freq", 58.27)    // Bb1
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("brightness", 0.4)
+        .param("freq", 58.27) // units: Hz, range: 20..20000, default: 58.27. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("brightness", 0.4) // units: normalized, range: 0..1, default: 0.4. Tone brightness; higher values add more high-frequency content.
         .body(|freq, amp, gate, brightness| {
             let env = envelope()
                 .asr(0.06, 1.0, 0.15)
@@ -407,10 +407,10 @@ define_synthdef("tuba_realistic", |builder| {
 // Euphonium - warm baritone brass
 define_synthdef("euphonium", |builder| {
     builder
-        .param("freq", 130.81)   // C3
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("warmth", 0.6)
+        .param("freq", 130.81) // units: Hz, range: 20..20000, default: 130.81. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("warmth", 0.6) // units: normalized, range: 0..1, default: 0.6. Warmth amount; higher values emphasize low-mid body and soften brightness.
         .body(|freq, amp, gate, warmth| {
             let env = envelope()
                 .asr(0.045, 1.0, 0.12)
@@ -454,10 +454,10 @@ define_synthdef("euphonium", |builder| {
 // Brass Section - ensemble sound
 define_synthdef("brass_section_realistic", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("width", 0.5)     // Ensemble width/detuning
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("width", 0.5) // units: normalized, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, width| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.1)
@@ -499,3 +499,152 @@ define_synthdef("brass_section_realistic", |builder| {
             hpf_ar(tone, 80.0) * env * amp * 0.5
         })
 });
+
+//
+// # Usage: `trumpet_realistic`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let trumpet_realistic = voice("doc_trumpet_realistic")
+//     .synth("trumpet_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("brightness", 0.6);
+// trumpet_realistic.output("out").to_main();
+// trumpet_realistic.run();
+// ```
+//
+// # Usage: `trumpet_harmon_mute`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let trumpet_harmon_mute = voice("doc_trumpet_harmon_mute")
+//     .synth("trumpet_harmon_mute")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("stem_in", 0.5);
+// trumpet_harmon_mute.output("out").to_main();
+// trumpet_harmon_mute.run();
+// ```
+//
+// # Usage: `trumpet_cup_mute`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let trumpet_cup_mute = voice("doc_trumpet_cup_mute")
+//     .synth("trumpet_cup_mute")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// trumpet_cup_mute.output("out").to_main();
+// trumpet_cup_mute.run();
+// ```
+//
+// # Usage: `flugelhorn`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let flugelhorn = voice("doc_flugelhorn")
+//     .synth("flugelhorn")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("warmth", 0.7);
+// flugelhorn.output("out").to_main();
+// flugelhorn.run();
+// ```
+//
+// # Usage: `trombone_realistic`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let trombone_realistic = voice("doc_trombone_realistic")
+//     .synth("trombone_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("slide_smoothness", 0.8);
+// trombone_realistic.output("out").to_main();
+// trombone_realistic.run();
+// ```
+//
+// # Usage: `bass_trombone`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let bass_trombone = voice("doc_bass_trombone")
+//     .synth("bass_trombone")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// bass_trombone.output("out").to_main();
+// bass_trombone.run();
+// ```
+//
+// # Usage: `french_horn_realistic`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let french_horn_realistic = voice("doc_french_horn_realistic")
+//     .synth("french_horn_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("stopped", 0.0);
+// french_horn_realistic.output("out").to_main();
+// french_horn_realistic.run();
+// ```
+//
+// # Usage: `tuba_realistic`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let tuba_realistic = voice("doc_tuba_realistic")
+//     .synth("tuba_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("brightness", 0.4);
+// tuba_realistic.output("out").to_main();
+// tuba_realistic.run();
+// ```
+//
+// # Usage: `euphonium`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let euphonium = voice("doc_euphonium")
+//     .synth("euphonium")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("warmth", 0.6);
+// euphonium.output("out").to_main();
+// euphonium.run();
+// ```
+//
+// # Usage: `brass_section_realistic`
+//
+// ```rhai
+// import "stdlib/brass/brass_realistic.vibe" as brass_realistic;
+//
+// let brass_section_realistic = voice("doc_brass_section_realistic")
+//     .synth("brass_section_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("width", 0.5);
+// brass_section_realistic.output("out").to_main();
+// brass_section_realistic.run();
+// ```

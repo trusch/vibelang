@@ -21,10 +21,10 @@
 
 define_fx("waveshaper", |builder| {
     builder
-        .param("amount", 0.5)
-        .param("curve", 2.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("amount", 0.5) // units: normalized, range: 0..1, default: 0.5. Amount; higher values apply more of that modulation or effect.
+        .param("curve", 2.0) // units: normalized, range: 0..10, default: 2.0. Curve amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, amount, curve, mix, level| {
             // Pre-gain based on amount
             let pre_gain = 1.0 + amount * 4.0;
@@ -50,3 +50,18 @@ define_fx("waveshaper", |builder| {
             ]
         })
 });
+
+//
+// # Usage: waveshaper
+//
+// ```rhai
+// import "stdlib/effects/distortion/waveshaper.vibe" as waveshaper;
+//
+// let doc_waveshaper = fx("doc_waveshaper")
+//     .synth("waveshaper")
+//     .param("amount", 0.5)
+//     .param("curve", 2.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -22,9 +22,9 @@
 
 define_fx("spectral_phase_shift", |builder| {
     builder
-        .param("shift_radians", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("shift_radians", 0.0) // units: radians, range: -6.283..6.283, default: 0.0. Shift Radians amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, shift_radians, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -52,3 +52,17 @@ define_fx("spectral_phase_shift", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_phase_shift
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_phase_shift.vibe" as spectral_phase_shift;
+//
+// let doc_spectral_phase_shift = fx("doc_spectral_phase_shift")
+//     .synth("spectral_phase_shift")
+//     .param("shift_radians", 0.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

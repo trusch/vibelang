@@ -1,7 +1,7 @@
 // Genre: 80s Rock, Pop | Character: Big gated reverb snare from the 80s
 define_synthdef("snare_gated")
-    .param("freq", 190.0)
-    .param("amp", 0.9)
+    .param("freq", 190.0) // units: Hz, range: 20..20000, default: 190.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Medium decay with abrupt end (gated feel)
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("snare_gated")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_gated
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_gated.vibe" as snare_gated;
+//
+// let doc_snare_gated = voice("doc_snare_gated")
+//     .synth("snare_gated")
+//     .set_param("freq", 190.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_snare_gated.output("out").to_main();
+// doc_snare_gated.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Ambient, Cinematic | Character: Slow atmospheric downer
 define_synthdef("downer_slow", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 6.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 6.0) // units: seconds, range: 0..60, default: 6.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.5, 1.0)
@@ -29,3 +29,18 @@ define_synthdef("downer_slow", |builder| {
             (pad + noise_filtered) * env * amp
         })
 });
+
+//
+// # Usage: downer_slow
+//
+// ```rhai
+// import "stdlib/fx/downers/downer_slow.vibe" as downer_slow;
+//
+// let doc_downer_slow = voice("doc_downer_slow")
+//     .synth("downer_slow")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 6.0)
+//     ;
+// doc_downer_slow.output("out").to_main();
+// doc_downer_slow.run();
+// ```

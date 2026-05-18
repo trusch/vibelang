@@ -6,10 +6,10 @@
 // Alto Saxophone
 define_synthdef("alto_sax", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("growl", 0.0) // Growl/subtone amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("growl", 0.0) // units: normalized, range: 0..1, default: 0.0. Growl amount; higher values add rough reed or throat modulation.
         .body(|freq, amp, gate, growl| {
             let env = envelope()
                 .asr(0.03, 1.0, 0.1)
@@ -45,9 +45,9 @@ define_synthdef("alto_sax", |builder| {
 // Tenor Saxophone
 define_synthdef("tenor_sax", |builder| {
     builder
-        .param("freq", 330.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 330.0) // units: Hz, range: 20..20000, default: 330.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.12)
@@ -78,9 +78,9 @@ define_synthdef("tenor_sax", |builder| {
 // Soprano Saxophone
 define_synthdef("soprano_sax", |builder| {
     builder
-        .param("freq", 660.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 660.0) // units: Hz, range: 20..20000, default: 660.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.08)
@@ -110,9 +110,9 @@ define_synthdef("soprano_sax", |builder| {
 // Baritone Saxophone
 define_synthdef("bari_sax", |builder| {
     builder
-        .param("freq", 165.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 165.0) // units: Hz, range: 20..20000, default: 165.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.06, 1.0, 0.15)
@@ -139,3 +139,61 @@ define_synthdef("bari_sax", |builder| {
             body * env * amp * 0.6
         })
 });
+
+//
+// # Usage: `alto_sax`
+//
+// ```rhai
+// import "stdlib/woodwinds/saxophone.vibe" as saxophone;
+//
+// let alto_sax = voice("doc_alto_sax")
+//     .synth("alto_sax")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("growl", 0.0);
+// alto_sax.output("out").to_main();
+// alto_sax.run();
+// ```
+//
+// # Usage: `tenor_sax`
+//
+// ```rhai
+// import "stdlib/woodwinds/saxophone.vibe" as saxophone;
+//
+// let tenor_sax = voice("doc_tenor_sax")
+//     .synth("tenor_sax")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// tenor_sax.output("out").to_main();
+// tenor_sax.run();
+// ```
+//
+// # Usage: `soprano_sax`
+//
+// ```rhai
+// import "stdlib/woodwinds/saxophone.vibe" as saxophone;
+//
+// let soprano_sax = voice("doc_soprano_sax")
+//     .synth("soprano_sax")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// soprano_sax.output("out").to_main();
+// soprano_sax.run();
+// ```
+//
+// # Usage: `bari_sax`
+//
+// ```rhai
+// import "stdlib/woodwinds/saxophone.vibe" as saxophone;
+//
+// let bari_sax = voice("doc_bari_sax")
+//     .synth("bari_sax")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// bari_sax.output("out").to_main();
+// bari_sax.run();
+// ```

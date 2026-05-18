@@ -30,16 +30,16 @@
 //   level:       Final output trim (1.0 = unity)
 
 define_fx("multiband_comp")
-    .param("low_freq", 200.0)
-    .param("high_freq", 3000.0)
-    .param("low_thresh", 0.5)
-    .param("mid_thresh", 0.4)
-    .param("high_thresh", 0.3)
-    .param("ratio", 4.0)
-    .param("attack", 0.01)
-    .param("release", 0.1)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("low_freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Low Freq in Hz; higher values move that tone or filter point upward.
+    .param("high_freq", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. High Freq in Hz; higher values move that tone or filter point upward.
+    .param("low_thresh", 0.5) // units: linear, range: 0..1, default: 0.5. Low Thresh amount; higher values emphasize that named musical or electrical behavior.
+    .param("mid_thresh", 0.4) // units: linear, range: 0..1, default: 0.4. Mid Thresh amount; higher values emphasize that named musical or electrical behavior.
+    .param("high_thresh", 0.3) // units: linear, range: 0..1, default: 0.3. High Thresh amount; higher values emphasize that named musical or electrical behavior.
+    .param("ratio", 4.0) // units: ratio, range: 1..100, default: 4.0. Frequency ratio; higher values tune the related oscillator or clock upward.
+    .param("attack", 0.01) // units: seconds, range: 0..10, default: 0.01. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("release", 0.1) // units: seconds, range: 0..10, default: 0.1. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, low_freq, high_freq, low_thresh, mid_thresh, high_thresh, ratio, attack, release, mix, level| {
         // Split into bands
         let low_left = lpf_ar(input[0], low_freq);
@@ -73,3 +73,18 @@ define_fx("multiband_comp")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: multiband_comp
+//
+// ```rhai
+// import "stdlib/effects/dynamics/multiband_comp.vibe" as multiband_comp;
+//
+// let doc_multiband_comp = fx("doc_multiband_comp")
+//     .synth("multiband_comp")
+//     .param("low_freq", 200.0)
+//     .param("high_freq", 3000.0)
+//     .param("low_thresh", 0.5)
+//     .param("mid_thresh", 0.4)
+//     .apply();
+// ```

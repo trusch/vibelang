@@ -25,10 +25,10 @@
 
 define_fx("reverb_partconv", |builder| {
     builder
-        .param("ir_buffer", 0.0)
-        .param("framesize", 2048.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("ir_buffer", 0.0) // units: buffer id, range: 0..N, default: 0.0. Selects impulse response buffer.
+        .param("framesize", 2048.0) // units: samples, range: 1..65536, default: 2048.0. Analysis frame size; higher values use longer convolution or FFT windows.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, ir_buffer, framesize, mix, level| {
             let conv_l = part_conv_ar(input[0], framesize, ir_buffer);
             let conv_r = part_conv_ar(input[1], framesize, ir_buffer);
@@ -42,3 +42,18 @@ define_fx("reverb_partconv", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_partconv
+//
+// ```rhai
+// import "stdlib/effects/convolution/reverb_partconv.vibe" as reverb_partconv;
+//
+// let doc_reverb_partconv = fx("doc_reverb_partconv")
+//     .synth("reverb_partconv")
+//     .param("ir_buffer", 0.0)
+//     .param("framesize", 2048.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

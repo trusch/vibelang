@@ -1,7 +1,7 @@
 // Genre: Reggaeton, Dembow | Character: Tight, punchy dembow-style kick
 define_synthdef("kick_reggaeton")
-    .param("freq", 58.0)
-    .param("amp", 1.0)
+    .param("freq", 58.0) // units: Hz, range: 20..20000, default: 58.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, tight decay
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("kick_reggaeton")
 
         (body + attack) * amp_env * amp
     });
+
+//
+// # Usage: kick_reggaeton
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_reggaeton.vibe" as kick_reggaeton;
+//
+// let doc_kick_reggaeton = voice("doc_kick_reggaeton")
+//     .synth("kick_reggaeton")
+//     .set_param("freq", 58.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_reggaeton.output("out").to_main();
+// doc_kick_reggaeton.run();
+// ```

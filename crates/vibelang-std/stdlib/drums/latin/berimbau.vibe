@@ -1,8 +1,8 @@
 // Genre: Brazilian, Capoeira | Character: Musical bow with gourd resonator
 define_synthdef("berimbau")
-    .param("freq", 120.0)
-    .param("amp", 0.7)
-    .param("open", 1.0)
+    .param("freq", 120.0) // units: Hz, range: 20..20000, default: 120.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("open", 1.0) // units: ratio, range: 0..1, default: 1.0. Open amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, open| {
         // Decay length based on open/closed
         let decay_time = 0.2 + (open * 0.4);
@@ -30,3 +30,19 @@ define_synthdef("berimbau")
 
         (resonated + attack) * amp_env * amp
     });
+
+//
+// # Usage: berimbau
+//
+// ```rhai
+// import "stdlib/drums/latin/berimbau.vibe" as berimbau;
+//
+// let doc_berimbau = voice("doc_berimbau")
+//     .synth("berimbau")
+//     .set_param("freq", 120.0)
+//     .set_param("amp", 0.7)
+//     .set_param("open", 1.0)
+//     ;
+// doc_berimbau.output("out").to_main();
+// doc_berimbau.run();
+// ```

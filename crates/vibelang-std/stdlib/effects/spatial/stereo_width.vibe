@@ -21,9 +21,9 @@
 
 define_fx("stereo_width", |builder| {
     builder
-        .param("width", 1.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("width", 1.5) // units: ratio, range: 0..2, default: 1.5. Spread width; higher values distribute energy across a wider range.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, width, mix, level| {
             // Mid-side processing
             let mid = (input[0] + input[1]) * 0.5;
@@ -42,3 +42,17 @@ define_fx("stereo_width", |builder| {
             ]
         })
 });
+
+//
+// # Usage: stereo_width
+//
+// ```rhai
+// import "stdlib/effects/spatial/stereo_width.vibe" as stereo_width;
+//
+// let doc_stereo_width = fx("doc_stereo_width")
+//     .synth("stereo_width")
+//     .param("width", 1.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -19,10 +19,10 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("shimmer_delay")
-    .param("time", 0.4)
-    .param("feedback", 0.6)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.4) // units: seconds, range: 0..10, default: 0.4. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.6) // units: ratio, range: 0..1, default: 0.6. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, mix, level| {
         // Main delay
         let delayed_left = comb_c_ar(input[0], 1.0, time, feedback * 3.0);
@@ -43,3 +43,18 @@ define_fx("shimmer_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: shimmer_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/shimmer_delay.vibe" as shimmer_delay;
+//
+// let doc_shimmer_delay = fx("doc_shimmer_delay")
+//     .synth("shimmer_delay")
+//     .param("time", 0.4)
+//     .param("feedback", 0.6)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

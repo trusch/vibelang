@@ -20,10 +20,10 @@
 
 define_fx("auto_wah", |builder| {
     builder
-        .param("sensitivity", 0.5)
-        .param("depth", 2000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("sensitivity", 0.5) // units: linear, range: 0..1, default: 0.5. Envelope sensitivity; higher values make smaller input changes trigger the effect.
+        .param("depth", 2000.0) // units: Hz, range: 0..8000, default: 2000.0. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, sensitivity, depth, mix, level| {
             // Envelope follower
             let env_left = amplitude_ar(input[0], 0.01, 0.1);
@@ -46,3 +46,18 @@ define_fx("auto_wah", |builder| {
             ]
         })
 });
+
+//
+// # Usage: auto_wah
+//
+// ```rhai
+// import "stdlib/effects/modulation/auto_wah.vibe" as auto_wah;
+//
+// let doc_auto_wah = fx("doc_auto_wah")
+//     .synth("auto_wah")
+//     .param("sensitivity", 0.5)
+//     .param("depth", 2000.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -1,7 +1,7 @@
 // Genre: 80s Pop, R&B, Hip-hop | Character: LinnDrum kick - punchy, bright attack
 define_synthdef("linn_kick")
-    .param("freq", 55.0)
-    .param("amp", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Tight, punchy envelope
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("linn_kick")
 
         (body + click) * amp_env * amp
     });
+
+//
+// # Usage: linn_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/linn_kick.vibe" as linn_kick;
+//
+// let doc_linn_kick = voice("doc_linn_kick")
+//     .synth("linn_kick")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_linn_kick.output("out").to_main();
+// doc_linn_kick.run();
+// ```

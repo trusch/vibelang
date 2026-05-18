@@ -1,8 +1,8 @@
 // Genre: Disco, Nu-Disco | Character: Octave-jumping disco bass
 define_synthdef("bass_disco")
-    .param("freq", 70.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 70.0) // units: Hz, range: 20..20000, default: 70.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.003, 1.0, 0.06)
@@ -25,3 +25,19 @@ define_synthdef("bass_disco")
 
         lpf_ar(sig, 4000.0) * env * amp
     });
+
+//
+// # Usage: bass_disco
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_disco.vibe" as bass_disco;
+//
+// let doc_bass_disco = voice("doc_bass_disco")
+//     .synth("bass_disco")
+//     .set_param("freq", 70.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_disco.output("out").to_main();
+// doc_bass_disco.run();
+// ```

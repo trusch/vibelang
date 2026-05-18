@@ -38,11 +38,11 @@
 
 define_fx("transient_glitch", |builder| {
     builder
-        .param("threshold", 0.2)
-        .param("glitch_chance", 0.5)
-        .param("glitch_amount", 0.5)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("threshold", 0.2) // units: linear, range: 0..1, default: 0.2. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("glitch_chance", 0.5) // units: probability, range: 0..1, default: 0.5. Glitch Chance amount; higher values emphasize that named musical or electrical behavior.
+        .param("glitch_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Glitch Amount; higher values apply more of that modulation or effect.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, threshold, glitch_chance, glitch_amount, mix, level| {
             // Fast envelope follower for transient detection.
             let mono = (input[0] + input[1]) * 0.5;
@@ -75,3 +75,18 @@ define_fx("transient_glitch", |builder| {
             ]
         })
 });
+
+//
+// # Usage: transient_glitch
+//
+// ```rhai
+// import "stdlib/effects/glitch/transient_glitch.vibe" as transient_glitch;
+//
+// let doc_transient_glitch = fx("doc_transient_glitch")
+//     .synth("transient_glitch")
+//     .param("threshold", 0.2)
+//     .param("glitch_chance", 0.5)
+//     .param("glitch_amount", 0.5)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

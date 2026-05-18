@@ -41,12 +41,12 @@
 // See kb/stdlib-cv-spec.md.
 
 define_synthdef("cv_env_adsr")
-    .param("gate", 0.0)
-    .param("attack_ms", 5.0)
-    .param("decay_ms", 100.0)
-    .param("sustain_v", 6.0)
-    .param("release_ms", 200.0)
-    .param("peak_v", 8.0)
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("attack_ms", 5.0) // units: ms, range: 0..10000, default: 5.0. Attack Ms in milliseconds; higher values make that time interval longer.
+    .param("decay_ms", 100.0) // units: ms, range: 0..10000, default: 100.0. Decay Ms in milliseconds; higher values make that time interval longer.
+    .param("sustain_v", 6.0) // units: volts, range: -10..10, default: 6.0. Sustain V amount; higher values emphasize that named musical or electrical behavior.
+    .param("release_ms", 200.0) // units: ms, range: 0..10000, default: 200.0. Release Ms in milliseconds; higher values make that time interval longer.
+    .param("peak_v", 8.0) // units: volts, range: -10..10, default: 8.0. Envelope peak voltage; higher values raise the CV output level.
     .body(|gate, attack_ms, decay_ms, sustain_v, release_ms, peak_v| {
         let attack_s = attack_ms * 0.001;
         let decay_s = decay_ms * 0.001;
@@ -66,3 +66,19 @@ define_synthdef("cv_env_adsr")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_env_adsr`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/cv_env_adsr.vibe" as cv_env_adsr;
+//
+// let cv_env_adsr = voice("doc_cv_env_adsr")
+//     .synth("cv_env_adsr")
+//     .set_param("gate", 1.0)
+//     .set_param("attack_ms", 80.0)
+//     .set_param("decay_ms", 80.0)
+//     .set_param("release_ms", 80.0);
+// cv_env_adsr.output("out").to_main();
+// cv_env_adsr.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Lo-fi, Experimental | Character: Heavily filtered, muffled
 define_synthdef("clap_filtered", |builder| {
     builder
-        .param("amp", 1.0)
-        .param("cutoff", 1500.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("cutoff", 1500.0) // units: Hz, range: 20..20000, default: 1500.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|amp, cutoff| {
             // Three bursts
             let burst1_env = envelope()
@@ -28,3 +28,17 @@ define_synthdef("clap_filtered", |builder| {
         })
 });
 
+//
+// # Usage: clap_filtered
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_filtered.vibe" as clap_filtered;
+//
+// let doc_clap_filtered = voice("doc_clap_filtered")
+//     .synth("clap_filtered")
+//     .set_param("amp", 1.0)
+//     .set_param("cutoff", 1500.0)
+//     ;
+// doc_clap_filtered.output("out").to_main();
+// doc_clap_filtered.run();
+// ```

@@ -1,7 +1,7 @@
 // Utility: Pure pink noise generator
 define_synthdef("noise_pink")
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -11,3 +11,17 @@ define_synthdef("noise_pink")
 
         pink_noise_ar() * env * amp
     });
+
+//
+// # Usage: `noise_pink`
+//
+// ```rhai
+// import "stdlib/utility/noise_pink.vibe" as noise_pink;
+//
+// let noise_pink = voice("doc_noise_pink")
+//     .synth("noise_pink")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// noise_pink.output("out").to_main();
+// noise_pink.run();
+// ```

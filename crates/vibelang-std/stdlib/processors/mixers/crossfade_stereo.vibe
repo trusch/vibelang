@@ -3,8 +3,8 @@
 define_synthdef("crossfade_stereo")
     .input("a", 2)
     .input("b", 2)
-    .param("fade", 0.5)
-    .param("level", 1.0)
+    .param("fade", 0.5) // units: normalized, range: 0..1, default: 0.5. Crossfade position; 0 favors input A and 1 favors input B.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let fade = clip(p.fade, 0.0, 1.0);
         let a_gain = 1.0 - fade;
@@ -15,3 +15,17 @@ define_synthdef("crossfade_stereo")
             (p.inputs.a[1] * a_gain + p.inputs.b[1] * b_gain) * p.level
         ]
     });
+
+//
+// # Usage: `crossfade_stereo`
+//
+// ```rhai
+// import "stdlib/processors/mixers/crossfade_stereo.vibe" as crossfade_stereo;
+//
+// let crossfade_stereo = voice("doc_crossfade_stereo")
+//     .synth("crossfade_stereo")
+//     .set_param("level", 0.5)
+//     .set_param("fade", 0.5);
+// crossfade_stereo.output("out").to_main();
+// crossfade_stereo.run();
+// ```

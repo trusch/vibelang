@@ -1,7 +1,7 @@
 // Genre: Cinematic, EDM | Character: Reverse crash cymbal effect
 define_synthdef("crash_reverse", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             // Reverse envelope (builds up)
             let env = envelope()
@@ -34,3 +34,16 @@ define_synthdef("crash_reverse", |builder| {
         })
 });
 
+//
+// # Usage: crash_reverse
+//
+// ```rhai
+// import "stdlib/drums/cymbals/crash_reverse.vibe" as crash_reverse;
+//
+// let doc_crash_reverse = voice("doc_crash_reverse")
+//     .synth("crash_reverse")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_crash_reverse.output("out").to_main();
+// doc_crash_reverse.run();
+// ```

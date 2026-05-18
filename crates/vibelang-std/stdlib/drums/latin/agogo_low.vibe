@@ -1,7 +1,7 @@
 // Genre: Brazilian, Samba, Latin | Character: Low-pitched agogo bell
 define_synthdef("agogo_low")
-    .param("freq", 600.0)
-    .param("amp", 0.7)
+    .param("freq", 600.0) // units: Hz, range: 20..20000, default: 600.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Longer metallic decay
         let amp_env = envelope()
@@ -22,3 +22,18 @@ define_synthdef("agogo_low")
 
         (body + ring1 + ring2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: agogo_low
+//
+// ```rhai
+// import "stdlib/drums/latin/agogo_low.vibe" as agogo_low;
+//
+// let doc_agogo_low = voice("doc_agogo_low")
+//     .synth("agogo_low")
+//     .set_param("freq", 600.0)
+//     .set_param("amp", 0.7)
+//     ;
+// doc_agogo_low.output("out").to_main();
+// doc_agogo_low.run();
+// ```

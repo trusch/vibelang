@@ -21,9 +21,9 @@
 
 define_fx("dc_blocker", |builder| {
     builder
-        .param("coef", 0.995)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("coef", 0.995) // units: normalized, range: 0..1, default: 0.995. Coef amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, coef, mix, level| {
             // Apply DC blocking filter
             let wet_l = leak_dc_ar(input[0], coef);
@@ -35,3 +35,17 @@ define_fx("dc_blocker", |builder| {
             ]
         })
 });
+
+//
+// # Usage: dc_blocker
+//
+// ```rhai
+// import "stdlib/effects/utility/dc_blocker.vibe" as dc_blocker;
+//
+// let doc_dc_blocker = fx("doc_dc_blocker")
+//     .synth("dc_blocker")
+//     .param("coef", 0.995)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

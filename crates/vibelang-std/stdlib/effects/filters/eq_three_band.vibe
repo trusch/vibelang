@@ -26,13 +26,13 @@
 
 define_fx("eq_three_band", |builder| {
     builder
-        .param("low_gain", 0.0)
-        .param("mid_gain", 0.0)
-        .param("high_gain", 0.0)
-        .param("low_freq", 250.0)
-        .param("high_freq", 4000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("low_gain", 0.0) // units: dB, range: -24..24, default: 0.0. Low Gain trim; higher sends more of that signal onward.
+        .param("mid_gain", 0.0) // units: dB, range: -24..24, default: 0.0. Mid Gain trim; higher sends more of that signal onward.
+        .param("high_gain", 0.0) // units: dB, range: -24..24, default: 0.0. High Gain trim; higher sends more of that signal onward.
+        .param("low_freq", 250.0) // units: Hz, range: 20..20000, default: 250.0. Low Freq in Hz; higher values move that tone or filter point upward.
+        .param("high_freq", 4000.0) // units: Hz, range: 20..20000, default: 4000.0. High Freq in Hz; higher values move that tone or filter point upward.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, low_gain, mid_gain, high_gain, low_freq, high_freq, mix, level| {
             // Process left channel
             let low_left = b_low_shelf_ar(input[0], low_freq, 1.0, low_gain);
@@ -53,3 +53,18 @@ define_fx("eq_three_band", |builder| {
             ]
         })
 });
+
+//
+// # Usage: eq_three_band
+//
+// ```rhai
+// import "stdlib/effects/filters/eq_three_band.vibe" as eq_three_band;
+//
+// let doc_eq_three_band = fx("doc_eq_three_band")
+//     .synth("eq_three_band")
+//     .param("low_gain", 0.0)
+//     .param("mid_gain", 0.0)
+//     .param("high_gain", 0.0)
+//     .param("low_freq", 250.0)
+//     .apply();
+// ```

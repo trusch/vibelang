@@ -1,9 +1,9 @@
 // Genre: House, Deep House | Character: Warm sub with gentle harmonics
 define_synthdef("sub_warm", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
             let env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("sub_warm", |builder| {
         })
 });
 
+//
+// # Usage: sub_warm
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_warm.vibe" as sub_warm;
+//
+// let doc_sub_warm = voice("doc_sub_warm")
+//     .synth("sub_warm")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_warm.output("out").to_main();
+// doc_sub_warm.run();
+// ```

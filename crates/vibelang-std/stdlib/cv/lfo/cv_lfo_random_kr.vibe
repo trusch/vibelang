@@ -18,9 +18,9 @@
 
 define_synthdef("cv_lfo_random_kr")
     .output_kr("out")
-    .param("rate", 1.0)       // Hz — step rate
-    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
-    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, depth_v, bipolar| {
         let noise = lf_noise0_ar(rate);
         let shaped = noise * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
@@ -28,3 +28,18 @@ define_synthdef("cv_lfo_random_kr")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [a2k_kr(clipped)]
     });
+
+//
+// # Usage: `cv_lfo_random_kr`
+//
+// ```rhai
+// import "stdlib/cv/lfo/cv_lfo_random_kr.vibe" as cv_lfo_random_kr;
+//
+// let cv_lfo_random_kr = voice("doc_cv_lfo_random_kr")
+//     .synth("cv_lfo_random_kr")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_v", 4.0)
+//     .set_param("bipolar", 0.5);
+// cv_lfo_random_kr.outputs(["out"]).mute();
+// cv_lfo_random_kr.run();
+// ```

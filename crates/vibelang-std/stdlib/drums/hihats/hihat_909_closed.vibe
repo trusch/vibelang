@@ -1,7 +1,7 @@
 // Genre: House, Techno | Character: Classic 909 closed hihat, bright and crisp
 define_synthdef("hihat_909_closed", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Short, tight envelope
             let env = envelope()
@@ -22,3 +22,16 @@ define_synthdef("hihat_909_closed", |builder| {
         })
 });
 
+//
+// # Usage: hihat_909_closed
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_909_closed.vibe" as hihat_909_closed;
+//
+// let doc_hihat_909_closed = voice("doc_hihat_909_closed")
+//     .synth("hihat_909_closed")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_909_closed.output("out").to_main();
+// doc_hihat_909_closed.run();
+// ```

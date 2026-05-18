@@ -200,6 +200,8 @@ fn collect_files_recursive(dir: &Dir, files: &mut std::collections::HashMap<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     #[test]
     fn test_stdlib_path_returns_string() {
@@ -343,8 +345,8 @@ mod tests {
                     .get("instruments/spectral/spectraphon_oscillator.vibe")
                     .is_none()
                 && files
-                .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
-                .is_none()
+                    .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
+                    .is_none()
                 && files
                     .get("instruments/spectral/spectraphon_sao_oscillator.vibe")
                     .is_none()
@@ -408,5 +410,246 @@ mod tests {
             normalized_reads >= 4,
             "all SAM partial-bank reads (odd seed/loop + even seed/loop) should apply mag_norm; found {normalized_reads}"
         );
+    }
+
+    #[test]
+    fn stdlib_synthdef_parameter_docs_and_usage_examples_are_verified() {
+        std::thread::Builder::new()
+            .name("stdlib-docs-verifier".to_string())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(stdlib_synthdef_parameter_docs_and_usage_examples_are_verified_inner)
+            .expect("spawn stdlib docs verifier thread")
+            .join()
+            .expect("stdlib docs verifier thread should not panic");
+    }
+
+    fn stdlib_synthdef_parameter_docs_and_usage_examples_are_verified_inner() {
+        let files = get_stdlib_files();
+        let mut failures = Vec::new();
+        let mut checked_params = 0usize;
+        let mut checked_definitions = 0usize;
+        let mut checked_examples = 0usize;
+
+        let mut sorted_files = files.iter().collect::<Vec<_>>();
+        sorted_files.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        for (path, body) in sorted_files {
+            let usage_examples = collect_usage_examples(path, body, &mut failures);
+
+            for (line_index, line) in body.lines().enumerate() {
+                let line_number = line_index + 1;
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                if line.contains(".param(") {
+                    checked_params += 1;
+                    if !has_param_metadata_comment(line) {
+                        failures.push(format!(
+                            "{path}:{line_number} `.param(...)` is missing same-line `// units: ..., range: ..., default: ...` metadata"
+                        ));
+                    }
+                }
+
+                for name in definition_names(line) {
+                    checked_definitions += 1;
+                    match usage_examples.get(&name) {
+                        Some(snippet) if snippet.trim().is_empty() => failures.push(format!(
+                            "{path}:{line_number} `define_*({name:?})` has an empty `// # Usage: {name}` Rhai snippet"
+                        )),
+                        Some(snippet) => {
+                            checked_examples += 1;
+                            if let Err(err) = compile_usage_example(path, &name, snippet) {
+                                failures.push(format!(
+                                    "{path}:{line_number} `// # Usage: {name}` Rhai snippet failed to compile: {err}"
+                                ));
+                            }
+                        }
+                        None => failures.push(format!(
+                            "{path}:{line_number} `define_*({name:?})` is missing `// # Usage: {name}` with a fenced Rhai snippet"
+                        )),
+                    }
+                }
+            }
+        }
+
+        if !failures.is_empty() {
+            panic!(
+                "stdlib synthdef docs verifier found {} issue(s):\n{}",
+                failures.len(),
+                failures.join("\n")
+            );
+        }
+
+        assert!(
+            checked_params > 0,
+            "stdlib docs verifier did not find any `.param(...)` declarations"
+        );
+        assert!(
+            checked_definitions > 0,
+            "stdlib docs verifier did not find any define_synthdef/define_fx declarations"
+        );
+        assert_eq!(
+            checked_definitions, checked_examples,
+            "every stdlib define_synthdef/define_fx should have one compilable usage example"
+        );
+    }
+
+    fn has_param_metadata_comment(line: &str) -> bool {
+        let Some(comment_start) = line.find("//") else {
+            return false;
+        };
+        let comment = &line[comment_start + 2..];
+        contains_ordered(comment, &["units:", "range:", "default:"])
+    }
+
+    fn contains_ordered(haystack: &str, needles: &[&str]) -> bool {
+        let mut rest = haystack;
+        for needle in needles {
+            let Some(index) = rest.find(needle) else {
+                return false;
+            };
+            rest = &rest[index + needle.len()..];
+        }
+        true
+    }
+
+    fn definition_names(line: &str) -> Vec<String> {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") {
+            return Vec::new();
+        }
+
+        let mut names = Vec::new();
+        for function in ["define_synthdef", "define_fx"] {
+            let mut rest = line;
+            while let Some(index) = rest.find(function) {
+                rest = &rest[index + function.len()..];
+                let Some(open_index) = rest.find('(') else {
+                    break;
+                };
+                let after_open = rest[open_index + 1..].trim_start();
+                let Some(after_quote) = after_open.strip_prefix('"') else {
+                    continue;
+                };
+                let Some(close_quote_index) = after_quote.find('"') else {
+                    continue;
+                };
+                names.push(after_quote[..close_quote_index].to_string());
+                rest = &after_quote[close_quote_index + 1..];
+            }
+        }
+        names
+    }
+
+    fn collect_usage_examples(
+        path: &str,
+        body: &str,
+        failures: &mut Vec<String>,
+    ) -> BTreeMap<String, String> {
+        let lines = body.lines().collect::<Vec<_>>();
+        let mut examples = BTreeMap::new();
+        let mut index = 0usize;
+
+        while index < lines.len() {
+            let line = lines[index];
+            let Some(name) = usage_name(line) else {
+                index += 1;
+                continue;
+            };
+            let usage_line = index + 1;
+
+            index += 1;
+            while index < lines.len() && is_usage_blank_line(lines[index]) {
+                index += 1;
+            }
+            if index >= lines.len() || lines[index].trim() != "// ```rhai" {
+                failures.push(format!(
+                    "{path}:{usage_line} `// # Usage: {name}` is missing an immediately following commented ```rhai fence"
+                ));
+                continue;
+            }
+
+            index += 1;
+            let mut snippet_lines = Vec::new();
+            while index < lines.len() && lines[index].trim() != "// ```" {
+                match uncomment_usage_line(lines[index]) {
+                    Some(snippet_line) => snippet_lines.push(snippet_line),
+                    None => failures.push(format!(
+                        "{path}:{} usage snippet for `{name}` contains a non-comment line",
+                        index + 1
+                    )),
+                }
+                index += 1;
+            }
+
+            if index >= lines.len() {
+                failures.push(format!(
+                    "{path}:{usage_line} usage snippet for `{name}` is missing a closing commented ``` fence"
+                ));
+            } else {
+                index += 1;
+            }
+
+            if examples
+                .insert(name.clone(), snippet_lines.join("\n"))
+                .is_some()
+            {
+                failures.push(format!(
+                    "{path}:{usage_line} has duplicate `// # Usage: {name}` sections"
+                ));
+            }
+        }
+
+        examples
+    }
+
+    fn usage_name(line: &str) -> Option<String> {
+        let name = line.trim_start().strip_prefix("// # Usage:")?.trim();
+        Some(name.trim_matches('`').to_string())
+    }
+
+    fn is_usage_blank_line(line: &str) -> bool {
+        let trimmed = line.trim();
+        trimmed.is_empty() || trimmed == "//"
+    }
+
+    fn uncomment_usage_line(line: &str) -> Option<String> {
+        let trimmed = line.trim_start();
+        let uncommented = trimmed.strip_prefix("//")?;
+        Some(
+            uncommented
+                .strip_prefix(' ')
+                .unwrap_or(uncommented)
+                .to_string(),
+        )
+    }
+
+    fn compile_usage_example(path: &str, name: &str, snippet: &str) -> Result<(), String> {
+        let expected_import = format!("import \"stdlib/{path}\"");
+        if !snippet.contains(&expected_import) {
+            return Err(format!(
+                "snippet should import its definition via `{expected_import}`\n{snippet}"
+            ));
+        }
+
+        let mut engine = vibelang_rhai::ScriptEngine::new();
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_dir = crate_dir
+            .parent()
+            .and_then(|path| path.parent())
+            .ok_or_else(|| "could not derive workspace root from CARGO_MANIFEST_DIR".to_string())?
+            .to_path_buf();
+        let stdlib_dir = crate_dir.join("stdlib");
+
+        engine.add_import_path(&workspace_dir);
+        engine.add_import_path(&crate_dir);
+        engine.add_import_path(&stdlib_dir);
+        engine.setup_module_resolver(crate_dir);
+        engine
+            .compile(snippet)
+            .map(|_| ())
+            .map_err(|err| format!("{err} in {path} usage example `{name}`\n{snippet}"))
     }
 }

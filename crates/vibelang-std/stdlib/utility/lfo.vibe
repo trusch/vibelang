@@ -7,9 +7,9 @@
 // Sine LFO
 define_synthdef("lfo_sine", |builder| {
     builder
-        .param("freq", 1.0)
-        .param("amp", 1.0)
-        .param("gate", 1.0)
+        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.001)
@@ -24,9 +24,9 @@ define_synthdef("lfo_sine", |builder| {
 // Triangle LFO (approximated)
 define_synthdef("lfo_triangle", |builder| {
     builder
-        .param("freq", 1.0)
-        .param("amp", 1.0)
-        .param("gate", 1.0)
+        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.001)
@@ -43,9 +43,9 @@ define_synthdef("lfo_triangle", |builder| {
 // Sawtooth LFO
 define_synthdef("lfo_saw", |builder| {
     builder
-        .param("freq", 1.0)
-        .param("amp", 1.0)
-        .param("gate", 1.0)
+        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.001)
@@ -60,9 +60,9 @@ define_synthdef("lfo_saw", |builder| {
 // Random/Sample & Hold LFO (stepped random)
 define_synthdef("lfo_random", |builder| {
     builder
-        .param("freq", 4.0)
-        .param("amp", 1.0)
-        .param("gate", 1.0)
+        .param("freq", 4.0) // units: Hz, range: 0..20000, default: 4.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.001)
@@ -77,3 +77,64 @@ define_synthdef("lfo_random", |builder| {
             stepped * env * amp
         })
 });
+
+//
+// # Usage: `lfo_sine`
+//
+// ```rhai
+// import "stdlib/utility/lfo.vibe" as lfo;
+//
+// let lfo_sine = voice("doc_lfo_sine")
+//     .synth("lfo_sine")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0);
+// lfo_sine.output("out").to_main();
+// lfo_sine.run();
+// ```
+//
+// # Usage: `lfo_triangle`
+//
+// ```rhai
+// import "stdlib/utility/lfo.vibe" as lfo;
+//
+// let lfo_triangle = voice("doc_lfo_triangle")
+//     .synth("lfo_triangle")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0);
+// lfo_triangle.output("out").to_main();
+// lfo_triangle.run();
+// ```
+//
+// # Usage: `lfo_saw`
+//
+// ```rhai
+// import "stdlib/utility/lfo.vibe" as lfo;
+//
+// let lfo_saw = voice("doc_lfo_saw")
+//     .synth("lfo_saw")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0);
+// lfo_saw.output("out").to_main();
+// lfo_saw.run();
+// ```
+//
+// # Usage: `lfo_random`
+//
+// ```rhai
+// import "stdlib/utility/lfo.vibe" as lfo;
+//
+// let lfo_random = voice("doc_lfo_random")
+//     .synth("lfo_random")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("freq", 220.0);
+// lfo_random.output("out").to_main();
+// lfo_random.run();
+// ```

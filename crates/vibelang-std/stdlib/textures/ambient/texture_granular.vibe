@@ -1,8 +1,8 @@
 // Genre: Ambient, Experimental | Character: Granular-style texture
 define_synthdef("texture_granular", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Long envelope
             let env = envelope()
@@ -29,3 +29,16 @@ define_synthdef("texture_granular", |builder| {
         })
 });
 
+//
+// # Usage: `texture_granular`
+//
+// ```rhai
+// import "stdlib/textures/ambient/texture_granular.vibe" as texture_granular;
+//
+// let texture_granular = voice("doc_texture_granular")
+//     .synth("texture_granular")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// texture_granular.output("out").to_main();
+// texture_granular.run();
+// ```

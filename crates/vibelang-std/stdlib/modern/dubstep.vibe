@@ -6,11 +6,11 @@
 // Dubstep Wobble - Classic LFO wobble
 define_synthdef("dubstep_wobble", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("rate", 4.0) // Wobble rate
-        .param("intensity", 0.8)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("intensity", 0.8) // units: normalized, range: 0..1, default: 0.8. Intensity macro; higher makes the patch louder, brighter, and more saturated.
         .body(|freq, amp, gate, rate, intensity| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -42,10 +42,10 @@ define_synthdef("dubstep_wobble", |builder| {
 // Dubstep Growl - Aggressive FM growl
 define_synthdef("dubstep_growl", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("aggression", 0.7)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("aggression", 0.7) // units: normalized, range: 0..1, default: 0.7. Aggression macro; higher makes the patch louder, brighter, and more saturated.
         .body(|freq, amp, gate, aggression| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -78,9 +78,9 @@ define_synthdef("dubstep_growl", |builder| {
 // Dubstep Riddim - Minimal riddim bass
 define_synthdef("dubstep_riddim", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.05)
@@ -113,8 +113,8 @@ define_synthdef("dubstep_riddim", |builder| {
 // Dubstep Snare - Heavy layered snare
 define_synthdef("dubstep_snare", |builder| {
     builder
-        .param("freq", 180.0)
-        .param("amp", 0.7)
+        .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.25)
@@ -144,9 +144,9 @@ define_synthdef("dubstep_snare", |builder| {
 // Dubstep Saw Chord - Massive saw chord
 define_synthdef("dubstep_chord", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.15)
@@ -170,3 +170,75 @@ define_synthdef("dubstep_chord", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `dubstep_wobble`
+//
+// ```rhai
+// import "stdlib/modern/dubstep.vibe" as dubstep;
+//
+// let dubstep_wobble = voice("doc_dubstep_wobble")
+//     .synth("dubstep_wobble")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("rate", 4.0);
+// dubstep_wobble.output("out").to_main();
+// dubstep_wobble.run();
+// ```
+//
+// # Usage: `dubstep_growl`
+//
+// ```rhai
+// import "stdlib/modern/dubstep.vibe" as dubstep;
+//
+// let dubstep_growl = voice("doc_dubstep_growl")
+//     .synth("dubstep_growl")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("aggression", 0.7);
+// dubstep_growl.output("out").to_main();
+// dubstep_growl.run();
+// ```
+//
+// # Usage: `dubstep_riddim`
+//
+// ```rhai
+// import "stdlib/modern/dubstep.vibe" as dubstep;
+//
+// let dubstep_riddim = voice("doc_dubstep_riddim")
+//     .synth("dubstep_riddim")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dubstep_riddim.output("out").to_main();
+// dubstep_riddim.run();
+// ```
+//
+// # Usage: `dubstep_snare`
+//
+// ```rhai
+// import "stdlib/modern/dubstep.vibe" as dubstep;
+//
+// let dubstep_snare = voice("doc_dubstep_snare")
+//     .synth("dubstep_snare")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// dubstep_snare.output("out").to_main();
+// dubstep_snare.run();
+// ```
+//
+// # Usage: `dubstep_chord`
+//
+// ```rhai
+// import "stdlib/modern/dubstep.vibe" as dubstep;
+//
+// let dubstep_chord = voice("doc_dubstep_chord")
+//     .synth("dubstep_chord")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dubstep_chord.output("out").to_main();
+// dubstep_chord.run();
+// ```

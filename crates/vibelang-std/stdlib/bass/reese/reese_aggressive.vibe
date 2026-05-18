@@ -1,9 +1,9 @@
 // Genre: Neurofunk, Techstep | Character: Aggressive, gritty Reese
 define_synthdef("reese_aggressive", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Punchy envelope
@@ -39,3 +39,18 @@ define_synthdef("reese_aggressive", |builder| {
         })
 });
 
+//
+// # Usage: reese_aggressive
+//
+// ```rhai
+// import "stdlib/bass/reese/reese_aggressive.vibe" as reese_aggressive;
+//
+// let doc_reese_aggressive = voice("doc_reese_aggressive")
+//     .synth("reese_aggressive")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.65)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_reese_aggressive.output("out").to_main();
+// doc_reese_aggressive.run();
+// ```

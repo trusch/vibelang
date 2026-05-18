@@ -31,25 +31,25 @@
 define_synthdef("plonk", |builder| {
     builder
         .output("out")
-        .param("trig", 0.0)                 // 0/1 trigger input for the exciter
-        .param("vel", 0.8)                  // 0..1 exciter velocity and overall hit strength
-        .param("pitch", 60.0)               // MIDI pitch before pitch CV
-        .param("freq", 0.0)                 // direct Hz override when >0
-        .param("x", 0.5)                    // 0..1 object damping/decay macro before CV
-        .param("y", 0.5)                    // 0..1 tone/inharmonicity macro before CV
-        .param("exciter_mode", 0.0)         // rounded enum: mallet, noise, or stick exciter
-        .param("exciter_decay", 0.015)      // exciter decay time in seconds
-        .param("object_mode", 3.0)          // rounded 0..5 modal object enum
-        .param("saturation", 0.1)           // 0..1 soft drive amount
-        .param("bitcrush", 0.0)             // 0 clean, 1 reduced sample-rate/bit-depth
-        .param("pitch_cv", 0.0)             // bipolar pitch CV scaled by pitch_cv_amt
-        .param("x_cv", 0.0)                 // bipolar CV summed into x through x_cv_amt
-        .param("y_cv", 0.0)                 // bipolar CV summed into y through y_cv_amt
-        .param("mod_cv", 0.0)               // bipolar macro CV added half-strength to x and y
-        .param("pitch_cv_amt", 0.0)         // 0..1 attenuator for pitch_cv depth
-        .param("x_cv_amt", 0.0)             // 0..1 attenuator for x_cv depth
-        .param("y_cv_amt", 0.0)             // 0..1 attenuator for y_cv depth
-        .param("mod_cv_amt", 0.0)           // 0..1 attenuator for shared mod_cv depth
+        .param("trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vel", 0.8) // units: normalized, range: 0..1, default: 0.8. Velocity response; higher makes the exciter or note hit harder.
+        .param("pitch", 60.0) // units: MIDI note, range: 12..120, default: 60.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("freq", 0.0) // units: Hz, range: 0..20000, default: 0.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("x", 0.5) // units: normalized, range: 0..1, default: 0.5. X macro; higher moves that model axis toward its brighter or more open setting.
+        .param("y", 0.5) // units: normalized, range: 0..1, default: 0.5. Y macro; higher moves that model axis toward its brighter or more open setting.
+        .param("exciter_mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("exciter_decay", 0.015) // units: normalized, range: 0..1, default: 0.015. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("object_mode", 3.0) // units: selector, range: 0..N, default: 3.0. Selects mode, table, or step count.
+        .param("saturation", 0.1) // units: normalized, range: 0..1, default: 0.1. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("bitcrush", 0.0) // units: normalized, range: 0..1, default: 0.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("pitch_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch CV input; bipolar values modulate the matching panel control.
+        .param("x_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. X CV input; bipolar values modulate the matching panel control.
+        .param("y_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Y CV input; bipolar values modulate the matching panel control.
+        .param("mod_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Mod CV input; bipolar values modulate the matching panel control.
+        .param("pitch_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. PITCH CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("x_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. X CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("y_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. Y CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("mod_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. MOD CV AMT attenuator; higher makes the matching CV modulation stronger.
         .body_map(|p| {
             let vel = clip(p.vel, 0.0, 1.0);
             let pitch_cv = clip(p.pitch_cv, -1.0, 1.0) * clip(p.pitch_cv_amt, 0.0, 1.0);
@@ -144,3 +144,19 @@ define_synthdef("plonk", |builder| {
             [out]
         })
 });
+
+//
+// # Usage: `plonk`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/plonk.vibe" as plonk;
+//
+// let plonk = voice("doc_plonk")
+//     .synth("plonk")
+//     .set_param("freq", 220.0)
+//     .set_param("exciter_decay", 0.5)
+//     .set_param("exciter_mode", 1.0)
+//     .set_param("trig", 1.0);
+// plonk.output("out").to_main();
+// plonk.run();
+// ```

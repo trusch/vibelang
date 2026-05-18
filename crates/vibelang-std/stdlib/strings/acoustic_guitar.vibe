@@ -11,11 +11,11 @@
 // Main Acoustic Guitar - steel string dreadnought style
 define_synthdef("acoustic_guitar", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("position", 0.5)     // 0=bridge (bright), 1=neck (mellow)
-        .param("pluck_hard", 0.6)   // Pluck hardness
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("position", 0.5) // units: normalized, range: 0..1, default: 0.5. Position macro; higher values move the model toward its brighter or more complex side.
+        .param("pluck_hard", 0.6) // units: normalized, range: 0..1, default: 0.6. Pick or nail attack; higher values make the pluck brighter and sharper.
         .body(|freq, amp, gate, position, pluck_hard| {
             // String decay time - lower notes ring longer
             let decay_time = 1.5 + (1.0 / (freq / 80.0));
@@ -82,10 +82,10 @@ define_synthdef("acoustic_guitar", |builder| {
 // Nylon String Classical Guitar
 define_synthdef("classical_guitar", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("position", 0.6)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("position", 0.6) // units: normalized, range: 0..1, default: 0.6. Position macro; higher values move the model toward its brighter or more complex side.
         .body(|freq, amp, gate, position| {
             let decay_time = 2.0 + (1.0 / (freq / 60.0));
             let env = envelope()
@@ -127,10 +127,10 @@ define_synthdef("classical_guitar", |builder| {
 // Steel String Fingerpicked - optimized for fingerstyle
 define_synthdef("fingerpick_guitar", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
-        .param("nail", 0.4)  // Amount of fingernail vs flesh
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("nail", 0.4) // units: normalized, range: 0..1, default: 0.4. Pick or nail attack; higher values make the pluck brighter and sharper.
         .body(|freq, amp, gate, nail| {
             let decay_time = 1.8 + (1.0 / (freq / 90.0));
             let env = envelope()
@@ -175,10 +175,10 @@ define_synthdef("fingerpick_guitar", |builder| {
 // 12-String Acoustic Guitar - double strings create chorus effect
 define_synthdef("twelve_string_guitar", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
-        .param("detune", 0.5)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("detune", 0.5) // units: semitones, range: -12..12, default: 0.5. Oscillator detune amount; higher spreads voices farther apart in pitch.
         .body(|freq, amp, gate, detune| {
             let decay_time = 1.6 + (1.0 / (freq / 100.0));
             let env = envelope()
@@ -229,9 +229,9 @@ define_synthdef("twelve_string_guitar", |builder| {
 // Guitar Harmonic - natural harmonic sound
 define_synthdef("guitar_harmonic", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let decay_time = 3.0;
             let env = envelope()
@@ -262,10 +262,10 @@ define_synthdef("guitar_harmonic", |builder| {
 // Muted/Palm Muted Guitar
 define_synthdef("guitar_muted", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("mute_amount", 0.7)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("mute_amount", 0.7) // units: normalized, range: 0..1, default: 0.7. Mute Amount; higher values apply more of that modulation or effect.
         .body(|freq, amp, gate, mute_amount| {
             // Very short decay when muted
             let decay_time = 0.15 + ((1.0 - mute_amount) * 0.6);
@@ -297,3 +297,93 @@ define_synthdef("guitar_muted", |builder| {
             output.softclip()
         })
 });
+
+//
+// # Usage: `acoustic_guitar`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let acoustic_guitar = voice("doc_acoustic_guitar")
+//     .synth("acoustic_guitar")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("position", 0.5);
+// acoustic_guitar.output("out").to_main();
+// acoustic_guitar.run();
+// ```
+//
+// # Usage: `classical_guitar`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let classical_guitar = voice("doc_classical_guitar")
+//     .synth("classical_guitar")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("position", 0.6);
+// classical_guitar.output("out").to_main();
+// classical_guitar.run();
+// ```
+//
+// # Usage: `fingerpick_guitar`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let fingerpick_guitar = voice("doc_fingerpick_guitar")
+//     .synth("fingerpick_guitar")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("nail", 0.4);
+// fingerpick_guitar.output("out").to_main();
+// fingerpick_guitar.run();
+// ```
+//
+// # Usage: `twelve_string_guitar`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let twelve_string_guitar = voice("doc_twelve_string_guitar")
+//     .synth("twelve_string_guitar")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("detune", 0.5);
+// twelve_string_guitar.output("out").to_main();
+// twelve_string_guitar.run();
+// ```
+//
+// # Usage: `guitar_harmonic`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let guitar_harmonic = voice("doc_guitar_harmonic")
+//     .synth("guitar_harmonic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// guitar_harmonic.output("out").to_main();
+// guitar_harmonic.run();
+// ```
+//
+// # Usage: `guitar_muted`
+//
+// ```rhai
+// import "stdlib/strings/acoustic_guitar.vibe" as acoustic_guitar;
+//
+// let guitar_muted = voice("doc_guitar_muted")
+//     .synth("guitar_muted")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("mute_amount", 0.7);
+// guitar_muted.output("out").to_main();
+// guitar_muted.run();
+// ```

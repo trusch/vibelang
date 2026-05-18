@@ -1,7 +1,7 @@
 // Genre: All genres | Character: Fast whoosh transition
 define_synthdef("whoosh_fast", |builder| {
     builder
-        .param("amp", 0.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.01, 0.3)
@@ -25,3 +25,17 @@ define_synthdef("whoosh_fast", |builder| {
             (filtered + res) * env * amp * 0.7
         })
 });
+
+//
+// # Usage: whoosh_fast
+//
+// ```rhai
+// import "stdlib/fx/transitions/whoosh_fast.vibe" as whoosh_fast;
+//
+// let doc_whoosh_fast = voice("doc_whoosh_fast")
+//     .synth("whoosh_fast")
+//     .set_param("amp", 0.5)
+//     ;
+// doc_whoosh_fast.output("out").to_main();
+// doc_whoosh_fast.run();
+// ```

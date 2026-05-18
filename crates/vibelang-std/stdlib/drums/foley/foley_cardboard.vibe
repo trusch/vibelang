@@ -1,7 +1,7 @@
 // Genre: Experimental, Lo-fi | Character: Cardboard box as drum
 define_synthdef("foley_cardboard")
-    .param("freq", 120.0)
-    .param("amp", 0.7)
+    .param("freq", 120.0) // units: Hz, range: 20..20000, default: 120.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Cardboard resonance
         let amp_env = envelope()
@@ -21,3 +21,18 @@ define_synthdef("foley_cardboard")
 
         (body + resonance + attack) * amp_env * amp
     });
+
+//
+// # Usage: foley_cardboard
+//
+// ```rhai
+// import "stdlib/drums/foley/foley_cardboard.vibe" as foley_cardboard;
+//
+// let doc_foley_cardboard = voice("doc_foley_cardboard")
+//     .synth("foley_cardboard")
+//     .set_param("freq", 120.0)
+//     .set_param("amp", 0.7)
+//     ;
+// doc_foley_cardboard.output("out").to_main();
+// doc_foley_cardboard.run();
+// ```

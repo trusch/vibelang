@@ -1,9 +1,9 @@
 // Genre: Industrial, Hard Techno | Character: Distorted, aggressive acid
 define_synthdef("acid_distorted", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -34,3 +34,18 @@ define_synthdef("acid_distorted", |builder| {
         })
 });
 
+//
+// # Usage: acid_distorted
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_distorted.vibe" as acid_distorted;
+//
+// let doc_acid_distorted = voice("doc_acid_distorted")
+//     .synth("acid_distorted")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.6)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_acid_distorted.output("out").to_main();
+// doc_acid_distorted.run();
+// ```

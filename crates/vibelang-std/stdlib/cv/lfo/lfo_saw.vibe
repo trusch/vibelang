@@ -4,10 +4,10 @@
 define_synthdef("lfo_saw", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (rising sawtooth LFO)
-        .param("rate", 1.0)   // LFO rate in Hz
-        .param("lo", 0.0)     // Minimum output value
-        .param("hi", 1.0)     // Maximum output value
-        .param("phase", 0.0)  // Initial phase offset (0-2)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("phase", 0.0) // units: cycles, range: 0..1, default: 0.0. Oscillator phase offset; higher values shift the waveform start point.
         .body_map(|p| {
             // Generate sawtooth wave at control rate (-1 to 1)
             let osc = lf_saw_kr(p.rate, p.phase);
@@ -21,10 +21,10 @@ define_synthdef("lfo_saw", |builder| {
 define_synthdef("lfo_saw_down", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (falling sawtooth LFO)
-        .param("rate", 1.0)
-        .param("lo", 0.0)
-        .param("hi", 1.0)
-        .param("phase", 0.0)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("phase", 0.0) // units: cycles, range: 0..1, default: 0.0. Oscillator phase offset; higher values shift the waveform start point.
         .body_map(|p| {
             let osc = lf_saw_kr(p.rate, p.phase);
             // Invert: map from (-1,1) to (hi,lo) using basic math
@@ -32,3 +32,34 @@ define_synthdef("lfo_saw_down", |builder| {
             [normalized * (p.lo - p.hi) + p.hi] // Map inverted to hi-lo range
         })
 });
+
+//
+// # Usage: `lfo_saw`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_saw.vibe" as lfo_saw;
+//
+// let lfo_saw = voice("doc_lfo_saw")
+//     .synth("lfo_saw")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5)
+//     .set_param("phase", 0.5);
+// lfo_saw.outputs(["out"]).mute();
+// lfo_saw.run();
+// ```
+//
+// # Usage: `lfo_saw_down`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_saw.vibe" as lfo_saw;
+//
+// let lfo_saw_down = voice("doc_lfo_saw_down")
+//     .synth("lfo_saw_down")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5)
+//     .set_param("phase", 0.5);
+// lfo_saw_down.outputs(["out"]).mute();
+// lfo_saw_down.run();
+// ```

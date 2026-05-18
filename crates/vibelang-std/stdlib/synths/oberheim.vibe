@@ -7,9 +7,9 @@
 // Oberheim Pad - Ultra-lush pad
 define_synthdef("oberheim_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -35,9 +35,9 @@ define_synthdef("oberheim_pad", |builder| {
 // Oberheim Brass - The "Jump" brass
 define_synthdef("oberheim_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.03, 1.0, 0.1)
@@ -68,9 +68,9 @@ define_synthdef("oberheim_brass", |builder| {
 // Oberheim Lead - Screaming lead
 define_synthdef("oberheim_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -94,9 +94,9 @@ define_synthdef("oberheim_lead", |builder| {
 // Oberheim Bass - Fat bass
 define_synthdef("oberheim_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.008, 1.0, 0.12)
@@ -123,3 +123,60 @@ define_synthdef("oberheim_bass", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `oberheim_pad`
+//
+// ```rhai
+// import "stdlib/synths/oberheim.vibe" as oberheim;
+//
+// let oberheim_pad = voice("doc_oberheim_pad")
+//     .synth("oberheim_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// oberheim_pad.output("out").to_main();
+// oberheim_pad.run();
+// ```
+//
+// # Usage: `oberheim_brass`
+//
+// ```rhai
+// import "stdlib/synths/oberheim.vibe" as oberheim;
+//
+// let oberheim_brass = voice("doc_oberheim_brass")
+//     .synth("oberheim_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// oberheim_brass.output("out").to_main();
+// oberheim_brass.run();
+// ```
+//
+// # Usage: `oberheim_lead`
+//
+// ```rhai
+// import "stdlib/synths/oberheim.vibe" as oberheim;
+//
+// let oberheim_lead = voice("doc_oberheim_lead")
+//     .synth("oberheim_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// oberheim_lead.output("out").to_main();
+// oberheim_lead.run();
+// ```
+//
+// # Usage: `oberheim_bass`
+//
+// ```rhai
+// import "stdlib/synths/oberheim.vibe" as oberheim;
+//
+// let oberheim_bass = voice("doc_oberheim_bass")
+//     .synth("oberheim_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// oberheim_bass.output("out").to_main();
+// oberheim_bass.run();
+// ```

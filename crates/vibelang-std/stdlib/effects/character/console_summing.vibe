@@ -25,10 +25,10 @@
 //   level:  Output level trim (1.0 = unity)
 
 define_fx("console_summing")
-    .param("drive", 1.4)
-    .param("hf_cut", 1.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("drive", 1.4) // units: gain, range: 0..4, default: 1.4. Nonlinear drive amount; higher adds harmonic distortion and compression.
+    .param("hf_cut", 1.5) // units: ratio, range: 0..4, default: 1.5. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, drive, hf_cut, mix, level| {
         // Slight HF shelf cut at 12 kHz — every transformer/Class A path loses
         // a touch of air. Apply -hf_cut dB.
@@ -54,3 +54,18 @@ define_fx("console_summing")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: console_summing
+//
+// ```rhai
+// import "stdlib/effects/character/console_summing.vibe" as console_summing;
+//
+// let doc_console_summing = fx("doc_console_summing")
+//     .synth("console_summing")
+//     .param("drive", 1.4)
+//     .param("hf_cut", 1.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

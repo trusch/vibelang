@@ -25,12 +25,12 @@
 //   level:     Final output trim (1.0 = unity)
 
 define_fx("analog_delay")
-    .param("time", 0.3)
-    .param("feedback", 0.5)
-    .param("tone", 0.4)
-    .param("mod_depth", 0.3)
-    .param("mix", 0.4)
-    .param("level", 1.0)
+    .param("time", 0.3) // units: seconds, range: 0..10, default: 0.3. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.5) // units: ratio, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("tone", 0.4) // units: normalized, range: 0..1, default: 0.4. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("mod_depth", 0.3) // units: ratio, range: 0..1, default: 0.3. Modulation depth; higher values make the movement more pronounced.
+    .param("mix", 0.4) // units: ratio, range: 0..1, default: 0.4. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, tone, mod_depth, mix, level| {
         // BBD-style modulation (clock instability)
         let mod_lfo = sin_osc_ar(0.6) * mod_depth * 0.002;
@@ -71,3 +71,18 @@ define_fx("analog_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: analog_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/analog_delay.vibe" as analog_delay;
+//
+// let doc_analog_delay = fx("doc_analog_delay")
+//     .synth("analog_delay")
+//     .param("time", 0.3)
+//     .param("feedback", 0.5)
+//     .param("tone", 0.4)
+//     .param("mod_depth", 0.3)
+//     .apply();
+// ```

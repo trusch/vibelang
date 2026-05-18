@@ -1,8 +1,8 @@
 // Genre: Future Bass, Pop | Character: Vocal formant riser
 define_synthdef("riser_vocal", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 3.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 3.0) // units: seconds, range: 0..60, default: 3.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.2, 1.0)
@@ -38,3 +38,18 @@ define_synthdef("riser_vocal", |builder| {
             (vocal + breath) * env * amp
         })
 });
+
+//
+// # Usage: riser_vocal
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_vocal.vibe" as riser_vocal;
+//
+// let doc_riser_vocal = voice("doc_riser_vocal")
+//     .synth("riser_vocal")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 3.0)
+//     ;
+// doc_riser_vocal.output("out").to_main();
+// doc_riser_vocal.run();
+// ```

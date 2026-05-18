@@ -1,8 +1,8 @@
 // Genre: EDM, House | Character: Noise-based downlifter
 define_synthdef("downer_noise", |builder| {
     builder
-        .param("amp", 0.6)
-        .param("duration", 2.0)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("duration", 2.0) // units: seconds, range: 0..60, default: 2.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.01, 1.0)
@@ -24,3 +24,18 @@ define_synthdef("downer_noise", |builder| {
             (filtered + res) * env * amp * 0.7
         })
 });
+
+//
+// # Usage: downer_noise
+//
+// ```rhai
+// import "stdlib/fx/downers/downer_noise.vibe" as downer_noise;
+//
+// let doc_downer_noise = voice("doc_downer_noise")
+//     .synth("downer_noise")
+//     .set_param("amp", 0.6)
+//     .set_param("duration", 2.0)
+//     ;
+// doc_downer_noise.output("out").to_main();
+// doc_downer_noise.run();
+// ```

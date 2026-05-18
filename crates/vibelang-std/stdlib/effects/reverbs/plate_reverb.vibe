@@ -21,10 +21,10 @@
 //   level: Final output trim (1.0 = unity)
 
 define_fx("plate_reverb")
-    .param("time", 2.0)
-    .param("damp", 0.4)
-    .param("mix", 0.3)
-    .param("level", 1.0)
+    .param("time", 2.0) // units: seconds, range: 0..10, default: 2.0. Delay or segment time; higher values make repeats arrive later.
+    .param("damp", 0.4) // units: ratio, range: 0..1, default: 0.4. Damping amount; higher values shorten and darken the decay.
+    .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, damp, mix, level| {
         // Mix to mono for the wet path
         let mono = (input[0] + input[1]) * 0.5;
@@ -65,3 +65,18 @@ define_fx("plate_reverb")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: plate_reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/plate_reverb.vibe" as plate_reverb;
+//
+// let doc_plate_reverb = fx("doc_plate_reverb")
+//     .synth("plate_reverb")
+//     .param("time", 2.0)
+//     .param("damp", 0.4)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

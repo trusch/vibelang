@@ -1,8 +1,8 @@
 // Genre: Deep Dubstep | Character: Very deep, chest-hitting sub drop
 define_synthdef("subdrop_deep", |builder| {
     builder
-        .param("freq", 35.0)
-        .param("amp", 1.0)
+        .param("freq", 35.0) // units: Hz, range: 20..20000, default: 35.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Longer decay for depth
             let env = envelope()
@@ -23,3 +23,17 @@ define_synthdef("subdrop_deep", |builder| {
         })
 });
 
+//
+// # Usage: subdrop_deep
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_deep.vibe" as subdrop_deep;
+//
+// let doc_subdrop_deep = voice("doc_subdrop_deep")
+//     .synth("subdrop_deep")
+//     .set_param("freq", 35.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_subdrop_deep.output("out").to_main();
+// doc_subdrop_deep.run();
+// ```

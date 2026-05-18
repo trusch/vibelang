@@ -6,9 +6,9 @@
 // Gamelan Gong
 define_synthdef("gamelan_gong", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.5)
@@ -43,9 +43,9 @@ define_synthdef("gamelan_gong", |builder| {
 // Gamelan Metallophone (Saron/Gender)
 define_synthdef("gamelan_metal", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.2)
@@ -75,3 +75,32 @@ define_synthdef("gamelan_metal", |builder| {
             (metal + strike) * env * decay_env * amp * 0.5
         })
 });
+
+//
+// # Usage: `gamelan_gong`
+//
+// ```rhai
+// import "stdlib/world/gamelan.vibe" as gamelan;
+//
+// let gamelan_gong = voice("doc_gamelan_gong")
+//     .synth("gamelan_gong")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// gamelan_gong.output("out").to_main();
+// gamelan_gong.run();
+// ```
+//
+// # Usage: `gamelan_metal`
+//
+// ```rhai
+// import "stdlib/world/gamelan.vibe" as gamelan;
+//
+// let gamelan_metal = voice("doc_gamelan_metal")
+//     .synth("gamelan_metal")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// gamelan_metal.output("out").to_main();
+// gamelan_metal.run();
+// ```

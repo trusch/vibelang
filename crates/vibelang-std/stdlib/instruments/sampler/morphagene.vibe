@@ -156,20 +156,20 @@ define_synthdef("morphagene", |builder| {
         .output("left")                    // 1ch — audio left
         .output("right")                   // 1ch — audio right
         .output_kr("eosg")                 // 1ch kr — End-of-Splice/Gene gate
-        .param("bufnum", 0.0)
-        .param("num_splices", 1.0)        // 1..300, evenly-spaced division of Reel
-        .param("splices_buf", 0.0)        // optional `num_splices+1` normalized boundaries
-        .param("organize", 0.0)           // 0..1 splice select knob+CV
-        .param("sos", 0.0)                // 0..1 SOS mix; > 0 also gates recording
-        .param("clk", 0.0)                // kr clock signal (rising edge ≈ +5 V pulse)
-        .param("vari_speed", 0.0)         // bipolar -1..+1, 0 = halt
-        .param("slide", 0.0)              // 0..1 start position within splice
-        .param("gene_size", 0.0)          // 0..1 grain duration (cubic; 0 = whole splice)
-        .param("morph", 0.0)              // 0..1 spawn cadence + pan + pitch-up
-        .param("amp", 0.5)                // output amplitude
-        .param("auto_level", 0.0)         // >0.5 normalizes final stereo peak
-        .param("play_gate", 1.0)          // 0/1 audible gate, synth stays alive
-        .param("gate", 1.0)               // synth-instance lifecycle
+        .param("bufnum", 0.0) // units: buffer, range: 0..N, default: 0.0. Selects source buffer number.
+        .param("num_splices", 1.0) // units: count, range: 1..256, default: 1.0. Num Splices amount; higher values emphasize that named musical or electrical behavior.
+        .param("splices_buf", 0.0) // units: buffer, range: 0..N, default: 0.0. Selects splice metadata buffer number.
+        .param("organize", 0.0) // units: normalized, range: 0..1, default: 0.0. Organize amount; higher values emphasize that named musical or electrical behavior.
+        .param("sos", 0.0) // units: normalized, range: 0..1, default: 0.0. Sos amount; higher values emphasize that named musical or electrical behavior.
+        .param("clk", 0.0) // units: trigger, range: 0..1, default: 0.0. Clk amount; higher values emphasize that named musical or electrical behavior.
+        .param("vari_speed", 0.0) // units: ratio, range: -4..4, default: 0.0. Vari Speed amount; higher values emphasize that named musical or electrical behavior.
+        .param("slide", 0.0) // units: normalized, range: 0..1, default: 0.0. Trombone slide position; higher values lower the tube resonance.
+        .param("gene_size", 0.0) // units: normalized, range: 0..1, default: 0.0. Gene Size; higher values use a larger buffer, room, or grain window.
+        .param("morph", 0.0) // units: normalized, range: 0..1, default: 0.0. Morph macro; higher values move the model toward its brighter or more complex side.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("auto_level", 0.0) // units: linear, range: 0..1, default: 0.0. Auto Level amount; higher values emphasize that named musical or electrical behavior.
+        .param("play_gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body_map(|p| {
             let bufnum = p.bufnum;
             let num_splices = p.num_splices;
@@ -489,10 +489,10 @@ define_synthdef("morphagene", |builder| {
 //   amp:     output amplitude written into the buffer (0..1).
 define_synthdef("morphagene_reel_fill", |builder| {
     builder
-        .param("bufnum", 0.0)
-        .param("preset", 0.0)
-        .param("freq", 110.0)
-        .param("amp", 0.6)
+        .param("bufnum", 0.0) // units: buffer, range: 0..N, default: 0.0. Selects source buffer number.
+        .param("preset", 0.0) // units: selector, range: 0..N, default: 0.0. Selects preset variation.
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|bufnum, preset, freq, amp| {
             // Mode-mix coefficients via cumulative-clip differences —
             // exactly one is 1.0 for any integer preset value.
@@ -615,3 +615,35 @@ fn reel_fill_preset(reel, preset) {
 // during the previous session is overwritten by the on-disk source on
 // every edit. Use `reel(...)` + `allocate_buffer` (above) when SOS
 // recordings must survive hot-reload.
+
+//
+// # Usage: `morphagene`
+//
+// ```rhai
+// import "stdlib/instruments/sampler/morphagene.vibe" as morphagene;
+//
+// let morphagene = voice("doc_morphagene")
+//     .synth("morphagene")
+//     .set_param("bufnum", 0.0)
+//     .set_param("num_splices", 8.0)
+//     .set_param("splices_buf", 1.0)
+//     .set_param("organize", 0.0);
+// morphagene.outputs(["left", "right"]).to_main();
+// morphagene.outputs(["eosg"]).mute();
+// morphagene.run();
+// ```
+//
+// # Usage: `morphagene_reel_fill`
+//
+// ```rhai
+// import "stdlib/instruments/sampler/morphagene.vibe" as morphagene;
+//
+// let morphagene_reel_fill = voice("doc_morphagene_reel_fill")
+//     .synth("morphagene_reel_fill")
+//     .set_param("bufnum", 0.0)
+//     .set_param("preset", 0.0)
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// morphagene_reel_fill.output("out").to_main();
+// morphagene_reel_fill.run();
+// ```

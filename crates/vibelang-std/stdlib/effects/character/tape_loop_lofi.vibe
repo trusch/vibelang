@@ -30,12 +30,12 @@
 //   level:          Output level trim (1.0 = unity)
 
 define_fx("tape_loop_lofi")
-    .param("loop_length", 2.0)
-    .param("sat_amount", 0.5)
-    .param("dropout_chance", 0.2)
-    .param("lp_freq", 6000.0)
-    .param("mix", 0.7)
-    .param("level", 1.0)
+    .param("loop_length", 2.0) // units: seconds, range: 0..60, default: 2.0. Loop Length amount; higher values emphasize that named musical or electrical behavior.
+    .param("sat_amount", 0.5) // units: normalized, range: 0..1, default: 0.5. Sat Amount; higher values apply more of that modulation or effect.
+    .param("dropout_chance", 0.2) // units: probability, range: 0..1, default: 0.2. Dropout Chance amount; higher values emphasize that named musical or electrical behavior.
+    .param("lp_freq", 6000.0) // units: Hz, range: 20..20000, default: 6000.0. Lp Freq in Hz; higher values move that tone or filter point upward.
+    .param("mix", 0.7) // units: ratio, range: 0..1, default: 0.7. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, loop_length, sat_amount, dropout_chance, lp_freq, mix, level| {
         // Random dropout gate: Dust2 impulses (rectified) shaped into short
         // attack/decay envelopes; gate dips toward 0.05 during a dropout, sits at 1.0 otherwise.
@@ -70,3 +70,18 @@ define_fx("tape_loop_lofi")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: tape_loop_lofi
+//
+// ```rhai
+// import "stdlib/effects/character/tape_loop_lofi.vibe" as tape_loop_lofi;
+//
+// let doc_tape_loop_lofi = fx("doc_tape_loop_lofi")
+//     .synth("tape_loop_lofi")
+//     .param("loop_length", 2.0)
+//     .param("sat_amount", 0.5)
+//     .param("dropout_chance", 0.2)
+//     .param("lp_freq", 6000.0)
+//     .apply();
+// ```

@@ -11,10 +11,10 @@
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_euclidean")
-    .param("clock", 0.0)
-    .param("hits", 3.0)
-    .param("total", 8.0)
-    .param("rotation", 0.0)
+    .param("clock", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("hits", 3.0) // units: count, range: 0..32, default: 3.0. Number of active hits in the rhythm pattern; higher values make it denser.
+    .param("total", 8.0) // units: count, range: 1..32, default: 8.0. Total step count for the rhythm cycle; higher values make a longer pattern.
+    .param("rotation", 0.0) // units: normalized, range: 0..1, default: 0.0. Pattern rotation; higher values shift the Euclidean rhythm forward.
     .body(|clock, hits, total, rotation| {
         // Step counter [0, total-1] advancing on every `clock` rising edge.
         let step = stepper_ar(clock, 0.0, 0.0, total - 1.0, 1.0, 0.0);
@@ -34,3 +34,19 @@ define_synthdef("cv_euclidean")
         let pulse = trig1_ar(gated, 0.005);
         clip_ar(pulse * 0.5, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_euclidean`
+//
+// ```rhai
+// import "stdlib/cv/triggers/cv_euclidean.vibe" as cv_euclidean;
+//
+// let cv_euclidean = voice("doc_cv_euclidean")
+//     .synth("cv_euclidean")
+//     .set_param("clock", 1.0)
+//     .set_param("hits", 0.5)
+//     .set_param("total", 0.5)
+//     .set_param("rotation", 0.5);
+// cv_euclidean.output("out").to_main();
+// cv_euclidean.run();
+// ```

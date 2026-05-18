@@ -27,22 +27,22 @@ define_synthdef("verbos_touchplate", |builder| {
         .output_kr("tune_cv")
         .output_kr("tune_gate")
         .output_kr("tune_pressure")
-        .param("key", 0.0)                  // rounded 0..31 keyboard key index
-        .param("octave", 1.0)               // rounded 0..3 octave offset for pitch output
-        .param("pressure", 0.0)             // 0..1 main touch pressure for gate and pressure CV
-        .param("bend", 0.0)                 // -1..1 pitch bend CV output
-        .param("tune_key", 0.0)             // rounded selector for tune row slots 1..8
-        .param("tune_pressure", 0.0)        // 0..1 pressure input for the tune row gate/CV
-        .param("tune1", 0.0)                // tune-row voltage for touchplate slot 1
-        .param("tune2", 0.1666667)          // tune-row voltage for touchplate slot 2
-        .param("tune3", 0.3333333)          // tune-row voltage for touchplate slot 3
-        .param("tune4", 0.4166667)          // tune-row voltage for touchplate slot 4
-        .param("tune5", 0.5833333)          // tune-row voltage for touchplate slot 5
-        .param("tune6", 0.75)               // tune-row voltage for touchplate slot 6
-        .param("tune7", 0.9166667)          // tune-row voltage for touchplate slot 7
-        .param("tune8", 1.0)                // tune-row voltage for touchplate slot 8
-        .param("threshold", 0.05)           // 0..1 gate threshold for both pressure lanes
-        .param("slew", 0.1)                 // 0..1 pitch and pressure lag amount
+        .param("key", 0.0) // units: normalized, range: 0..1, default: 0.0. Key amount; higher values emphasize that named musical or electrical behavior.
+        .param("octave", 1.0) // units: normalized, range: 0..1, default: 1.0. Octave offset; higher values transpose the pitch upward by octaves.
+        .param("pressure", 0.0) // units: normalized, range: 0..1, default: 0.0. Pressure amount; higher values emphasize that named musical or electrical behavior.
+        .param("bend", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch bend offset in Hz; positive values sweep the drum voice upward.
+        .param("tune_key", 0.0) // units: normalized, range: 0..1, default: 0.0. Tune Key amount; higher values emphasize that named musical or electrical behavior.
+        .param("tune_pressure", 0.0) // units: normalized, range: 0..1, default: 0.0. Tune Pressure amount; higher values emphasize that named musical or electrical behavior.
+        .param("tune1", 0.0) // units: normalized, range: 0..1, default: 0.0. Tune slot 1; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune2", 0.1666667) // units: normalized, range: 0..1, default: 0.1666667. Tune slot 2; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune3", 0.3333333) // units: normalized, range: 0..1, default: 0.3333333. Tune slot 3; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune4", 0.4166667) // units: normalized, range: 0..1, default: 0.4166667. Tune slot 4; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune5", 0.5833333) // units: normalized, range: 0..1, default: 0.5833333. Tune slot 5; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune6", 0.75) // units: normalized, range: 0..1, default: 0.75. Tune slot 6; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune7", 0.9166667) // units: normalized, range: 0..1, default: 0.9166667. Tune slot 7; higher values adjust that numbered harmonic or stage as labeled.
+        .param("tune8", 1.0) // units: normalized, range: 0..1, default: 1.0. Tune slot 8; higher values adjust that numbered harmonic or stage as labeled.
+        .param("threshold", 0.05) // units: normalized, range: 0..1, default: 0.05. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("slew", 0.1) // units: normalized, range: 0..1, default: 0.1. Slew smoothing time; higher values soften abrupt CV changes.
         .body_map(|p| {
             let key = clip_kr(round(p.key), 0.0, 31.0);
             let octave = clip_kr(round(p.octave), 0.0, 3.0);
@@ -96,3 +96,19 @@ define_synthdef("verbos_touchplate", |builder| {
             [pitch, gate, trigger, pressure, bend, tune_cv, tune_gate, tune_pressure]
         })
 });
+
+//
+// # Usage: `verbos_touchplate`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/verbos_touchplate.vibe" as verbos_touchplate;
+//
+// let verbos_touchplate = voice("doc_verbos_touchplate")
+//     .synth("verbos_touchplate")
+//     .set_param("pressure", 0.35)
+//     .set_param("key", 0.5)
+//     .set_param("octave", 0.5)
+//     .set_param("bend", 0.5);
+// verbos_touchplate.outputs(["pitch"]).mute();
+// verbos_touchplate.run();
+// ```

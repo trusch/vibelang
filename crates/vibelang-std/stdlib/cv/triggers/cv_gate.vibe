@@ -12,7 +12,7 @@
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_gate")
-    .param("gate", 0.0)
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|gate| {
         // ASR shape: 0.1ms attack, sustain at 1.0 while gate>0, 1ms release
         // on gate=0 — then doneAction=2 frees the synth.
@@ -27,3 +27,16 @@ define_synthdef("cv_gate")
         // already 0) but it's the carrier for doneAction=2.
         clip_ar(smoothed * env * 0.5, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_gate`
+//
+// ```rhai
+// import "stdlib/cv/triggers/cv_gate.vibe" as cv_gate;
+//
+// let cv_gate = voice("doc_cv_gate")
+//     .synth("cv_gate")
+//     .set_param("gate", 1.0);
+// cv_gate.output("out").to_main();
+// cv_gate.run();
+// ```

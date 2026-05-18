@@ -114,22 +114,22 @@ define_synthdef("erica_wavetable_vco", |builder| {
         .output("main", 1)
         .output("sub1", 1)
         .output("sub2", 1)
-        .param("freq", 110.0)               // base oscillator frequency in Hz when voct is zero
-        .param("voct", 0.0)                 // MIDI-note-style pitch source; nonzero replaces freq
-        .param("bank", 0.0)                 // 0..15 wavetable bank before bank CV
-        .param("wave", 0.0)                 // 0..15 wave index inside the selected bank
-        .param("morph", 0.0)                // 0..1 blend toward the next wave cell
-        .param("bitcrush", 0.0)             // 0 clean, 1 reduced bit depth/sample-rate color
-        .param("vca", 1.0)                  // 0..1 output level shared by main and sub oscillators
-        .param("sub_shape", 0.0)            // 0 square, 0.5 triangle, 1 sine sub shape
-        .param("sub1_level", 0.3)           // 0..1 level for octave -1 sub output
-        .param("sub2_level", 0.2)           // 0..1 level for octave -2 sub output
-        .param("bank_cv_amt", 0.0)          // 0..1 attenuator for bank_cv across the bank range
-        .param("bank_cv", 0.0)              // bipolar CV added to bank selection
-        .param("wave_cv_amt", 0.0)          // 0..1 attenuator for wave_cv across the wave range
-        .param("wave_cv", 0.0)              // bipolar CV added to wave selection
-        .param("bitcrush_cv_amt", 0.0)      // 0..1 attenuator for bitcrush_cv
-        .param("bitcrush_cv", 0.0)          // bipolar CV added to bitcrush amount
+        .param("freq", 110.0) // units: Hz, range: 0..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("voct", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("bank", 0.0) // units: normalized, range: 0..1, default: 0.0. Bank amount; higher values emphasize that named musical or electrical behavior.
+        .param("wave", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("morph", 0.0) // units: normalized, range: 0..1, default: 0.0. Morph macro; higher values move the model toward its brighter or more complex side.
+        .param("bitcrush", 0.0) // units: normalized, range: 0..1, default: 0.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("vca", 1.0) // units: normalized, range: 0..1, default: 1.0. Vca amount; higher values emphasize that named musical or electrical behavior.
+        .param("sub_shape", 0.0) // units: normalized, range: 0..1, default: 0.0. Sub Shape amount; higher values emphasize that named musical or electrical behavior.
+        .param("sub1_level", 0.3) // units: linear, range: 0..1, default: 0.3. Sub1 Level amount; higher values emphasize that named musical or electrical behavior.
+        .param("sub2_level", 0.2) // units: linear, range: 0..1, default: 0.2. Sub2 Level amount; higher values emphasize that named musical or electrical behavior.
+        .param("bank_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. BANK CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("bank_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Bank CV input; bipolar values modulate the matching panel control.
+        .param("wave_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. WAVE CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("wave_cv", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("bitcrush_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. BITCRUSH CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("bitcrush_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Bitcrush CV input; bipolar values modulate the matching panel control.
         .body_map(|p| {
             let freq_hz = clip(p.freq, 0.001, 20000.0);
             let voct_on = clip(p.voct * 1000.0, 0.0, 1.0);
@@ -173,3 +173,19 @@ define_synthdef("erica_wavetable_vco", |builder| {
             [main, sub1, sub2]
         })
 });
+
+//
+// # Usage: `erica_wavetable_vco`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_wavetable_vco.vibe" as erica_wavetable_vco;
+//
+// let erica_wavetable_vco = voice("doc_erica_wavetable_vco")
+//     .synth("erica_wavetable_vco")
+//     .set_param("freq", 220.0)
+//     .set_param("sub1_level", 0.5)
+//     .set_param("sub_shape", 0.6)
+//     .set_param("voct", 0.5);
+// erica_wavetable_vco.output("main").to_main();
+// erica_wavetable_vco.run();
+// ```

@@ -46,21 +46,21 @@ define_synthdef("beads", |builder| {
         .input("in", 2)
         .output("left", 1)
         .output("right", 1)
-        .param("time", 0.5)                 // 0..1 grain position; spread_time adds random drift
-        .param("pitch", 0.0)                // semitone transposition clipped to +/-24 before grain playback
-        .param("size", 0.5)                 // 0..1 grain size; spread_size adds random variation
-        .param("shape", 0.5)                // 0..1 Clouds texture/shape control for grain tone
-        .param("density", 0.5)              // 0..1 grain density and randomizer rate driver
-        .param("seed_mode", 0.0)            // rounded enum: latched, clocked, or gated grain retriggering
-        .param("seed", 0.0)                 // 0/1 trigger or gate for seed modes 1 and 2
-        .param("quality", 0.0)              // rounded enum: clean, tape-like, or degraded path
-        .param("freeze", 0.0)               // 0/1 freeze latch passed into the granular core
-        .param("feedback", 0.0)             // local feedback amount clipped below runaway
-        .param("dry_wet", 0.5)              // 0..1 dry input to granular output blend
-        .param("space", 0.2)                // 0..1 post-core reverb send amount
-        .param("spread_time", 0.1)          // 0..1 random drift depth for grain position
-        .param("spread_pitch", 0.0)         // 0..1 random pitch scatter up to roughly +/-12 semitones
-        .param("spread_size", 0.0)          // 0..1 random drift depth for grain size
+        .param("time", 0.5) // units: seconds, range: 0..60, default: 0.5. Delay or segment time; higher values make repeats arrive later.
+        .param("pitch", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("size", 0.5) // units: normalized, range: 0..1, default: 0.5. Size; higher values use a larger buffer, room, or grain window.
+        .param("shape", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
+        .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
+        .param("seed_mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("seed", 0.0) // units: normalized, range: 0..1, default: 0.0. Seed amount; higher values emphasize that named musical or electrical behavior.
+        .param("quality", 0.0) // units: normalized, range: 0..1, default: 0.0. Quality mode; higher values choose denser or cleaner granular processing.
+        .param("freeze", 0.0) // units: normalized, range: 0..1, default: 0.0. Freeze switch; rounded values turn that mode off or on.
+        .param("feedback", 0.0) // units: normalized, range: 0..1, default: 0.0. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("dry_wet", 0.5) // units: normalized, range: 0..1, default: 0.5. Blend amount; 0 favors the first source and 1 favors the second or wet source.
+        .param("space", 0.2) // units: normalized, range: 0..1, default: 0.2. Space amount; higher values emphasize that named musical or electrical behavior.
+        .param("spread_time", 0.1) // units: seconds, range: 0..60, default: 0.1. Delay or segment time; higher values make repeats arrive later.
+        .param("spread_pitch", 0.0) // units: normalized, range: 0..1, default: 0.0. Spread Pitch amount; higher values emphasize that named musical or electrical behavior.
+        .param("spread_size", 0.0) // units: normalized, range: 0..1, default: 0.0. Spread Size; higher values use a larger buffer, room, or grain window.
         .body_map(|p| {
             let dry_l = p.inputs["in"][0];
             let dry_r = p.inputs["in"][1];
@@ -128,3 +128,19 @@ define_synthdef("beads", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `beads`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/beads.vibe" as beads;
+//
+// let beads = voice("doc_beads")
+//     .synth("beads")
+//     .set_param("shape", 0.6)
+//     .set_param("seed_mode", 1.0)
+//     .set_param("time", 0.5)
+//     .set_param("pitch", 0.5);
+// beads.output("left").to_main();
+// beads.run();
+// ```

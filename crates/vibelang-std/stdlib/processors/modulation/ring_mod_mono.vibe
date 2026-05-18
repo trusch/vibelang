@@ -4,8 +4,8 @@ define_synthdef("ring_mod_mono")
     .input("carrier", 1)
     .input("modulator", 1)
     .output("out", 1)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let carrier = p.inputs.carrier;
         let modulator = p.inputs.modulator;
@@ -14,3 +14,17 @@ define_synthdef("ring_mod_mono")
 
         [((1.0 - mix) * carrier + mix * wet) * p.level]
     });
+
+//
+// # Usage: `ring_mod_mono`
+//
+// ```rhai
+// import "stdlib/processors/modulation/ring_mod_mono.vibe" as ring_mod_mono;
+//
+// let ring_mod_mono = voice("doc_ring_mod_mono")
+//     .synth("ring_mod_mono")
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45);
+// ring_mod_mono.output("out").to_main();
+// ring_mod_mono.run();
+// ```

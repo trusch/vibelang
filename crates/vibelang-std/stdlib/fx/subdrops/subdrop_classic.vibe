@@ -1,8 +1,8 @@
 // Genre: Dubstep, Bass Music | Character: Classic sub drop for emphasis
 define_synthdef("subdrop_classic", |builder| {
     builder
-        .param("freq", 50.0)
-        .param("amp", 1.0)
+        .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Quick attack, medium decay
             let env = envelope()
@@ -23,3 +23,17 @@ define_synthdef("subdrop_classic", |builder| {
         })
 });
 
+//
+// # Usage: subdrop_classic
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_classic.vibe" as subdrop_classic;
+//
+// let doc_subdrop_classic = voice("doc_subdrop_classic")
+//     .synth("subdrop_classic")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_subdrop_classic.output("out").to_main();
+// doc_subdrop_classic.run();
+// ```

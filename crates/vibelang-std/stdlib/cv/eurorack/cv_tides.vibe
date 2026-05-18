@@ -37,11 +37,11 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_tides")
-    .param("rate", 1.0)
-    .param("shape", 0.5)
-    .param("slope", 0.5)
-    .param("depth_v", 5.0)
-    .param("bipolar", 1.0)
+    .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("shape", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
+    .param("slope", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, shape, slope, depth_v, bipolar| {
         let period = 1.0 / (rate + 0.001);
 
@@ -80,3 +80,19 @@ define_synthdef("cv_tides")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_tides`
+//
+// ```rhai
+// import "stdlib/cv/eurorack/cv_tides.vibe" as cv_tides;
+//
+// let cv_tides = voice("doc_cv_tides")
+//     .synth("cv_tides")
+//     .set_param("rate", 2.0)
+//     .set_param("shape", 0.6)
+//     .set_param("depth_v", 4.0)
+//     .set_param("slope", 0.6);
+// cv_tides.output("out").to_main();
+// cv_tides.run();
+// ```

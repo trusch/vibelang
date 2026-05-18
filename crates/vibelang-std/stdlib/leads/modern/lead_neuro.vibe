@@ -1,9 +1,9 @@
 // Genre: Neurofunk, Drum & Bass | Character: Neurofunk lead - aggressive and morphing
 define_synthdef("lead_neuro")
-    .param("freq", 220.0)
-    .param("amp", 0.55)
-    .param("gate", 1.0)
-    .param("morph", 0.5)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("morph", 0.5) // units: normalized, range: 0..1, default: 0.5. Morph macro; higher values move the model toward its brighter or more complex side.
     .body(|freq, amp, gate, morph| {
         let env = envelope()
             .asr(0.002, 1.0, 0.08)
@@ -30,3 +30,19 @@ define_synthdef("lead_neuro")
 
         (filtered * 1.5).tanh() * env * amp
     });
+
+//
+// # Usage: `lead_neuro`
+//
+// ```rhai
+// import "stdlib/leads/modern/lead_neuro.vibe" as lead_neuro;
+//
+// let lead_neuro = voice("doc_lead_neuro")
+//     .synth("lead_neuro")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("morph", 0.5);
+// lead_neuro.output("out").to_main();
+// lead_neuro.run();
+// ```

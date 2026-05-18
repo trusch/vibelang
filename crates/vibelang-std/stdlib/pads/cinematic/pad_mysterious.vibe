@@ -1,8 +1,8 @@
 // Genre: Mystery, Thriller | Character: Mysterious pad - enigmatic and suspenseful
 define_synthdef("pad_mysterious")
-    .param("freq", 165.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 165.0) // units: Hz, range: 20..20000, default: 165.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.45, 1.0, 0.4)
@@ -26,3 +26,18 @@ define_synthdef("pad_mysterious")
 
         lpf_ar(mix, 2500.0) * env * amp
     });
+
+//
+// # Usage: `pad_mysterious`
+//
+// ```rhai
+// import "stdlib/pads/cinematic/pad_mysterious.vibe" as pad_mysterious;
+//
+// let pad_mysterious = voice("doc_pad_mysterious")
+//     .synth("pad_mysterious")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_mysterious.output("out").to_main();
+// pad_mysterious.run();
+// ```

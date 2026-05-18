@@ -1,7 +1,7 @@
 // Genre: Horror, Dark Ambient | Character: Dark ominous stinger
 define_synthdef("stinger_dark", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.001, 1.5)
@@ -34,3 +34,17 @@ define_synthdef("stinger_dark", |builder| {
             mix * env * amp * 0.6
         })
 });
+
+//
+// # Usage: stinger_dark
+//
+// ```rhai
+// import "stdlib/fx/stingers/stinger_dark.vibe" as stinger_dark;
+//
+// let doc_stinger_dark = voice("doc_stinger_dark")
+//     .synth("stinger_dark")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_stinger_dark.output("out").to_main();
+// doc_stinger_dark.run();
+// ```

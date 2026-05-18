@@ -4,8 +4,21 @@
 // CV contract: 1.0 audio = +10V, so the internal scale is voct/10 in volts.
 // Hard-clipped to ±1.0 (±10V, ±12 octaves around C4) — no leak_dc, no soft-sat.
 define_synthdef("cv_voct_from_midi")
-    .param("midi_note", 60.0)  // 60 = C4 → 0V
+    .param("midi_note", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
     .body(|midi_note| {
         let voct = (midi_note - 60.0) / 12.0;
         clip(voct, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_voct_from_midi`
+//
+// ```rhai
+// import "stdlib/cv/pitch/cv_voct_from_midi.vibe" as cv_voct_from_midi;
+//
+// let cv_voct_from_midi = voice("doc_cv_voct_from_midi")
+//     .synth("cv_voct_from_midi")
+//     .set_param("midi_note", 60.0);
+// cv_voct_from_midi.output("out").to_main();
+// cv_voct_from_midi.run();
+// ```

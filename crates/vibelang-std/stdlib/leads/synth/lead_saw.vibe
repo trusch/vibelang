@@ -1,9 +1,9 @@
 // Genre: Trance, House | Character: Classic saw lead, bright and cutting
 define_synthdef("lead_saw", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Lead envelope
@@ -32,3 +32,17 @@ define_synthdef("lead_saw", |builder| {
         })
 });
 
+//
+// # Usage: `lead_saw`
+//
+// ```rhai
+// import "stdlib/leads/synth/lead_saw.vibe" as lead_saw;
+//
+// let lead_saw = voice("doc_lead_saw")
+//     .synth("lead_saw")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_saw.output("out").to_main();
+// lead_saw.run();
+// ```

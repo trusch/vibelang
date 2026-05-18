@@ -47,11 +47,11 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_marbles")
-    .param("clock_in", 0.0)
-    .param("bias", 0.0)
-    .param("spread", 0.5)
-    .param("density", 1.0)
-    .param("length", 0.0)
+    .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("bias", 0.0) // units: normalized, range: 0..1, default: 0.0. Bias offset; higher values shift the distribution or VCA opening upward.
+    .param("spread", 0.5) // units: normalized, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
+    .param("density", 1.0) // units: normalized, range: 0..1, default: 1.0. Event density per second; higher values create more grains, dust, or impulses.
+    .param("length", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
     .body(|clock_in, bias, spread, density, length| {
         // Triangular-distribution random source, centred on 0, in [-1, +1].
         let g1 = white_noise_kr();
@@ -85,3 +85,19 @@ define_synthdef("cv_marbles")
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_marbles`
+//
+// ```rhai
+// import "stdlib/cv/eurorack/cv_marbles.vibe" as cv_marbles;
+//
+// let cv_marbles = voice("doc_cv_marbles")
+//     .synth("cv_marbles")
+//     .set_param("clock_in", 1.0)
+//     .set_param("length", 1.0)
+//     .set_param("bias", 0.6)
+//     .set_param("spread", 0.6);
+// cv_marbles.output("out").to_main();
+// cv_marbles.run();
+// ```

@@ -31,11 +31,11 @@
 
 define_fx("chorus_dimension_3d", |builder| {
     builder
-        .param("rate", 0.5)
-        .param("depth", 0.004)
-        .param("spread", 1.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.004) // units: ratio, range: 0..1, default: 0.004. Modulation depth; higher values make the movement more pronounced.
+        .param("spread", 1.0) // units: ratio, range: 0..1, default: 1.0. Spread width; higher values distribute energy across a wider range.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, spread, mix, level| {
             // Six LFOs evenly spaced around the cycle.
             let lfo1 = sin_osc_kr(rate, 0.0);
@@ -91,3 +91,18 @@ define_fx("chorus_dimension_3d", |builder| {
             ]
         })
 });
+
+//
+// # Usage: chorus_dimension_3d
+//
+// ```rhai
+// import "stdlib/effects/modulation/chorus_dimension_3d.vibe" as chorus_dimension_3d;
+//
+// let doc_chorus_dimension_3d = fx("doc_chorus_dimension_3d")
+//     .synth("chorus_dimension_3d")
+//     .param("rate", 0.5)
+//     .param("depth", 0.004)
+//     .param("spread", 1.0)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

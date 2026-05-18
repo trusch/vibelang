@@ -5,9 +5,9 @@
 
 define_synthdef("xylophone", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Short percussive envelope
             let env = envelope()
@@ -39,3 +39,18 @@ define_synthdef("xylophone", |builder| {
             (wood + click_filtered) * env * decay_env * amp * 0.7
         })
 });
+
+//
+// # Usage: `xylophone`
+//
+// ```rhai
+// import "stdlib/bells/xylophone.vibe" as xylophone;
+//
+// let xylophone = voice("doc_xylophone")
+//     .synth("xylophone")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// xylophone.output("out").to_main();
+// xylophone.run();
+// ```

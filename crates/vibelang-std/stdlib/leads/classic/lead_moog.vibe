@@ -1,9 +1,9 @@
 // Genre: Funk, Progressive Rock | Character: Classic Minimoog lead - fat and expressive
 define_synthdef("lead_moog")
-    .param("freq", 440.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
-    .param("cutoff", 2000.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("cutoff", 2000.0) // units: Hz, range: 20..20000, default: 2000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
     .body(|freq, amp, gate, cutoff| {
         let env = envelope()
             .asr(0.01, 1.0, 0.1)
@@ -29,3 +29,19 @@ define_synthdef("lead_moog")
 
         filtered * env * amp
     });
+
+//
+// # Usage: `lead_moog`
+//
+// ```rhai
+// import "stdlib/leads/classic/lead_moog.vibe" as lead_moog;
+//
+// let lead_moog = voice("doc_lead_moog")
+//     .synth("lead_moog")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0);
+// lead_moog.output("out").to_main();
+// lead_moog.run();
+// ```

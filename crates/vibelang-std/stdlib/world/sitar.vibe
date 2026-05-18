@@ -6,10 +6,10 @@
 
 define_synthdef("sitar", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("buzz", 0.6) // Buzz/Jivari amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("buzz", 0.6) // units: normalized, range: 0..1, default: 0.6. Buzz amount; higher adds brighter string or reed rasp.
         .body(|freq, amp, gate, buzz| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -47,3 +47,19 @@ define_synthdef("sitar", |builder| {
             body * env * decay_env * amp * 0.6
         })
 });
+
+//
+// # Usage: `sitar`
+//
+// ```rhai
+// import "stdlib/world/sitar.vibe" as sitar;
+//
+// let sitar = voice("doc_sitar")
+//     .synth("sitar")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("buzz", 0.6);
+// sitar.output("out").to_main();
+// sitar.run();
+// ```

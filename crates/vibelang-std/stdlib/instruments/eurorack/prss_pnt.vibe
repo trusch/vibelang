@@ -19,12 +19,12 @@ define_synthdef("prss_pnt", |builder| {
         .output_kr("gate3")
         .output_kr("pressure4")
         .output_kr("gate4")
-        .param("press1", 0.0)               // 0..1 pressure input for pad 1
-        .param("press2", 0.0)               // 0..1 pressure input for pad 2
-        .param("press3", 0.0)               // 0..1 pressure input for pad 3
-        .param("press4", 0.0)               // 0..1 pressure input for pad 4
-        .param("threshold", 0.05)           // 0..1 shared pressure threshold for gate outputs
-        .param("slew", 0.01)                // seconds of attack/release lag for pressure CVs
+        .param("press1", 0.0) // units: normalized, range: 0..1, default: 0.0. Press 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("press2", 0.0) // units: normalized, range: 0..1, default: 0.0. Press 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("press3", 0.0) // units: normalized, range: 0..1, default: 0.0. Press 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("press4", 0.0) // units: normalized, range: 0..1, default: 0.0. Press 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("threshold", 0.05) // units: normalized, range: 0..1, default: 0.05. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("slew", 0.01) // units: normalized, range: 0..1, default: 0.01. Slew smoothing time; higher values soften abrupt CV changes.
         .body_map(|p| {
             let slew = p.slew.max(0.0);
             let threshold = clip(p.threshold, 0.0, 1.0);
@@ -41,3 +41,19 @@ define_synthdef("prss_pnt", |builder| {
             [p1, g1, p2, g2, p3, g3, p4, g4]
         })
 });
+
+//
+// # Usage: `prss_pnt`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/prss_pnt.vibe" as prss_pnt;
+//
+// let prss_pnt = voice("doc_prss_pnt")
+//     .synth("prss_pnt")
+//     .set_param("press1", 0.35)
+//     .set_param("press2", 0.35)
+//     .set_param("press3", 0.35)
+//     .set_param("press4", 0.35);
+// prss_pnt.outputs(["pressure1"]).mute();
+// prss_pnt.run();
+// ```

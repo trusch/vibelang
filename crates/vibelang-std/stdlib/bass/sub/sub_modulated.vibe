@@ -1,9 +1,9 @@
 // Genre: Techno, Minimal | Character: Phase-modulated sub with movement
 define_synthdef("sub_modulated", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -28,3 +28,18 @@ define_synthdef("sub_modulated", |builder| {
         })
 });
 
+//
+// # Usage: sub_modulated
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_modulated.vibe" as sub_modulated;
+//
+// let doc_sub_modulated = voice("doc_sub_modulated")
+//     .synth("sub_modulated")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_modulated.output("out").to_main();
+// doc_sub_modulated.run();
+// ```

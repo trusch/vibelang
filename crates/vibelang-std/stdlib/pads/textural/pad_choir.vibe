@@ -1,8 +1,8 @@
 // Genre: Cinematic, Ambient | Character: Choir pad - ethereal voices
 define_synthdef("pad_choir")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.35, 1.0, 0.4)
@@ -29,3 +29,18 @@ define_synthdef("pad_choir")
 
         sig * env * amp
     });
+
+//
+// # Usage: `pad_choir`
+//
+// ```rhai
+// import "stdlib/pads/textural/pad_choir.vibe" as pad_choir;
+//
+// let pad_choir = voice("doc_pad_choir")
+//     .synth("pad_choir")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_choir.output("out").to_main();
+// pad_choir.run();
+// ```

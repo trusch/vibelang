@@ -1,7 +1,7 @@
 // Genre: EDM, Cinematic | Character: Hard, aggressive impact
 define_synthdef("impact_hard", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Quick attack, medium decay
             let env = envelope()
@@ -25,3 +25,16 @@ define_synthdef("impact_hard", |builder| {
         })
 });
 
+//
+// # Usage: impact_hard
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_hard.vibe" as impact_hard;
+//
+// let doc_impact_hard = voice("doc_impact_hard")
+//     .synth("impact_hard")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_impact_hard.output("out").to_main();
+// doc_impact_hard.run();
+// ```

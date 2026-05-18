@@ -1,9 +1,9 @@
 // Genre: Chiptune, Lo-fi | Character: Bitcrushed lo-fi lead
 define_synthdef("lead_bitcrushed")
-    .param("freq", 440.0)
-    .param("amp", 0.55)
-    .param("gate", 1.0)
-    .param("bits", 8.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("bits", 8.0) // units: bits, range: 1..16, default: 8.0. Random shift-register bit depth; higher values make stepped CV less coarse.
     .body(|freq, amp, gate, bits| {
         let env = envelope()
             .asr(0.005, 1.0, 0.08)
@@ -20,3 +20,19 @@ define_synthdef("lead_bitcrushed")
 
         crushed * env * amp
     });
+
+//
+// # Usage: `lead_bitcrushed`
+//
+// ```rhai
+// import "stdlib/leads/organic/lead_bitcrushed.vibe" as lead_bitcrushed;
+//
+// let lead_bitcrushed = voice("doc_lead_bitcrushed")
+//     .synth("lead_bitcrushed")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("bits", 8.0);
+// lead_bitcrushed.output("out").to_main();
+// lead_bitcrushed.run();
+// ```

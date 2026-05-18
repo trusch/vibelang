@@ -1,9 +1,9 @@
 // Genre: House, Techno | Character: Detuned lead with chorus effect
 define_synthdef("lead_detuned", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope
@@ -34,3 +34,17 @@ define_synthdef("lead_detuned", |builder| {
         })
 });
 
+//
+// # Usage: `lead_detuned`
+//
+// ```rhai
+// import "stdlib/leads/synth/lead_detuned.vibe" as lead_detuned;
+//
+// let lead_detuned = voice("doc_lead_detuned")
+//     .synth("lead_detuned")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_detuned.output("out").to_main();
+// lead_detuned.run();
+// ```

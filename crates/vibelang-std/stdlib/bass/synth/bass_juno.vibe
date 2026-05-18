@@ -1,8 +1,8 @@
 // Genre: House, Disco, Synthwave | Character: Roland Juno-style bass - warm and punchy
 define_synthdef("bass_juno")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.008, 1.0, 0.1)
@@ -30,3 +30,19 @@ define_synthdef("bass_juno")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_juno
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_juno.vibe" as bass_juno;
+//
+// let doc_bass_juno = voice("doc_bass_juno")
+//     .synth("bass_juno")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_juno.output("out").to_main();
+// doc_bass_juno.run();
+// ```

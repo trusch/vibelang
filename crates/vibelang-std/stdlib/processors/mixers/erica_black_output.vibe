@@ -18,17 +18,17 @@ define_synthdef("erica_black_output")
     .input("in1", 1)
     .input("in2", 1)
     .input("in3", 1)
-    .param("level1", 0.7)
-    .param("level2", 0.7)
-    .param("level3", 0.7)
-    .param("pan1", 0.0)
-    .param("pan2", 0.0)
-    .param("pan3", 0.0)
-    .param("pan3_cv_amt", 0.0)
-    .param("pan3_cv", 0.0)
-    .param("master", 0.8)
-    .param("phones_level", 0.5)
-    .param("limit", 1.0)
+    .param("level1", 0.7) // units: linear, range: 0..1, default: 0.7. Band 1 output level; higher makes that resonator louder.
+    .param("level2", 0.7) // units: linear, range: 0..1, default: 0.7. Band 2 output level; higher makes that resonator louder.
+    .param("level3", 0.7) // units: linear, range: 0..1, default: 0.7. Band 3 output level; higher makes that resonator louder.
+    .param("pan1", 0.0) // units: pan, range: -1..1, default: 0.0. Stereo pan position; -1 is left, 0 is center, +1 is right.
+    .param("pan2", 0.0) // units: pan, range: -1..1, default: 0.0. Stereo pan position; -1 is left, 0 is center, +1 is right.
+    .param("pan3", 0.0) // units: pan, range: -1..1, default: 0.0. Stereo pan position; -1 is left, 0 is center, +1 is right.
+    .param("pan3_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. PAN3 CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("pan3_cv", 0.0) // units: pan, range: -1..1, default: 0.0. Pan3 CV input; bipolar values modulate the matching panel control.
+    .param("master", 0.8) // units: linear, range: 0..1, default: 0.8. Master output level; higher raises the final stereo bus.
+    .param("phones_level", 0.5) // units: linear, range: 0..1, default: 0.5. Headphone monitor level; higher raises the phones output feed.
+    .param("limit", 1.0) // units: normalized, range: 0..1, default: 1.0. Limiter enable/amount; higher applies more output protection.
     .body_map(|p| {
         let pan1 = clip(p.pan1, -1.0, 1.0);
         let pan2 = clip(p.pan2, -1.0, 1.0);
@@ -50,3 +50,19 @@ define_synthdef("erica_black_output")
             out_r
         ]
     });
+
+//
+// # Usage: `erica_black_output`
+//
+// ```rhai
+// import "stdlib/processors/mixers/erica_black_output.vibe" as erica_black_output;
+//
+// let erica_black_output = voice("doc_erica_black_output")
+//     .synth("erica_black_output")
+//     .set_param("level1", 0.5)
+//     .set_param("level2", 0.5)
+//     .set_param("level3", 0.5)
+//     .set_param("pan1", -0.2);
+// erica_black_output.output("out").to_main();
+// erica_black_output.run();
+// ```

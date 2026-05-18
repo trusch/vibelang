@@ -1,10 +1,10 @@
 // Genre: Brostep, Dubstep | Character: Aggressive, distorted wobble
 define_synthdef("wobble_aggressive", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("wobble_rate", 6.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("wobble_rate", 6.0) // units: Hz, range: 0..100, default: 6.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, wobble_rate, amp, gate| {
 
             // Envelope
@@ -34,3 +34,19 @@ define_synthdef("wobble_aggressive", |builder| {
         })
 });
 
+//
+// # Usage: wobble_aggressive
+//
+// ```rhai
+// import "stdlib/bass/wobble/wobble_aggressive.vibe" as wobble_aggressive;
+//
+// let doc_wobble_aggressive = voice("doc_wobble_aggressive")
+//     .synth("wobble_aggressive")
+//     .set_param("freq", 110.0)
+//     .set_param("wobble_rate", 6.0)
+//     .set_param("amp", 0.55)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_wobble_aggressive.output("out").to_main();
+// doc_wobble_aggressive.run();
+// ```

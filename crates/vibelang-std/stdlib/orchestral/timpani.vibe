@@ -1,7 +1,7 @@
 // Genre: Orchestral, Cinematic | Character: Timpani drum with resonant tone
 define_synthdef("timpani")
-    .param("freq", 80.0)
-    .param("amp", 0.9)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Long resonant decay
         let amp_env = envelope()
@@ -28,3 +28,17 @@ define_synthdef("timpani")
 
         (body + harm1 + harm2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: `timpani`
+//
+// ```rhai
+// import "stdlib/orchestral/timpani.vibe" as timpani;
+//
+// let timpani = voice("doc_timpani")
+//     .synth("timpani")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// timpani.output("out").to_main();
+// timpani.run();
+// ```

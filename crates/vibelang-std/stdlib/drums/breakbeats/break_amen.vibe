@@ -1,8 +1,8 @@
 // Genre: Jungle, Drum & Bass | Character: Amen break-style kit (combined hit)
 define_synthdef("break_amen")
-    .param("freq", 200.0)
-    .param("amp", 0.9)
-    .param("type", 0.0) // 0=kick, 0.5=snare, 1.0=hat
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("type", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or algorithm.
     .body(|freq, amp, type_param| {
         // Different envelopes based on type
         let decay = 0.3 - type_param * 0.15;
@@ -38,3 +38,19 @@ define_synthdef("break_amen")
 
         (kick + snare_body + snare_noise + hat + attack) * amp_env * amp
     });
+
+//
+// # Usage: break_amen
+//
+// ```rhai
+// import "stdlib/drums/breakbeats/break_amen.vibe" as break_amen;
+//
+// let doc_break_amen = voice("doc_break_amen")
+//     .synth("break_amen")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.9)
+//     .set_param("type", 0.0)
+//     ;
+// doc_break_amen.output("out").to_main();
+// doc_break_amen.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Pop, Rock | Character: Tambourine jingle, bright and sustained
 define_synthdef("tambourine", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Medium decay for jingle sustain
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("tambourine", |builder| {
         })
 });
 
+//
+// # Usage: tambourine
+//
+// ```rhai
+// import "stdlib/drums/percussion/tambourine.vibe" as tambourine;
+//
+// let doc_tambourine = voice("doc_tambourine")
+//     .synth("tambourine")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_tambourine.output("out").to_main();
+// doc_tambourine.run();
+// ```

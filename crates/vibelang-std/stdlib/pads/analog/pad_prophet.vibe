@@ -1,8 +1,8 @@
 // Genre: Synthpop, New Wave | Character: Prophet-5 strings pad
 define_synthdef("pad_prophet")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.15, 1.0, 0.25)
@@ -28,3 +28,18 @@ define_synthdef("pad_prophet")
         let cutoff = 800.0 + filt_env * 2000.0;
         rlpf_ar(mix, cutoff, 0.15) * env * amp
     });
+
+//
+// # Usage: `pad_prophet`
+//
+// ```rhai
+// import "stdlib/pads/analog/pad_prophet.vibe" as pad_prophet;
+//
+// let pad_prophet = voice("doc_pad_prophet")
+//     .synth("pad_prophet")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_prophet.output("out").to_main();
+// pad_prophet.run();
+// ```

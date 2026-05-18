@@ -1,7 +1,7 @@
 // Genre: Jungle, Drum & Bass | Character: Pitched, punchy jungle kick
 define_synthdef("kick_jungle")
-    .param("freq", 70.0)
-    .param("amp", 1.0)
+    .param("freq", 70.0) // units: Hz, range: 20..20000, default: 70.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, punchy decay
         let amp_env = envelope()
@@ -26,3 +26,18 @@ define_synthdef("kick_jungle")
 
         (body + attack) * amp_env * amp
     });
+
+//
+// # Usage: kick_jungle
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_jungle.vibe" as kick_jungle;
+//
+// let doc_kick_jungle = voice("doc_kick_jungle")
+//     .synth("kick_jungle")
+//     .set_param("freq", 70.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_jungle.output("out").to_main();
+// doc_kick_jungle.run();
+// ```

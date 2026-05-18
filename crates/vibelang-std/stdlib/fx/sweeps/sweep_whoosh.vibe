@@ -1,7 +1,7 @@
 // Genre: Cinematic, Trailer | Character: Whoosh/wind sweep
 define_synthdef("sweep_whoosh", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             // Quick whoosh envelope
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("sweep_whoosh", |builder| {
         })
 });
 
+//
+// # Usage: sweep_whoosh
+//
+// ```rhai
+// import "stdlib/fx/sweeps/sweep_whoosh.vibe" as sweep_whoosh;
+//
+// let doc_sweep_whoosh = voice("doc_sweep_whoosh")
+//     .synth("sweep_whoosh")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_sweep_whoosh.output("out").to_main();
+// doc_sweep_whoosh.run();
+// ```

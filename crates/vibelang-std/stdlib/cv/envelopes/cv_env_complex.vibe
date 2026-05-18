@@ -34,9 +34,9 @@
 
 define_synthdef("cv_env_complex", |builder| {
     builder
-        .param("gate", 0.0)
-        .param("time_scale", 1.0)
-        .param("level_scale", 1.0)
+        .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("time_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Time Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("level_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Envelope level scale; higher values raise the generated CV amplitude.
         .body(|gate, time_scale, level_scale| {
             // Four-stage breakpoint envelope (5 levels, 4 times). Levels are
             // already in audio space (1.0 = +10 V). Curve = 1.0 → linear
@@ -59,3 +59,18 @@ define_synthdef("cv_env_complex", |builder| {
             [clipped]
         })
 });
+
+//
+// # Usage: `cv_env_complex`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/cv_env_complex.vibe" as cv_env_complex;
+//
+// let cv_env_complex = voice("doc_cv_env_complex")
+//     .synth("cv_env_complex")
+//     .set_param("gate", 1.0)
+//     .set_param("level_scale", 0.5)
+//     .set_param("time_scale", 1.0);
+// cv_env_complex.output("out").to_main();
+// cv_env_complex.run();
+// ```

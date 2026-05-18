@@ -16,12 +16,12 @@
 
 define_fx("hall_reverb", |builder| {
     builder
-        .param("size", 0.7)
-        .param("decay", 0.6)
-        .param("damping", 0.4)
-        .param("predelay", 0.02)
-        .param("mix", 0.35)
-        .param("level", 1.0)
+        .param("size", 0.7) // units: ratio, range: 0..1, default: 0.7. Size; higher values use a larger buffer, room, or grain window.
+        .param("decay", 0.6) // units: seconds, range: 0..10, default: 0.6. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("damping", 0.4) // units: ratio, range: 0..1, default: 0.4. High-frequency damping; higher values darken and shorten resonant tails.
+        .param("predelay", 0.02) // units: seconds, range: 0..1, default: 0.02. Predelay amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.35) // units: ratio, range: 0..1, default: 0.35. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, size, decay, damping, predelay, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -60,3 +60,18 @@ define_fx("hall_reverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: hall_reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/hall_reverb.vibe" as hall_reverb;
+//
+// let doc_hall_reverb = fx("doc_hall_reverb")
+//     .synth("hall_reverb")
+//     .param("size", 0.7)
+//     .param("decay", 0.6)
+//     .param("damping", 0.4)
+//     .param("predelay", 0.02)
+//     .apply();
+// ```

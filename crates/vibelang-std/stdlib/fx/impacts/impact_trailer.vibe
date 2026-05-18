@@ -1,7 +1,7 @@
 // Genre: Trailer, Action | Character: Massive trailer hit
 define_synthdef("impact_trailer", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.001, 3.0)
@@ -41,3 +41,17 @@ define_synthdef("impact_trailer", |builder| {
             mix * amp * 0.5
         })
 });
+
+//
+// # Usage: impact_trailer
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_trailer.vibe" as impact_trailer;
+//
+// let doc_impact_trailer = voice("doc_impact_trailer")
+//     .synth("impact_trailer")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_impact_trailer.output("out").to_main();
+// doc_impact_trailer.run();
+// ```

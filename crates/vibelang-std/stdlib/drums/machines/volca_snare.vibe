@@ -1,8 +1,8 @@
 // Genre: Electronic, Lo-fi | Character: Korg Volca Beats style snare - analog, snappy
 define_synthdef("volca_snare")
-    .param("freq", 180.0)
-    .param("amp", 0.8)
-    .param("snappy", 0.6)
+    .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("snappy", 0.6) // units: ratio, range: 0..1, default: 0.6. Snare snap amount; higher values add more bright noise crack.
     .body(|freq, amp, snappy| {
         // Decay envelope
         let amp_env = envelope()
@@ -25,3 +25,19 @@ define_synthdef("volca_snare")
 
         (body + noise) * amp_env * amp
     });
+
+//
+// # Usage: volca_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/volca_snare.vibe" as volca_snare;
+//
+// let doc_volca_snare = voice("doc_volca_snare")
+//     .synth("volca_snare")
+//     .set_param("freq", 180.0)
+//     .set_param("amp", 0.8)
+//     .set_param("snappy", 0.6)
+//     ;
+// doc_volca_snare.output("out").to_main();
+// doc_volca_snare.run();
+// ```

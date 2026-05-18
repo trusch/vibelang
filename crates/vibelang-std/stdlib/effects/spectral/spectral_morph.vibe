@@ -26,9 +26,9 @@
 
 define_fx("spectral_morph", |builder| {
     builder
-        .param("morph_amount", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("morph_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Morph Amount; higher values apply more of that modulation or effect.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, morph_amount, mix, level| {
             // Four FFT buffers — one per (path, channel) pair, since pv_add_kr
             // and pv_mul_kr both overwrite their first chain in place.
@@ -66,3 +66,17 @@ define_fx("spectral_morph", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_morph
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_morph.vibe" as spectral_morph;
+//
+// let doc_spectral_morph = fx("doc_spectral_morph")
+//     .synth("spectral_morph")
+//     .param("morph_amount", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

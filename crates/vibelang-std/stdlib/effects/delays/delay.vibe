@@ -21,10 +21,10 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("delay")
-    .param("time", 0.25)
-    .param("feedback", 0.5)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.25) // units: seconds, range: 0..10, default: 0.25. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.5) // units: ratio, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, mix, level| {
         // Simple stereo delay with feedback
         let processed_l = delay_n_ar(input[0] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
@@ -38,3 +38,18 @@ define_fx("delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: delay
+//
+// ```rhai
+// import "stdlib/effects/delays/delay.vibe" as delay;
+//
+// let doc_delay = fx("doc_delay")
+//     .synth("delay")
+//     .param("time", 0.25)
+//     .param("feedback", 0.5)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

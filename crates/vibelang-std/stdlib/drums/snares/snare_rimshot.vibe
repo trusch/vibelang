@@ -1,7 +1,7 @@
 // Genre: Latin, Reggaeton | Character: Rimshot, sharp and cutting
 define_synthdef("snare_rimshot", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Very short, sharp envelope
             let rim_env = envelope()
@@ -22,3 +22,16 @@ define_synthdef("snare_rimshot", |builder| {
         })
 });
 
+//
+// # Usage: snare_rimshot
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_rimshot.vibe" as snare_rimshot;
+//
+// let doc_snare_rimshot = voice("doc_snare_rimshot")
+//     .synth("snare_rimshot")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_rimshot.output("out").to_main();
+// doc_snare_rimshot.run();
+// ```

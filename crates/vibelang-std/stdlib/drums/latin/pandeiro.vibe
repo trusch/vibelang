@@ -1,7 +1,7 @@
 // Genre: Brazilian, Samba, Choro | Character: Brazilian tambourine with jingles
 define_synthdef("pandeiro")
-    .param("freq", 300.0)
-    .param("amp", 0.7)
+    .param("freq", 300.0) // units: Hz, range: 20..20000, default: 300.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Medium decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("pandeiro")
 
         (body + jingles + attack) * amp_env * amp
     });
+
+//
+// # Usage: pandeiro
+//
+// ```rhai
+// import "stdlib/drums/latin/pandeiro.vibe" as pandeiro;
+//
+// let doc_pandeiro = voice("doc_pandeiro")
+//     .synth("pandeiro")
+//     .set_param("freq", 300.0)
+//     .set_param("amp", 0.7)
+//     ;
+// doc_pandeiro.output("out").to_main();
+// doc_pandeiro.run();
+// ```

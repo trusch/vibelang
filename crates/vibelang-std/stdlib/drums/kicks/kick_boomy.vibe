@@ -1,7 +1,7 @@
 // Genre: Rock, Acoustic, Live | Character: Room-y acoustic kick with natural boom
 define_synthdef("kick_boomy")
-    .param("freq", 60.0)
-    .param("amp", 0.9)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Long, boomy decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("kick_boomy")
 
         (body + room + attack) * amp_env * amp
     });
+
+//
+// # Usage: kick_boomy
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_boomy.vibe" as kick_boomy;
+//
+// let doc_kick_boomy = voice("doc_kick_boomy")
+//     .synth("kick_boomy")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_kick_boomy.output("out").to_main();
+// doc_kick_boomy.run();
+// ```

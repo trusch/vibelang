@@ -1,7 +1,7 @@
 // Genre: Video Game, Chiptune | Character: Laser/shoot sound effect
 define_synthdef("sfx_laser")
-    .param("freq", 800.0)
-    .param("amp", 0.5)
+    .param("freq", 800.0) // units: Hz, range: 20..20000, default: 800.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         let amp_env = envelope()
             .perc(0.001, 0.1)
@@ -25,3 +25,17 @@ define_synthdef("sfx_laser")
 
         (osc + noise) * amp_env * amp
     });
+
+//
+// # Usage: `sfx_laser`
+//
+// ```rhai
+// import "stdlib/retro/sfx_laser.vibe" as sfx_laser;
+//
+// let sfx_laser = voice("doc_sfx_laser")
+//     .synth("sfx_laser")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// sfx_laser.output("out").to_main();
+// sfx_laser.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Ambient, Chillout | Character: Soft, gentle, minimal attack
 define_synthdef("kick_soft", |builder| {
     builder
-        .param("freq", 75.0)
-        .param("amp", 1.0)
+        .param("freq", 75.0) // units: Hz, range: 20..20000, default: 75.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Gentle attack and decay
             let amp_env = envelope()
@@ -33,3 +33,17 @@ define_synthdef("kick_soft", |builder| {
         })
 });
 
+//
+// # Usage: kick_soft
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_soft.vibe" as kick_soft;
+//
+// let doc_kick_soft = voice("doc_kick_soft")
+//     .synth("kick_soft")
+//     .set_param("freq", 75.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_soft.output("out").to_main();
+// doc_kick_soft.run();
+// ```

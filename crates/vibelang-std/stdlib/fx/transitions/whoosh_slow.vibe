@@ -1,8 +1,8 @@
 // Genre: Cinematic, Ambient | Character: Slow atmospheric whoosh
 define_synthdef("whoosh_slow", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 1.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 1.5) // units: seconds, range: 0..60, default: 1.5. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.3, 1.0)
@@ -25,3 +25,18 @@ define_synthdef("whoosh_slow", |builder| {
             wind * env * amp * 0.8
         })
 });
+
+//
+// # Usage: whoosh_slow
+//
+// ```rhai
+// import "stdlib/fx/transitions/whoosh_slow.vibe" as whoosh_slow;
+//
+// let doc_whoosh_slow = voice("doc_whoosh_slow")
+//     .synth("whoosh_slow")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 1.5)
+//     ;
+// doc_whoosh_slow.output("out").to_main();
+// doc_whoosh_slow.run();
+// ```

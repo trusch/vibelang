@@ -11,12 +11,12 @@
 // Realistic Clarinet with register breaks and chalumeau character
 define_synthdef("clarinet_realistic", |builder| {
     builder
-        .param("freq", 261.63)    // Middle C default
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("reed_stiffness", 0.5)   // Softer reed = warmer
-        .param("embouchure", 0.5)       // Lip pressure
-        .param("breath", 0.3)           // Breath noise amount
+        .param("freq", 261.63) // units: Hz, range: 20..20000, default: 261.63. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("reed_stiffness", 0.5) // units: normalized, range: 0..1, default: 0.5. Reed stiffness; higher values make the reed response brighter and tighter.
+        .param("embouchure", 0.5) // units: normalized, range: 0..1, default: 0.5. Embouchure shaping; higher values tighten and brighten the wind tone.
+        .param("breath", 0.3) // units: normalized, range: 0..1, default: 0.3. Breath-noise amount; higher adds more airy turbulence.
         .body(|freq, amp, gate, reed_stiffness, embouchure, breath| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.12)
@@ -80,12 +80,12 @@ define_synthdef("clarinet_realistic", |builder| {
 // Realistic Alto Saxophone with growl and subtone capabilities
 define_synthdef("alto_sax_realistic", |builder| {
     builder
-        .param("freq", 370.0)     // F#4 - comfortable alto range
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("embouchure", 0.5)    // Affects timbre brightness
-        .param("growl", 0.0)         // Throat growl amount
-        .param("subtone", 0.0)       // Airy subtone amount
+        .param("freq", 370.0) // units: Hz, range: 20..20000, default: 370.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("embouchure", 0.5) // units: normalized, range: 0..1, default: 0.5. Embouchure shaping; higher values tighten and brighten the wind tone.
+        .param("growl", 0.0) // units: normalized, range: 0..1, default: 0.0. Growl amount; higher values add rough reed or throat modulation.
+        .param("subtone", 0.0) // units: normalized, range: 0..1, default: 0.0. Subtone amount; higher values add a breathier low-register sax color.
         .body(|freq, amp, gate, embouchure, growl, subtone| {
             let env = envelope()
                 .asr(0.025, 1.0, 0.1)
@@ -146,11 +146,11 @@ define_synthdef("alto_sax_realistic", |builder| {
 // Realistic Tenor Saxophone - warmer, bigger sound
 define_synthdef("tenor_sax_realistic", |builder| {
     builder
-        .param("freq", 277.18)   // C#4
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("warmth", 0.6)
-        .param("growl", 0.0)
+        .param("freq", 277.18) // units: Hz, range: 20..20000, default: 277.18. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("warmth", 0.6) // units: normalized, range: 0..1, default: 0.6. Warmth amount; higher values emphasize low-mid body and soften brightness.
+        .param("growl", 0.0) // units: normalized, range: 0..1, default: 0.0. Growl amount; higher values add rough reed or throat modulation.
         .body(|freq, amp, gate, warmth, growl| {
             let env = envelope()
                 .asr(0.035, 1.0, 0.12)
@@ -202,11 +202,11 @@ define_synthdef("tenor_sax_realistic", |builder| {
 // Realistic Flute with air jet modeling
 define_synthdef("flute_realistic", |builder| {
     builder
-        .param("freq", 523.25)   // C5
-        .param("amp", 0.55)
-        .param("gate", 1.0)
-        .param("breath", 0.35)      // Breath noise amount
-        .param("air_speed", 0.5)    // Embouchure tightness
+        .param("freq", 523.25) // units: Hz, range: 20..20000, default: 523.25. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("breath", 0.35) // units: normalized, range: 0..1, default: 0.35. Breath-noise amount; higher adds more airy turbulence.
+        .param("air_speed", 0.5) // units: normalized, range: 0..1, default: 0.5. Air speed noise; higher values add faster breath turbulence.
         .body(|freq, amp, gate, breath, air_speed| {
             let env = envelope()
                 .asr(0.06, 1.0, 0.1)
@@ -259,10 +259,10 @@ define_synthdef("flute_realistic", |builder| {
 // Realistic Oboe - nasal, penetrating
 define_synthdef("oboe_realistic", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.55)
-        .param("gate", 1.0)
-        .param("reed_pressure", 0.6)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("reed_pressure", 0.6) // units: normalized, range: 0..1, default: 0.6. Reed pressure; higher values drive the reed model harder.
         .body(|freq, amp, gate, reed_pressure| {
             let env = envelope()
                 .asr(0.03, 1.0, 0.08)
@@ -310,9 +310,9 @@ define_synthdef("oboe_realistic", |builder| {
 // English Horn (Cor Anglais) - deeper, more melancholic
 define_synthdef("english_horn", |builder| {
     builder
-        .param("freq", 311.13)   // Eb4
-        .param("amp", 0.55)
-        .param("gate", 1.0)
+        .param("freq", 311.13) // units: Hz, range: 20..20000, default: 311.13. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.04, 1.0, 0.1)
@@ -349,10 +349,10 @@ define_synthdef("english_horn", |builder| {
 // Bassoon - rich, woody bass woodwind
 define_synthdef("bassoon_realistic", |builder| {
     builder
-        .param("freq", 130.81)   // C3
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("reed_buzz", 0.4)
+        .param("freq", 130.81) // units: Hz, range: 20..20000, default: 130.81. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("reed_buzz", 0.4) // units: normalized, range: 0..1, default: 0.4. Reed buzz amount; higher values add brighter reed rasp.
         .body(|freq, amp, gate, reed_buzz| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.12)
@@ -400,10 +400,10 @@ define_synthdef("bassoon_realistic", |builder| {
 // Recorder - Medieval/Renaissance woodwind
 define_synthdef("recorder", |builder| {
     builder
-        .param("freq", 523.25)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("breath", 0.4)
+        .param("freq", 523.25) // units: Hz, range: 20..20000, default: 523.25. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("breath", 0.4) // units: normalized, range: 0..1, default: 0.4. Breath-noise amount; higher adds more airy turbulence.
         .body(|freq, amp, gate, breath| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.08)
@@ -436,10 +436,10 @@ define_synthdef("recorder", |builder| {
 // Pan Flute - breathy, ethereal
 define_synthdef("pan_flute", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("breath", 0.5)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("breath", 0.5) // units: normalized, range: 0..1, default: 0.5. Breath-noise amount; higher adds more airy turbulence.
         .body(|freq, amp, gate, breath| {
             let env = envelope()
                 .asr(0.08, 1.0, 0.15)
@@ -472,3 +472,138 @@ define_synthdef("pan_flute", |builder| {
             hpf_ar(tone, 150.0) * env * amp * 0.5
         })
 });
+
+//
+// # Usage: `clarinet_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let clarinet_realistic = voice("doc_clarinet_realistic")
+//     .synth("clarinet_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("reed_stiffness", 0.5);
+// clarinet_realistic.output("out").to_main();
+// clarinet_realistic.run();
+// ```
+//
+// # Usage: `alto_sax_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let alto_sax_realistic = voice("doc_alto_sax_realistic")
+//     .synth("alto_sax_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("embouchure", 0.5);
+// alto_sax_realistic.output("out").to_main();
+// alto_sax_realistic.run();
+// ```
+//
+// # Usage: `tenor_sax_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let tenor_sax_realistic = voice("doc_tenor_sax_realistic")
+//     .synth("tenor_sax_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("warmth", 0.6);
+// tenor_sax_realistic.output("out").to_main();
+// tenor_sax_realistic.run();
+// ```
+//
+// # Usage: `flute_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let flute_realistic = voice("doc_flute_realistic")
+//     .synth("flute_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("breath", 0.35);
+// flute_realistic.output("out").to_main();
+// flute_realistic.run();
+// ```
+//
+// # Usage: `oboe_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let oboe_realistic = voice("doc_oboe_realistic")
+//     .synth("oboe_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("reed_pressure", 0.6);
+// oboe_realistic.output("out").to_main();
+// oboe_realistic.run();
+// ```
+//
+// # Usage: `english_horn`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let english_horn = voice("doc_english_horn")
+//     .synth("english_horn")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// english_horn.output("out").to_main();
+// english_horn.run();
+// ```
+//
+// # Usage: `bassoon_realistic`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let bassoon_realistic = voice("doc_bassoon_realistic")
+//     .synth("bassoon_realistic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("reed_buzz", 0.4);
+// bassoon_realistic.output("out").to_main();
+// bassoon_realistic.run();
+// ```
+//
+// # Usage: `recorder`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let recorder = voice("doc_recorder")
+//     .synth("recorder")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("breath", 0.4);
+// recorder.output("out").to_main();
+// recorder.run();
+// ```
+//
+// # Usage: `pan_flute`
+//
+// ```rhai
+// import "stdlib/woodwinds/woodwinds_realistic.vibe" as woodwinds_realistic;
+//
+// let pan_flute = voice("doc_pan_flute")
+//     .synth("pan_flute")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("breath", 0.5);
+// pan_flute.output("out").to_main();
+// pan_flute.run();
+// ```

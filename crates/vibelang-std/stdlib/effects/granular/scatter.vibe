@@ -25,11 +25,11 @@
 
 define_fx("scatter", |builder| {
     builder
-        .param("jitter_amount", 0.5)
-        .param("density", 30.0)
-        .param("grain_size", 0.1)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("jitter_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Jitter Amount; higher values apply more of that modulation or effect.
+        .param("density", 30.0) // units: events/s, range: 0..200, default: 30.0. Event density per second; higher values create more grains, dust, or impulses.
+        .param("grain_size", 0.1) // units: seconds, range: 0..1, default: 0.1. Grain Size; higher values use a larger buffer, room, or grain window.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, jitter_amount, density, grain_size, mix, level| {
             // ~2s circular buffers, one per channel.
             let buf_l = local_buf_ir(1, 96000);
@@ -57,3 +57,18 @@ define_fx("scatter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: scatter
+//
+// ```rhai
+// import "stdlib/effects/granular/scatter.vibe" as scatter;
+//
+// let doc_scatter = fx("doc_scatter")
+//     .synth("scatter")
+//     .param("jitter_amount", 0.5)
+//     .param("density", 30.0)
+//     .param("grain_size", 0.1)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

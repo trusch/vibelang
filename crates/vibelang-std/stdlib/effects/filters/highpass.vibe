@@ -20,10 +20,10 @@
 
 define_fx("highpass", |builder| {
     builder
-        .param("cutoff", 200.0)
-        .param("resonance", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("cutoff", 200.0) // units: Hz, range: 20..20000, default: 200.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, cutoff, resonance, mix, level| {
             // RHPF provides resonant high pass filtering
             let filtered_left = rhpf_ar(input[0], cutoff, resonance);
@@ -38,3 +38,18 @@ define_fx("highpass", |builder| {
             ]
         })
 });
+
+//
+// # Usage: highpass
+//
+// ```rhai
+// import "stdlib/effects/filters/highpass.vibe" as highpass;
+//
+// let doc_highpass = fx("doc_highpass")
+//     .synth("highpass")
+//     .param("cutoff", 200.0)
+//     .param("resonance", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

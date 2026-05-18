@@ -4,9 +4,9 @@
 define_synthdef("lfo_random", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (random step LFO)
-        .param("rate", 1.0)   // Rate of random value changes in Hz
-        .param("lo", 0.0)     // Minimum output value
-        .param("hi", 1.0)     // Maximum output value
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
         .body_map(|p| {
             // LFNoise0 generates random steps, changes every 1/rate seconds
             let noise = lf_noise0_kr(p.rate);
@@ -20,9 +20,9 @@ define_synthdef("lfo_random", |builder| {
 define_synthdef("lfo_random_smooth", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (smoothed random LFO)
-        .param("rate", 1.0)
-        .param("lo", 0.0)
-        .param("hi", 1.0)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
         .body_map(|p| {
             // LFNoise1 generates linearly interpolated random values
             let noise = lf_noise1_kr(p.rate);
@@ -36,9 +36,9 @@ define_synthdef("lfo_random_smooth", |builder| {
 define_synthdef("lfo_random_exp", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (exp-smoothed random LFO)
-        .param("rate", 1.0)
-        .param("lo", 0.0)
-        .param("hi", 1.0)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
         .body_map(|p| {
             // LFNoise2 generates quadratically interpolated random values
             let noise = lf_noise2_kr(p.rate);
@@ -47,3 +47,46 @@ define_synthdef("lfo_random_exp", |builder| {
             [normalized * (p.hi - p.lo) + p.lo]
         })
 });
+
+//
+// # Usage: `lfo_random`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_random.vibe" as lfo_random;
+//
+// let lfo_random = voice("doc_lfo_random")
+//     .synth("lfo_random")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5);
+// lfo_random.outputs(["out"]).mute();
+// lfo_random.run();
+// ```
+//
+// # Usage: `lfo_random_smooth`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_random.vibe" as lfo_random;
+//
+// let lfo_random_smooth = voice("doc_lfo_random_smooth")
+//     .synth("lfo_random_smooth")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5);
+// lfo_random_smooth.outputs(["out"]).mute();
+// lfo_random_smooth.run();
+// ```
+//
+// # Usage: `lfo_random_exp`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_random.vibe" as lfo_random;
+//
+// let lfo_random_exp = voice("doc_lfo_random_exp")
+//     .synth("lfo_random_exp")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5);
+// lfo_random_exp.outputs(["out"]).mute();
+// lfo_random_exp.run();
+// ```

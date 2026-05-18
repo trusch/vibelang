@@ -21,10 +21,10 @@
 
 define_fx("comb_filter", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("decay", 2.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("decay", 2.0) // units: seconds, range: 0..10, default: 2.0. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freq, decay, mix, level| {
             // Calculate delay time from frequency
             let delay_time = 1.0 / freq;
@@ -42,3 +42,18 @@ define_fx("comb_filter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: comb_filter
+//
+// ```rhai
+// import "stdlib/effects/filters/comb_filter.vibe" as comb_filter;
+//
+// let doc_comb_filter = fx("doc_comb_filter")
+//     .synth("comb_filter")
+//     .param("freq", 220.0)
+//     .param("decay", 2.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

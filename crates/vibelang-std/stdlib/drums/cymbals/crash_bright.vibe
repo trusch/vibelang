@@ -1,7 +1,7 @@
 // Genre: Rock, EDM | Character: Bright crash cymbal for builds and emphasis
 define_synthdef("crash_bright", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long decay for crash
             let env = envelope()
@@ -34,3 +34,16 @@ define_synthdef("crash_bright", |builder| {
         })
 });
 
+//
+// # Usage: crash_bright
+//
+// ```rhai
+// import "stdlib/drums/cymbals/crash_bright.vibe" as crash_bright;
+//
+// let doc_crash_bright = voice("doc_crash_bright")
+//     .synth("crash_bright")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_crash_bright.output("out").to_main();
+// doc_crash_bright.run();
+// ```

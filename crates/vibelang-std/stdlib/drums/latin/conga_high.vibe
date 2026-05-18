@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Afro-Cuban | Character: High-pitched conga slap with bright attack
 define_synthdef("conga_high")
-    .param("freq", 350.0)
-    .param("amp", 0.8)
+    .param("freq", 350.0) // units: Hz, range: 20..20000, default: 350.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Main body envelope
         let amp_env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("conga_high")
 
         (body + overtone + click + attack) * amp_env * amp
     });
+
+//
+// # Usage: conga_high
+//
+// ```rhai
+// import "stdlib/drums/latin/conga_high.vibe" as conga_high;
+//
+// let doc_conga_high = voice("doc_conga_high")
+//     .synth("conga_high")
+//     .set_param("freq", 350.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_conga_high.output("out").to_main();
+// doc_conga_high.run();
+// ```

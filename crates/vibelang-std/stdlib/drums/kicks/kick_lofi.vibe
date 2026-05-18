@@ -1,7 +1,7 @@
 // Genre: Lo-fi Hip-hop, Chillhop | Character: Warm, dusty lo-fi kick
 define_synthdef("kick_lofi")
-    .param("freq", 55.0)
-    .param("amp", 0.9)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Soft decay
         let amp_env = envelope()
@@ -27,3 +27,18 @@ define_synthdef("kick_lofi")
 
         (body + attack) * amp_env * amp
     });
+
+//
+// # Usage: kick_lofi
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_lofi.vibe" as kick_lofi;
+//
+// let doc_kick_lofi = voice("doc_kick_lofi")
+//     .synth("kick_lofi")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_kick_lofi.output("out").to_main();
+// doc_kick_lofi.run();
+// ```

@@ -31,40 +31,40 @@ define_synthdef("verbos_multistage", |builder| {
         .output_kr("stage6_gate")
         .output_kr("stage7_gate")
         .output_kr("stage8_gate")
-        .param("advance", 0.0)              // 0/1 manual trigger advancing the sequence
-        .param("strobe", 0.0)               // 0 sequencer mode, 1 address stage from analog
-        .param("analog", 0.0)               // 0..1 direct stage address mapped to 1..8
-        .param("enable", 1.0)               // 0 disables gates/advance, 1 enables playback
-        .param("sustain", 0.0)              // 1 holds current stage, 0 allows advance
-        .param("time_cv", 0.0)              // bipolar CV scaling the internal clock rate
-        .param("clock_rate", 4.0)           // internal clock rate in Hz
-        .param("time_cv_amt", 0.0)          // 0..1 attenuator for time_cv depth
-        .param("start", 1.0)                // rounded first stage in the active range
-        .param("stop", 8.0)                 // rounded last stage in the active range
-        .param("stage_a1", 0.0)             // row A CV voltage for multistage step 1
-        .param("stage_a2", 0.1666667)       // row A CV voltage for multistage step 2
-        .param("stage_a3", 0.3333333)       // row A CV voltage for multistage step 3
-        .param("stage_a4", 0.4166667)       // row A CV voltage for multistage step 4
-        .param("stage_a5", 0.5833333)       // row A CV voltage for multistage step 5
-        .param("stage_a6", 0.75)            // row A CV voltage for multistage step 6
-        .param("stage_a7", 0.9166667)       // row A CV voltage for multistage step 7
-        .param("stage_a8", 1.0)             // row A CV voltage for multistage step 8
-        .param("stage_b1", 0.0)             // row B CV voltage for multistage step 1
-        .param("stage_b2", 0.1666667)       // row B CV voltage for multistage step 2
-        .param("stage_b3", 0.3333333)       // row B CV voltage for multistage step 3
-        .param("stage_b4", 0.4166667)       // row B CV voltage for multistage step 4
-        .param("stage_b5", 0.5833333)       // row B CV voltage for multistage step 5
-        .param("stage_b6", 0.75)            // row B CV voltage for multistage step 6
-        .param("stage_b7", 0.9166667)       // row B CV voltage for multistage step 7
-        .param("stage_b8", 1.0)             // row B CV voltage for multistage step 8
-        .param("mode1", 0.0)                // rounded stage 1 mode: active/off/slide
-        .param("mode2", 0.0)                // rounded stage 2 mode: active/off/slide
-        .param("mode3", 0.0)                // rounded stage 3 mode: active/off/slide
-        .param("mode4", 0.0)                // rounded stage 4 mode: active/off/slide
-        .param("mode5", 0.0)                // rounded stage 5 mode: active/off/slide
-        .param("mode6", 0.0)                // rounded stage 6 mode: active/off/slide
-        .param("mode7", 0.0)                // rounded stage 7 mode: active/off/slide
-        .param("mode8", 0.0)                // rounded stage 8 mode: active/off/slide
+        .param("advance", 0.0) // units: normalized, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("strobe", 0.0) // units: normalized, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("analog", 0.0) // units: normalized, range: 0..1, default: 0.0. Analog amount; higher values emphasize that named musical or electrical behavior.
+        .param("enable", 1.0) // units: normalized, range: 0..1, default: 1.0. Enable amount; higher values emphasize that named musical or electrical behavior.
+        .param("sustain", 0.0) // units: normalized, range: 0..1, default: 0.0. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("time_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Time CV input; bipolar values modulate the matching panel control.
+        .param("clock_rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("time_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. TIME CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("start", 1.0) // units: normalized, range: 0..1, default: 1.0. Start amount; higher values emphasize that named musical or electrical behavior.
+        .param("stop", 8.0) // units: stage, range: 1..8, default: 8.0. Stop amount; higher values emphasize that named musical or electrical behavior.
+        .param("stage_a1", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("stage_a2", 0.1666667) // units: selector, range: 0..N, default: 0.1666667. Selects mode, table, or step count.
+        .param("stage_a3", 0.3333333) // units: selector, range: 0..N, default: 0.3333333. Selects mode, table, or step count.
+        .param("stage_a4", 0.4166667) // units: selector, range: 0..N, default: 0.4166667. Selects mode, table, or step count.
+        .param("stage_a5", 0.5833333) // units: selector, range: 0..N, default: 0.5833333. Selects mode, table, or step count.
+        .param("stage_a6", 0.75) // units: selector, range: 0..N, default: 0.75. Selects mode, table, or step count.
+        .param("stage_a7", 0.9166667) // units: selector, range: 0..N, default: 0.9166667. Selects mode, table, or step count.
+        .param("stage_a8", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("stage_b1", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("stage_b2", 0.1666667) // units: selector, range: 0..N, default: 0.1666667. Selects mode, table, or step count.
+        .param("stage_b3", 0.3333333) // units: selector, range: 0..N, default: 0.3333333. Selects mode, table, or step count.
+        .param("stage_b4", 0.4166667) // units: selector, range: 0..N, default: 0.4166667. Selects mode, table, or step count.
+        .param("stage_b5", 0.5833333) // units: selector, range: 0..N, default: 0.5833333. Selects mode, table, or step count.
+        .param("stage_b6", 0.75) // units: selector, range: 0..N, default: 0.75. Selects mode, table, or step count.
+        .param("stage_b7", 0.9166667) // units: selector, range: 0..N, default: 0.9166667. Selects mode, table, or step count.
+        .param("stage_b8", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("mode1", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode2", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode3", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode4", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode5", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode6", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode7", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("mode8", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
         .body_map(|p| {
             let enabled = clip_kr(p.enable, 0.0, 1.0);
             let sustain = clip_kr(p.sustain, 0.0, 1.0);
@@ -171,3 +171,19 @@ define_synthdef("verbos_multistage", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `verbos_multistage`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/verbos_multistage.vibe" as verbos_multistage;
+//
+// let verbos_multistage = voice("doc_verbos_multistage")
+//     .synth("verbos_multistage")
+//     .set_param("clock_rate", 2.0)
+//     .set_param("mode1", 1.0)
+//     .set_param("advance", 0.5)
+//     .set_param("strobe", 0.5);
+// verbos_multistage.outputs(["cv_a"]).mute();
+// verbos_multistage.run();
+// ```

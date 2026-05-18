@@ -10,14 +10,14 @@ fn _ufold_stage(x) {
 define_synthdef("ufold")
     .input("in", 1)
     .output("out", 1)
-    .param("folds", 0.3)
-    .param("folds_cv", 0.0)
-    .param("folds_cv_amt", 0.0)
-    .param("symmetry", 0.0)
-    .param("symmetry_cv", 0.0)
-    .param("symmetry_cv_amt", 0.0)
-    .param("stages", 4.0)
-    .param("level", 1.0)
+    .param("folds", 0.3) // units: normalized, range: 0..1, default: 0.3. Wavefold amount; higher folds the waveform into brighter harmonics.
+    .param("folds_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Folds CV input; bipolar values modulate the matching panel control.
+    .param("folds_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. FOLDS CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("symmetry", 0.0) // units: normalized, range: 0..1, default: 0.0. Wavefold symmetry offset; higher skews folding toward one side of the waveform.
+    .param("symmetry_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Symmetry CV input; bipolar values modulate the matching panel control.
+    .param("symmetry_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. SYMMETRY CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("stages", 4.0) // units: selector, range: 0..N, default: 4.0. Selects mode, table, or step count.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let symmetry = clip(p.symmetry, -1.0, 1.0);
         let symmetry_cv_amt = clip(p.symmetry_cv_amt, 0.0, 1.0);
@@ -45,3 +45,19 @@ define_synthdef("ufold")
 
         [selected * level]
     });
+
+//
+// # Usage: `ufold`
+//
+// ```rhai
+// import "stdlib/processors/distortion/ufold.vibe" as ufold;
+//
+// let ufold = voice("doc_ufold")
+//     .synth("ufold")
+//     .set_param("level", 0.5)
+//     .set_param("folds", 0.6)
+//     .set_param("folds_cv", 0.6)
+//     .set_param("folds_cv_amt", 0.6);
+// ufold.output("out").to_main();
+// ufold.run();
+// ```

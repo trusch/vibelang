@@ -7,18 +7,18 @@
 define_synthdef("verbos_amp_tone")
     .input("in", 1)
     .output("out", 1)
-    .param("gain", 1.0)
-    .param("cutoff", 8000.0)
-    .param("resonance", 0.3)
-    .param("cutoff_cv_amt", 0.0)
-    .param("cutoff_cv", 0.0)
-    .param("amp", 0.8)
-    .param("lin_cv_amt", 0.0)
-    .param("lin_cv", 0.0)
-    .param("exp_cv_amt", 0.0)
-    .param("exp_cv", 0.0)
-    .param("drive", 0.1)
-    .param("level", 1.0)
+    .param("gain", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("cutoff", 8000.0) // units: Hz, range: 20..20000, default: 8000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("resonance", 0.3) // units: resonance, range: 0..1, default: 0.3. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("cutoff_cv_amt", 0.0) // units: linear, range: 0..1, default: 0.0. CUTOFF CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("cutoff_cv", 0.0) // units: semitones, range: -12..12, default: 0.0. Cutoff CV input; bipolar values modulate the matching panel control.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("lin_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. LIN CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("lin_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Lin CV input; bipolar values modulate the matching panel control.
+    .param("exp_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. EXP CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("exp_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Exp CV input; bipolar values modulate the matching panel control.
+    .param("drive", 0.1) // units: normalized, range: 0..1, default: 0.1. Nonlinear drive amount; higher adds harmonic distortion and compression.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let gain = clip(p.gain, 0.0, 2.0);
         let drive = clip(p.drive, 0.0, 1.0);
@@ -43,3 +43,19 @@ define_synthdef("verbos_amp_tone")
 
         [out]
     });
+
+//
+// # Usage: `verbos_amp_tone`
+//
+// ```rhai
+// import "stdlib/processors/utility/verbos_amp_tone.vibe" as verbos_amp_tone;
+//
+// let verbos_amp_tone = voice("doc_verbos_amp_tone")
+//     .synth("verbos_amp_tone")
+//     .set_param("cutoff", 1800.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gain", 0.5)
+//     .set_param("level", 0.5);
+// verbos_amp_tone.output("out").to_main();
+// verbos_amp_tone.run();
+// ```

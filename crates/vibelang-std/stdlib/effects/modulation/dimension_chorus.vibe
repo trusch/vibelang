@@ -14,10 +14,10 @@
 
 define_fx("dimension_chorus", |builder| {
     builder
-        .param("mode", 0.5)
-        .param("rate", 0.5)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("mode", 0.5) // units: selector, range: 0..N, default: 0.5. Selects mode, table, or algorithm.
+        .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, mode, rate, mix, level| {
             let lfo_rate = 0.3 + rate * 1.2;
 
@@ -55,3 +55,18 @@ define_fx("dimension_chorus", |builder| {
             ]
         })
 });
+
+//
+// # Usage: dimension_chorus
+//
+// ```rhai
+// import "stdlib/effects/modulation/dimension_chorus.vibe" as dimension_chorus;
+//
+// let doc_dimension_chorus = fx("doc_dimension_chorus")
+//     .synth("dimension_chorus")
+//     .param("mode", 0.5)
+//     .param("rate", 0.5)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Ambient, Cinematic | Character: Soft, subtle impact
 define_synthdef("impact_soft", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             // Gentle envelope
             let env = envelope()
@@ -25,3 +25,16 @@ define_synthdef("impact_soft", |builder| {
         })
 });
 
+//
+// # Usage: impact_soft
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_soft.vibe" as impact_soft;
+//
+// let doc_impact_soft = voice("doc_impact_soft")
+//     .synth("impact_soft")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_impact_soft.output("out").to_main();
+// doc_impact_soft.run();
+// ```

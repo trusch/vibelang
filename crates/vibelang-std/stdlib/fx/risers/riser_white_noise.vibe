@@ -1,7 +1,7 @@
 // Genre: EDM, Trap | Character: White noise riser with filter sweep
 define_synthdef("riser_white_noise", |builder| {
     builder
-        .param("amp", 0.6)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long rise envelope
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("riser_white_noise", |builder| {
         })
 });
 
+//
+// # Usage: riser_white_noise
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_white_noise.vibe" as riser_white_noise;
+//
+// let doc_riser_white_noise = voice("doc_riser_white_noise")
+//     .synth("riser_white_noise")
+//     .set_param("amp", 0.6)
+//     ;
+// doc_riser_white_noise.output("out").to_main();
+// doc_riser_white_noise.run();
+// ```

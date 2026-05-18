@@ -1,7 +1,7 @@
 // Genre: Rock, Blues | Character: Loose, rattling acoustic snare
 define_synthdef("snare_loose_acoustic", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Longer decay for loose character
             let noise_env = envelope()
@@ -28,3 +28,16 @@ define_synthdef("snare_loose_acoustic", |builder| {
         })
 });
 
+//
+// # Usage: snare_loose_acoustic
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_loose_acoustic.vibe" as snare_loose_acoustic;
+//
+// let doc_snare_loose_acoustic = voice("doc_snare_loose_acoustic")
+//     .synth("snare_loose_acoustic")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_loose_acoustic.output("out").to_main();
+// doc_snare_loose_acoustic.run();
+// ```

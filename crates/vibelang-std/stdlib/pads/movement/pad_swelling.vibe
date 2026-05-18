@@ -1,8 +1,8 @@
 // Genre: Cinematic, Ambient | Character: Slowly swelling pad
 define_synthdef("pad_swelling")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Very slow attack
         let env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("pad_swelling")
         let cutoff = 300.0 + filt_env * 4000.0;
         rlpf_ar(mix, cutoff, 0.12) * env * amp
     });
+
+//
+// # Usage: `pad_swelling`
+//
+// ```rhai
+// import "stdlib/pads/movement/pad_swelling.vibe" as pad_swelling;
+//
+// let pad_swelling = voice("doc_pad_swelling")
+//     .synth("pad_swelling")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_swelling.output("out").to_main();
+// pad_swelling.run();
+// ```

@@ -1,9 +1,9 @@
 // Genre: Acid House | Character: Bubbly, playful resonance
 define_synthdef("acid_bubbly", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Bouncy envelope
@@ -31,3 +31,18 @@ define_synthdef("acid_bubbly", |builder| {
         })
 });
 
+//
+// # Usage: acid_bubbly
+//
+// ```rhai
+// import "stdlib/bass/acid/acid_bubbly.vibe" as acid_bubbly;
+//
+// let doc_acid_bubbly = voice("doc_acid_bubbly")
+//     .synth("acid_bubbly")
+//     .set_param("freq", 110.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_acid_bubbly.output("out").to_main();
+// doc_acid_bubbly.run();
+// ```

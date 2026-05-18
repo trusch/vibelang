@@ -21,9 +21,9 @@
 
 define_fx("spectral_freeze", |builder| {
     builder
-        .param("freeze", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("freeze", 0.0) // units: trigger, range: 0..1, default: 0.0. Freeze switch; rounded values turn that mode off or on.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freeze, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -51,3 +51,17 @@ define_fx("spectral_freeze", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_freeze
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_freeze.vibe" as spectral_freeze;
+//
+// let doc_spectral_freeze = fx("doc_spectral_freeze")
+//     .synth("spectral_freeze")
+//     .param("freeze", 0.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

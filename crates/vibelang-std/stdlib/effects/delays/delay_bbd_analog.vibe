@@ -26,12 +26,12 @@
 //   level:        Final output trim (1.0 = unity)
 
 define_fx("delay_bbd_analog")
-    .param("time", 0.35)
-    .param("feedback", 0.45)
-    .param("chorus_depth", 0.5)
-    .param("lp_freq", 3500.0)
-    .param("mix", 0.3)
-    .param("level", 1.0)
+    .param("time", 0.35) // units: seconds, range: 0..10, default: 0.35. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.45) // units: ratio, range: 0..1, default: 0.45. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("chorus_depth", 0.5) // units: ratio, range: 0..1, default: 0.5. Modulation depth; higher values make the movement more pronounced.
+    .param("lp_freq", 3500.0) // units: Hz, range: 20..20000, default: 3500.0. Lp Freq in Hz; higher values move that tone or filter point upward.
+    .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, chorus_depth, lp_freq, mix, level| {
         // Chorus LFO around 6 Hz — slightly different rate per side for stereo width
         let chorus_l = sin_osc_kr(6.0) * chorus_depth * 0.0025;
@@ -68,3 +68,18 @@ define_fx("delay_bbd_analog")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: delay_bbd_analog
+//
+// ```rhai
+// import "stdlib/effects/delays/delay_bbd_analog.vibe" as delay_bbd_analog;
+//
+// let doc_delay_bbd_analog = fx("doc_delay_bbd_analog")
+//     .synth("delay_bbd_analog")
+//     .param("time", 0.35)
+//     .param("feedback", 0.45)
+//     .param("chorus_depth", 0.5)
+//     .param("lp_freq", 3500.0)
+//     .apply();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Techno, Industrial | Character: Driving techno bass - punchy and relentless
 define_synthdef("bass_techno")
-    .param("freq", 50.0)
-    .param("amp", 0.9)
-    .param("gate", 1.0)
+    .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.002, 1.0, 0.08)
@@ -25,3 +25,19 @@ define_synthdef("bass_techno")
         let cutoff = 300.0 + filt_env * 2000.0;
         rlpf_ar(mix, cutoff, 0.35) * env * amp
     });
+
+//
+// # Usage: bass_techno
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_techno.vibe" as bass_techno;
+//
+// let doc_bass_techno = voice("doc_bass_techno")
+//     .synth("bass_techno")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 0.9)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_techno.output("out").to_main();
+// doc_bass_techno.run();
+// ```

@@ -42,30 +42,30 @@ define_synthdef("maths", |builder| {
         .output_kr("eoc1")
         .output_kr("eor4")
         .output_kr("eoc4")
-        .param("rise1", 0.05)               // base rise time in seconds for function channel 1
-        .param("rise1_cv", 0.0)             // bipolar CV bending rise time for channel 1
-        .param("rise1_cv_scale", 1.0)       // bipolar amount for channel 1 rise CV
-        .param("fall1", 0.5)                // base fall time in seconds for function channel 1
-        .param("fall1_cv", 0.0)             // bipolar CV bending fall time for channel 1
-        .param("fall1_cv_scale", 1.0)       // bipolar amount for channel 1 fall CV
-        .param("shape1", 0.5)               // curve morph for function channel 1
-        .param("cycle1", 0.0)               // 0 one-shot, >0 self-cycles function channel 1
-        .param("trig1", 0.0)                // trigger input for function channel 1
-        .param("rise4", 0.05)               // base rise time in seconds for function channel 4
-        .param("rise4_cv", 0.0)             // bipolar CV bending rise time for channel 4
-        .param("rise4_cv_scale", 1.0)       // bipolar amount for channel 4 rise CV
-        .param("fall4", 0.5)                // base fall time in seconds for function channel 4
-        .param("fall4_cv", 0.0)             // bipolar CV bending fall time for channel 4
-        .param("fall4_cv_scale", 1.0)       // bipolar amount for channel 4 fall CV
-        .param("shape4", 0.5)               // curve morph for function channel 4
-        .param("cycle4", 0.0)               // 0 one-shot, >0 self-cycles function channel 4
-        .param("trig4", 0.0)                // trigger input for function channel 4
-        .param("ch2", 0.0)                  // patchable utility CV input for channel 2
-        .param("ch2_scale", 0.5)            // attenuverter knob for utility channel 2
-        .param("ch2_offset", 0.0)           // DC offset added after channel 2 scaling
-        .param("ch3", 0.0)                  // patchable utility CV input for channel 3
-        .param("ch3_scale", 0.5)            // attenuverter knob for utility channel 3
-        .param("ch3_offset", 0.0)           // DC offset added after channel 3 scaling
+        .param("rise1", 0.05) // units: seconds, range: 0..60, default: 0.05. Rise 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise1_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Rise1 CV input; bipolar values modulate the matching panel control.
+        .param("rise1_cv_scale", 1.0) // units: seconds, range: 0..60, default: 1.0. Rise1 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall1", 0.5) // units: seconds, range: 0..60, default: 0.5. Fall 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall1_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Fall1 CV input; bipolar values modulate the matching panel control.
+        .param("fall1_cv_scale", 1.0) // units: seconds, range: 0..60, default: 1.0. Fall1 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape1", 0.5) // units: normalized, range: 0..1, default: 0.5. Shape 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("cycle1", 0.0) // units: normalized, range: 0..1, default: 0.0. Cycle 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trig1", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise4", 0.05) // units: seconds, range: 0..60, default: 0.05. Rise 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise4_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Rise4 CV input; bipolar values modulate the matching panel control.
+        .param("rise4_cv_scale", 1.0) // units: seconds, range: 0..60, default: 1.0. Rise4 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall4", 0.5) // units: seconds, range: 0..60, default: 0.5. Fall 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall4_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Fall4 CV input; bipolar values modulate the matching panel control.
+        .param("fall4_cv_scale", 1.0) // units: seconds, range: 0..60, default: 1.0. Fall4 Cv Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape4", 0.5) // units: normalized, range: 0..1, default: 0.5. Shape 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("cycle4", 0.0) // units: normalized, range: 0..1, default: 0.0. Cycle 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trig4", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch2", 0.0) // units: linear, range: -1..1, default: 0.0. Ch 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch2_scale", 0.5) // units: linear, range: -1..1, default: 0.5. Ch2 Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch2_offset", 0.0) // units: linear, range: -1..1, default: 0.0. Ch2 Offset amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch3", 0.0) // units: linear, range: -1..1, default: 0.0. Ch 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch3_scale", 0.5) // units: linear, range: -1..1, default: 0.5. Ch3 Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("ch3_offset", 0.0) // units: linear, range: -1..1, default: 0.0. Ch3 Offset amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let rise1_cv = clip(p.rise1_cv * p.rise1_cv_scale, -1.0, 1.0);
             let fall1_cv = clip(p.fall1_cv * p.fall1_cv_scale, -1.0, 1.0);
@@ -122,3 +122,19 @@ define_synthdef("maths", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `maths`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/maths.vibe" as maths;
+//
+// let maths = voice("doc_maths")
+//     .synth("maths")
+//     .set_param("rise1", 0.02)
+//     .set_param("fall1", 0.35)
+//     .set_param("shape1", 0.6)
+//     .set_param("rise1_cv", 0.02);
+// maths.outputs(["ch1"]).mute();
+// maths.run();
+// ```

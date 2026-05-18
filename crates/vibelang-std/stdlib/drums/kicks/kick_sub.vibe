@@ -1,8 +1,8 @@
 // Genre: Dubstep, Bass Music | Character: Pure sub bass, minimal harmonics
 define_synthdef("kick_sub", |builder| {
     builder
-        .param("freq", 40.0)
-        .param("amp", 1.0)
+        .param("freq", 40.0) // units: Hz, range: 20..20000, default: 40.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Medium-long decay for sub presence
             let amp_env = envelope()
@@ -30,3 +30,17 @@ define_synthdef("kick_sub", |builder| {
         })
 });
 
+//
+// # Usage: kick_sub
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_sub.vibe" as kick_sub;
+//
+// let doc_kick_sub = voice("doc_kick_sub")
+//     .synth("kick_sub")
+//     .set_param("freq", 40.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_sub.output("out").to_main();
+// doc_kick_sub.run();
+// ```

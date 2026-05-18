@@ -6,8 +6,8 @@
 // White Noise (all frequencies, flat spectrum)
 define_synthdef("white_noise_gen", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -22,8 +22,8 @@ define_synthdef("white_noise_gen", |builder| {
 // Pink Noise (1/f spectrum, equal energy per octave)
 define_synthdef("pink_noise_gen", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -42,8 +42,8 @@ define_synthdef("pink_noise_gen", |builder| {
 // Brown/Red Noise (1/f^2 spectrum, deeper)
 define_synthdef("brown_noise_gen", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -62,9 +62,9 @@ define_synthdef("brown_noise_gen", |builder| {
 // High-passed Noise (hiss, bright)
 define_synthdef("hiss_gen", |builder| {
     builder
-        .param("amp", 0.2)
-        .param("gate", 1.0)
-        .param("freq", 4000.0) // High pass frequency
+        .param("amp", 0.2) // units: linear, range: 0..1, default: 0.2. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("freq", 4000.0) // units: Hz, range: 0..20000, default: 4000.0. Pitch frequency in Hz; higher raises the note or resonator center.
         .body(|amp, gate, freq| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -82,10 +82,10 @@ define_synthdef("hiss_gen", |builder| {
 // Filtered Noise (bandpass, focused)
 define_synthdef("filtered_noise_gen", |builder| {
     builder
-        .param("amp", 0.3)
-        .param("gate", 1.0)
-        .param("freq", 1000.0) // Center frequency
-        .param("rq", 0.2) // Resonance (lower = more resonant)
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("freq", 1000.0) // units: Hz, range: 0..20000, default: 1000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("rq", 0.2) // units: resonance, range: 0..1, default: 0.2. RQ macro; higher moves that model axis toward its brighter or more open setting.
         .body(|amp, gate, freq, rq| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -103,9 +103,9 @@ define_synthdef("filtered_noise_gen", |builder| {
 // Crackle (random impulses)
 define_synthdef("crackle_gen", |builder| {
     builder
-        .param("amp", 0.2)
-        .param("gate", 1.0)
-        .param("density", 0.5) // Crackle density
+        .param("amp", 0.2) // units: linear, range: 0..1, default: 0.2. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
         .body(|amp, gate, density| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.05)
@@ -120,3 +120,94 @@ define_synthdef("crackle_gen", |builder| {
             crackle * env * amp * 3.0
         })
 });
+
+//
+// # Usage: `white_noise_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let white_noise_gen = voice("doc_white_noise_gen")
+//     .synth("white_noise_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// white_noise_gen.output("out").to_main();
+// white_noise_gen.run();
+// ```
+//
+// # Usage: `pink_noise_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let pink_noise_gen = voice("doc_pink_noise_gen")
+//     .synth("pink_noise_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// pink_noise_gen.output("out").to_main();
+// pink_noise_gen.run();
+// ```
+//
+// # Usage: `brown_noise_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let brown_noise_gen = voice("doc_brown_noise_gen")
+//     .synth("brown_noise_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// brown_noise_gen.output("out").to_main();
+// brown_noise_gen.run();
+// ```
+//
+// # Usage: `hiss_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let hiss_gen = voice("doc_hiss_gen")
+//     .synth("hiss_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// hiss_gen.output("out").to_main();
+// hiss_gen.run();
+// ```
+//
+// # Usage: `filtered_noise_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let filtered_noise_gen = voice("doc_filtered_noise_gen")
+//     .synth("filtered_noise_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// filtered_noise_gen.output("out").to_main();
+// filtered_noise_gen.run();
+// ```
+//
+// # Usage: `crackle_gen`
+//
+// ```rhai
+// import "stdlib/utility/noise_generators.vibe" as noise_generators;
+//
+// let crackle_gen = voice("doc_crackle_gen")
+//     .synth("crackle_gen")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// crackle_gen.output("out").to_main();
+// crackle_gen.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Trailer, Film Score | Character: Epic cinematic riser
 define_synthdef("riser_cinematic", |builder| {
     builder
-        .param("amp", 0.7)
-        .param("duration", 5.0)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("duration", 5.0) // units: seconds, range: 0..60, default: 5.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.5, 1.0)
@@ -34,3 +34,18 @@ define_synthdef("riser_cinematic", |builder| {
             mix * env * amp * 0.5
         })
 });
+
+//
+// # Usage: riser_cinematic
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_cinematic.vibe" as riser_cinematic;
+//
+// let doc_riser_cinematic = voice("doc_riser_cinematic")
+//     .synth("riser_cinematic")
+//     .set_param("amp", 0.7)
+//     .set_param("duration", 5.0)
+//     ;
+// doc_riser_cinematic.output("out").to_main();
+// doc_riser_cinematic.run();
+// ```

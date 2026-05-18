@@ -1,8 +1,8 @@
 // Genre: Dark Ambient, Drone | Character: Dark, ominous drone
 define_synthdef("drone_dark", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.4)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Very long sustain
             let env = envelope()
@@ -25,3 +25,16 @@ define_synthdef("drone_dark", |builder| {
         })
 });
 
+//
+// # Usage: `drone_dark`
+//
+// ```rhai
+// import "stdlib/textures/drone/drone_dark.vibe" as drone_dark;
+//
+// let drone_dark = voice("doc_drone_dark")
+//     .synth("drone_dark")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// drone_dark.output("out").to_main();
+// drone_dark.run();
+// ```

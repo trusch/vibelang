@@ -1,9 +1,9 @@
 // Genre: Modern Electronic, EDM | Character: Wavetable-style bass with morphing character
 define_synthdef("bass_wavetable")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
-    .param("morph", 0.5)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("morph", 0.5) // units: ratio, range: 0..1, default: 0.5. Morph macro; higher values move the model toward its brighter or more complex side.
     .body(|freq, amp, gate, morph| {
         let env = envelope()
             .asr(0.005, 1.0, 0.1)
@@ -34,3 +34,20 @@ define_synthdef("bass_wavetable")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_wavetable
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_wavetable.vibe" as bass_wavetable;
+//
+// let doc_bass_wavetable = voice("doc_bass_wavetable")
+//     .synth("bass_wavetable")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     .set_param("morph", 0.5)
+//     ;
+// doc_bass_wavetable.output("out").to_main();
+// doc_bass_wavetable.run();
+// ```

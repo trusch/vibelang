@@ -1,7 +1,7 @@
 // Genre: Orchestral, Cinematic | Character: Short staccato string section
 define_synthdef("strings_staccato")
-    .param("freq", 440.0)
-    .param("amp", 0.6)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short staccato envelope
         let amp_env = envelope()
@@ -20,3 +20,17 @@ define_synthdef("strings_staccato")
         // Warm filtering
         lpf_ar(mix, 4000.0) * amp_env * amp
     });
+
+//
+// # Usage: `strings_staccato`
+//
+// ```rhai
+// import "stdlib/orchestral/strings_staccato.vibe" as strings_staccato;
+//
+// let strings_staccato = voice("doc_strings_staccato")
+//     .synth("strings_staccato")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// strings_staccato.output("out").to_main();
+// strings_staccato.run();
+// ```

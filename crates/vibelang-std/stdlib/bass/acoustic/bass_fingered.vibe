@@ -1,8 +1,8 @@
 // Genre: Rock, Pop, R&B | Character: Fingerstyle electric bass
 define_synthdef("bass_fingered")
-    .param("freq", 80.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Natural envelope
         let env = envelope()
@@ -25,3 +25,19 @@ define_synthdef("bass_fingered")
         let sig = body + harm1 + harm2 + attack;
         lpf_ar(sig, 3500.0) * env * amp
     });
+
+//
+// # Usage: bass_fingered
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_fingered.vibe" as bass_fingered;
+//
+// let doc_bass_fingered = voice("doc_bass_fingered")
+//     .synth("bass_fingered")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_fingered.output("out").to_main();
+// doc_bass_fingered.run();
+// ```

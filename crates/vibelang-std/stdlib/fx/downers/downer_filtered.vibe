@@ -1,8 +1,8 @@
 // Genre: House, Techno | Character: Resonant filter downlifter
 define_synthdef("downer_filtered", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 2.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 2.5) // units: seconds, range: 0..60, default: 2.5. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.05, 1.0)
@@ -25,3 +25,18 @@ define_synthdef("downer_filtered", |builder| {
             (filtered + peak2) * env * amp * 0.7
         })
 });
+
+//
+// # Usage: downer_filtered
+//
+// ```rhai
+// import "stdlib/fx/downers/downer_filtered.vibe" as downer_filtered;
+//
+// let doc_downer_filtered = voice("doc_downer_filtered")
+//     .synth("downer_filtered")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 2.5)
+//     ;
+// doc_downer_filtered.output("out").to_main();
+// doc_downer_filtered.run();
+// ```

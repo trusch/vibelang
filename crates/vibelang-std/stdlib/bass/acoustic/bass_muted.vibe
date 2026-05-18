@@ -1,7 +1,7 @@
 // Genre: Funk, R&B, Pop | Character: Palm-muted bass with short, controlled notes
 define_synthdef("bass_muted")
-    .param("freq", 80.0)
-    .param("amp", 0.75)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.75) // units: linear, range: 0..1, default: 0.75. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Very short decay
         let amp_env = envelope()
@@ -22,3 +22,18 @@ define_synthdef("bass_muted")
         let sig = body + harm1 + attack;
         lpf_ar(sig, 1500.0) * amp_env * amp
     });
+
+//
+// # Usage: bass_muted
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_muted.vibe" as bass_muted;
+//
+// let doc_bass_muted = voice("doc_bass_muted")
+//     .synth("bass_muted")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.75)
+//     ;
+// doc_bass_muted.output("out").to_main();
+// doc_bass_muted.run();
+// ```

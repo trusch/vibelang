@@ -1,9 +1,9 @@
 // Genre: Acid, Techno, Electronic | Character: Roland SH-101 bass - classic mono synth
 define_synthdef("bass_101")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
-    .param("cutoff", 1000.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
     .body(|freq, amp, gate, cutoff| {
         let env = envelope()
             .asr(0.005, 1.0, 0.08)
@@ -28,3 +28,20 @@ define_synthdef("bass_101")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_101
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_101.vibe" as bass_101;
+//
+// let doc_bass_101 = voice("doc_bass_101")
+//     .synth("bass_101")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1000.0)
+//     ;
+// doc_bass_101.output("out").to_main();
+// doc_bass_101.run();
+// ```

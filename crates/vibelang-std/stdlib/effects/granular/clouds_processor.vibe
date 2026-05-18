@@ -58,22 +58,22 @@
 
 define_fx("clouds_processor", |builder| {
     builder
-        .param("mode", 0.0)
-        .param("freeze", 0.0)
-        .param("position", 0.5)
-        .param("size", 0.5)
-        .param("pitch", 0.0)
-        .param("density", 0.5)
-        .param("texture", 0.5)
-        .param("dry_wet", 0.5)
-        .param("spread", 0.3)
-        .param("feedback", 0.0)
-        .param("reverb", 0.0)
-        .param("trigger", 0.0)
-        .param("quality", 0.0)
-        .param("blend", 1.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or algorithm.
+        .param("freeze", 0.0) // units: trigger, range: 0..1, default: 0.0. Freeze switch; rounded values turn that mode off or on.
+        .param("position", 0.5) // units: ratio, range: 0..1, default: 0.5. Position macro; higher values move the model toward its brighter or more complex side.
+        .param("size", 0.5) // units: ratio, range: 0..1, default: 0.5. Size; higher values use a larger buffer, room, or grain window.
+        .param("pitch", 0.0) // units: semitones, range: -48..48, default: 0.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
+        .param("texture", 0.5) // units: ratio, range: 0..1, default: 0.5. Texture amount; higher values emphasize that named musical or electrical behavior.
+        .param("dry_wet", 0.5) // units: ratio, range: 0..1, default: 0.5. Blend amount; 0 favors the first source and 1 favors the second or wet source.
+        .param("spread", 0.3) // units: ratio, range: 0..1, default: 0.3. Spread width; higher values distribute energy across a wider range.
+        .param("feedback", 0.0) // units: ratio, range: 0..1, default: 0.0. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("reverb", 0.0) // units: normalized, range: 0..1, default: 0.0. Reverb amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("quality", 0.0) // units: normalized, range: 0..1, default: 0.0. Quality mode; higher values choose denser or cleaner granular processing.
+        .param("blend", 1.0) // units: ratio, range: 0..1, default: 1.0. Blend amount; 0 favors the first source and 1 favors the second or wet source.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body_map(|p| {
             let input = p.input;
             let mono = (input[0] + input[1]) * 0.5;
@@ -173,3 +173,18 @@ define_fx("clouds_processor", |builder| {
             ]
         })
 });
+
+//
+// # Usage: clouds_processor
+//
+// ```rhai
+// import "stdlib/effects/granular/clouds_processor.vibe" as clouds_processor;
+//
+// let doc_clouds_processor = fx("doc_clouds_processor")
+//     .synth("clouds_processor")
+//     .param("mode", 0.0)
+//     .param("freeze", 0.0)
+//     .param("position", 0.5)
+//     .param("size", 0.5)
+//     .apply();
+// ```

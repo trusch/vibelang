@@ -1,7 +1,7 @@
 // Genre: All | Character: Noise-based impact, versatile
 define_synthdef("impact_noise", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             // Quick decay
             let env = envelope()
@@ -20,3 +20,16 @@ define_synthdef("impact_noise", |builder| {
         })
 });
 
+//
+// # Usage: impact_noise
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_noise.vibe" as impact_noise;
+//
+// let doc_impact_noise = voice("doc_impact_noise")
+//     .synth("impact_noise")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_impact_noise.output("out").to_main();
+// doc_impact_noise.run();
+// ```

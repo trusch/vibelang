@@ -40,17 +40,17 @@ define_synthdef("rings", |builder| {
         .output("odd")              // 1ch - Rings first output
         .output("even")             // 1ch - Rings second output
         .output("sum")              // 1ch - odd + even convenience mix
-        .param("pit", 60.0)                 // pitch in MIDI note units passed to the Rings core
-        .param("structure", 0.5)            // 0..1 resonator structure control
-        .param("brightness", 0.5)           // 0..1 exciter/resonator brightness
-        .param("damping", 0.5)              // 0..1 resonator decay damping
-        .param("position", 0.5)             // 0..1 excitation position along the resonator
-        .param("model", 0.0)                // rounded Rings resonator model enum
-        .param("polyphony", 1.0)            // polyphony selector passed to the Rings core
-        .param("internal_exciter", 0.0)     // 0 external input, 1 use internal exciter
-        .param("bypass", 0.0)               // 0 resonator path, 1 bypass through the core
-        .param("gain", 1.0)                 // output gain multiplier for Rings outputs
-        .param("trigger", 0.0)              // 0/1 trigger for the internal exciter
+        .param("pit", 60.0) // units: MIDI note, range: 0..127, default: 60.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("structure", 0.5) // units: normalized, range: 0..1, default: 0.5. Structure macro; higher values move the model toward its brighter or more complex side.
+        .param("brightness", 0.5) // units: normalized, range: 0..1, default: 0.5. Tone brightness; higher values add more high-frequency content.
+        .param("damping", 0.5) // units: linear, range: 0..1, default: 0.5. High-frequency damping; higher values darken and shorten resonant tails.
+        .param("position", 0.5) // units: normalized, range: 0..1, default: 0.5. Position macro; higher values move the model toward its brighter or more complex side.
+        .param("model", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("polyphony", 1.0) // units: normalized, range: 0..1, default: 1.0. Polyphony amount; higher values emphasize that named musical or electrical behavior.
+        .param("internal_exciter", 0.0) // units: normalized, range: 0..1, default: 0.0. Internal Exciter amount; higher values emphasize that named musical or electrical behavior.
+        .param("bypass", 0.0) // units: normalized, range: 0..1, default: 0.0. Bypass switch; rounded values turn that mode off or on.
+        .param("gain", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body_map(|p| {
             // mi_rings_ar args: in, trig, pit, struct, bright, damp, pos,
             // model, poly, intern_exciter, easteregg, bypass, mul
@@ -83,3 +83,19 @@ define_synthdef("rings", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `rings`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/rings.vibe" as rings;
+//
+// let rings = voice("doc_rings")
+//     .synth("rings")
+//     .set_param("damping", 0.5)
+//     .set_param("gain", 0.5)
+//     .set_param("model", 1.0)
+//     .set_param("pit", 0.5);
+// rings.output("odd").to_main();
+// rings.run();
+// ```

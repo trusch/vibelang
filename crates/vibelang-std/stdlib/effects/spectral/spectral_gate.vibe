@@ -24,9 +24,9 @@
 
 define_fx("spectral_gate", |builder| {
     builder
-        .param("threshold", 5.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("threshold", 5.0) // units: linear, range: 0..20, default: 5.0. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, threshold, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -54,3 +54,17 @@ define_fx("spectral_gate", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_gate
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_gate.vibe" as spectral_gate;
+//
+// let doc_spectral_gate = fx("doc_spectral_gate")
+//     .synth("spectral_gate")
+//     .param("threshold", 5.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

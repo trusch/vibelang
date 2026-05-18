@@ -7,8 +7,8 @@
 // Tabla Bayan (bass drum)
 define_synthdef("tabla_bayan", |builder| {
     builder
-        .param("freq", 80.0)
-        .param("amp", 0.7)
+        .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.4)
@@ -41,8 +41,8 @@ define_synthdef("tabla_bayan", |builder| {
 // Tabla Dayan (treble drum)
 define_synthdef("tabla_dayan", |builder| {
     builder
-        .param("freq", 300.0)
-        .param("amp", 0.6)
+        .param("freq", 300.0) // units: Hz, range: 20..20000, default: 300.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.25)
@@ -65,3 +65,30 @@ define_synthdef("tabla_dayan", |builder| {
             (tone + hpf_ar(attack, 2000.0)) * env * amp
         })
 });
+
+//
+// # Usage: `tabla_bayan`
+//
+// ```rhai
+// import "stdlib/world/tabla.vibe" as tabla;
+//
+// let tabla_bayan = voice("doc_tabla_bayan")
+//     .synth("tabla_bayan")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// tabla_bayan.output("out").to_main();
+// tabla_bayan.run();
+// ```
+//
+// # Usage: `tabla_dayan`
+//
+// ```rhai
+// import "stdlib/world/tabla.vibe" as tabla;
+//
+// let tabla_dayan = voice("doc_tabla_dayan")
+//     .synth("tabla_dayan")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// tabla_dayan.output("out").to_main();
+// tabla_dayan.run();
+// ```

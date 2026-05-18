@@ -1,7 +1,7 @@
 // Genre: Industrial, Experimental | Character: Metallic, resonant impact
 define_synthdef("impact_metallic", |builder| {
     builder
-        .param("amp", 0.8)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
         .body(|amp| {
             // Sharp attack, long resonance
             let env = envelope()
@@ -29,3 +29,16 @@ define_synthdef("impact_metallic", |builder| {
         })
 });
 
+//
+// # Usage: impact_metallic
+//
+// ```rhai
+// import "stdlib/fx/impacts/impact_metallic.vibe" as impact_metallic;
+//
+// let doc_impact_metallic = voice("doc_impact_metallic")
+//     .synth("impact_metallic")
+//     .set_param("amp", 0.8)
+//     ;
+// doc_impact_metallic.output("out").to_main();
+// doc_impact_metallic.run();
+// ```

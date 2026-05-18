@@ -70,26 +70,26 @@ define_synthdef("marbles", |builder| {
         .output("x1")
         .output("x2")
         .output("x3")
-        .param("clock", 0.25)               // master period in seconds; smaller values run faster
-        .param("bias_t", 0.5)               // legacy trigger bias center, combined with t_bias
-        .param("spread_t", 0.3)             // legacy trigger distribution spread
-        .param("bias_x", 0.5)               // legacy X voltage bias center, combined with x_bias
-        .param("spread_x", 0.5)             // legacy X voltage spread, combined with x_spread
-        .param("length", 4.0)               // legacy X memory blend length for old patches
-        .param("quant_steps", 12.0)         // chromatic quantizer divisions when x_scale is 0
-        .param("t_model", 0.0)              // rounded trigger model enum for T outputs
-        .param("t_rate", 0.5)               // master clock multiplier for T and X sampling
-        .param("t_bias", 0.5)               // additive trigger bias around 0.5
-        .param("t_jitter", 0.1)             // 0..1 timing looseness for trigger streams
-        .param("deja_vu_t", 0.0)            // 0 fresh triggers, >=0.5 loops trigger memory
-        .param("length_t", 8.0)             // rounded trigger loop length, 1..32 cells
-        .param("x_mode", 1.0)               // rounded X mode: continuous, quantized, or stepped/noisy
-        .param("x_scale", 0.0)              // rounded pitch scale enum for X quantization
-        .param("x_spread", 0.5)             // 0..1 X voltage distribution width
-        .param("x_bias", 0.5)               // 0..1 X voltage distribution center
-        .param("x_steps", 0.0)              // 0 smooth X voltages, higher values add stair-stepping
-        .param("deja_vu_x", 0.0)            // 0 fresh X values, >=0.5 loops X memory
-        .param("length_x", 8.0)             // rounded X loop length, 1..32 cells
+        .param("clock", 0.25) // units: trigger, range: 0..1, default: 0.25. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("bias_t", 0.5) // units: normalized, range: 0..1, default: 0.5. Bias T amount; higher values emphasize that named musical or electrical behavior.
+        .param("spread_t", 0.3) // units: normalized, range: 0..1, default: 0.3. Spread T amount; higher values emphasize that named musical or electrical behavior.
+        .param("bias_x", 0.5) // units: normalized, range: 0..1, default: 0.5. Bias X amount; higher values emphasize that named musical or electrical behavior.
+        .param("spread_x", 0.5) // units: normalized, range: 0..1, default: 0.5. Spread X amount; higher values emphasize that named musical or electrical behavior.
+        .param("length", 4.0) // units: selector, range: 0..N, default: 4.0. Selects mode, table, or step count.
+        .param("quant_steps", 12.0) // units: steps, range: 1..24, default: 12.0. Step count or loop length; higher values increase quantization or memory resolution.
+        .param("t_model", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("t_rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("t_bias", 0.5) // units: normalized, range: 0..1, default: 0.5. Bias offset; higher values shift the distribution or VCA opening upward.
+        .param("t_jitter", 0.1) // units: normalized, range: 0..1, default: 0.1. T Jitter amount; higher values emphasize that named musical or electrical behavior.
+        .param("deja_vu_t", 0.0) // units: normalized, range: 0..1, default: 0.0. Deja Vu T amount; higher values emphasize that named musical or electrical behavior.
+        .param("length_t", 8.0) // units: selector, range: 0..N, default: 8.0. Selects mode, table, or step count.
+        .param("x_mode", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("x_scale", 0.0) // units: linear, range: -1..1, default: 0.0. Mode selector; rounded values choose the model or scale listed in the header.
+        .param("x_spread", 0.5) // units: normalized, range: 0..1, default: 0.5. X Spread amount; higher values emphasize that named musical or electrical behavior.
+        .param("x_bias", 0.5) // units: normalized, range: 0..1, default: 0.5. Bias offset; higher values shift the distribution or VCA opening upward.
+        .param("x_steps", 0.0) // units: normalized, range: 0..1, default: 0.0. Step count or loop length; higher values increase quantization or memory resolution.
+        .param("deja_vu_x", 0.0) // units: normalized, range: 0..1, default: 0.0. Deja Vu X amount; higher values emphasize that named musical or electrical behavior.
+        .param("length_x", 8.0) // units: selector, range: 0..N, default: 8.0. Selects mode, table, or step count.
         .body_map(|p| {
             let clock_hz = (1.0 / (p.clock + 0.001)) * clip(p.t_rate * 2.0, 0.05, 4.0);
             let master_kr = impulse_kr(clock_hz, 0.0);
@@ -616,3 +616,19 @@ define_synthdef("marbles", |builder| {
             [t1_out, t2_out, t3_out, x1_out, x2_out, x3_out]
         })
 });
+
+//
+// # Usage: `marbles`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/marbles.vibe" as marbles;
+//
+// let marbles = voice("doc_marbles")
+//     .synth("marbles")
+//     .set_param("t_rate", 2.0)
+//     .set_param("clock", 1.0)
+//     .set_param("t_model", 1.0)
+//     .set_param("length", 1.0);
+// marbles.output("t1").to_main();
+// marbles.run();
+// ```

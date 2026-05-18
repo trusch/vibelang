@@ -1,7 +1,7 @@
 // Genre: Jungle, Drum & Bass | Character: Amen-break style snare with roll potential
 define_synthdef("snare_jungle")
-    .param("freq", 220.0)
-    .param("amp", 0.9)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Tight decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("snare_jungle")
 
         (body + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_jungle
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_jungle.vibe" as snare_jungle;
+//
+// let doc_snare_jungle = voice("doc_snare_jungle")
+//     .synth("snare_jungle")
+//     .set_param("freq", 220.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_snare_jungle.output("out").to_main();
+// doc_snare_jungle.run();
+// ```

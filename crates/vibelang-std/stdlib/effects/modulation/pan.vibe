@@ -18,9 +18,9 @@
 
 define_fx("pan", |builder| {
     builder
-        .param("pan", 0.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("pan", 0.0) // units: pan, range: -1..1, default: 0.0. Stereo pan position; -1 is left, 0 is center, +1 is right.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, pan, mix, level| {
             // Mix to mono first so pan2 has a single source to position.
             let mono = (input[0] + input[1]) * 0.5;
@@ -39,3 +39,17 @@ define_fx("pan", |builder| {
             ]
         })
 });
+
+//
+// # Usage: pan
+//
+// ```rhai
+// import "stdlib/effects/modulation/pan.vibe" as pan;
+//
+// let doc_pan = fx("doc_pan")
+//     .synth("pan")
+//     .param("pan", 0.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

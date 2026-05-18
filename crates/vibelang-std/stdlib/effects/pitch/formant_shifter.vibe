@@ -36,10 +36,10 @@
 
 define_fx("formant_shifter", |builder| {
     builder
-        .param("pitch_semitones", 0.0)
-        .param("formant_shift", 1.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("pitch_semitones", 0.0) // units: semitones, range: -48..48, default: 0.0. Pitch Semitones; positive values transpose that voice upward.
+        .param("formant_shift", 1.0) // units: ratio, range: 0..4, default: 1.0. Formant Shift amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, pitch_semitones, formant_shift, mix, level| {
             let ratio = (2.0).pow(pitch_semitones / 12.0);
 
@@ -66,3 +66,18 @@ define_fx("formant_shifter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: formant_shifter
+//
+// ```rhai
+// import "stdlib/effects/pitch/formant_shifter.vibe" as formant_shifter;
+//
+// let doc_formant_shifter = fx("doc_formant_shifter")
+//     .synth("formant_shifter")
+//     .param("pitch_semitones", 0.0)
+//     .param("formant_shift", 1.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -130,51 +130,51 @@ define_synthdef("stages", |builder| {
         .output_kr("group3")
         .output_kr("eor")
         .output_kr("eoc")
-        .param("clock", 0.0)                // shared 0/1 clock advance for grouped segments
-        .param("reset", 0.0)                // shared 0/1 reset for segment/group phases
-        .param("scale", 1.0)                // 0..2 multiplier applied to segment values
-        .param("seg_1_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 1
-        .param("seg_1_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 1
-        .param("seg_1_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 1
-        .param("seg_1_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 1
-        .param("seg_1_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 1
-        .param("seg_1_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 1
-        .param("seg_1_group_with_prev", 0.0) // 0 starts new group, 1 chains to previous segment for Stages segment 1
-        .param("seg_2_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 2
-        .param("seg_2_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 2
-        .param("seg_2_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 2
-        .param("seg_2_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 2
-        .param("seg_2_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 2
-        .param("seg_2_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 2
-        .param("seg_2_group_with_prev", 1.0) // 0 starts new group, 1 chains to previous segment for Stages segment 2
-        .param("seg_3_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 3
-        .param("seg_3_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 3
-        .param("seg_3_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 3
-        .param("seg_3_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 3
-        .param("seg_3_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 3
-        .param("seg_3_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 3
-        .param("seg_3_group_with_prev", 1.0) // 0 starts new group, 1 chains to previous segment for Stages segment 3
-        .param("seg_4_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 4
-        .param("seg_4_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 4
-        .param("seg_4_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 4
-        .param("seg_4_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 4
-        .param("seg_4_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 4
-        .param("seg_4_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 4
-        .param("seg_4_group_with_prev", 1.0) // 0 starts new group, 1 chains to previous segment for Stages segment 4
-        .param("seg_5_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 5
-        .param("seg_5_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 5
-        .param("seg_5_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 5
-        .param("seg_5_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 5
-        .param("seg_5_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 5
-        .param("seg_5_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 5
-        .param("seg_5_group_with_prev", 1.0) // 0 starts new group, 1 chains to previous segment for Stages segment 5
-        .param("seg_6_type", 0.0)           // rounded segment enum: ramp/step/hold/alt for Stages segment 6
-        .param("seg_6_loop", 0.0)           // 0 one-shot, 1 loops this segment/group for Stages segment 6
-        .param("seg_6_primary", 0.5)        // type-dependent time, level, or rate control for Stages segment 6
-        .param("seg_6_secondary", 0.5)      // type-dependent curve, slew, or shape control for Stages segment 6
-        .param("seg_6_gate", 0.0)           // 0/1 held gate for hold-style behavior for Stages segment 6
-        .param("seg_6_trigger", 0.0)        // 0/1 trigger or advance input for Stages segment 6
-        .param("seg_6_group_with_prev", 1.0) // 0 starts new group, 1 chains to previous segment for Stages segment 6
+        .param("clock", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("reset", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("scale", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("seg_1_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 1 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_1_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 1 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_1_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 1 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_1_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 1 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_1_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_1_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 1 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_1_group_with_prev", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 1 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 2 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 2 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 2 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 2 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_2_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 2 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_2_group_with_prev", 1.0) // units: normalized, range: 0..1, default: 1.0. Seg 2 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 3 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 3 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 3 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 3 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_3_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 3 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_3_group_with_prev", 1.0) // units: normalized, range: 0..1, default: 1.0. Seg 3 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 4 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 4 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 4 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 4 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_4_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 4 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_4_group_with_prev", 1.0) // units: normalized, range: 0..1, default: 1.0. Seg 4 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 5 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 5 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 5 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 5 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_5_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 5 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_5_group_with_prev", 1.0) // units: normalized, range: 0..1, default: 1.0. Seg 5 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_type", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 6 Type amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_loop", 0.0) // units: normalized, range: 0..1, default: 0.0. Seg 6 Loop amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_primary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 6 Primary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_secondary", 0.5) // units: normalized, range: 0..1, default: 0.5. Seg 6 Secondary amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("seg_6_trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Seg 6 Trigger amount; higher values emphasize that named musical or electrical behavior.
+        .param("seg_6_group_with_prev", 1.0) // units: normalized, range: 0..1, default: 1.0. Seg 6 Group With Prev amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let join2 = _stages_gate(p.seg_2_group_with_prev);
             let join3 = _stages_gate(p.seg_3_group_with_prev);
@@ -367,3 +367,19 @@ define_synthdef("stages", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `stages`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/stages.vibe" as stages;
+//
+// let stages = voice("doc_stages")
+//     .synth("stages")
+//     .set_param("clock", 1.0)
+//     .set_param("seg_1_gate", 0.5)
+//     .set_param("reset", 0.35)
+//     .set_param("scale", 1.0);
+// stages.outputs(["seg1"]).mute();
+// stages.run();
+// ```

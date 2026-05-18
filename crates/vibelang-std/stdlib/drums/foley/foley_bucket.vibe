@@ -1,7 +1,7 @@
 // Genre: Street, Experimental | Character: Plastic bucket drum
 define_synthdef("foley_bucket")
-    .param("freq", 180.0)
-    .param("amp", 0.8)
+    .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Plastic resonance
         let amp_env = envelope()
@@ -27,3 +27,18 @@ define_synthdef("foley_bucket")
 
         (body + overtone1 + overtone2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: foley_bucket
+//
+// ```rhai
+// import "stdlib/drums/foley/foley_bucket.vibe" as foley_bucket;
+//
+// let doc_foley_bucket = voice("doc_foley_bucket")
+//     .synth("foley_bucket")
+//     .set_param("freq", 180.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_foley_bucket.output("out").to_main();
+// doc_foley_bucket.run();
+// ```

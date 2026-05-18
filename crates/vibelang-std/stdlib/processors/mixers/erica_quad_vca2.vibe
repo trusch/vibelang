@@ -25,22 +25,22 @@ define_synthdef("erica_quad_vca2")
     .output("out2", 1)
     .output("out3", 1)
     .output("out4", 1)
-    .param("level_1", 0.7)
-    .param("bias_1", 0.0)
-    .param("cv_1", 0.0)
-    .param("curve_1", 0.0)
-    .param("level_2", 0.7)
-    .param("bias_2", 0.0)
-    .param("cv_2", 0.0)
-    .param("curve_2", 0.0)
-    .param("level_3", 0.7)
-    .param("bias_3", 0.0)
-    .param("cv_3", 0.0)
-    .param("curve_3", 0.0)
-    .param("level_4", 0.7)
-    .param("bias_4", 0.0)
-    .param("cv_4", 0.0)
-    .param("curve_4", 0.0)
+    .param("level_1", 0.7) // units: linear, range: 0..1, default: 0.7. VCA channel 1 level; higher opens the amplifier further.
+    .param("bias_1", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 1 bias offset; higher opens the channel without external CV.
+    .param("cv_1", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 1 CV input; higher opens that amplifier through modulation.
+    .param("curve_1", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 1 response curve; higher bends the VCA toward exponential response.
+    .param("level_2", 0.7) // units: linear, range: 0..1, default: 0.7. VCA channel 2 level; higher opens the amplifier further.
+    .param("bias_2", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 2 bias offset; higher opens the channel without external CV.
+    .param("cv_2", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 2 CV input; higher opens that amplifier through modulation.
+    .param("curve_2", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 2 response curve; higher bends the VCA toward exponential response.
+    .param("level_3", 0.7) // units: linear, range: 0..1, default: 0.7. VCA channel 3 level; higher opens the amplifier further.
+    .param("bias_3", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 3 bias offset; higher opens the channel without external CV.
+    .param("cv_3", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 3 CV input; higher opens that amplifier through modulation.
+    .param("curve_3", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 3 response curve; higher bends the VCA toward exponential response.
+    .param("level_4", 0.7) // units: linear, range: 0..1, default: 0.7. VCA channel 4 level; higher opens the amplifier further.
+    .param("bias_4", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 4 bias offset; higher opens the channel without external CV.
+    .param("cv_4", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 4 CV input; higher opens that amplifier through modulation.
+    .param("curve_4", 0.0) // units: normalized, range: 0..1, default: 0.0. VCA channel 4 response curve; higher bends the VCA toward exponential response.
     .body_map(|p| {
         let gain_1 = _erica_quad_vca2_gain(p.cv_1, p.bias_1, p.level_1, p.curve_1);
         let gain_2 = _erica_quad_vca2_gain(p.cv_2, p.bias_2, p.level_2, p.curve_2);
@@ -60,3 +60,19 @@ define_synthdef("erica_quad_vca2")
             out4
         ]
     });
+
+//
+// # Usage: `erica_quad_vca2`
+//
+// ```rhai
+// import "stdlib/processors/mixers/erica_quad_vca2.vibe" as erica_quad_vca2;
+//
+// let erica_quad_vca2 = voice("doc_erica_quad_vca2")
+//     .synth("erica_quad_vca2")
+//     .set_param("level_1", 0.5)
+//     .set_param("bias_1", 0.6)
+//     .set_param("cv_1", 0.5)
+//     .set_param("curve_1", 0.5);
+// erica_quad_vca2.output("out").to_main();
+// erica_quad_vca2.run();
+// ```

@@ -19,21 +19,21 @@ define_synthdef("cv_bus", |builder| {
         .output_kr("bus3")
         .output_kr("bus4")
         .output_kr("sum")
-        .param("in1", 0.0)                  // patchable CV input for bus 1
-        .param("in2", 0.0)                  // patchable CV input for bus 2
-        .param("in3", 0.0)                  // patchable CV input for bus 3
-        .param("in4", 0.0)                  // patchable CV input for bus 4
-        .param("atten1", 1.0)               // bipolar gain for bus 1 before offset
-        .param("atten2", 1.0)               // bipolar gain for bus 2 before offset
-        .param("atten3", 1.0)               // bipolar gain for bus 3 before offset
-        .param("atten4", 1.0)               // bipolar gain for bus 4 before offset
-        .param("offset1", 0.0)              // DC offset added to bus 1 after attenuation
-        .param("offset2", 0.0)              // DC offset added to bus 2 after attenuation
-        .param("offset3", 0.0)              // DC offset added to bus 3 after attenuation
-        .param("offset4", 0.0)              // DC offset added to bus 4 after attenuation
-        .param("norm12", 1.0)               // 0/1 normal from bus 1 into bus 2
-        .param("norm23", 1.0)               // 0/1 normal from bus 2 into bus 3
-        .param("norm34", 1.0)               // 0/1 normal from bus 3 into bus 4
+        .param("in1", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 1 gain; higher values add more of that CV/audio input.
+        .param("in2", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 2 gain; higher values add more of that CV/audio input.
+        .param("in3", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 3 gain; higher values add more of that CV/audio input.
+        .param("in4", 0.0) // units: normalized, range: 0..1, default: 0.0. Input 4 gain; higher values add more of that CV/audio input.
+        .param("atten1", 1.0) // units: normalized, range: 0..1, default: 1.0. Atten 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("atten2", 1.0) // units: normalized, range: 0..1, default: 1.0. Atten 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("atten3", 1.0) // units: normalized, range: 0..1, default: 1.0. Atten 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("atten4", 1.0) // units: normalized, range: 0..1, default: 1.0. Atten 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("offset1", 0.0) // units: normalized, range: 0..1, default: 0.0. Offset 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("offset2", 0.0) // units: normalized, range: 0..1, default: 0.0. Offset 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("offset3", 0.0) // units: normalized, range: 0..1, default: 0.0. Offset 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("offset4", 0.0) // units: normalized, range: 0..1, default: 0.0. Offset 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("norm12", 1.0) // units: normalized, range: 0..1, default: 1.0. Norm 12 amount; higher values emphasize that named musical or electrical behavior.
+        .param("norm23", 1.0) // units: normalized, range: 0..1, default: 1.0. Norm 23 amount; higher values emphasize that named musical or electrical behavior.
+        .param("norm34", 1.0) // units: normalized, range: 0..1, default: 1.0. Norm 34 amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let bus1 = clip_kr(p.in1 * p.atten1 + p.offset1, -1.0, 1.0);
             let bus2 = clip_kr(p.in2 * p.atten2 + p.offset2 + bus1 * p.norm12, -1.0, 1.0);
@@ -44,3 +44,19 @@ define_synthdef("cv_bus", |builder| {
             [bus1, bus2, bus3, bus4, sum_out]
         })
 });
+
+//
+// # Usage: `cv_bus`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/cv_bus.vibe" as cv_bus;
+//
+// let cv_bus = voice("doc_cv_bus")
+//     .synth("cv_bus")
+//     .set_param("in1", 0.5)
+//     .set_param("in2", 0.5)
+//     .set_param("in3", 0.5)
+//     .set_param("in4", 0.5);
+// cv_bus.outputs(["bus1"]).mute();
+// cv_bus.run();
+// ```

@@ -27,9 +27,9 @@
 
 define_fx("spectral_denoise", |builder| {
     builder
-        .param("threshold", 2.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("threshold", 2.0) // units: linear, range: 0..20, default: 2.0. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, threshold, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -57,3 +57,17 @@ define_fx("spectral_denoise", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_denoise
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_denoise.vibe" as spectral_denoise;
+//
+// let doc_spectral_denoise = fx("doc_spectral_denoise")
+//     .synth("spectral_denoise")
+//     .param("threshold", 2.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -1,9 +1,9 @@
 // Genre: Chiptune, 8-bit | Character: Classic pulse wave with variable duty
 define_synthdef("chip_pulse")
-    .param("freq", 440.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
-    .param("duty", 0.5)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("duty", 0.5) // units: ratio, range: 0..1, default: 0.5. Pulse width or duty cycle; higher values widen the high portion of the wave.
     .body(|freq, amp, gate, duty| {
         let env = envelope()
             .asr(0.001, 1.0, 0.01)
@@ -16,3 +16,19 @@ define_synthdef("chip_pulse")
 
         osc * env * amp
     });
+
+//
+// # Usage: `chip_pulse`
+//
+// ```rhai
+// import "stdlib/retro/chip_pulse.vibe" as chip_pulse;
+//
+// let chip_pulse = voice("doc_chip_pulse")
+//     .synth("chip_pulse")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("duty", 0.5);
+// chip_pulse.output("out").to_main();
+// chip_pulse.run();
+// ```

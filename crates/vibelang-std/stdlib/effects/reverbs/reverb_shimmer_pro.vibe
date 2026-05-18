@@ -30,10 +30,10 @@
 
 define_fx("reverb_shimmer_pro", |builder| {
     builder
-        .param("time", 3.0)
-        .param("shimmer_amount", 0.5)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 3.0) // units: seconds, range: 0..10, default: 3.0. Delay or segment time; higher values make repeats arrive later.
+        .param("shimmer_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Shimmer Amount; higher values apply more of that modulation or effect.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, shimmer_amount, mix, level| {
             // Read the previous block's pitch-shifted feedback (2 channels).
             let fb = local_in_ar(2.0);
@@ -92,3 +92,18 @@ define_fx("reverb_shimmer_pro", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_shimmer_pro
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_shimmer_pro.vibe" as reverb_shimmer_pro;
+//
+// let doc_reverb_shimmer_pro = fx("doc_reverb_shimmer_pro")
+//     .synth("reverb_shimmer_pro")
+//     .param("time", 3.0)
+//     .param("shimmer_amount", 0.5)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

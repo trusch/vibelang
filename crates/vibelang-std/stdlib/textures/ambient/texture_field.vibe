@@ -1,7 +1,7 @@
 // Genre: Ambient, Field Recording | Character: Field recording style ambient
 define_synthdef("texture_field", |builder| {
     builder
-        .param("amp", 0.35)
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
         .body(|amp| {
             // Very long sustain
             let env = envelope()
@@ -31,3 +31,15 @@ define_synthdef("texture_field", |builder| {
         })
 });
 
+//
+// # Usage: `texture_field`
+//
+// ```rhai
+// import "stdlib/textures/ambient/texture_field.vibe" as texture_field;
+//
+// let texture_field = voice("doc_texture_field")
+//     .synth("texture_field")
+//     .set_param("amp", 0.5);
+// texture_field.output("out").to_main();
+// texture_field.run();
+// ```

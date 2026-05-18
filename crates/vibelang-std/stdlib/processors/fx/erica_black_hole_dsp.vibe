@@ -24,14 +24,14 @@ fn _erica_bh_soft(sig, drive) {
 
 define_synthdef("erica_black_hole_dsp")
     .input("in", 2)
-    .param("program", 0.0)
-    .param("param1", 0.5)
-    .param("param2", 0.5)
-    .param("rate", 0.5)
-    .param("mix", 0.5)
-    .param("cv_assign", 1.0)
-    .param("cv", 0.0)
-    .param("cv_amt", 0.0)
+    .param("program", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+    .param("param1", 0.5) // units: normalized, range: 0..1, default: 0.5. Algorithm macro 1; higher pushes the selected DSP program further along its first two controls.
+    .param("param2", 0.5) // units: normalized, range: 0..1, default: 0.5. Algorithm macro 2; higher pushes the selected DSP program further along its first two controls.
+    .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("cv_assign", 1.0) // units: normalized, range: 0..1, default: 1.0. CV assignment selector; rounded values choose which Black Hole DSP macro the CV input modulates.
+    .param("cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Shared CV input; bipolar values modulate the assigned destination.
+    .param("cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. Shared CV attenuator; higher makes the assigned modulation stronger.
     .body_map(|p| {
         let dry_l = p.inputs["in"][0];
         let dry_r = p.inputs["in"][1];
@@ -217,3 +217,19 @@ define_synthdef("erica_black_hole_dsp")
             softclip((1.0 - mix) * dry_r + mix * wet_r)
         ]
     });
+
+//
+// # Usage: `erica_black_hole_dsp`
+//
+// ```rhai
+// import "stdlib/processors/fx/erica_black_hole_dsp.vibe" as erica_black_hole_dsp;
+//
+// let erica_black_hole_dsp = voice("doc_erica_black_hole_dsp")
+//     .synth("erica_black_hole_dsp")
+//     .set_param("rate", 2.0)
+//     .set_param("mix", 0.45)
+//     .set_param("program", 1.0)
+//     .set_param("param1", 0.5);
+// erica_black_hole_dsp.output("out").to_main();
+// erica_black_hole_dsp.run();
+// ```

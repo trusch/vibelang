@@ -25,10 +25,10 @@
 
 define_fx("harmonic_tremolo", |builder| {
     builder
-        .param("rate", 5.0)
-        .param("depth", 0.7)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 5.0) // units: Hz, range: 0..100, default: 5.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.7) // units: ratio, range: 0..1, default: 0.7. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, mix, level| {
             // Single LFO drives both bands; the opposite-phase trick is
             // done by inverting the sign in the modulator math, not by
@@ -56,3 +56,18 @@ define_fx("harmonic_tremolo", |builder| {
             ]
         })
 });
+
+//
+// # Usage: harmonic_tremolo
+//
+// ```rhai
+// import "stdlib/effects/modulation/harmonic_tremolo.vibe" as harmonic_tremolo;
+//
+// let doc_harmonic_tremolo = fx("doc_harmonic_tremolo")
+//     .synth("harmonic_tremolo")
+//     .param("rate", 5.0)
+//     .param("depth", 0.7)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

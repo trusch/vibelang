@@ -18,9 +18,9 @@
 
 define_fx("vocoder", |builder| {
     builder
-        .param("bands", 16.0)
-        .param("mix", 0.8)
-        .param("level", 1.0)
+        .param("bands", 16.0) // units: count, range: 1..64, default: 16.0. Bands amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.8) // units: ratio, range: 0..1, default: 0.8. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, bands, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -43,3 +43,17 @@ define_fx("vocoder", |builder| {
             ]
         })
 });
+
+//
+// # Usage: vocoder
+//
+// ```rhai
+// import "stdlib/effects/utility/vocoder.vibe" as vocoder;
+//
+// let doc_vocoder = fx("doc_vocoder")
+//     .synth("vocoder")
+//     .param("bands", 16.0)
+//     .param("mix", 0.8)
+//     .param("level", 1.0)
+//     .apply();
+// ```

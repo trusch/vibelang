@@ -1,8 +1,8 @@
 // Genre: Latin, Caribbean, World | Character: Scraped guiro with ridged texture
 define_synthdef("guiro")
-    .param("freq", 3000.0)
-    .param("amp", 0.6)
-    .param("length", 0.3)
+    .param("freq", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("length", 0.3) // units: seconds, range: 0..60, default: 0.3. Step count or loop length; higher values increase quantization or memory resolution.
     .body(|freq, amp, length| {
         // Scraping duration envelope
         let amp_env = envelope()
@@ -21,3 +21,19 @@ define_synthdef("guiro")
 
         (scrape + body) * ridges * amp_env * amp
     });
+
+//
+// # Usage: guiro
+//
+// ```rhai
+// import "stdlib/drums/latin/guiro.vibe" as guiro;
+//
+// let doc_guiro = voice("doc_guiro")
+//     .synth("guiro")
+//     .set_param("freq", 3000.0)
+//     .set_param("amp", 0.6)
+//     .set_param("length", 0.3)
+//     ;
+// doc_guiro.output("out").to_main();
+// doc_guiro.run();
+// ```

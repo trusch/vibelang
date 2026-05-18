@@ -13,16 +13,16 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_voct_seq", |builder| {
     builder
-        .param("clock", 0.0)       // rising edge advances step
-        .param("length", 8.0)      // 1..8 active steps
-        .param("note0", 60.0)
-        .param("note1", 62.0)
-        .param("note2", 64.0)
-        .param("note3", 67.0)
-        .param("note4", 60.0)
-        .param("note5", 62.0)
-        .param("note6", 64.0)
-        .param("note7", 67.0)
+        .param("clock", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("length", 8.0) // units: selector, range: 0..N, default: 8.0. Selects mode, table, or step count.
+        .param("note0", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
+        .param("note1", 62.0) // units: MIDI note, range: 0..127, default: 62.0. MIDI note value; higher values output a higher pitch.
+        .param("note2", 64.0) // units: MIDI note, range: 0..127, default: 64.0. MIDI note value; higher values output a higher pitch.
+        .param("note3", 67.0) // units: MIDI note, range: 0..127, default: 67.0. MIDI note value; higher values output a higher pitch.
+        .param("note4", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
+        .param("note5", 62.0) // units: MIDI note, range: 0..127, default: 62.0. MIDI note value; higher values output a higher pitch.
+        .param("note6", 64.0) // units: MIDI note, range: 0..127, default: 64.0. MIDI note value; higher values output a higher pitch.
+        .param("note7", 67.0) // units: MIDI note, range: 0..127, default: 67.0. MIDI note value; higher values output a higher pitch.
         .body(|clock, length, note0, note1, note2, note3,
                note4, note5, note6, note7| {
             // Stepper wraps at max_idx = length-1, so changing `length` at
@@ -48,3 +48,19 @@ define_synthdef("cv_voct_seq", |builder| {
             clip(voct, -1.0, 1.0)
         })
 });
+
+//
+// # Usage: `cv_voct_seq`
+//
+// ```rhai
+// import "stdlib/cv/pitch/cv_voct_seq.vibe" as cv_voct_seq;
+//
+// let cv_voct_seq = voice("doc_cv_voct_seq")
+//     .synth("cv_voct_seq")
+//     .set_param("clock", 1.0)
+//     .set_param("length", 1.0)
+//     .set_param("note0", 60.0)
+//     .set_param("note1", 60.0);
+// cv_voct_seq.output("out").to_main();
+// cv_voct_seq.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: EDM, Electronic | Character: Synth stab stinger
 define_synthdef("stinger_synth", |builder| {
     builder
-        .param("amp", 0.7)
-        .param("note", 60.0)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("note", 60.0) // units: MIDI note, range: 0..127, default: 60.0. MIDI note value; higher values output a higher pitch.
         .body(|amp, note| {
             let env = envelope()
                 .perc(0.001, 0.3)
@@ -28,3 +28,18 @@ define_synthdef("stinger_synth", |builder| {
             filtered * env * amp * 0.5
         })
 });
+
+//
+// # Usage: stinger_synth
+//
+// ```rhai
+// import "stdlib/fx/stingers/stinger_synth.vibe" as stinger_synth;
+//
+// let doc_stinger_synth = voice("doc_stinger_synth")
+//     .synth("stinger_synth")
+//     .set_param("amp", 0.7)
+//     .set_param("note", 60.0)
+//     ;
+// doc_stinger_synth.output("out").to_main();
+// doc_stinger_synth.run();
+// ```

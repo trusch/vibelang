@@ -1,8 +1,8 @@
 // Genre: Electronic, Production | Character: Pure noise snare layer for stacking
 define_synthdef("snare_noise_layer")
-    .param("freq", 5000.0)
-    .param("amp", 0.7)
-    .param("decay", 0.2)
+    .param("freq", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("decay", 0.2) // units: seconds, range: 0..10, default: 0.2. Envelope time or level; higher values make that stage last longer or sustain higher.
     .body(|freq, amp, decay| {
         // Adjustable decay
         let amp_env = envelope()
@@ -22,3 +22,19 @@ define_synthdef("snare_noise_layer")
 
         (noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_noise_layer
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_noise_layer.vibe" as snare_noise_layer;
+//
+// let doc_snare_noise_layer = voice("doc_snare_noise_layer")
+//     .synth("snare_noise_layer")
+//     .set_param("freq", 5000.0)
+//     .set_param("amp", 0.7)
+//     .set_param("decay", 0.2)
+//     ;
+// doc_snare_noise_layer.output("out").to_main();
+// doc_snare_noise_layer.run();
+// ```

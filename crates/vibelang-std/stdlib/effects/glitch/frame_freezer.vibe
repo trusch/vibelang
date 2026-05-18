@@ -30,10 +30,10 @@
 
 define_fx("frame_freezer", |builder| {
     builder
-        .param("freeze_chance", 0.4)
-        .param("freeze_duration", 0.05)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("freeze_chance", 0.4) // units: probability, range: 0..1, default: 0.4. Freeze Chance amount; higher values emphasize that named musical or electrical behavior.
+        .param("freeze_duration", 0.05) // units: seconds, range: 0..10, default: 0.05. Freeze Duration amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freeze_chance, freeze_duration, mix, level| {
             // Cadence pulses at 1/freeze_duration Hz, randomly let through
             // by the coin gate at probability `freeze_chance`.
@@ -58,3 +58,18 @@ define_fx("frame_freezer", |builder| {
             ]
         })
 });
+
+//
+// # Usage: frame_freezer
+//
+// ```rhai
+// import "stdlib/effects/glitch/frame_freezer.vibe" as frame_freezer;
+//
+// let doc_frame_freezer = fx("doc_frame_freezer")
+//     .synth("frame_freezer")
+//     .param("freeze_chance", 0.4)
+//     .param("freeze_duration", 0.05)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -261,33 +261,33 @@ define_synthdef("tetrapad", |builder| {
         .output_kr("pad3_b")
         .output_kr("pad4_a")
         .output_kr("pad4_b")
-        .param("pressure_1", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 1
-        .param("position_1", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 1
-        .param("encoder_1", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 1
-        .param("mode_1", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 1
-        .param("slew_1", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 1
-        .param("voltage_1", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 1
-        .param("pressure_2", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 2
-        .param("position_2", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 2
-        .param("encoder_2", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 2
-        .param("mode_2", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 2
-        .param("slew_2", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 2
-        .param("voltage_2", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 2
-        .param("pressure_3", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 3
-        .param("position_3", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 3
-        .param("encoder_3", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 3
-        .param("mode_3", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 3
-        .param("slew_3", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 3
-        .param("voltage_3", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 3
-        .param("pressure_4", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 4
-        .param("position_4", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 4
-        .param("encoder_4", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 4
-        .param("mode_4", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 4
-        .param("slew_4", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 4
-        .param("voltage_4", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 4
-        .param("chord_mode", 0.0)           // rounded chord enum: major/minor/sus4/dim/aug
-        .param("keyboard_scale", 0.0)       // rounded keyboard scale enum for pitch quantization
-        .param("threshold", 0.05)           // 0..1 shared touch threshold for gate/trigger logic
+        .param("pressure_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 1 pressure CV; higher raises the touch-pressure output.
+        .param("position_1", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 1 position CV; higher moves the touch position toward the far edge.
+        .param("encoder_1", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 1 encoder value; higher raises the auxiliary pad output.
+        .param("mode_1", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("slew_1", 0.1) // units: normalized, range: 0..1, default: 0.1. Pad 1 slew time; higher smooths voltage changes more slowly.
+        .param("voltage_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 1 base voltage; sets the unpressed CV level.
+        .param("pressure_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 2 pressure CV; higher raises the touch-pressure output.
+        .param("position_2", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 2 position CV; higher moves the touch position toward the far edge.
+        .param("encoder_2", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 2 encoder value; higher raises the auxiliary pad output.
+        .param("mode_2", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("slew_2", 0.1) // units: normalized, range: 0..1, default: 0.1. Pad 2 slew time; higher smooths voltage changes more slowly.
+        .param("voltage_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 2 base voltage; sets the unpressed CV level.
+        .param("pressure_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 3 pressure CV; higher raises the touch-pressure output.
+        .param("position_3", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 3 position CV; higher moves the touch position toward the far edge.
+        .param("encoder_3", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 3 encoder value; higher raises the auxiliary pad output.
+        .param("mode_3", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("slew_3", 0.1) // units: normalized, range: 0..1, default: 0.1. Pad 3 slew time; higher smooths voltage changes more slowly.
+        .param("voltage_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 3 base voltage; sets the unpressed CV level.
+        .param("pressure_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 4 pressure CV; higher raises the touch-pressure output.
+        .param("position_4", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 4 position CV; higher moves the touch position toward the far edge.
+        .param("encoder_4", 0.5) // units: normalized, range: 0..1, default: 0.5. Pad 4 encoder value; higher raises the auxiliary pad output.
+        .param("mode_4", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("slew_4", 0.1) // units: normalized, range: 0..1, default: 0.1. Pad 4 slew time; higher smooths voltage changes more slowly.
+        .param("voltage_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Pad 4 base voltage; sets the unpressed CV level.
+        .param("chord_mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("keyboard_scale", 0.0) // units: linear, range: -1..1, default: 0.0. Keyboard Scale amount; higher values emphasize that named musical or electrical behavior.
+        .param("threshold", 0.05) // units: normalized, range: 0..1, default: 0.05. Detection threshold; higher values require a stronger signal before processing opens.
         .body_map(|p| {
             let pad1 = _tetrapad_pad(
                 p.pressure_1, p.position_1, p.encoder_1, p.mode_1, p.slew_1,
@@ -314,3 +314,19 @@ define_synthdef("tetrapad", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `tetrapad`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/tetrapad.vibe" as tetrapad;
+//
+// let tetrapad = voice("doc_tetrapad")
+//     .synth("tetrapad")
+//     .set_param("pressure_1", 0.35)
+//     .set_param("mode_1", 1.0)
+//     .set_param("position_1", 0.5)
+//     .set_param("encoder_1", 0.5);
+// tetrapad.outputs(["pad1_a"]).mute();
+// tetrapad.run();
+// ```

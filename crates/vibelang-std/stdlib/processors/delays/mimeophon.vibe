@@ -14,15 +14,15 @@
 
 define_synthdef("mimeophon")
     .input("in", 2)
-    .param("time", 0.25)
-    .param("zone", 0.0)
-    .param("repeats", 0.45)
-    .param("skew", 0.15)
-    .param("color", 0.0)
-    .param("halo", 0.25)
-    .param("halftime", 0.0)
-    .param("mix", 0.35)
-    .param("level", 0.9)
+    .param("time", 0.25) // units: seconds, range: 0..60, default: 0.25. Delay or segment time; higher values make repeats arrive later.
+    .param("zone", 0.0) // units: normalized, range: 0..1, default: 0.0. Delay zone selector; higher values choose wider Mimeophon time ranges.
+    .param("repeats", 0.45) // units: normalized, range: 0..1, default: 0.45. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("skew", 0.15) // units: normalized, range: 0..1, default: 0.15. Repeat skew; higher values offsets left/right repeat timing.
+    .param("color", 0.0) // units: normalized, range: 0..1, default: 0.0. Color macro; higher values move the model toward its brighter or more complex side.
+    .param("halo", 0.25) // units: normalized, range: 0..1, default: 0.25. Halo smear amount; higher values add more diffuse reverb around repeats.
+    .param("halftime", 0.0) // units: normalized, range: 0..1, default: 0.0. Halftime switch; rounded values turn that mode off or on.
+    .param("mix", 0.35) // units: ratio, range: 0..1, default: 0.35. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body_map(|p| {
         let dry_l = p.inputs["in"][0];
         let dry_r = p.inputs["in"][1];
@@ -90,3 +90,19 @@ define_synthdef("mimeophon")
             softclip(((1.0 - mix) * dry_r + mix * leak_dc_ar(wet_r, 0.995)) * p.level)
         ]
     });
+
+//
+// # Usage: `mimeophon`
+//
+// ```rhai
+// import "stdlib/processors/delays/mimeophon.vibe" as mimeophon;
+//
+// let mimeophon = voice("doc_mimeophon")
+//     .synth("mimeophon")
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45)
+//     .set_param("time", 0.5)
+//     .set_param("zone", 0.5);
+// mimeophon.output("out").to_main();
+// mimeophon.run();
+// ```

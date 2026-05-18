@@ -1,9 +1,9 @@
 // Genre: Industrial, Hardcore | Character: Heavy distortion, aggressive
 define_synthdef("kick_distorted", |builder| {
     builder
-        .param("freq", 58.0)
-        .param("amp", 1.0)
-        .param("drive", 2.5)
+        .param("freq", 58.0) // units: Hz, range: 20..20000, default: 58.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("drive", 2.5) // units: gain, range: 0..10, default: 2.5. Nonlinear drive amount; higher adds harmonic distortion and compression.
         .body(|freq, amp, drive| {
             // Punchy envelope
             let amp_env = envelope()
@@ -36,3 +36,18 @@ define_synthdef("kick_distorted", |builder| {
         })
 });
 
+//
+// # Usage: kick_distorted
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_distorted.vibe" as kick_distorted;
+//
+// let doc_kick_distorted = voice("doc_kick_distorted")
+//     .synth("kick_distorted")
+//     .set_param("freq", 58.0)
+//     .set_param("amp", 1.0)
+//     .set_param("drive", 2.5)
+//     ;
+// doc_kick_distorted.output("out").to_main();
+// doc_kick_distorted.run();
+// ```

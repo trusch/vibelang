@@ -6,10 +6,10 @@
 
 define_synthdef("vocal_chop", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("vowel", 0.5) // Vowel type
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vowel", 0.5) // units: normalized, range: 0..1, default: 0.5. Vowel/formant position; higher values move the resonant vowels forward.
         .body(|freq, amp, gate, vowel| {
             // Short percussive envelope for chops
             let env = envelope()
@@ -41,3 +41,19 @@ define_synthdef("vocal_chop", |builder| {
             (vocal + pitched) * env * amp
         })
 });
+
+//
+// # Usage: `vocal_chop`
+//
+// ```rhai
+// import "stdlib/vocals/vocal_chop.vibe" as vocal_chop;
+//
+// let vocal_chop = voice("doc_vocal_chop")
+//     .synth("vocal_chop")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("vowel", 0.5);
+// vocal_chop.output("out").to_main();
+// vocal_chop.run();
+// ```

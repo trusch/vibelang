@@ -1,8 +1,8 @@
 // Genre: Dark Ambient, Horror | Character: Dark foreboding atmosphere
 define_synthdef("atmosphere_dark", |builder| {
     builder
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(2.0, 1.0, 2.0)
@@ -29,3 +29,18 @@ define_synthdef("atmosphere_dark", |builder| {
             mix * env * amp
         })
 });
+
+//
+// # Usage: atmosphere_dark
+//
+// ```rhai
+// import "stdlib/fx/atmospheres/atmosphere_dark.vibe" as atmosphere_dark;
+//
+// let doc_atmosphere_dark = voice("doc_atmosphere_dark")
+//     .synth("atmosphere_dark")
+//     .set_param("amp", 0.4)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_atmosphere_dark.output("out").to_main();
+// doc_atmosphere_dark.run();
+// ```

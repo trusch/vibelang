@@ -6,10 +6,10 @@
 
 define_synthdef("formant_synth", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("formant", 0.5) // 0=a, 0.5=e, 1.0=o
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("formant", 0.5) // units: normalized, range: 0..1, default: 0.5. Vowel/formant position; higher values move the resonant vowels forward.
         .body(|freq, amp, gate, formant| {
             // Gate-controlled envelope
             let env = envelope()
@@ -42,3 +42,19 @@ define_synthdef("formant_synth", |builder| {
             formants * env * amp
         })
 });
+
+//
+// # Usage: `formant_synth`
+//
+// ```rhai
+// import "stdlib/vocals/formant_synth.vibe" as formant_synth;
+//
+// let formant_synth = voice("doc_formant_synth")
+//     .synth("formant_synth")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("formant", 0.5);
+// formant_synth.output("out").to_main();
+// formant_synth.run();
+// ```

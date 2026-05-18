@@ -23,12 +23,12 @@
 //   level:    Final output trim (1.0 = unity)
 
 define_fx("tape_delay")
-    .param("time", 0.5)
-    .param("feedback", 0.5)
-    .param("wow", 0.3)
-    .param("flutter", 0.2)
-    .param("mix", 0.5)
-    .param("level", 1.0)
+    .param("time", 0.5) // units: seconds, range: 0..10, default: 0.5. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.5) // units: ratio, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("wow", 0.3) // units: ratio, range: 0..1, default: 0.3. Tape wow depth; higher values add slower pitch drift.
+    .param("flutter", 0.2) // units: ratio, range: 0..1, default: 0.2. Tape flutter depth; higher values add faster pitch shimmer.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, wow, flutter, mix, level| {
         // Generate wow (slow LFO) and flutter (fast LFO)
         let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
@@ -57,3 +57,18 @@ define_fx("tape_delay")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: tape_delay
+//
+// ```rhai
+// import "stdlib/effects/delays/tape_delay.vibe" as tape_delay;
+//
+// let doc_tape_delay = fx("doc_tape_delay")
+//     .synth("tape_delay")
+//     .param("time", 0.5)
+//     .param("feedback", 0.5)
+//     .param("wow", 0.3)
+//     .param("flutter", 0.2)
+//     .apply();
+// ```

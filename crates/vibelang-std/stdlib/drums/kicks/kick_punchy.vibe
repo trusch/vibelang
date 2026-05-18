@@ -1,7 +1,7 @@
 // Genre: Pop, Modern | Character: Modern pop kick with controlled punch
 define_synthdef("kick_punchy")
-    .param("freq", 52.0)
-    .param("amp", 1.0)
+    .param("freq", 52.0) // units: Hz, range: 20..20000, default: 52.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Controlled decay
         let amp_env = envelope()
@@ -32,3 +32,18 @@ define_synthdef("kick_punchy")
 
         (body + mid + click) * amp_env * amp
     });
+
+//
+// # Usage: kick_punchy
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_punchy.vibe" as kick_punchy;
+//
+// let doc_kick_punchy = voice("doc_kick_punchy")
+//     .synth("kick_punchy")
+//     .set_param("freq", 52.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_punchy.output("out").to_main();
+// doc_kick_punchy.run();
+// ```

@@ -26,9 +26,9 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_quantizer", |builder| {
     builder
-        .param("cv_in", 0.0)   // continuous V/oct input, ±1.0
-        .param("scale", 0.0)   // scale enum (see header)
-        .param("root", 0.0)    // root offset in semitones from C, 0..11
+        .param("cv_in", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the incoming CV value.
+        .param("scale", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("root", 0.0) // units: semitones, range: -60..60, default: 0.0. Scale root offset in semitones; shifts quantized CV around the key center.
         .body(|cv_in, scale, root| {
             // Quantize on a root-relative axis so the delta tables are
             // always written for C; the root shift cancels at the end.
@@ -84,3 +84,18 @@ define_synthdef("cv_quantizer", |builder| {
             clip(voct_q, -1.0, 1.0)
         })
 });
+
+//
+// # Usage: `cv_quantizer`
+//
+// ```rhai
+// import "stdlib/cv/pitch/cv_quantizer.vibe" as cv_quantizer;
+//
+// let cv_quantizer = voice("doc_cv_quantizer")
+//     .synth("cv_quantizer")
+//     .set_param("cv_in", 0.5)
+//     .set_param("scale", 1.0)
+//     .set_param("root", 0.5);
+// cv_quantizer.output("out").to_main();
+// cv_quantizer.run();
+// ```

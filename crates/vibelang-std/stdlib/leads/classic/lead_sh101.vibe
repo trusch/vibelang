@@ -1,9 +1,9 @@
 // Genre: Acid, Techno, Synthpop | Character: Roland SH-101 lead - clean and versatile
 define_synthdef("lead_sh101")
-    .param("freq", 440.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
-    .param("pw", 0.5)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("pw", 0.5) // units: ratio, range: 0..1, default: 0.5. PW macro; higher moves that model axis toward its brighter or more open setting.
     .body(|freq, amp, gate, pw| {
         let env = envelope()
             .asr(0.003, 1.0, 0.08)
@@ -26,3 +26,19 @@ define_synthdef("lead_sh101")
         let cutoff = 1000.0 + filt_env * 3500.0;
         rlpf_ar(mix, cutoff, 0.35) * env * amp
     });
+
+//
+// # Usage: `lead_sh101`
+//
+// ```rhai
+// import "stdlib/leads/classic/lead_sh101.vibe" as lead_sh101;
+//
+// let lead_sh101 = voice("doc_lead_sh101")
+//     .synth("lead_sh101")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("pw", 0.5);
+// lead_sh101.output("out").to_main();
+// lead_sh101.run();
+// ```

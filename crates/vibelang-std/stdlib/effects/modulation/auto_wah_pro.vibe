@@ -30,12 +30,12 @@
 
 define_fx("auto_wah_pro", |builder| {
     builder
-        .param("sensitivity", 1.0)
-        .param("q", 2.0)
-        .param("range_min", 250.0)
-        .param("range_max", 3000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("sensitivity", 1.0) // units: linear, range: 0..1, default: 1.0. Envelope sensitivity; higher values make smaller input changes trigger the effect.
+        .param("q", 2.0) // units: resonance, range: 0.1..10, default: 2.0. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("range_min", 250.0) // units: Hz, range: 20..20000, default: 250.0. Range Min amount; higher values emphasize that named musical or electrical behavior.
+        .param("range_max", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. Range Max amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, sensitivity, q, range_min, range_max, mix, level| {
             // Per-channel envelope follower at kr — cheaper than ar and the
             // bandpass cutoff doesn't need audio-rate detail. Scale the env
@@ -62,3 +62,18 @@ define_fx("auto_wah_pro", |builder| {
             ]
         })
 });
+
+//
+// # Usage: auto_wah_pro
+//
+// ```rhai
+// import "stdlib/effects/modulation/auto_wah_pro.vibe" as auto_wah_pro;
+//
+// let doc_auto_wah_pro = fx("doc_auto_wah_pro")
+//     .synth("auto_wah_pro")
+//     .param("sensitivity", 1.0)
+//     .param("q", 2.0)
+//     .param("range_min", 250.0)
+//     .param("range_max", 3000.0)
+//     .apply();
+// ```

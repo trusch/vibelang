@@ -131,34 +131,34 @@ define_synthdef("quadrax", |builder| {
         .output_kr("eof3")
         .output_kr("eor4")
         .output_kr("eof4")
-        .param("trig_1", 0.0)               // 0/1 trigger or gate input for Quadrax channel 1
-        .param("rise_1", 0.1)               // rise time control (0..1) for Quadrax channel 1
-        .param("fall_1", 0.3)               // fall time control (0..1) for Quadrax channel 1
-        .param("shape_1", 0.0)              // curve exponent, negative softer and positive snappier for Quadrax channel 1
-        .param("mode_1", 0.0)               // rounded function enum: AD/AHR/cycle/burst/LFO for Quadrax channel 1
-        .param("level_1", 1.0)              // output level for the channel envelope for Quadrax channel 1
-        .param("link_1", 0.0)               // 0/1 fire this channel from previous timing taps for Quadrax channel 1
-        .param("trig_2", 0.0)               // 0/1 trigger or gate input for Quadrax channel 2
-        .param("rise_2", 0.1)               // rise time control (0..1) for Quadrax channel 2
-        .param("fall_2", 0.3)               // fall time control (0..1) for Quadrax channel 2
-        .param("shape_2", 0.0)              // curve exponent, negative softer and positive snappier for Quadrax channel 2
-        .param("mode_2", 0.0)               // rounded function enum: AD/AHR/cycle/burst/LFO for Quadrax channel 2
-        .param("level_2", 1.0)              // output level for the channel envelope for Quadrax channel 2
-        .param("link_2", 0.0)               // 0/1 fire this channel from previous timing taps for Quadrax channel 2
-        .param("trig_3", 0.0)               // 0/1 trigger or gate input for Quadrax channel 3
-        .param("rise_3", 0.1)               // rise time control (0..1) for Quadrax channel 3
-        .param("fall_3", 0.3)               // fall time control (0..1) for Quadrax channel 3
-        .param("shape_3", 0.0)              // curve exponent, negative softer and positive snappier for Quadrax channel 3
-        .param("mode_3", 0.0)               // rounded function enum: AD/AHR/cycle/burst/LFO for Quadrax channel 3
-        .param("level_3", 1.0)              // output level for the channel envelope for Quadrax channel 3
-        .param("link_3", 0.0)               // 0/1 fire this channel from previous timing taps for Quadrax channel 3
-        .param("trig_4", 0.0)               // 0/1 trigger or gate input for Quadrax channel 4
-        .param("rise_4", 0.1)               // rise time control (0..1) for Quadrax channel 4
-        .param("fall_4", 0.3)               // fall time control (0..1) for Quadrax channel 4
-        .param("shape_4", 0.0)              // curve exponent, negative softer and positive snappier for Quadrax channel 4
-        .param("mode_4", 0.0)               // rounded function enum: AD/AHR/cycle/burst/LFO for Quadrax channel 4
-        .param("level_4", 1.0)              // output level for the channel envelope for Quadrax channel 4
-        .param("link_4", 0.0)               // 0/1 fire this channel from previous timing taps for Quadrax channel 4
+        .param("trig_1", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise_1", 0.1) // units: seconds, range: 0..60, default: 0.1. Rise 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall_1", 0.3) // units: seconds, range: 0..60, default: 0.3. Fall 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Shape 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mode_1", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("level_1", 1.0) // units: linear, range: 0..1, default: 1.0. VCA channel 1 level; higher opens the amplifier further.
+        .param("link_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Link 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trig_2", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise_2", 0.1) // units: seconds, range: 0..60, default: 0.1. Rise 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall_2", 0.3) // units: seconds, range: 0..60, default: 0.3. Fall 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Shape 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mode_2", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("level_2", 1.0) // units: linear, range: 0..1, default: 1.0. VCA channel 2 level; higher opens the amplifier further.
+        .param("link_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Link 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trig_3", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise_3", 0.1) // units: seconds, range: 0..60, default: 0.1. Rise 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall_3", 0.3) // units: seconds, range: 0..60, default: 0.3. Fall 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Shape 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mode_3", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("level_3", 1.0) // units: linear, range: 0..1, default: 1.0. VCA channel 3 level; higher opens the amplifier further.
+        .param("link_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Link 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trig_4", 0.0) // units: trigger, range: 0..1, default: 0.0. Trig 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("rise_4", 0.1) // units: seconds, range: 0..60, default: 0.1. Rise 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("fall_4", 0.3) // units: seconds, range: 0..60, default: 0.3. Fall 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("shape_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Shape 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mode_4", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+        .param("level_4", 1.0) // units: linear, range: 0..1, default: 1.0. VCA channel 4 level; higher opens the amplifier further.
+        .param("link_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Link 4 amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let ch1 = _quadrax_channel(
                 p.trig_1,
@@ -217,3 +217,19 @@ define_synthdef("quadrax", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `quadrax`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/quadrax.vibe" as quadrax;
+//
+// let quadrax = voice("doc_quadrax")
+//     .synth("quadrax")
+//     .set_param("level_1", 0.5)
+//     .set_param("rise_1", 0.02)
+//     .set_param("fall_1", 0.35)
+//     .set_param("shape_1", 0.6);
+// quadrax.outputs(["env1"]).mute();
+// quadrax.run();
+// ```

@@ -21,11 +21,25 @@
 // safeguard if `period` is ever modulated to extreme values.
 
 define_synthdef("cv_test_swept_dc")
-    .param("period", 10.0)
-    .param("gate", 1.0)
+    .param("period", 10.0) // units: seconds, range: 0.05..120, default: 10.0. Cycle time in seconds; higher values make the calibration sequence slower.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|period, gate| {
         let freq = 1.0 / period;
         let ramp = lf_saw_ar(freq, 0.0) * gate;
         let clipped = clip_ar(ramp, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_test_swept_dc`
+//
+// ```rhai
+// import "stdlib/cv/calibration/cv_test_swept_dc.vibe" as cv_test_swept_dc;
+//
+// let cv_test_swept_dc = voice("doc_cv_test_swept_dc")
+//     .synth("cv_test_swept_dc")
+//     .set_param("gate", 1.0)
+//     .set_param("period", 0.5);
+// cv_test_swept_dc.output("out").to_main();
+// cv_test_swept_dc.run();
+// ```

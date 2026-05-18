@@ -26,13 +26,13 @@
 
 define_synthdef("otey_piano", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("vel", 0.7)
-        .param("rho", 1.0)
-        .param("loss", 1.0)
-        .param("detune", 0.0003)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vel", 0.7) // units: normalized, range: 0..1, default: 0.7. Velocity response; higher makes the exciter or note hit harder.
+        .param("rho", 1.0) // units: coefficient, range: 0..2, default: 1.0. Piano string stiffness coefficient; higher changes the modeled string coupling.
+        .param("loss", 1.0) // units: coefficient, range: 0..2, default: 1.0. Piano string loss coefficient; higher damps the modeled string faster.
+        .param("detune", 0.0003) // units: semitones, range: -12..12, default: 0.0003. Oscillator detune amount; higher spreads voices farther apart in pitch.
         .body(|freq, amp, gate, vel, rho, loss, detune| {
             // ASR envelope — hammer model already produces its own decay,
             // so the outer envelope is just a release/cleanup wrapper.
@@ -77,3 +77,19 @@ define_synthdef("otey_piano", |builder| {
             piano * env * amp * 0.1
         })
 });
+
+//
+// # Usage: `otey_piano`
+//
+// ```rhai
+// import "stdlib/instruments/keyboard/otey_piano.vibe" as otey_piano;
+//
+// let otey_piano = voice("doc_otey_piano")
+//     .synth("otey_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("vel", 0.8);
+// otey_piano.output("out").to_main();
+// otey_piano.run();
+// ```

@@ -19,9 +19,9 @@
 // leak_dc, no soft-sat, no envelope on the carrier.
 
 define_synthdef("cv_lfo_sine")
-    .param("rate", 1.0)       // Hz
-    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
-    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, depth_v, bipolar| {
         let osc = sin_osc_ar(rate, 0.0);
         // Mix bipolar [-1,+1] vs unipolar [0,+1]:
@@ -32,3 +32,18 @@ define_synthdef("cv_lfo_sine")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_lfo_sine`
+//
+// ```rhai
+// import "stdlib/cv/lfo/cv_lfo_sine.vibe" as cv_lfo_sine;
+//
+// let cv_lfo_sine = voice("doc_cv_lfo_sine")
+//     .synth("cv_lfo_sine")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_v", 4.0)
+//     .set_param("bipolar", 0.5);
+// cv_lfo_sine.output("out").to_main();
+// cv_lfo_sine.run();
+// ```

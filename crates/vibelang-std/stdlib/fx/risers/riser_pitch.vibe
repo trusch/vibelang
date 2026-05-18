@@ -1,8 +1,8 @@
 // Genre: Trance, EDM | Character: Pitch-rising synth
 define_synthdef("riser_pitch", |builder| {
     builder
-        .param("start_freq", 55.0)
-        .param("amp", 0.5)
+        .param("start_freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Start Freq in Hz; higher values move that tone or filter point upward.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
         .body(|start_freq, amp| {
             // Rise envelope
             let env = envelope()
@@ -30,3 +30,17 @@ define_synthdef("riser_pitch", |builder| {
         })
 });
 
+//
+// # Usage: riser_pitch
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_pitch.vibe" as riser_pitch;
+//
+// let doc_riser_pitch = voice("doc_riser_pitch")
+//     .synth("riser_pitch")
+//     .set_param("start_freq", 55.0)
+//     .set_param("amp", 0.5)
+//     ;
+// doc_riser_pitch.output("out").to_main();
+// doc_riser_pitch.run();
+// ```

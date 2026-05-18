@@ -1,8 +1,8 @@
 // Genre: Electronic, Experimental | Character: Glitchy digital transition
 define_synthdef("transition_glitch", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 0.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 0.5) // units: seconds, range: 0..60, default: 0.5. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.01, 1.0)
@@ -30,3 +30,18 @@ define_synthdef("transition_glitch", |builder| {
             mix * env * amp * 0.6
         })
 });
+
+//
+// # Usage: transition_glitch
+//
+// ```rhai
+// import "stdlib/fx/transitions/transition_glitch.vibe" as transition_glitch;
+//
+// let doc_transition_glitch = voice("doc_transition_glitch")
+//     .synth("transition_glitch")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 0.5)
+//     ;
+// doc_transition_glitch.output("out").to_main();
+// doc_transition_glitch.run();
+// ```

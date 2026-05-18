@@ -1,9 +1,9 @@
 // Genre: Ambient, Chillout | Character: Warm, comforting pad
 define_synthdef("pad_warm", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Gentle attack
@@ -28,3 +28,17 @@ define_synthdef("pad_warm", |builder| {
         })
 });
 
+//
+// # Usage: `pad_warm`
+//
+// ```rhai
+// import "stdlib/pads/ambient/pad_warm.vibe" as pad_warm;
+//
+// let pad_warm = voice("doc_pad_warm")
+//     .synth("pad_warm")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_warm.output("out").to_main();
+// pad_warm.run();
+// ```

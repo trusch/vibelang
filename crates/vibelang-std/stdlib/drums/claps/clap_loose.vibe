@@ -1,7 +1,7 @@
 // Genre: Funk, Soul | Character: Loose, spread out clap
 define_synthdef("clap_loose", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Four bursts with larger timing spread
             let burst1_env = envelope()
@@ -31,3 +31,16 @@ define_synthdef("clap_loose", |builder| {
         })
 });
 
+//
+// # Usage: clap_loose
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_loose.vibe" as clap_loose;
+//
+// let doc_clap_loose = voice("doc_clap_loose")
+//     .synth("clap_loose")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_clap_loose.output("out").to_main();
+// doc_clap_loose.run();
+// ```

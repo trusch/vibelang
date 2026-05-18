@@ -1,7 +1,7 @@
 // Genre: Electro, Techno | Character: Tight, electronic, punchy
 define_synthdef("snare_tight_electronic", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Short, controlled envelope
             let noise_env = envelope()
@@ -29,3 +29,16 @@ define_synthdef("snare_tight_electronic", |builder| {
         })
 });
 
+//
+// # Usage: snare_tight_electronic
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_tight_electronic.vibe" as snare_tight_electronic;
+//
+// let doc_snare_tight_electronic = voice("doc_snare_tight_electronic")
+//     .synth("snare_tight_electronic")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_tight_electronic.output("out").to_main();
+// doc_snare_tight_electronic.run();
+// ```

@@ -1,8 +1,8 @@
 // Genre: Experimental, IDM | Character: Karplus-Strong plucked bass
 define_synthdef("bass_karplus")
-    .param("freq", 80.0)
-    .param("amp", 0.8)
-    .param("decay", 0.5)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("decay", 0.5) // units: seconds, range: 0..10, default: 0.5. Envelope time or level; higher values make that stage last longer or sustain higher.
     .body(|freq, amp, decay| {
         // Karplus-Strong style using comb filter
         let amp_env = envelope()
@@ -26,3 +26,19 @@ define_synthdef("bass_karplus")
         // Low pass for warmth
         lpf_ar(resonated, 2000.0) * amp_env * amp
     });
+
+//
+// # Usage: bass_karplus
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_karplus.vibe" as bass_karplus;
+//
+// let doc_bass_karplus = voice("doc_bass_karplus")
+//     .synth("bass_karplus")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.8)
+//     .set_param("decay", 0.5)
+//     ;
+// doc_bass_karplus.output("out").to_main();
+// doc_bass_karplus.run();
+// ```

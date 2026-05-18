@@ -24,12 +24,12 @@
 
 define_fx("phaser", |builder| {
     builder
-        .param("rate", 0.5)
-        .param("depth", 1000.0)
-        .param("freq", 1000.0)
-        .param("feedback", 0.3)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 1000.0) // units: Hz, range: 0..5000, default: 1000.0. Modulation depth; higher values make the movement more pronounced.
+        .param("freq", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("feedback", 0.3) // units: ratio, range: 0..1, default: 0.3. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, freq, feedback, mix, level| {
             // LFO for filter modulation
             let lfo = sin_osc_ar(rate, 0.0);
@@ -61,3 +61,18 @@ define_fx("phaser", |builder| {
             ]
         })
 });
+
+//
+// # Usage: phaser
+//
+// ```rhai
+// import "stdlib/effects/modulation/phaser.vibe" as phaser;
+//
+// let doc_phaser = fx("doc_phaser")
+//     .synth("phaser")
+//     .param("rate", 0.5)
+//     .param("depth", 1000.0)
+//     .param("freq", 1000.0)
+//     .param("feedback", 0.3)
+//     .apply();
+// ```

@@ -9,16 +9,16 @@
 define_synthdef("erica_polivoks_vcf")
     .input("in", 1)
     .output("out", 1)
-    .param("cutoff", 1000.0)
-    .param("resonance", 0.5)
-    .param("mode", 0.0)
-    .param("input_gain", 1.0)
-    .param("cv1_amt", 0.0)
-    .param("cv2_amt", 0.0)
-    .param("cv1", 0.0)
-    .param("cv2", 0.0)
-    .param("drive", 0.2)
-    .param("level", 1.0)
+    .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("mode", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+    .param("input_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Input Gain trim; higher sends more of that input into the processor.
+    .param("cv1_amt", 0.0) // units: linear, range: -1..1, default: 0.0. Cv1 Amt attenuator; higher makes that CV input stronger.
+    .param("cv2_amt", 0.0) // units: linear, range: -1..1, default: 0.0. Cv2 Amt attenuator; higher makes that CV input stronger.
+    .param("cv1", 0.0) // units: normalized, range: 0..1, default: 0.0. Cv 1 input; bipolar values modulate the matching destination.
+    .param("cv2", 0.0) // units: normalized, range: 0..1, default: 0.0. Cv 2 input; bipolar values modulate the matching destination.
+    .param("drive", 0.2) // units: normalized, range: 0..1, default: 0.2. Nonlinear drive amount; higher adds harmonic distortion and compression.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let dry = p.inputs["in"];
         let input_gain = clip(p.input_gain, 0.0, 2.0);
@@ -51,3 +51,19 @@ define_synthdef("erica_polivoks_vcf")
 
         [softclip(wet * clip(p.level, 0.0, 2.0))]
     });
+
+//
+// # Usage: `erica_polivoks_vcf`
+//
+// ```rhai
+// import "stdlib/processors/filters/erica_polivoks_vcf.vibe" as erica_polivoks_vcf;
+//
+// let erica_polivoks_vcf = voice("doc_erica_polivoks_vcf")
+//     .synth("erica_polivoks_vcf")
+//     .set_param("cutoff", 1800.0)
+//     .set_param("input_gain", 0.5)
+//     .set_param("level", 0.5)
+//     .set_param("resonance", 0.35);
+// erica_polivoks_vcf.output("out").to_main();
+// erica_polivoks_vcf.run();
+// ```

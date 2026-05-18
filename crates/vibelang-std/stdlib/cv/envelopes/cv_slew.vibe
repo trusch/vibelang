@@ -21,9 +21,9 @@
 // no leak_dc / soft-sat. See kb/stdlib-cv-spec.md.
 
 define_synthdef("cv_slew")
-    .param("cv_in", 0.0)
-    .param("rise_ms", 50.0)
-    .param("fall_ms", 50.0)
+    .param("cv_in", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the incoming CV value.
+    .param("rise_ms", 50.0) // units: ms, range: 0..10000, default: 50.0. Rise Ms in milliseconds; higher values make that time interval longer.
+    .param("fall_ms", 50.0) // units: ms, range: 0..10000, default: 50.0. Fall Ms in milliseconds; higher values make that time interval longer.
     .body(|cv_in, rise_ms, fall_ms| {
         let rise_s = rise_ms * 0.001;
         let fall_s = fall_ms * 0.001;
@@ -34,3 +34,18 @@ define_synthdef("cv_slew")
         let clipped = clip_ar(slewed, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_slew`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/cv_slew.vibe" as cv_slew;
+//
+// let cv_slew = voice("doc_cv_slew")
+//     .synth("cv_slew")
+//     .set_param("rise_ms", 80.0)
+//     .set_param("fall_ms", 80.0)
+//     .set_param("cv_in", 0.5);
+// cv_slew.output("out").to_main();
+// cv_slew.run();
+// ```

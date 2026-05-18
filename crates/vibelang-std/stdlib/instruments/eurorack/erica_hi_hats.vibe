@@ -21,19 +21,19 @@ define_synthdef("erica_hi_hats", |builder| {
         .output("out", 1)
         .output("ch", 1)
         .output("oh", 1)
-        .param("ch_trig", 0.0)              // 0/1 trigger input for the closed hat voice
-        .param("oh_trig", 0.0)              // 0/1 trigger input for the open hat voice
-        .param("accent", 0.0)               // 0..1 shared level boost for both hats
-        .param("tone", 0.5)                 // 0..1 filter brightness before tone CV
-        .param("tone_cv", 0.0)              // bipolar tone CV summed through tone_cv_amt
-        .param("tone_cv_amt", 0.0)          // 0..1 attenuator for tone_cv depth
-        .param("ch_decay", 0.05)            // closed-hat decay control before CV
-        .param("ch_decay_cv", 0.0)          // bipolar CV for closed-hat decay
-        .param("ch_decay_cv_amt", 0.0)      // 0..1 attenuator for closed decay CV
-        .param("oh_decay", 0.4)             // open-hat decay control before CV
-        .param("oh_decay_cv", 0.0)          // bipolar CV for open-hat decay
-        .param("oh_decay_cv_amt", 0.0)      // 0..1 attenuator for open decay CV
-        .param("exclusive", 1.0)            // 0 allows overlap, 1 lets open hat choke closed hat
+        .param("ch_trig", 0.0) // units: linear, range: -1..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("oh_trig", 0.0) // units: normalized, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("accent", 0.0) // units: normalized, range: 0..1, default: 0.0. Accent strength; higher values make the hit louder and brighter.
+        .param("tone", 0.5) // units: normalized, range: 0..1, default: 0.5. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("tone_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Tone CV input; bipolar values modulate the matching panel control.
+        .param("tone_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. TONE CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("ch_decay", 0.05) // units: linear, range: -1..1, default: 0.05. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("ch_decay_cv", 0.0) // units: linear, range: -1..1, default: 0.0. Ch Decay CV input; bipolar values modulate the matching panel control.
+        .param("ch_decay_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. CH DECAY CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("oh_decay", 0.4) // units: normalized, range: 0..1, default: 0.4. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("oh_decay_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Oh Decay CV input; bipolar values modulate the matching panel control.
+        .param("oh_decay_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. OH DECAY CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("exclusive", 1.0) // units: normalized, range: 0..1, default: 1.0. Exclusive switch; rounded values turn that mode off or on.
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let exclusive = clip(p.exclusive, 0.0, 1.0);
@@ -86,3 +86,19 @@ define_synthdef("erica_hi_hats", |builder| {
             [out, ch, oh]
         })
 });
+
+//
+// # Usage: `erica_hi_hats`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_hi_hats.vibe" as erica_hi_hats;
+//
+// let erica_hi_hats = voice("doc_erica_hi_hats")
+//     .synth("erica_hi_hats")
+//     .set_param("ch_decay", 0.5)
+//     .set_param("ch_trig", 0.5)
+//     .set_param("oh_trig", 0.5)
+//     .set_param("accent", 0.5);
+// erica_hi_hats.output("out").to_main();
+// erica_hi_hats.run();
+// ```

@@ -6,10 +6,10 @@
 
 define_synthdef("hammond_organ", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("percussion", 0.5) // Percussion amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("percussion", 0.5) // units: normalized, range: 0..1, default: 0.5. Percussion key-click amount; higher values make the organ attack sharper.
         .body(|freq, amp, gate, percussion| {
             // Instant attack organ envelope
             let env = envelope()
@@ -57,3 +57,19 @@ define_synthdef("hammond_organ", |builder| {
             organ * env * amp
         })
 });
+
+//
+// # Usage: `hammond_organ`
+//
+// ```rhai
+// import "stdlib/keys/hammond_organ.vibe" as hammond_organ;
+//
+// let hammond_organ = voice("doc_hammond_organ")
+//     .synth("hammond_organ")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("percussion", 0.5);
+// hammond_organ.output("out").to_main();
+// hammond_organ.run();
+// ```

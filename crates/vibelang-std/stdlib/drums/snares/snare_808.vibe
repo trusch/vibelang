@@ -1,6 +1,6 @@
 // Genre: Hip-hop, Trap | Character: Classic 808 snare, short and snappy
 define_synthdef("snare_808")
-    .param("amp", 1.0)
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|amp| {
         // Noise component - short decay
         let noise_env = envelope()
@@ -20,3 +20,16 @@ define_synthdef("snare_808")
         (snare_noise + tone) * amp
     });
 
+//
+// # Usage: snare_808
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_808.vibe" as snare_808;
+//
+// let doc_snare_808 = voice("doc_snare_808")
+//     .synth("snare_808")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_808.output("out").to_main();
+// doc_snare_808.run();
+// ```

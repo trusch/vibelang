@@ -1,8 +1,8 @@
 // Genre: Experimental, World | Character: Hollow wooden block
 define_synthdef("woodblock", |builder| {
     builder
-        .param("freq", 800.0)
-        .param("amp", 1.0)
+        .param("freq", 800.0) // units: Hz, range: 20..20000, default: 800.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Short, percussive envelope
             let env = envelope()
@@ -23,3 +23,17 @@ define_synthdef("woodblock", |builder| {
         })
 });
 
+//
+// # Usage: woodblock
+//
+// ```rhai
+// import "stdlib/drums/percussion/woodblock.vibe" as woodblock;
+//
+// let doc_woodblock = voice("doc_woodblock")
+//     .synth("woodblock")
+//     .set_param("freq", 800.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_woodblock.output("out").to_main();
+// doc_woodblock.run();
+// ```

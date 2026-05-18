@@ -1,8 +1,8 @@
 // Genre: EDM, House | Character: Tonal transition sweep
 define_synthdef("transition_sweep", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 1.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 1.0) // units: seconds, range: 0..60, default: 1.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.05, 1.0)
@@ -26,3 +26,18 @@ define_synthdef("transition_sweep", |builder| {
             (filtered + noise) * env * amp
         })
 });
+
+//
+// # Usage: transition_sweep
+//
+// ```rhai
+// import "stdlib/fx/transitions/transition_sweep.vibe" as transition_sweep;
+//
+// let doc_transition_sweep = voice("doc_transition_sweep")
+//     .synth("transition_sweep")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 1.0)
+//     ;
+// doc_transition_sweep.output("out").to_main();
+// doc_transition_sweep.run();
+// ```

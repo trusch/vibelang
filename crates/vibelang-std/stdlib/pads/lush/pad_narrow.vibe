@@ -1,9 +1,9 @@
 // Genre: Minimal, House | Character: Narrow, focused lush pad
 define_synthdef("pad_narrow", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Pad envelope
@@ -28,3 +28,17 @@ define_synthdef("pad_narrow", |builder| {
         })
 });
 
+//
+// # Usage: `pad_narrow`
+//
+// ```rhai
+// import "stdlib/pads/lush/pad_narrow.vibe" as pad_narrow;
+//
+// let pad_narrow = voice("doc_pad_narrow")
+//     .synth("pad_narrow")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_narrow.output("out").to_main();
+// pad_narrow.run();
+// ```

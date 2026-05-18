@@ -1,8 +1,8 @@
 // Genre: Funk, Disco | Character: Funky bass with bright attack and groove
 define_synthdef("bass_funk")
-    .param("freq", 70.0)
-    .param("amp", 0.85)
-    .param("gate", 1.0)
+    .param("freq", 70.0) // units: Hz, range: 20..20000, default: 70.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.005, 1.0, 0.08)
@@ -32,3 +32,19 @@ define_synthdef("bass_funk")
         let cutoff = 1000.0 + filt_env * 2500.0;
         lpf_ar(sig, cutoff) * env * amp
     });
+
+//
+// # Usage: bass_funk
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_funk.vibe" as bass_funk;
+//
+// let doc_bass_funk = voice("doc_bass_funk")
+//     .synth("bass_funk")
+//     .set_param("freq", 70.0)
+//     .set_param("amp", 0.85)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_funk.output("out").to_main();
+// doc_bass_funk.run();
+// ```

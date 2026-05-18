@@ -1,10 +1,10 @@
 // Genre: Funk, Electronic, Classic | Character: Classic Minimoog bass - fat and warm
 define_synthdef("bass_moog")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
-    .param("cutoff", 800.0)
-    .param("res", 0.3)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("cutoff", 800.0) // units: Hz, range: 20..20000, default: 800.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("res", 0.3) // units: resonance, range: 0..1, default: 0.3. Filter resonance amount; higher values emphasize the cutoff peak.
     .body(|freq, amp, gate, cutoff, res| {
         let env = envelope()
             .asr(0.01, 1.0, 0.1)
@@ -30,3 +30,20 @@ define_synthdef("bass_moog")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_moog
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_moog.vibe" as bass_moog;
+//
+// let doc_bass_moog = voice("doc_bass_moog")
+//     .synth("bass_moog")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 800.0)
+//     ;
+// doc_bass_moog.output("out").to_main();
+// doc_bass_moog.run();
+// ```

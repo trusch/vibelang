@@ -11,12 +11,12 @@
 // Main Grand Piano - velocity-sensitive with full harmonic content
 define_synthdef("grand_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("velocity", 0.7)     // 0-1: affects brightness and attack
-        .param("brightness", 0.5)   // Tonal character
-        .param("resonance", 0.4)    // Sympathetic string resonance amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("velocity", 0.7) // units: normalized, range: 0..1, default: 0.7. Velocity response; higher makes the exciter or note hit harder.
+        .param("brightness", 0.5) // units: normalized, range: 0..1, default: 0.5. Tone brightness; higher values add more high-frequency content.
+        .param("resonance", 0.4) // units: resonance, range: 0..1, default: 0.4. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, velocity, brightness, resonance| {
             // Main amplitude envelope - piano has sharp attack, long decay
             let decay_time = 2.0 + (1.0 / (freq / 100.0));  // Lower notes decay longer
@@ -96,10 +96,10 @@ define_synthdef("grand_piano", |builder| {
 // Bright Grand Piano - more upper harmonics, concert hall character
 define_synthdef("grand_piano_bright", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("velocity", 0.8)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("velocity", 0.8) // units: normalized, range: 0..1, default: 0.8. Velocity response; higher makes the exciter or note hit harder.
         .body(|freq, amp, gate, velocity| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
             let env = envelope()
@@ -145,10 +145,10 @@ define_synthdef("grand_piano_bright", |builder| {
 // Warm Grand Piano - darker, more intimate character
 define_synthdef("grand_piano_warm", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("velocity", 0.6)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("velocity", 0.6) // units: normalized, range: 0..1, default: 0.6. Velocity response; higher makes the exciter or note hit harder.
         .body(|freq, amp, gate, velocity| {
             let decay_time = 3.0 + (1.0 / (freq / 60.0));
             let env = envelope()
@@ -188,10 +188,10 @@ define_synthdef("grand_piano_warm", |builder| {
 // Upright Piano - different character from grand
 define_synthdef("upright_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("velocity", 0.7)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("velocity", 0.7) // units: normalized, range: 0..1, default: 0.7. Velocity response; higher makes the exciter or note hit harder.
         .body(|freq, amp, gate, velocity| {
             let decay_time = 1.8 + (1.0 / (freq / 120.0));
             let env = envelope()
@@ -232,10 +232,10 @@ define_synthdef("upright_piano", |builder| {
 // Tack Piano - prepared piano with tacks on hammers
 define_synthdef("tack_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("velocity", 0.7)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("velocity", 0.7) // units: normalized, range: 0..1, default: 0.7. Velocity response; higher makes the exciter or note hit harder.
         .body(|freq, amp, gate, velocity| {
             let decay_time = 1.2;
             let env = envelope()
@@ -269,3 +269,79 @@ define_synthdef("tack_piano", |builder| {
             output.softclip()
         })
 });
+
+//
+// # Usage: `grand_piano`
+//
+// ```rhai
+// import "stdlib/keys/grand_piano.vibe" as grand_piano;
+//
+// let grand_piano = voice("doc_grand_piano")
+//     .synth("grand_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("velocity", 0.8);
+// grand_piano.output("out").to_main();
+// grand_piano.run();
+// ```
+//
+// # Usage: `grand_piano_bright`
+//
+// ```rhai
+// import "stdlib/keys/grand_piano.vibe" as grand_piano;
+//
+// let grand_piano_bright = voice("doc_grand_piano_bright")
+//     .synth("grand_piano_bright")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("velocity", 0.8);
+// grand_piano_bright.output("out").to_main();
+// grand_piano_bright.run();
+// ```
+//
+// # Usage: `grand_piano_warm`
+//
+// ```rhai
+// import "stdlib/keys/grand_piano.vibe" as grand_piano;
+//
+// let grand_piano_warm = voice("doc_grand_piano_warm")
+//     .synth("grand_piano_warm")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("velocity", 0.8);
+// grand_piano_warm.output("out").to_main();
+// grand_piano_warm.run();
+// ```
+//
+// # Usage: `upright_piano`
+//
+// ```rhai
+// import "stdlib/keys/grand_piano.vibe" as grand_piano;
+//
+// let upright_piano = voice("doc_upright_piano")
+//     .synth("upright_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("velocity", 0.8);
+// upright_piano.output("out").to_main();
+// upright_piano.run();
+// ```
+//
+// # Usage: `tack_piano`
+//
+// ```rhai
+// import "stdlib/keys/grand_piano.vibe" as grand_piano;
+//
+// let tack_piano = voice("doc_tack_piano")
+//     .synth("tack_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("velocity", 0.8);
+// tack_piano.output("out").to_main();
+// tack_piano.run();
+// ```

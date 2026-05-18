@@ -18,9 +18,9 @@
 
 define_fx("haas", |builder| {
     builder
-        .param("delay_time", 0.015)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("delay_time", 0.015) // units: seconds, range: 0..10, default: 0.015. Delay or segment time; higher values make repeats arrive later.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, delay_time, mix, level| {
             // Mix to mono
             let mono = (input[0] + input[1]) * 0.5;
@@ -41,3 +41,17 @@ define_fx("haas", |builder| {
             ]
         })
 });
+
+//
+// # Usage: haas
+//
+// ```rhai
+// import "stdlib/effects/spatial/haas.vibe" as haas;
+//
+// let doc_haas = fx("doc_haas")
+//     .synth("haas")
+//     .param("delay_time", 0.015)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

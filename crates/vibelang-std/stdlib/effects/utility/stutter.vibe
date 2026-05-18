@@ -18,9 +18,9 @@
 
 define_fx("stutter", |builder| {
     builder
-        .param("rate", 8.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("rate", 8.0) // units: Hz, range: 0..100, default: 8.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, mix, level| {
             // Buffer size based on rate
             let buf_time = 1.0 / rate;
@@ -38,3 +38,17 @@ define_fx("stutter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: stutter
+//
+// ```rhai
+// import "stdlib/effects/utility/stutter.vibe" as stutter;
+//
+// let doc_stutter = fx("doc_stutter")
+//     .synth("stutter")
+//     .param("rate", 8.0)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

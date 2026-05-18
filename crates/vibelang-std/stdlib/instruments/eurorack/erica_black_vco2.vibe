@@ -34,27 +34,27 @@ define_synthdef("erica_black_vco2", |builder| {
         .output("pulse", 1)
         .output("sub", 1)
         .output("mix", 1)
-        .param("freq", 110.0)               // base oscillator frequency in Hz when voct is zero
-        .param("voct", 0.0)                 // MIDI-note-style pitch source; nonzero replaces freq
-        .param("octave", 0.0)               // rounded octave switch clipped -2..+2
-        .param("pw", 0.5)                   // pulse width before CV, clipped to 0.05..0.95
-        .param("saw_shape", 0.0)            // 0 clean saw, 1 folded saw coloration
-        .param("fm", 0.0)                   // 0..1 depth for fm_in modulation
-        .param("fm_mode", 1.0)              // rounded selector: 0 linear Hz FM, 1 exponential FM
-        .param("fm_in", 0.0)                // bipolar FM input clipped to +/-5 before scaling
-        .param("reset_mode", 0.0)           // 0 free-running oscillators, 1 hard-sync phase reset
-        .param("reset_trig", 0.0)           // 0/1 trigger that resets phase when reset_mode is enabled
-        .param("lfo1_rate", 4.0)            // internal pitch LFO 1 rate in Hz
-        .param("lfo1_depth", 0.0)           // 0..1 pitch bend depth for internal LFO 1
-        .param("lfo2_rate", 0.5)            // internal pitch LFO 2 rate in Hz
-        .param("lfo2_depth", 0.0)           // 0..1 pitch bend depth for internal LFO 2
-        .param("pw_cv_amt", 0.0)            // 0..1 attenuator for pulse-width CV
-        .param("pw_cv", 0.0)                // bipolar pulse-width CV summed into pw
-        .param("mix_sine", 0.5)             // 0..1 sine level in the expander mix
-        .param("mix_tri", 0.5)              // 0..1 triangle level in the expander mix
-        .param("mix_saw", 0.5)              // 0..1 saw level in the expander mix
-        .param("mix_pulse", 0.5)            // 0..1 pulse level in the expander mix
-        .param("mix_sub", 0.5)              // 0..1 sub oscillator level in the expander mix
+        .param("freq", 110.0) // units: Hz, range: 0..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("voct", 0.0) // units: normalized, range: 0..1, default: 0.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("octave", 0.0) // units: normalized, range: 0..1, default: 0.0. Octave offset; higher values transpose the pitch upward by octaves.
+        .param("pw", 0.5) // units: normalized, range: 0..1, default: 0.5. PW macro; higher moves that model axis toward its brighter or more open setting.
+        .param("saw_shape", 0.0) // units: normalized, range: 0..1, default: 0.0. Saw Shape amount; higher values emphasize that named musical or electrical behavior.
+        .param("fm", 0.0) // units: normalized, range: 0..1, default: 0.0. FM macro; higher moves that model axis toward its brighter or more open setting.
+        .param("fm_mode", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("fm_in", 0.0) // units: normalized, range: 0..1, default: 0.0. Fm In CV input; bipolar values modulate the matching panel control.
+        .param("reset_mode", 0.0) // units: trigger, range: 0..1, default: 0.0. Reset mode selector; rounded values choose how sync resets the oscillator.
+        .param("reset_trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("lfo1_rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lfo1_depth", 0.0) // units: normalized, range: 0..1, default: 0.0. Modulation depth; higher values make the movement more pronounced.
+        .param("lfo2_rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lfo2_depth", 0.0) // units: normalized, range: 0..1, default: 0.0. Modulation depth; higher values make the movement more pronounced.
+        .param("pw_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. PW CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("pw_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Pw CV input; bipolar values modulate the matching panel control.
+        .param("mix_sine", 0.5) // units: normalized, range: 0..1, default: 0.5. Mix Sine amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix_tri", 0.5) // units: normalized, range: 0..1, default: 0.5. Mix Tri amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix_saw", 0.5) // units: normalized, range: 0..1, default: 0.5. Mix Saw amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix_pulse", 0.5) // units: normalized, range: 0..1, default: 0.5. Mix Pulse amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix_sub", 0.5) // units: normalized, range: 0..1, default: 0.5. Mix Sub amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let freq_hz = clip(p.freq, 0.001, 20000.0);
             let voct_on = clip(p.voct * 1000.0, 0.0, 1.0);
@@ -130,3 +130,19 @@ define_synthdef("erica_black_vco2", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `erica_black_vco2`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_black_vco2.vibe" as erica_black_vco2;
+//
+// let erica_black_vco2 = voice("doc_erica_black_vco2")
+//     .synth("erica_black_vco2")
+//     .set_param("freq", 220.0)
+//     .set_param("lfo1_rate", 2.0)
+//     .set_param("mix_sine", 0.5)
+//     .set_param("reset_mode", 0.35);
+// erica_black_vco2.output("out").to_main();
+// erica_black_vco2.run();
+// ```

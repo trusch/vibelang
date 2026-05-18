@@ -1,8 +1,8 @@
 // Genre: Ambient, Soundscape | Character: Underwater pad - muffled and deep
 define_synthdef("pad_underwater")
-    .param("freq", 110.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.4, 1.0, 0.5)
@@ -26,3 +26,18 @@ define_synthdef("pad_underwater")
         // Heavy low-pass for underwater muffled effect
         lpf_ar(sig, 800.0) * env * amp
     });
+
+//
+// # Usage: `pad_underwater`
+//
+// ```rhai
+// import "stdlib/pads/textural/pad_underwater.vibe" as pad_underwater;
+//
+// let pad_underwater = voice("doc_pad_underwater")
+//     .synth("pad_underwater")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_underwater.output("out").to_main();
+// pad_underwater.run();
+// ```

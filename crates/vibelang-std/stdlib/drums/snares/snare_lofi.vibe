@@ -1,7 +1,7 @@
 // Genre: Lo-fi Hip-hop, Chillhop | Character: Dusty, lo-fi character with crackle
 define_synthdef("snare_lofi", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Main snare - filtered and soft
             let snare_env = envelope()
@@ -30,3 +30,16 @@ define_synthdef("snare_lofi", |builder| {
         })
 });
 
+//
+// # Usage: snare_lofi
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_lofi.vibe" as snare_lofi;
+//
+// let doc_snare_lofi = voice("doc_snare_lofi")
+//     .synth("snare_lofi")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_lofi.output("out").to_main();
+// doc_snare_lofi.run();
+// ```

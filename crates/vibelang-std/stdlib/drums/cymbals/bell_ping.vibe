@@ -1,8 +1,8 @@
 // Genre: Jazz, Experimental | Character: Ride bell or cymbal ping
 define_synthdef("bell_ping", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.7)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Medium decay
             let env = envelope()
@@ -31,3 +31,17 @@ define_synthdef("bell_ping", |builder| {
         })
 });
 
+//
+// # Usage: bell_ping
+//
+// ```rhai
+// import "stdlib/drums/cymbals/bell_ping.vibe" as bell_ping;
+//
+// let doc_bell_ping = voice("doc_bell_ping")
+//     .synth("bell_ping")
+//     .set_param("freq", 880.0)
+//     .set_param("amp", 0.7)
+//     ;
+// doc_bell_ping.output("out").to_main();
+// doc_bell_ping.run();
+// ```

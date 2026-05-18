@@ -27,12 +27,12 @@
 
 define_fx("granular_processor", |builder| {
     builder
-        .param("density", 30.0)
-        .param("grain_size", 0.1)
-        .param("pitch", 1.0)
-        .param("pos_jitter", 0.5)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("density", 30.0) // units: grains/s, range: 0..200, default: 30.0. Event density per second; higher values create more grains, dust, or impulses.
+        .param("grain_size", 0.1) // units: seconds, range: 0..1, default: 0.1. Grain Size; higher values use a larger buffer, room, or grain window.
+        .param("pitch", 1.0) // units: semitones, range: -48..48, default: 1.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("pos_jitter", 0.5) // units: ratio, range: 0..1, default: 0.5. Grain position jitter; higher values scatter playback positions more widely.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, density, grain_size, pitch, pos_jitter, mix, level| {
             // ~2s circular buffers, one per channel for true-stereo granulation.
             let buf_l = local_buf_ir(1, 96000);
@@ -60,3 +60,18 @@ define_fx("granular_processor", |builder| {
             ]
         })
 });
+
+//
+// # Usage: granular_processor
+//
+// ```rhai
+// import "stdlib/effects/granular/granular_processor.vibe" as granular_processor;
+//
+// let doc_granular_processor = fx("doc_granular_processor")
+//     .synth("granular_processor")
+//     .param("density", 30.0)
+//     .param("grain_size", 0.1)
+//     .param("pitch", 1.0)
+//     .param("pos_jitter", 0.5)
+//     .apply();
+// ```

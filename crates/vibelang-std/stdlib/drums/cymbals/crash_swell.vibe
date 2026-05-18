@@ -1,7 +1,7 @@
 // Genre: Cinematic, Orchestral | Character: Crash with dynamic swell
 define_synthdef("crash_swell", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             // Build and decay envelope
             let env = envelope()
@@ -35,3 +35,16 @@ define_synthdef("crash_swell", |builder| {
         })
 });
 
+//
+// # Usage: crash_swell
+//
+// ```rhai
+// import "stdlib/drums/cymbals/crash_swell.vibe" as crash_swell;
+//
+// let doc_crash_swell = voice("doc_crash_swell")
+//     .synth("crash_swell")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_crash_swell.output("out").to_main();
+// doc_crash_swell.run();
+// ```

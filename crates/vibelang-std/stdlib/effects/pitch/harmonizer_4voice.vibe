@@ -31,12 +31,12 @@
 
 define_fx("harmonizer_4voice", |builder| {
     builder
-        .param("voice1_semitones", 3.0)
-        .param("voice2_semitones", 5.0)
-        .param("voice3_semitones", 7.0)
-        .param("voice4_semitones", 12.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("voice1_semitones", 3.0) // units: semitones, range: -48..48, default: 3.0. Voice1 Semitones; positive values transpose that voice upward.
+        .param("voice2_semitones", 5.0) // units: semitones, range: -48..48, default: 5.0. Voice2 Semitones; positive values transpose that voice upward.
+        .param("voice3_semitones", 7.0) // units: semitones, range: -48..48, default: 7.0. Voice3 Semitones; positive values transpose that voice upward.
+        .param("voice4_semitones", 12.0) // units: semitones, range: -48..48, default: 12.0. Voice4 Semitones; positive values transpose that voice upward.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, voice1_semitones, voice2_semitones, voice3_semitones, voice4_semitones, mix, level| {
             let r1 = (2.0).pow(voice1_semitones / 12.0);
             let r2 = (2.0).pow(voice2_semitones / 12.0);
@@ -64,3 +64,18 @@ define_fx("harmonizer_4voice", |builder| {
             ]
         })
 });
+
+//
+// # Usage: harmonizer_4voice
+//
+// ```rhai
+// import "stdlib/effects/pitch/harmonizer_4voice.vibe" as harmonizer_4voice;
+//
+// let doc_harmonizer_4voice = fx("doc_harmonizer_4voice")
+//     .synth("harmonizer_4voice")
+//     .param("voice1_semitones", 3.0)
+//     .param("voice2_semitones", 5.0)
+//     .param("voice3_semitones", 7.0)
+//     .param("voice4_semitones", 12.0)
+//     .apply();
+// ```

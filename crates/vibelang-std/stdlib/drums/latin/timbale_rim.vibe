@@ -1,7 +1,7 @@
 // Genre: Latin, Salsa, Mambo | Character: Cascara/rim pattern stick hit
 define_synthdef("timbale_rim")
-    .param("freq", 800.0)
-    .param("amp", 0.8)
+    .param("freq", 800.0) // units: Hz, range: 20..20000, default: 800.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, tight decay
         let amp_env = envelope()
@@ -22,3 +22,18 @@ define_synthdef("timbale_rim")
 
         (body + ring1 + ring2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: timbale_rim
+//
+// ```rhai
+// import "stdlib/drums/latin/timbale_rim.vibe" as timbale_rim;
+//
+// let doc_timbale_rim = voice("doc_timbale_rim")
+//     .synth("timbale_rim")
+//     .set_param("freq", 800.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_timbale_rim.output("out").to_main();
+// doc_timbale_rim.run();
+// ```

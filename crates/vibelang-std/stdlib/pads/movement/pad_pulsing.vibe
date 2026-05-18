@@ -1,9 +1,9 @@
 // Genre: Electronic, Trance | Character: Rhythmic pulsing pad
 define_synthdef("pad_pulsing")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
-    .param("rate", 4.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
     .body(|freq, amp, gate, rate| {
         let env = envelope()
             .asr(0.1, 1.0, 0.2)
@@ -25,3 +25,19 @@ define_synthdef("pad_pulsing")
         let cutoff = 800.0 + pulse_lfo * 2000.0;
         rlpf_ar(mix, cutoff, 0.15) * pulse_lfo * env * amp
     });
+
+//
+// # Usage: `pad_pulsing`
+//
+// ```rhai
+// import "stdlib/pads/movement/pad_pulsing.vibe" as pad_pulsing;
+//
+// let pad_pulsing = voice("doc_pad_pulsing")
+//     .synth("pad_pulsing")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("rate", 4.0);
+// pad_pulsing.output("out").to_main();
+// pad_pulsing.run();
+// ```

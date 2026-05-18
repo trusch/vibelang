@@ -1,8 +1,8 @@
 // Genre: Sci-Fi, Electronic | Character: Sci-fi pad - futuristic and alien
 define_synthdef("pad_scifi")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.3, 1.0, 0.35)
@@ -27,3 +27,18 @@ define_synthdef("pad_scifi")
         let sweep = sin_osc_ar(0.2) * 1500.0 + 2500.0;
         lpf_ar(mix, sweep) * env * amp
     });
+
+//
+// # Usage: `pad_scifi`
+//
+// ```rhai
+// import "stdlib/pads/cinematic/pad_scifi.vibe" as pad_scifi;
+//
+// let pad_scifi = voice("doc_pad_scifi")
+//     .synth("pad_scifi")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_scifi.output("out").to_main();
+// pad_scifi.run();
+// ```

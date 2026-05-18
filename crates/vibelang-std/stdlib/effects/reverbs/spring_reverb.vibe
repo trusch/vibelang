@@ -14,10 +14,10 @@
 
 define_fx("spring_reverb", |builder| {
     builder
-        .param("tension", 0.5)
-        .param("diffusion", 0.6)
-        .param("mix", 0.35)
-        .param("level", 1.0)
+        .param("tension", 0.5) // units: ratio, range: 0..1, default: 0.5. Tension amount; higher values emphasize that named musical or electrical behavior.
+        .param("diffusion", 0.6) // units: ratio, range: 0..1, default: 0.6. Diffusion amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.35) // units: ratio, range: 0..1, default: 0.35. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, tension, diffusion, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -60,3 +60,18 @@ define_fx("spring_reverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spring_reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/spring_reverb.vibe" as spring_reverb;
+//
+// let doc_spring_reverb = fx("doc_spring_reverb")
+//     .synth("spring_reverb")
+//     .param("tension", 0.5)
+//     .param("diffusion", 0.6)
+//     .param("mix", 0.35)
+//     .param("level", 1.0)
+//     .apply();
+// ```

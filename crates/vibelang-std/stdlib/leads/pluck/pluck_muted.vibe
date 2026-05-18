@@ -1,9 +1,9 @@
 // Genre: Lo-fi, Jazz | Character: Muted, soft pluck
 define_synthdef("lead_pluck_muted", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Soft envelope
@@ -28,3 +28,17 @@ define_synthdef("lead_pluck_muted", |builder| {
         })
 });
 
+//
+// # Usage: `lead_pluck_muted`
+//
+// ```rhai
+// import "stdlib/leads/pluck/pluck_muted.vibe" as pluck_muted;
+//
+// let lead_pluck_muted = voice("doc_lead_pluck_muted")
+//     .synth("lead_pluck_muted")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lead_pluck_muted.output("out").to_main();
+// lead_pluck_muted.run();
+// ```

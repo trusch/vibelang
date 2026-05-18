@@ -27,11 +27,11 @@
 
 define_fx("reverb_gated", |builder| {
     builder
-        .param("time", 1.5)
-        .param("gate_time", 0.25)
-        .param("threshold", 0.05)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 1.5) // units: seconds, range: 0..10, default: 1.5. Delay or segment time; higher values make repeats arrive later.
+        .param("gate_time", 0.25) // units: seconds, range: 0..10, default: 0.25. Delay or segment time; higher values make repeats arrive later.
+        .param("threshold", 0.05) // units: linear, range: 0..1, default: 0.05. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, gate_time, threshold, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -65,3 +65,18 @@ define_fx("reverb_gated", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_gated
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_gated.vibe" as reverb_gated;
+//
+// let doc_reverb_gated = fx("doc_reverb_gated")
+//     .synth("reverb_gated")
+//     .param("time", 1.5)
+//     .param("gate_time", 0.25)
+//     .param("threshold", 0.05)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

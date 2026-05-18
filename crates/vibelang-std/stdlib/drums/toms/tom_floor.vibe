@@ -1,7 +1,7 @@
 // Genre: Rock, Pop | Character: Deep floor tom
 define_synthdef("tom_floor")
-    .param("freq", 80.0)
-    .param("amp", 0.85)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Deep, resonant decay
         let amp_env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("tom_floor")
 
         (body + sub + overtone + attack) * amp_env * amp
     });
+
+//
+// # Usage: tom_floor
+//
+// ```rhai
+// import "stdlib/drums/toms/tom_floor.vibe" as tom_floor;
+//
+// let doc_tom_floor = voice("doc_tom_floor")
+//     .synth("tom_floor")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.85)
+//     ;
+// doc_tom_floor.output("out").to_main();
+// doc_tom_floor.run();
+// ```

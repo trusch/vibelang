@@ -25,10 +25,10 @@
 
 define_fx("reverb_infinite", |builder| {
     builder
-        .param("freeze", 0.0)
-        .param("time", 4.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("freeze", 0.0) // units: trigger, range: 0..1, default: 0.0. Freeze switch; rounded values turn that mode off or on.
+        .param("time", 4.0) // units: seconds, range: 0..10, default: 4.0. Delay or segment time; higher values make repeats arrive later.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freeze, time, mix, level| {
             // Mix stereo input to mono for the JPverb input.
             let mono = (input[0] + input[1]) * 0.5;
@@ -71,3 +71,18 @@ define_fx("reverb_infinite", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_infinite
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_infinite.vibe" as reverb_infinite;
+//
+// let doc_reverb_infinite = fx("doc_reverb_infinite")
+//     .synth("reverb_infinite")
+//     .param("freeze", 0.0)
+//     .param("time", 4.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

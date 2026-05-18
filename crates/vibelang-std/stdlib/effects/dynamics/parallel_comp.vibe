@@ -29,13 +29,13 @@
 //   level:   Final output trim (1.0 = unity)
 
 define_fx("parallel_comp")
-    .param("ratio", 8.0)
-    .param("attack", 0.3)
-    .param("release", 0.4)
-    .param("makeup", 1.0)
-    .param("blend", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("ratio", 8.0) // units: ratio, range: 1..100, default: 8.0. Frequency ratio; higher values tune the related oscillator or clock upward.
+    .param("attack", 0.3) // units: seconds, range: 0..10, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("release", 0.4) // units: seconds, range: 0..10, default: 0.4. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("makeup", 1.0) // units: linear, range: 0..10, default: 1.0. Makeup amount; higher values emphasize that named musical or electrical behavior.
+    .param("blend", 0.5) // units: ratio, range: 0..1, default: 0.5. Blend amount; 0 favors the first source and 1 favors the second or wet source.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, ratio, attack, release, makeup, blend, mix, level| {
         // Convert attack/release to time constants
         let attack_time = 0.001 + attack * 0.05;
@@ -79,3 +79,18 @@ define_fx("parallel_comp")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: parallel_comp
+//
+// ```rhai
+// import "stdlib/effects/dynamics/parallel_comp.vibe" as parallel_comp;
+//
+// let doc_parallel_comp = fx("doc_parallel_comp")
+//     .synth("parallel_comp")
+//     .param("ratio", 8.0)
+//     .param("attack", 0.3)
+//     .param("release", 0.4)
+//     .param("makeup", 1.0)
+//     .apply();
+// ```

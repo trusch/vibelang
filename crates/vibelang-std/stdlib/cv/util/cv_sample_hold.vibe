@@ -16,10 +16,24 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_sample_hold")
-    .param("cv_in", 0.0)
-    .param("gate", 0.0)
+    .param("cv_in", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the incoming CV value.
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|cv_in, gate| {
         let held = latch_ar(cv_in, gate);
         let clipped = clip_ar(held, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_sample_hold`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_sample_hold.vibe" as cv_sample_hold;
+//
+// let cv_sample_hold = voice("doc_cv_sample_hold")
+//     .synth("cv_sample_hold")
+//     .set_param("gate", 1.0)
+//     .set_param("cv_in", 0.5);
+// cv_sample_hold.output("out").to_main();
+// cv_sample_hold.run();
+// ```

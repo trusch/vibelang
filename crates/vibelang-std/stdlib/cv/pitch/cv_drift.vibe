@@ -19,10 +19,24 @@
 //
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_drift")
-    .param("rate", 4.0)          // Hz — drift speed
-    .param("depth_cents", 5.0)   // cents — peak deviation (±)
+    .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("depth_cents", 5.0) // units: cents, range: 0..1200, default: 5.0. Modulation depth; higher values make the movement more pronounced.
     .body(|rate, depth_cents| {
         let noise = lf_noise2_kr(rate);
         let voct_drift = noise * (depth_cents / 14400.0);
         clip(voct_drift, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_drift`
+//
+// ```rhai
+// import "stdlib/cv/pitch/cv_drift.vibe" as cv_drift;
+//
+// let cv_drift = voice("doc_cv_drift")
+//     .synth("cv_drift")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_cents", 0.5);
+// cv_drift.output("out").to_main();
+// cv_drift.run();
+// ```

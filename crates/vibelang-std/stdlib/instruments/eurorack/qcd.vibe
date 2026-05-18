@@ -24,23 +24,23 @@ define_synthdef("qcd", |builder| {
         .output_kr("ch3")
         .output_kr("ch4")
         .output_kr("tap")
-        .param("bpm", 120.0)                // master tempo in beats per minute
-        .param("div_mult_1", 1.0)           // clock divide/multiply selector for QCD channel 1
-        .param("div_mult_2", 1.0)           // clock divide/multiply selector for QCD channel 2
-        .param("div_mult_3", 1.0)           // clock divide/multiply selector for QCD channel 3
-        .param("div_mult_4", 1.0)           // clock divide/multiply selector for QCD channel 4
-        .param("reset", 0.0)                // 0/1 reset trigger for all clock phases
-        .param("run", 1.0)                  // 0 stops outputs, 1 runs
-        .param("pulse_width", 0.5)          // clock duty cycle clipped to 0.001..0.95
-        .param("trigger_delay_ch_1", 0.0)   // seconds of phase delay for QCD channel 1
-        .param("trigger_delay_ch_2", 0.0)   // seconds of phase delay for QCD channel 2
-        .param("trigger_delay_ch_3", 0.0)   // seconds of phase delay for QCD channel 3
-        .param("trigger_delay_ch_4", 0.0)   // seconds of phase delay for QCD channel 4
-        .param("mute_1", 0.0)               // 0 active, 1 mutes QCD channel 1
-        .param("mute_2", 0.0)               // 0 active, 1 mutes QCD channel 2
-        .param("mute_3", 0.0)               // 0 active, 1 mutes QCD channel 3
-        .param("mute_4", 0.0)               // 0 active, 1 mutes QCD channel 4
-        .param("tap", 0.0)                  // 0/1 tap/reset trigger into the master phase
+        .param("bpm", 120.0) // units: BPM, range: 20..300, default: 120.0. Clock tempo in beats per minute; higher values make the pulse faster.
+        .param("div_mult_1", 1.0) // units: normalized, range: 0..1, default: 1.0. Div Mult 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("div_mult_2", 1.0) // units: normalized, range: 0..1, default: 1.0. Div Mult 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("div_mult_3", 1.0) // units: normalized, range: 0..1, default: 1.0. Div Mult 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("div_mult_4", 1.0) // units: normalized, range: 0..1, default: 1.0. Div Mult 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("reset", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("run", 1.0) // units: trigger, range: 0..1, default: 1.0. Run switch; 1 lets the clocked process advance.
+        .param("pulse_width", 0.5) // units: ratio, range: 0..1, default: 0.5. Pulse width or duty cycle; higher values widen the high portion of the wave.
+        .param("trigger_delay_ch_1", 0.0) // units: trigger, range: 0..1, default: 0.0. Trigger Delay Ch 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger_delay_ch_2", 0.0) // units: trigger, range: 0..1, default: 0.0. Trigger Delay Ch 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger_delay_ch_3", 0.0) // units: trigger, range: 0..1, default: 0.0. Trigger Delay Ch 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger_delay_ch_4", 0.0) // units: trigger, range: 0..1, default: 0.0. Trigger Delay Ch 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mute_1", 0.0) // units: trigger, range: 0..1, default: 0.0. Mute 1 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mute_2", 0.0) // units: trigger, range: 0..1, default: 0.0. Mute 2 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mute_3", 0.0) // units: trigger, range: 0..1, default: 0.0. Mute 3 amount; higher values emphasize that named musical or electrical behavior.
+        .param("mute_4", 0.0) // units: trigger, range: 0..1, default: 0.0. Mute 4 amount; higher values emphasize that named musical or electrical behavior.
+        .param("tap", 0.0) // units: trigger, range: 0..1, default: 0.0. Tap amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * run;
@@ -82,3 +82,19 @@ define_synthdef("qcd", |builder| {
             [ch1, ch2, ch3, ch4, tap]
         })
 });
+
+//
+// # Usage: `qcd`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/qcd.vibe" as qcd;
+//
+// let qcd = voice("doc_qcd")
+//     .synth("qcd")
+//     .set_param("bpm", 96.0)
+//     .set_param("reset", 0.35)
+//     .set_param("div_mult_1", 0.5)
+//     .set_param("div_mult_2", 0.5);
+// qcd.outputs(["ch1"]).mute();
+// qcd.run();
+// ```

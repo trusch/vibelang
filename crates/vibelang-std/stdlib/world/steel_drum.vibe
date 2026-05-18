@@ -6,9 +6,9 @@
 
 define_synthdef("steel_drum", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.15)
@@ -40,3 +40,18 @@ define_synthdef("steel_drum", |builder| {
             (metal + attack) * env * decay_env * amp * 0.5
         })
 });
+
+//
+// # Usage: `steel_drum`
+//
+// ```rhai
+// import "stdlib/world/steel_drum.vibe" as steel_drum;
+//
+// let steel_drum = voice("doc_steel_drum")
+//     .synth("steel_drum")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// steel_drum.output("out").to_main();
+// steel_drum.run();
+// ```

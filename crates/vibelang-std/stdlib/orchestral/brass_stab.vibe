@@ -1,7 +1,7 @@
 // Genre: Orchestral, Cinematic | Character: Punchy brass stab
 define_synthdef("brass_stab")
-    .param("freq", 220.0)
-    .param("amp", 0.7)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Punchy brass envelope
         let amp_env = envelope()
@@ -25,3 +25,17 @@ define_synthdef("brass_stab")
         let cutoff = 1000.0 + filt_env * 4000.0;
         rlpf_ar(mix, cutoff, 0.2) * amp_env * amp
     });
+
+//
+// # Usage: `brass_stab`
+//
+// ```rhai
+// import "stdlib/orchestral/brass_stab.vibe" as brass_stab;
+//
+// let brass_stab = voice("doc_brass_stab")
+//     .synth("brass_stab")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// brass_stab.output("out").to_main();
+// brass_stab.run();
+// ```

@@ -23,9 +23,9 @@
 
 define_fx("early_reflections_ir", |builder| {
     builder
-        .param("ir_buffer", 0.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("ir_buffer", 0.0) // units: buffer id, range: 0..N, default: 0.0. Selects impulse response buffer.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, ir_buffer, mix, level| {
             // 4096 samples ≈ 93 ms at 44.1 kHz / 85 ms at 48 kHz —
             // the early-reflections window of typical room IRs.
@@ -43,3 +43,17 @@ define_fx("early_reflections_ir", |builder| {
             ]
         })
 });
+
+//
+// # Usage: early_reflections_ir
+//
+// ```rhai
+// import "stdlib/effects/convolution/early_reflections_ir.vibe" as early_reflections_ir;
+//
+// let doc_early_reflections_ir = fx("doc_early_reflections_ir")
+//     .synth("early_reflections_ir")
+//     .param("ir_buffer", 0.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -47,22 +47,22 @@ define_synthdef("erica_vc_eg", |builder| {
         .output_kr("eoa")
         .output_kr("eod")
         .output_kr("eor")
-        .param("gate", 0.0)                 // 0/1 held gate; falling edge starts release
-        .param("trigger", 0.0)              // 0/1 retrigger input for the ADSR cycle
-        .param("attack", 0.05)              // attack stage time in seconds before CV
-        .param("decay", 0.3)                // decay stage time in seconds before CV
-        .param("sustain", 0.5)              // 0..1 sustain level before sustain CV
-        .param("release", 0.3)              // release stage time in seconds before CV
-        .param("level", 1.0)                // 0..1 final envelope output level
-        .param("attack_cv_amt", 0.0)        // 0..1 attenuator for attack_cv
-        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv
-        .param("sustain_cv_amt", 0.0)       // 0..1 attenuator for sustain_cv
-        .param("release_cv_amt", 0.0)       // 0..1 attenuator for release_cv
-        .param("attack_cv", 0.0)            // bipolar CV for attack time
-        .param("decay_cv", 0.0)             // bipolar CV for decay time
-        .param("sustain_cv", 0.0)           // bipolar CV for sustain level
-        .param("release_cv", 0.0)           // bipolar CV for release time
-        .param("loop_gate", 0.0)            // rounded 0/1; high enables attack-decay looping
+        .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("attack", 0.05) // units: seconds, range: 0..60, default: 0.05. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("decay", 0.3) // units: seconds, range: 0..60, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("sustain", 0.5) // units: normalized, range: 0..1, default: 0.5. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("release", 0.3) // units: seconds, range: 0..60, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+        .param("attack_cv_amt", 0.0) // units: seconds, range: 0..60, default: 0.0. ATTACK CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("decay_cv_amt", 0.0) // units: seconds, range: 0..60, default: 0.0. DECAY CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("sustain_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. SUSTAIN CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("release_cv_amt", 0.0) // units: seconds, range: 0..60, default: 0.0. RELEASE CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("attack_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Attack CV input; bipolar values modulate the matching panel control.
+        .param("decay_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Decay CV input; bipolar values modulate the matching panel control.
+        .param("sustain_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Sustain CV input; bipolar values modulate the matching panel control.
+        .param("release_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Release CV input; bipolar values modulate the matching panel control.
+        .param("loop_gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body_map(|p| {
             let gate = _erica_vc_eg_gate(p.gate);
             let trigger = _erica_vc_eg_gate(p.trigger);
@@ -133,3 +133,19 @@ define_synthdef("erica_vc_eg", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `erica_vc_eg`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_vc_eg.vibe" as erica_vc_eg;
+//
+// let erica_vc_eg = voice("doc_erica_vc_eg")
+//     .synth("erica_vc_eg")
+//     .set_param("gate", 1.0)
+//     .set_param("level", 0.5)
+//     .set_param("attack", 0.02)
+//     .set_param("decay", 0.35);
+// erica_vc_eg.outputs(["env"]).mute();
+// erica_vc_eg.run();
+// ```

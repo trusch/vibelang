@@ -7,11 +7,11 @@
 define_synthdef("envelope_follower", |builder| {
     builder
         .output_kr("out")        // 1ch — kr CV (envelope follower)
-        .param("attack", 0.01)   // Attack time in seconds
-        .param("release", 0.1)   // Release time in seconds
-        .param("lo", 0.0)        // Output minimum
-        .param("hi", 1.0)        // Output maximum
-        .param("input_bus", 0.0) // Audio bus to follow
+        .param("attack", 0.01) // units: seconds, range: 0..60, default: 0.01. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("release", 0.1) // units: seconds, range: 0..60, default: 0.1. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("input_bus", 0.0) // units: bus/buffer id, range: 0..N, default: 0.0. Selects runtime bus or buffer.
         .body_map(|p| {
             // Read from the specified audio bus
             let input = in_ar(p.input_bus);
@@ -27,13 +27,44 @@ define_synthdef("envelope_follower", |builder| {
 define_synthdef("peak_follower", |builder| {
     builder
         .output_kr("out")        // 1ch — kr CV (peak follower)
-        .param("decay", 0.999)   // Decay coefficient (0-1, higher = slower decay)
-        .param("lo", 0.0)
-        .param("hi", 1.0)
-        .param("input_bus", 0.0)
+        .param("decay", 0.999) // units: seconds, range: 0..60, default: 0.999. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("input_bus", 0.0) // units: bus/buffer id, range: 0..N, default: 0.0. Selects runtime bus or buffer.
         .body_map(|p| {
             let input = in_ar(p.input_bus);
             let peak = peak_follower_kr(input, p.decay);
             [lin_lin_kr(peak, 0.0, 1.0, p.lo, p.hi)]
         })
 });
+
+//
+// # Usage: `envelope_follower`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/envelope_follower.vibe" as envelope_follower;
+//
+// let envelope_follower = voice("doc_envelope_follower")
+//     .synth("envelope_follower")
+//     .set_param("attack", 0.02)
+//     .set_param("decay", 0.35)
+//     .set_param("release", 0.35)
+//     .set_param("lo", 0.5);
+// envelope_follower.outputs(["out"]).mute();
+// envelope_follower.run();
+// ```
+//
+// # Usage: `peak_follower`
+//
+// ```rhai
+// import "stdlib/cv/envelopes/envelope_follower.vibe" as envelope_follower;
+//
+// let peak_follower = voice("doc_peak_follower")
+//     .synth("peak_follower")
+//     .set_param("attack", 0.02)
+//     .set_param("decay", 0.35)
+//     .set_param("release", 0.35)
+//     .set_param("lo", 0.5);
+// peak_follower.outputs(["out"]).mute();
+// peak_follower.run();
+// ```

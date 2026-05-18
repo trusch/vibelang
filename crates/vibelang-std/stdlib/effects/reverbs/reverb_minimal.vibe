@@ -23,10 +23,10 @@
 
 define_fx("reverb_minimal", |builder| {
     builder
-        .param("room", 0.6)
-        .param("damp", 0.4)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("room", 0.6) // units: ratio, range: 0..1, default: 0.6. Reverb room size; higher values make a larger, longer acoustic space.
+        .param("damp", 0.4) // units: ratio, range: 0..1, default: 0.4. Damping amount; higher values shorten and darken the decay.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, room, damp, mix, level| {
             // Collapse to mono so we only need a single FreeVerb output.
             let mono = (input[0] + input[1]) * 0.5;
@@ -44,3 +44,18 @@ define_fx("reverb_minimal", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_minimal
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_minimal.vibe" as reverb_minimal;
+//
+// let doc_reverb_minimal = fx("doc_reverb_minimal")
+//     .synth("reverb_minimal")
+//     .param("room", 0.6)
+//     .param("damp", 0.4)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

@@ -1,7 +1,7 @@
 // Genre: House, Latin | Character: Classic cowbell, bright and cutting
 define_synthdef("cowbell", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Medium-short decay
             let env = envelope()
@@ -29,3 +29,16 @@ define_synthdef("cowbell", |builder| {
         })
 });
 
+//
+// # Usage: cowbell
+//
+// ```rhai
+// import "stdlib/drums/percussion/cowbell.vibe" as cowbell;
+//
+// let doc_cowbell = voice("doc_cowbell")
+//     .synth("cowbell")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_cowbell.output("out").to_main();
+// doc_cowbell.run();
+// ```

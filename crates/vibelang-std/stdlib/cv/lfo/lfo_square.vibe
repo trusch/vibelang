@@ -4,11 +4,11 @@
 define_synthdef("lfo_square", |builder| {
     builder
         .output_kr("out")     // 1ch — kr CV (square / pulse LFO)
-        .param("rate", 1.0)   // LFO rate in Hz
-        .param("lo", 0.0)     // Low value (when pulse is 0)
-        .param("hi", 1.0)     // High value (when pulse is 1)
-        .param("width", 0.5)  // Pulse width (0-1, 0.5 = 50% duty cycle)
-        .param("phase", 0.0)  // Initial phase offset (0-1)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("lo", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the output minimum.
+        .param("hi", 1.0) // units: volts, range: -10..10, default: 1.0. Sets the output maximum.
+        .param("width", 0.5) // units: ratio, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
+        .param("phase", 0.0) // units: cycles, range: 0..1, default: 0.0. Oscillator phase offset; higher values shift the waveform start point.
         .body_map(|p| {
             // Generate pulse wave at control rate (0 to 1)
             let osc = lf_pulse_kr(p.rate, p.phase, p.width);
@@ -16,3 +16,19 @@ define_synthdef("lfo_square", |builder| {
             [osc * (p.hi - p.lo) + p.lo] // osc is already 0-1, just scale to lo-hi
         })
 });
+
+//
+// # Usage: `lfo_square`
+//
+// ```rhai
+// import "stdlib/cv/lfo/lfo_square.vibe" as lfo_square;
+//
+// let lfo_square = voice("doc_lfo_square")
+//     .synth("lfo_square")
+//     .set_param("rate", 2.0)
+//     .set_param("lo", 0.5)
+//     .set_param("hi", 0.5)
+//     .set_param("width", 0.5);
+// lfo_square.outputs(["out"]).mute();
+// lfo_square.run();
+// ```

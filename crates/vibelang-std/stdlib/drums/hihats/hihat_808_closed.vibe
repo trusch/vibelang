@@ -1,6 +1,6 @@
 // Genre: Hip-hop, Trap | Character: Classic 808 closed hihat, short and tight
 define_synthdef("hihat_808_closed")
-    .param("amp", 1.0)
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|amp| {
         // Very short envelope
         let env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("hihat_808_closed")
         filtered * env * amp
     });
 
+//
+// # Usage: hihat_808_closed
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_808_closed.vibe" as hihat_808_closed;
+//
+// let doc_hihat_808_closed = voice("doc_hihat_808_closed")
+//     .synth("hihat_808_closed")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_808_closed.output("out").to_main();
+// doc_hihat_808_closed.run();
+// ```

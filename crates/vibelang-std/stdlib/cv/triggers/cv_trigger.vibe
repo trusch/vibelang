@@ -11,8 +11,8 @@
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_trigger")
-    .param("gate", 0.0)
-    .param("width_ms", 5.0)
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("width_ms", 5.0) // units: ms, range: 0..10000, default: 5.0. Width Ms in milliseconds; higher values make that time interval longer.
     .body(|gate, width_ms| {
         let width_s = width_ms * 0.001;
 
@@ -28,3 +28,17 @@ define_synthdef("cv_trigger")
         // Scale unit pulse to 0.5 audio (= +5V at the ES-3 jack), hard clip to +/-1.0.
         clip_ar(pulse * env * 0.5, -1.0, 1.0)
     });
+
+//
+// # Usage: `cv_trigger`
+//
+// ```rhai
+// import "stdlib/cv/triggers/cv_trigger.vibe" as cv_trigger;
+//
+// let cv_trigger = voice("doc_cv_trigger")
+//     .synth("cv_trigger")
+//     .set_param("gate", 1.0)
+//     .set_param("width_ms", 80.0);
+// cv_trigger.output("out").to_main();
+// cv_trigger.run();
+// ```

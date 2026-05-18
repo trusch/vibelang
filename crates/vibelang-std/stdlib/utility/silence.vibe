@@ -2,8 +2,8 @@
 
 // Silence - Output nothing (useful for bus routing setup)
 define_synthdef("silence")
-    .param("amp", 0.0)
-    .param("gate", 1.0)
+    .param("amp", 0.0) // units: linear, range: 0..1, default: 0.0. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|amp, gate| {
         let env = envelope()
             .asr(0.0, 1.0, 0.0)
@@ -13,3 +13,17 @@ define_synthdef("silence")
 
         dc_ar(0.0) * env * amp
     });
+
+//
+// # Usage: `silence`
+//
+// ```rhai
+// import "stdlib/utility/silence.vibe" as silence;
+//
+// let silence = voice("doc_silence")
+//     .synth("silence")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// silence.output("out").to_main();
+// silence.run();
+// ```

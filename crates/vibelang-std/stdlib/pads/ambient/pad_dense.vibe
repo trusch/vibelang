@@ -1,9 +1,9 @@
 // Genre: Ambient, Drone | Character: Dense, thick pad
 define_synthdef("pad_dense", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.35)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Moderate attack, long sustain
@@ -30,3 +30,17 @@ define_synthdef("pad_dense", |builder| {
         })
 });
 
+//
+// # Usage: `pad_dense`
+//
+// ```rhai
+// import "stdlib/pads/ambient/pad_dense.vibe" as pad_dense;
+//
+// let pad_dense = voice("doc_pad_dense")
+//     .synth("pad_dense")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_dense.output("out").to_main();
+// pad_dense.run();
+// ```

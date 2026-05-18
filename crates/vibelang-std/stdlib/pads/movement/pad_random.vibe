@@ -1,8 +1,8 @@
 // Genre: Experimental, Ambient | Character: Random modulation pad
 define_synthdef("pad_random")
-    .param("freq", 220.0)
-    .param("amp", 0.45)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.2, 1.0, 0.3)
@@ -26,3 +26,18 @@ define_synthdef("pad_random")
         let rand_cutoff = lf_noise1_ar(0.5) * 1500.0 + 2000.0;
         lpf_ar(mix, rand_cutoff) * env * amp
     });
+
+//
+// # Usage: `pad_random`
+//
+// ```rhai
+// import "stdlib/pads/movement/pad_random.vibe" as pad_random;
+//
+// let pad_random = voice("doc_pad_random")
+//     .synth("pad_random")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_random.output("out").to_main();
+// pad_random.run();
+// ```

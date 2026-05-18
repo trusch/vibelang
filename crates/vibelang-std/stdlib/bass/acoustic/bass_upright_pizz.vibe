@@ -1,7 +1,7 @@
 // Genre: Jazz, Classical | Character: Pizzicato upright bass
 define_synthdef("bass_upright_pizz")
-    .param("freq", 80.0)
-    .param("amp", 0.8)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Pizzicato envelope - short decay
         let amp_env = envelope()
@@ -23,3 +23,18 @@ define_synthdef("bass_upright_pizz")
         let sig = body + harm1 + harm2 + pluck;
         lpf_ar(sig, 2500.0) * amp_env * amp
     });
+
+//
+// # Usage: bass_upright_pizz
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_upright_pizz.vibe" as bass_upright_pizz;
+//
+// let doc_bass_upright_pizz = voice("doc_bass_upright_pizz")
+//     .synth("bass_upright_pizz")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_bass_upright_pizz.output("out").to_main();
+// doc_bass_upright_pizz.run();
+// ```

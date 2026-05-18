@@ -6,10 +6,10 @@
 
 define_synthdef("choir_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("spread", 0.5) // Stereo width and detune
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("spread", 0.5) // units: normalized, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, spread| {
             // Slow attack for choir swell
             let env = envelope()
@@ -48,3 +48,19 @@ define_synthdef("choir_pad", |builder| {
             shaped * env * amp * vibrato_mod
         })
 });
+
+//
+// # Usage: `choir_pad`
+//
+// ```rhai
+// import "stdlib/vocals/choir_pad.vibe" as choir_pad;
+//
+// let choir_pad = voice("doc_choir_pad")
+//     .synth("choir_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("spread", 0.5);
+// choir_pad.output("out").to_main();
+// choir_pad.run();
+// ```

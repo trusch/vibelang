@@ -30,9 +30,9 @@
 // CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
 
 define_synthdef("cv_lfo_chaos")
-    .param("rate", 4.0)       // Hz — Lorenz iteration speed
-    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
-    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, depth_v, bipolar| {
         // Slow Lorenz orbit. Defaults s=10, r=28, b=2.667, h=0.05 give the
         // classic two-wing butterfly.
@@ -44,3 +44,18 @@ define_synthdef("cv_lfo_chaos")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_lfo_chaos`
+//
+// ```rhai
+// import "stdlib/cv/lfo/cv_lfo_chaos.vibe" as cv_lfo_chaos;
+//
+// let cv_lfo_chaos = voice("doc_cv_lfo_chaos")
+//     .synth("cv_lfo_chaos")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_v", 4.0)
+//     .set_param("bipolar", 0.5);
+// cv_lfo_chaos.output("out").to_main();
+// cv_lfo_chaos.run();
+// ```

@@ -20,10 +20,10 @@
 
 define_fx("distortion", |builder| {
     builder
-        .param("drive", 8.0)
-        .param("tone", 5000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("drive", 8.0) // units: gain, range: 0..20, default: 8.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+        .param("tone", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, drive, tone, mix, level| {
             // Large constant boost to ensure we hit tanh saturation even on quiet signals
             // drive=8 -> 800x boost, drive=20 -> 2000x boost
@@ -50,3 +50,18 @@ define_fx("distortion", |builder| {
             ]
         })
 });
+
+//
+// # Usage: distortion
+//
+// ```rhai
+// import "stdlib/effects/distortion/distortion.vibe" as distortion;
+//
+// let doc_distortion = fx("doc_distortion")
+//     .synth("distortion")
+//     .param("drive", 8.0)
+//     .param("tone", 5000.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

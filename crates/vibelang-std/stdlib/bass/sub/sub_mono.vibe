@@ -1,9 +1,9 @@
 // Genre: All | Character: Focused mono sub for club systems
 define_synthdef("sub_mono", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Clean envelope
@@ -21,3 +21,18 @@ define_synthdef("sub_mono", |builder| {
         })
 });
 
+//
+// # Usage: sub_mono
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_mono.vibe" as sub_mono;
+//
+// let doc_sub_mono = voice("doc_sub_mono")
+//     .synth("sub_mono")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_mono.output("out").to_main();
+// doc_sub_mono.run();
+// ```

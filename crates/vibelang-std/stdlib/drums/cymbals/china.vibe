@@ -1,7 +1,7 @@
 // Genre: Rock, Metal | Character: Trashy china cymbal with aggressive attack
 define_synthdef("china", |builder| {
     builder
-        .param("amp", 0.75)
+        .param("amp", 0.75) // units: linear, range: 0..1, default: 0.75. Output level multiplier; higher is louder.
         .body(|amp| {
             // Medium-long decay
             let env = envelope()
@@ -32,3 +32,16 @@ define_synthdef("china", |builder| {
         })
 });
 
+//
+// # Usage: china
+//
+// ```rhai
+// import "stdlib/drums/cymbals/china.vibe" as china;
+//
+// let doc_china = voice("doc_china")
+//     .synth("china")
+//     .set_param("amp", 0.75)
+//     ;
+// doc_china.output("out").to_main();
+// doc_china.run();
+// ```

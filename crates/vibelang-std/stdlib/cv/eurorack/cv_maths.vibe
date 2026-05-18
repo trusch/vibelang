@@ -33,12 +33,12 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_maths")
-    .param("rate", 0.0)
-    .param("gate", 0.0)
-    .param("rise_ms", 50.0)
-    .param("fall_ms", 250.0)
-    .param("peak_v", 8.0)
-    .param("bipolar", 0.0)
+    .param("rate", 0.0) // units: Hz, range: 0..100, default: 0.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("rise_ms", 50.0) // units: ms, range: 0..10000, default: 50.0. Rise Ms in milliseconds; higher values make that time interval longer.
+    .param("fall_ms", 250.0) // units: ms, range: 0..10000, default: 250.0. Fall Ms in milliseconds; higher values make that time interval longer.
+    .param("peak_v", 8.0) // units: volts, range: -10..10, default: 8.0. Envelope peak voltage; higher values raise the CV output level.
+    .param("bipolar", 0.0) // units: normalized, range: 0..1, default: 0.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, gate, rise_ms, fall_ms, peak_v, bipolar| {
         let rise_s = rise_ms * 0.001;
         let fall_s = fall_ms * 0.001;
@@ -60,3 +60,19 @@ define_synthdef("cv_maths")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_maths`
+//
+// ```rhai
+// import "stdlib/cv/eurorack/cv_maths.vibe" as cv_maths;
+//
+// let cv_maths = voice("doc_cv_maths")
+//     .synth("cv_maths")
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     .set_param("rise_ms", 80.0)
+//     .set_param("fall_ms", 80.0);
+// cv_maths.output("out").to_main();
+// cv_maths.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Experimental, IDM | Character: Reverse-style riser effect
 define_synthdef("riser_reverse", |builder| {
     builder
-        .param("amp", 0.6)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|amp| {
             // Reverse envelope (starts high, fades slightly, then rises)
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("riser_reverse", |builder| {
         })
 });
 
+//
+// # Usage: riser_reverse
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_reverse.vibe" as riser_reverse;
+//
+// let doc_riser_reverse = voice("doc_riser_reverse")
+//     .synth("riser_reverse")
+//     .set_param("amp", 0.6)
+//     ;
+// doc_riser_reverse.output("out").to_main();
+// doc_riser_reverse.run();
+// ```

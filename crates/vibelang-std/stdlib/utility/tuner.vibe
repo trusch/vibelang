@@ -2,8 +2,8 @@
 
 // A440 - Standard concert pitch
 define_synthdef("tuner_a440")
-    .param("amp", 0.3)
-    .param("gate", 1.0)
+    .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -16,8 +16,8 @@ define_synthdef("tuner_a440")
 
 // A432 - Alternative tuning reference
 define_synthdef("tuner_a432")
-    .param("amp", 0.3)
-    .param("gate", 1.0)
+    .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -30,8 +30,8 @@ define_synthdef("tuner_a432")
 
 // E Standard - Guitar low E
 define_synthdef("tuner_e_low")
-    .param("amp", 0.35)
-    .param("gate", 1.0)
+    .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -42,3 +42,46 @@ define_synthdef("tuner_e_low")
         // 82.41 Hz - Low E
         sin_osc_ar(82.41) * env * amp
     });
+
+//
+// # Usage: `tuner_a440`
+//
+// ```rhai
+// import "stdlib/utility/tuner.vibe" as tuner;
+//
+// let tuner_a440 = voice("doc_tuner_a440")
+//     .synth("tuner_a440")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// tuner_a440.output("out").to_main();
+// tuner_a440.run();
+// ```
+//
+// # Usage: `tuner_a432`
+//
+// ```rhai
+// import "stdlib/utility/tuner.vibe" as tuner;
+//
+// let tuner_a432 = voice("doc_tuner_a432")
+//     .synth("tuner_a432")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// tuner_a432.output("out").to_main();
+// tuner_a432.run();
+// ```
+//
+// # Usage: `tuner_e_low`
+//
+// ```rhai
+// import "stdlib/utility/tuner.vibe" as tuner;
+//
+// let tuner_e_low = voice("doc_tuner_e_low")
+//     .synth("tuner_e_low")
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("amp", 0.5);
+// tuner_e_low.output("out").to_main();
+// tuner_e_low.run();
+// ```

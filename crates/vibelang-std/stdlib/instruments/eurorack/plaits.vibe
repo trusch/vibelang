@@ -44,18 +44,18 @@ define_synthdef("plaits", |builder| {
     builder
         .output("out")       // 1ch - main Plaits OUT jack
         .output("aux")       // 1ch - model-specific AUX jack
-        .param("pitch", 60.0)               // pitch in MIDI note units passed to the Plaits core
-        .param("engine", 0.0)               // rounded 0..23 Plaits engine enum
-        .param("harmonics", 0.5)            // 0..1 model harmonics control
-        .param("timbre", 0.5)               // 0..1 model timbre control
-        .param("morph", 0.5)                // 0..1 model morph control
-        .param("trigger", 0.0)              // positive trigger/gate for internal exciter and LPG
-        .param("level", 0.7)                // 0..1 internal LPG level
-        .param("fm_mod", 0.0)               // bipolar FM modulation input to the Plaits core
-        .param("timbre_mod", 0.0)           // bipolar timbre modulation input to the Plaits core
-        .param("morph_mod", 0.0)            // bipolar morph modulation input to the Plaits core
-        .param("decay", 0.5)                // 0..1 internal envelope decay
-        .param("lpg_colour", 0.5)           // 0..1 low-pass gate color
+        .param("pitch", 60.0) // units: MIDI note, range: 0..127, default: 60.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("engine", 0.0) // units: normalized, range: 0..1, default: 0.0. Mode selector; rounded values choose the model or scale listed in the header.
+        .param("harmonics", 0.5) // units: normalized, range: 0..1, default: 0.5. Harmonics macro; higher values move the model toward its brighter or more complex side.
+        .param("timbre", 0.5) // units: normalized, range: 0..1, default: 0.5. Timbre macro; higher values move the model toward its brighter or more complex side.
+        .param("morph", 0.5) // units: normalized, range: 0..1, default: 0.5. Morph macro; higher values move the model toward its brighter or more complex side.
+        .param("trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("level", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("fm_mod", 0.0) // units: normalized, range: 0..1, default: 0.0. Fm modulation input; bipolar values push that macro around its panel setting.
+        .param("timbre_mod", 0.0) // units: normalized, range: 0..1, default: 0.0. Timbre modulation input; bipolar values push that macro around its panel setting.
+        .param("morph_mod", 0.0) // units: normalized, range: 0..1, default: 0.0. Morph modulation input; bipolar values push that macro around its panel setting.
+        .param("decay", 0.5) // units: seconds, range: 0..60, default: 0.5. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("lpg_colour", 0.5) // units: normalized, range: 0..1, default: 0.5. Lpg Colour amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             // mi_plaits_ar args: pitch, engine, harm, timbre, morph, trigger,
             // level, fm_mod, timb_mod, morph_mod, decay, lpg_colour, mul
@@ -84,3 +84,19 @@ define_synthdef("plaits", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `plaits`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/plaits.vibe" as plaits;
+//
+// let plaits = voice("doc_plaits")
+//     .synth("plaits")
+//     .set_param("level", 0.5)
+//     .set_param("decay", 0.35)
+//     .set_param("pitch", 0.5)
+//     .set_param("engine", 0.5);
+// plaits.output("out").to_main();
+// plaits.run();
+// ```

@@ -56,17 +56,17 @@ define_synthdef("tides2", |builder| {
         .output("slope")     // 1ch - second Tides2 output
         .output("shape")     // 1ch - third Tides2 output
         .output("high")      // 1ch - fourth Tides2 output
-        .param("freq", 1.0)                 // Hz in looping mode, envelope time reference otherwise
-        .param("shape", 0.5)                // 0..1 waveform shape control passed to Tides core
-        .param("slope", 0.5)                // 0..1 rise/fall slope balance
-        .param("smoothness", 0.5)           // 0..1 low-pass/folding smoothness
-        .param("shift", 0.5)                // 0..1 spread/level/ratio control by output mode
-        .param("ramp_mode", 2.0)            // rounded public enum: AD, AR, or looping
-        .param("output_mode", 1.0)          // rounded enum: gates, amplitude, phase, or frequency
-        .param("range", 1.0)                // rounded range enum: 0 audio, 1 control
-        .param("trigger", 0.0)              // 0/1 trigger or gate input to the Tides core
-        .param("clock", 0.0)                // 0/1 external clock input to the Tides core
-        .param("ratio", 0.0)                // clock ratio table index passed to the Tides core
+        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("shape", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
+        .param("slope", 0.5) // units: normalized, range: 0..1, default: 0.5. Curve shape; higher values bend the envelope or oscillator toward a sharper contour.
+        .param("smoothness", 0.5) // units: normalized, range: 0..1, default: 0.5. Smoothness amount; higher values emphasize that named musical or electrical behavior.
+        .param("shift", 0.5) // units: cycles, range: 0..1, default: 0.5. Phase shift amount; higher values offset the related output further.
+        .param("ramp_mode", 2.0) // units: selector, range: 0..2, default: 2.0. Mode selector; rounded values choose the model or scale listed in the header.
+        .param("output_mode", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+        .param("range", 1.0) // units: normalized, range: 0..1, default: 1.0. Range amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("clock", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("ratio", 0.0) // units: normalized, range: 0..1, default: 0.0. Frequency ratio; higher values tune the related oscillator or clock upward.
         .body_map(|p| {
             // Public ramp_mode is 0=AD, 1=AR, 2=looping. The UGen enum is
             // 0=AD, 1=looping, 2=AR, so swap public 1 and 2.
@@ -106,3 +106,19 @@ define_synthdef("tides2", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `tides2`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/tides2.vibe" as tides2;
+//
+// let tides2 = voice("doc_tides2")
+//     .synth("tides2")
+//     .set_param("freq", 220.0)
+//     .set_param("clock", 1.0)
+//     .set_param("ramp_mode", 0.5)
+//     .set_param("shape", 0.6);
+// tides2.output("low").to_main();
+// tides2.run();
+// ```

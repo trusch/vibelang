@@ -25,12 +25,12 @@
 //   level:     Final output trim (1.0 = unity)
 
 define_fx("de_esser")
-    .param("freq", 6000.0)
-    .param("threshold", 0.5)
-    .param("reduction", 0.5)
-    .param("width", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("freq", 6000.0) // units: Hz, range: 20..20000, default: 6000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("threshold", 0.5) // units: linear, range: 0..1, default: 0.5. Detection threshold; higher values require a stronger signal before processing opens.
+    .param("reduction", 0.5) // units: dB, range: 0..60, default: 0.5. Reduction amount; higher values emphasize that named musical or electrical behavior.
+    .param("width", 0.5) // units: ratio, range: 0..2, default: 0.5. Spread width; higher values distribute energy across a wider range.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, freq, threshold, reduction, width, mix, level| {
         // Extract sibilance band
         let q = 0.5 + (1.0 - width) * 1.5;
@@ -69,3 +69,18 @@ define_fx("de_esser")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: de_esser
+//
+// ```rhai
+// import "stdlib/effects/dynamics/de_esser.vibe" as de_esser;
+//
+// let doc_de_esser = fx("doc_de_esser")
+//     .synth("de_esser")
+//     .param("freq", 6000.0)
+//     .param("threshold", 0.5)
+//     .param("reduction", 0.5)
+//     .param("width", 0.5)
+//     .apply();
+// ```

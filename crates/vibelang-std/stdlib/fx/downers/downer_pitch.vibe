@@ -1,8 +1,8 @@
 // Genre: EDM, Dubstep | Character: Pitch-falling downlifter
 define_synthdef("downer_pitch", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 2.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 2.0) // units: seconds, range: 0..60, default: 2.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.01, 1.0)
@@ -28,3 +28,18 @@ define_synthdef("downer_pitch", |builder| {
             (combined + noise) * env * amp
         })
 });
+
+//
+// # Usage: downer_pitch
+//
+// ```rhai
+// import "stdlib/fx/downers/downer_pitch.vibe" as downer_pitch;
+//
+// let doc_downer_pitch = voice("doc_downer_pitch")
+//     .synth("downer_pitch")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 2.0)
+//     ;
+// doc_downer_pitch.output("out").to_main();
+// doc_downer_pitch.run();
+// ```

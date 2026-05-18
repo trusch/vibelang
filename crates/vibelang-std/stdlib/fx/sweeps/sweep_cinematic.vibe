@@ -1,8 +1,8 @@
 // Genre: Cinematic, Trailer | Character: Epic cinematic sweep
 define_synthdef("sweep_cinematic", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 3.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 3.0) // units: seconds, range: 0..60, default: 3.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.3, 1.0)
@@ -28,3 +28,18 @@ define_synthdef("sweep_cinematic", |builder| {
             mix * env * amp
         })
 });
+
+//
+// # Usage: sweep_cinematic
+//
+// ```rhai
+// import "stdlib/fx/sweeps/sweep_cinematic.vibe" as sweep_cinematic;
+//
+// let doc_sweep_cinematic = voice("doc_sweep_cinematic")
+//     .synth("sweep_cinematic")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 3.0)
+//     ;
+// doc_sweep_cinematic.output("out").to_main();
+// doc_sweep_cinematic.run();
+// ```

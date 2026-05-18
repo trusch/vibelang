@@ -29,13 +29,13 @@
 //   level:          Final output trim (1.0 = unity)
 
 define_fx("delay_tape_wow")
-    .param("time", 0.4)
-    .param("feedback", 0.5)
-    .param("wow_amount", 0.5)
-    .param("flutter_amount", 0.4)
-    .param("sat_amount", 0.4)
-    .param("mix", 0.3)
-    .param("level", 1.0)
+    .param("time", 0.4) // units: seconds, range: 0..10, default: 0.4. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.5) // units: ratio, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("wow_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Wow Amount; higher values apply more of that modulation or effect.
+    .param("flutter_amount", 0.4) // units: ratio, range: 0..1, default: 0.4. Flutter Amount; higher values apply more of that modulation or effect.
+    .param("sat_amount", 0.4) // units: normalized, range: 0..1, default: 0.4. Sat Amount; higher values apply more of that modulation or effect.
+    .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, wow_amount, flutter_amount, sat_amount, mix, level| {
         // Wow: slow ~0.5 Hz drift, ~0.3% of delay time at full depth
         // Flutter: fast ~7 Hz wobble, ~0.05% of delay time at full depth
@@ -78,3 +78,18 @@ define_fx("delay_tape_wow")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: delay_tape_wow
+//
+// ```rhai
+// import "stdlib/effects/delays/delay_tape_wow.vibe" as delay_tape_wow;
+//
+// let doc_delay_tape_wow = fx("doc_delay_tape_wow")
+//     .synth("delay_tape_wow")
+//     .param("time", 0.4)
+//     .param("feedback", 0.5)
+//     .param("wow_amount", 0.5)
+//     .param("flutter_amount", 0.4)
+//     .apply();
+// ```

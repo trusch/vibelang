@@ -21,10 +21,10 @@
 //   level:     Final output trim (1.0 = unity)
 
 define_fx("limiter")
-    .param("ceiling", 0.9)
-    .param("lookahead", 0.01)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("ceiling", 0.9) // units: linear, range: 0..1, default: 0.9. Ceiling amount; higher values emphasize that named musical or electrical behavior.
+    .param("lookahead", 0.01) // units: ms, range: 0..100, default: 0.01. Lookahead amount; higher values emphasize that named musical or electrical behavior.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, ceiling, lookahead, mix, level| {
         // Apply limiter to both channels
         let limited_left = limiter_ar(input[0], ceiling, lookahead);
@@ -38,3 +38,18 @@ define_fx("limiter")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: limiter
+//
+// ```rhai
+// import "stdlib/effects/dynamics/limiter.vibe" as limiter;
+//
+// let doc_limiter = fx("doc_limiter")
+//     .synth("limiter")
+//     .param("ceiling", 0.9)
+//     .param("lookahead", 0.01)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

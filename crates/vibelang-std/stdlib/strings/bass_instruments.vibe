@@ -11,11 +11,11 @@
 // Upright/Double Bass - Acoustic pizzicato (plucked)
 define_synthdef("upright_bass", |builder| {
     builder
-        .param("freq", 82.41)    // E2
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("position", 0.5)     // Playing position (0=bridge, 1=fingerboard)
-        .param("finger_noise", 0.4)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("position", 0.5) // units: normalized, range: 0..1, default: 0.5. Position macro; higher values move the model toward its brighter or more complex side.
+        .param("finger_noise", 0.4) // units: normalized, range: 0..1, default: 0.4. Finger noise level; higher values add more fret and string handling sound.
         .body(|freq, amp, gate, position, finger_noise| {
             // Pizzicato envelope
             let decay_time = 1.2 + (1.0 / (freq / 40.0));
@@ -64,11 +64,11 @@ define_synthdef("upright_bass", |builder| {
 // Upright Bass - Arco (bowed)
 define_synthdef("upright_bass_bowed", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("bow_pressure", 0.6)
-        .param("bow_position", 0.5)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("bow_pressure", 0.6) // units: normalized, range: 0..1, default: 0.6. Bow pressure; higher values make the bowed tone more forceful.
+        .param("bow_position", 0.5) // units: normalized, range: 0..1, default: 0.5. Bow position; higher values move the bowing point along the string.
         .body(|freq, amp, gate, bow_pressure, bow_position| {
             let env = envelope()
                 .asr(0.12, 1.0, 0.15)
@@ -111,11 +111,11 @@ define_synthdef("upright_bass_bowed", |builder| {
 // Electric Bass - Precision Bass style (split coil)
 define_synthdef("electric_bass", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("tone", 0.6)          // Tone knob
-        .param("attack_style", 0.5)  // 0=finger, 1=pick
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("tone", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("attack_style", 0.5) // units: normalized, range: 0..1, default: 0.5. Attack style blend; higher values make the pluck or strike sharper.
         .body(|freq, amp, gate, tone, attack_style| {
             let decay_time = 2.0 + (1.0 / (freq / 50.0));
             let env = envelope()
@@ -166,11 +166,11 @@ define_synthdef("electric_bass", |builder| {
 // Electric Bass - Jazz Bass style (dual single coil)
 define_synthdef("jazz_bass", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("neck_pickup", 0.7)
-        .param("bridge_pickup", 0.5)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("neck_pickup", 0.7) // units: normalized, range: 0..1, default: 0.7. Neck pickup blend; higher values add warmer pickup tone.
+        .param("bridge_pickup", 0.5) // units: normalized, range: 0..1, default: 0.5. Bridge pickup blend; higher values add brighter pickup tone.
         .body(|freq, amp, gate, neck_pickup, bridge_pickup| {
             let decay_time = 2.5 + (1.0 / (freq / 50.0));
             let env = envelope()
@@ -221,10 +221,10 @@ define_synthdef("jazz_bass", |builder| {
 // Fretless Electric Bass
 define_synthdef("fretless_bass", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("mwah", 0.6)     // Characteristic fretless "mwah"
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("mwah", 0.6) // units: normalized, range: 0..1, default: 0.6. Fretless mwah amount; higher values emphasize sliding vocal resonance.
         .body(|freq, amp, gate, mwah| {
             let decay_time = 2.0 + (1.0 / (freq / 50.0));
             let env = envelope()
@@ -272,10 +272,10 @@ define_synthdef("fretless_bass", |builder| {
 // Slap Bass
 define_synthdef("slap_bass", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("slap_pop", 0.0)  // 0=slap (thumb), 1=pop (finger)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("slap_pop", 0.0) // units: normalized, range: 0..1, default: 0.0. Slap/pop balance; higher values emphasize brighter pop articulation.
         .body(|freq, amp, gate, slap_pop| {
             let decay_time = 0.8;
             let env = envelope()
@@ -323,12 +323,12 @@ define_synthdef("slap_bass", |builder| {
 // Synth Bass - Moog-style
 define_synthdef("synth_bass_moog", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
-        .param("cutoff", 800.0)
-        .param("resonance", 0.5)
-        .param("filter_env", 0.6)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 800.0) // units: Hz, range: 20..20000, default: 800.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("filter_env", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter Env amount; higher values emphasize that named musical or electrical behavior.
         .body(|freq, amp, gate, cutoff, resonance, filter_env| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -363,13 +363,13 @@ define_synthdef("synth_bass_moog", |builder| {
 // Synth Bass - 303 Acid style
 define_synthdef("acid_bass", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
-        .param("cutoff", 400.0)
-        .param("resonance", 0.7)
-        .param("env_mod", 0.8)
-        .param("accent", 0.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("cutoff", 400.0) // units: Hz, range: 20..20000, default: 400.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("env_mod", 0.8) // units: normalized, range: 0..1, default: 0.8. Env modulation input; bipolar values push that macro around its panel setting.
+        .param("accent", 0.0) // units: normalized, range: 0..1, default: 0.0. Accent strength; higher values make the hit louder and brighter.
         .body(|freq, amp, gate, cutoff, resonance, env_mod, accent| {
             let env = envelope()
                 .perc(0.001, 0.2)
@@ -401,11 +401,11 @@ define_synthdef("acid_bass", |builder| {
 // Picked Bass - Rock/Metal style
 define_synthdef("picked_bass", |builder| {
     builder
-        .param("freq", 82.41)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
-        .param("pick_attack", 0.8)
-        .param("drive", 0.3)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("pick_attack", 0.8) // units: normalized, range: 0..1, default: 0.8. Pick or nail attack; higher values make the pluck brighter and sharper.
+        .param("drive", 0.3) // units: normalized, range: 0..1, default: 0.3. Nonlinear drive amount; higher adds harmonic distortion and compression.
         .body(|freq, amp, gate, pick_attack, drive| {
             let decay_time = 1.5;
             let env = envelope()
@@ -448,3 +448,139 @@ define_synthdef("picked_bass", |builder| {
             output.softclip()
         })
 });
+
+//
+// # Usage: `upright_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let upright_bass = voice("doc_upright_bass")
+//     .synth("upright_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("position", 0.5);
+// upright_bass.output("out").to_main();
+// upright_bass.run();
+// ```
+//
+// # Usage: `upright_bass_bowed`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let upright_bass_bowed = voice("doc_upright_bass_bowed")
+//     .synth("upright_bass_bowed")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("bow_pressure", 0.6);
+// upright_bass_bowed.output("out").to_main();
+// upright_bass_bowed.run();
+// ```
+//
+// # Usage: `electric_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let electric_bass = voice("doc_electric_bass")
+//     .synth("electric_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("tone", 0.6);
+// electric_bass.output("out").to_main();
+// electric_bass.run();
+// ```
+//
+// # Usage: `jazz_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let jazz_bass = voice("doc_jazz_bass")
+//     .synth("jazz_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("neck_pickup", 0.7);
+// jazz_bass.output("out").to_main();
+// jazz_bass.run();
+// ```
+//
+// # Usage: `fretless_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let fretless_bass = voice("doc_fretless_bass")
+//     .synth("fretless_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("mwah", 0.6);
+// fretless_bass.output("out").to_main();
+// fretless_bass.run();
+// ```
+//
+// # Usage: `slap_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let slap_bass = voice("doc_slap_bass")
+//     .synth("slap_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("slap_pop", 0.0);
+// slap_bass.output("out").to_main();
+// slap_bass.run();
+// ```
+//
+// # Usage: `synth_bass_moog`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let synth_bass_moog = voice("doc_synth_bass_moog")
+//     .synth("synth_bass_moog")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0);
+// synth_bass_moog.output("out").to_main();
+// synth_bass_moog.run();
+// ```
+//
+// # Usage: `acid_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let acid_bass = voice("doc_acid_bass")
+//     .synth("acid_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("cutoff", 1200.0);
+// acid_bass.output("out").to_main();
+// acid_bass.run();
+// ```
+//
+// # Usage: `picked_bass`
+//
+// ```rhai
+// import "stdlib/strings/bass_instruments.vibe" as bass_instruments;
+//
+// let picked_bass = voice("doc_picked_bass")
+//     .synth("picked_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("pick_attack", 0.8);
+// picked_bass.output("out").to_main();
+// picked_bass.run();
+// ```

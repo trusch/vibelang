@@ -1,7 +1,7 @@
 // Genre: House, Techno | Character: Upward filter sweep
 define_synthdef("sweep_filter_up", |builder| {
     builder
-        .param("amp", 0.6)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|amp| {
             // Sweep envelope
             let env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("sweep_filter_up", |builder| {
         })
 });
 
+//
+// # Usage: sweep_filter_up
+//
+// ```rhai
+// import "stdlib/fx/sweeps/sweep_filter_up.vibe" as sweep_filter_up;
+//
+// let doc_sweep_filter_up = voice("doc_sweep_filter_up")
+//     .synth("sweep_filter_up")
+//     .set_param("amp", 0.6)
+//     ;
+// doc_sweep_filter_up.output("out").to_main();
+// doc_sweep_filter_up.run();
+// ```

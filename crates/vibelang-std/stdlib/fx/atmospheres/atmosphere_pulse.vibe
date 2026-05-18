@@ -1,9 +1,9 @@
 // Genre: Electronic, Techno | Character: Pulsing rhythmic atmosphere
 define_synthdef("atmosphere_pulse", |builder| {
     builder
-        .param("amp", 0.4)
-        .param("rate", 2.0)
-        .param("gate", 1.0)
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("rate", 2.0) // units: Hz, range: 0..100, default: 2.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, rate, gate| {
             let env = envelope()
                 .asr(0.5, 1.0, 0.5)
@@ -29,3 +29,19 @@ define_synthdef("atmosphere_pulse", |builder| {
             mix * env * amp
         })
 });
+
+//
+// # Usage: atmosphere_pulse
+//
+// ```rhai
+// import "stdlib/fx/atmospheres/atmosphere_pulse.vibe" as atmosphere_pulse;
+//
+// let doc_atmosphere_pulse = voice("doc_atmosphere_pulse")
+//     .synth("atmosphere_pulse")
+//     .set_param("amp", 0.4)
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_atmosphere_pulse.output("out").to_main();
+// doc_atmosphere_pulse.run();
+// ```

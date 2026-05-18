@@ -1,10 +1,10 @@
 // Genre: Dubstep, Bass Music | Character: Classic wobble bass with filter modulation
 define_synthdef("wobble_classic", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("wobble_rate", 4.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("wobble_rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, wobble_rate, amp, gate| {
 
             // Envelope
@@ -33,3 +33,19 @@ define_synthdef("wobble_classic", |builder| {
         })
 });
 
+//
+// # Usage: wobble_classic
+//
+// ```rhai
+// import "stdlib/bass/wobble/wobble_classic.vibe" as wobble_classic;
+//
+// let doc_wobble_classic = voice("doc_wobble_classic")
+//     .synth("wobble_classic")
+//     .set_param("freq", 110.0)
+//     .set_param("wobble_rate", 4.0)
+//     .set_param("amp", 0.6)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_wobble_classic.output("out").to_main();
+// doc_wobble_classic.run();
+// ```

@@ -7,10 +7,10 @@
 // DX7 Electric Piano - The sound of the 80s
 define_synthdef("dx7_epiano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("brightness", 0.6)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("brightness", 0.6) // units: normalized, range: 0..1, default: 0.6. Tone brightness; higher values add more high-frequency content.
         .body(|freq, amp, gate, brightness| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.3)
@@ -44,9 +44,9 @@ define_synthdef("dx7_epiano", |builder| {
 // DX7 Bass - Punchy FM bass
 define_synthdef("dx7_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.003, 1.0, 0.1)
@@ -74,9 +74,9 @@ define_synthdef("dx7_bass", |builder| {
 // DX7 Bells - Classic FM bells
 define_synthdef("dx7_bells", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.5)
@@ -108,9 +108,9 @@ define_synthdef("dx7_bells", |builder| {
 // DX7 Brass - Punchy FM brass
 define_synthdef("dx7_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.05, 1.0, 0.1)
@@ -141,9 +141,9 @@ define_synthdef("dx7_brass", |builder| {
 // DX7 Marimba - Classic FM marimba
 define_synthdef("dx7_marimba", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.1)
@@ -167,3 +167,75 @@ define_synthdef("dx7_marimba", |builder| {
             (carrier * 0.5 + fundamental) * env * decay_env * amp
         })
 });
+
+//
+// # Usage: `dx7_epiano`
+//
+// ```rhai
+// import "stdlib/synths/dx7.vibe" as dx7;
+//
+// let dx7_epiano = voice("doc_dx7_epiano")
+//     .synth("dx7_epiano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("brightness", 0.6);
+// dx7_epiano.output("out").to_main();
+// dx7_epiano.run();
+// ```
+//
+// # Usage: `dx7_bass`
+//
+// ```rhai
+// import "stdlib/synths/dx7.vibe" as dx7;
+//
+// let dx7_bass = voice("doc_dx7_bass")
+//     .synth("dx7_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dx7_bass.output("out").to_main();
+// dx7_bass.run();
+// ```
+//
+// # Usage: `dx7_bells`
+//
+// ```rhai
+// import "stdlib/synths/dx7.vibe" as dx7;
+//
+// let dx7_bells = voice("doc_dx7_bells")
+//     .synth("dx7_bells")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dx7_bells.output("out").to_main();
+// dx7_bells.run();
+// ```
+//
+// # Usage: `dx7_brass`
+//
+// ```rhai
+// import "stdlib/synths/dx7.vibe" as dx7;
+//
+// let dx7_brass = voice("doc_dx7_brass")
+//     .synth("dx7_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dx7_brass.output("out").to_main();
+// dx7_brass.run();
+// ```
+//
+// # Usage: `dx7_marimba`
+//
+// ```rhai
+// import "stdlib/synths/dx7.vibe" as dx7;
+//
+// let dx7_marimba = voice("doc_dx7_marimba")
+//     .synth("dx7_marimba")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// dx7_marimba.output("out").to_main();
+// dx7_marimba.run();
+// ```

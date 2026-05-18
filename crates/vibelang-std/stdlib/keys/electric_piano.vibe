@@ -6,10 +6,10 @@
 
 define_synthdef("electric_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("brightness", 0.5) // Tine brightness
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("brightness", 0.5) // units: normalized, range: 0..1, default: 0.5. Tone brightness; higher values add more high-frequency content.
         .body(|freq, amp, gate, brightness| {
             // Gate-controlled envelope with classic EP decay
             let env = envelope()
@@ -45,3 +45,19 @@ define_synthdef("electric_piano", |builder| {
             filtered * env * amp * 0.6
         })
 });
+
+//
+// # Usage: `electric_piano`
+//
+// ```rhai
+// import "stdlib/keys/electric_piano.vibe" as electric_piano;
+//
+// let electric_piano = voice("doc_electric_piano")
+//     .synth("electric_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("brightness", 0.5);
+// electric_piano.output("out").to_main();
+// electric_piano.run();
+// ```

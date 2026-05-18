@@ -31,17 +31,17 @@ define_synthdef("verbos_random_sampling", |builder| {
         .output_kr("asr2")
         .output_kr("asr3")
         .output_kr("asr4")
-        .param("rate", 4.0)                 // internal random/sample clock rate in Hz
-        .param("rate_cv", 0.0)              // CV added to rate through rate_cv_amt
-        .param("rate_cv_amt", 0.0)          // 0..1 attenuator for rate_cv depth
-        .param("bits", 4.0)                 // rounded quantizer depth, 1..8 bits
-        .param("distribution", 0.0)         // 0 uniform, 1 more centered random voltages
-        .param("clock_in", 0.0)             // 0 internal clock, 1 use clock_trig input
-        .param("clock_trig", 0.0)           // external 0/1 sample clock when clock_in is high
-        .param("sample_in", 0.0)            // external ASR source; near zero uses internal noise
-        .param("depth_v", 5.0)              // output depth in volts, mapped to CV range by /10
-        .param("bipolar", 1.0)              // 0 unipolar, 1 bipolar random CV outputs
-        .param("noise_level", 1.0)          // 0..1 audio noise output level
+        .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("rate_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Rate CV input; bipolar values modulate the matching panel control.
+        .param("rate_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. RATE CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("bits", 4.0) // units: bits, range: 1..8, default: 4.0. Random shift-register bit depth; higher values make stepped CV less coarse.
+        .param("distribution", 0.0) // units: normalized, range: 0..1, default: 0.0. Distribution amount; higher values emphasize that named musical or electrical behavior.
+        .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("clock_trig", 0.0) // units: normalized, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("sample_in", 0.0) // units: linear, range: 0..1, default: 0.0. Sample In amount; higher values emphasize that named musical or electrical behavior.
+        .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+        .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
+        .param("noise_level", 1.0) // units: linear, range: 0..1, default: 1.0. Noise Level amount; higher values emphasize that named musical or electrical behavior.
         .body_map(|p| {
             let rate_cv_amt = clip(p.rate_cv_amt, 0.0, 1.0);
             let rate = (p.rate + p.rate_cv * rate_cv_amt).max(0.001);
@@ -137,3 +137,19 @@ define_synthdef("verbos_random_sampling", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `verbos_random_sampling`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/verbos_random_sampling.vibe" as verbos_random_sampling;
+//
+// let verbos_random_sampling = voice("doc_verbos_random_sampling")
+//     .synth("verbos_random_sampling")
+//     .set_param("rate", 2.0)
+//     .set_param("clock_in", 1.0)
+//     .set_param("sample_in", 0.5)
+//     .set_param("noise_level", 0.5);
+// verbos_random_sampling.output("white").to_main();
+// verbos_random_sampling.run();
+// ```

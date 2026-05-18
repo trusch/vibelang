@@ -1,8 +1,8 @@
 // Genre: Ambient, New Age | Character: Bright ethereal atmosphere
 define_synthdef("atmosphere_bright", |builder| {
     builder
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|amp, gate| {
             let env = envelope()
                 .asr(1.5, 1.0, 1.5)
@@ -30,3 +30,18 @@ define_synthdef("atmosphere_bright", |builder| {
             mix * env * amp
         })
 });
+
+//
+// # Usage: atmosphere_bright
+//
+// ```rhai
+// import "stdlib/fx/atmospheres/atmosphere_bright.vibe" as atmosphere_bright;
+//
+// let doc_atmosphere_bright = voice("doc_atmosphere_bright")
+//     .synth("atmosphere_bright")
+//     .set_param("amp", 0.4)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_atmosphere_bright.output("out").to_main();
+// doc_atmosphere_bright.run();
+// ```

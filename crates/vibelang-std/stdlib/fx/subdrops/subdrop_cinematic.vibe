@@ -1,7 +1,7 @@
 // Genre: Trailer, Film | Character: Cinematic sub boom
 define_synthdef("subdrop_cinematic", |builder| {
     builder
-        .param("amp", 0.9)
+        .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
         .body(|amp| {
             let env = envelope()
                 .perc(0.02, 3.0)
@@ -33,3 +33,17 @@ define_synthdef("subdrop_cinematic", |builder| {
             mix * env * amp * 0.6
         })
 });
+
+//
+// # Usage: subdrop_cinematic
+//
+// ```rhai
+// import "stdlib/fx/subdrops/subdrop_cinematic.vibe" as subdrop_cinematic;
+//
+// let doc_subdrop_cinematic = voice("doc_subdrop_cinematic")
+//     .synth("subdrop_cinematic")
+//     .set_param("amp", 0.9)
+//     ;
+// doc_subdrop_cinematic.output("out").to_main();
+// doc_subdrop_cinematic.run();
+// ```

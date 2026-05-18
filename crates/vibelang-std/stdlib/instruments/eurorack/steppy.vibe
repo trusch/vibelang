@@ -26,41 +26,41 @@ define_synthdef("steppy", |builder| {
         .output_kr("gate_c")
         .output_kr("gate_d")
         .output_kr("clock")
-        .param("bpm", 120.0)                // master tempo in beats per minute
-        .param("reset", 0.0)                // 0/1 reset trigger for all tracks
-        .param("run", 1.0)                  // 0 stops the sequencer, 1 runs
-        .param("track_a_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track A
-        .param("track_a_pattern", 4369.0)   // 16-bit gate mask; bit 0 is step 0 for Steppy track A
-        .param("track_a_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track A
-        .param("track_a_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track A
-        .param("track_a_swing", 0.0)        // delay amount for alternating steps for Steppy track A
-        .param("track_a_probability", 1.0)  // deterministic per-step probability threshold for Steppy track A
-        .param("track_a_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track A
-        .param("track_a_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track A
-        .param("track_b_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track B
-        .param("track_b_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track B
-        .param("track_b_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track B
-        .param("track_b_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track B
-        .param("track_b_swing", 0.0)        // delay amount for alternating steps for Steppy track B
-        .param("track_b_probability", 1.0)  // deterministic per-step probability threshold for Steppy track B
-        .param("track_b_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track B
-        .param("track_b_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track B
-        .param("track_c_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track C
-        .param("track_c_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track C
-        .param("track_c_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track C
-        .param("track_c_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track C
-        .param("track_c_swing", 0.0)        // delay amount for alternating steps for Steppy track C
-        .param("track_c_probability", 1.0)  // deterministic per-step probability threshold for Steppy track C
-        .param("track_c_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track C
-        .param("track_c_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track C
-        .param("track_d_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track D
-        .param("track_d_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track D
-        .param("track_d_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track D
-        .param("track_d_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track D
-        .param("track_d_swing", 0.0)        // delay amount for alternating steps for Steppy track D
-        .param("track_d_probability", 1.0)  // deterministic per-step probability threshold for Steppy track D
-        .param("track_d_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track D
-        .param("track_d_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track D
+        .param("bpm", 120.0) // units: BPM, range: 20..300, default: 120.0. Clock tempo in beats per minute; higher values make the pulse faster.
+        .param("reset", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("run", 1.0) // units: trigger, range: 0..1, default: 1.0. Run switch; 1 lets the clocked process advance.
+        .param("track_a_steps", 16.0) // units: steps, range: 1..16, default: 16.0. Track A sequence length in steps; shorter lengths loop sooner.
+        .param("track_a_pattern", 4369.0) // units: bitmask, range: 0..65535, default: 4369.0. Track A trigger bitmask; set bits choose which steps fire.
+        .param("track_a_clock_div", 1.0) // units: normalized, range: 0..1, default: 1.0. Track A clock divider; higher values make the lane advance slower.
+        .param("track_a_gate_len", 0.5) // units: normalized, range: 0..1, default: 0.5. Track A gate length; higher holds each trigger open longer.
+        .param("track_a_swing", 0.0) // units: normalized, range: 0..1, default: 0.0. Track A swing amount; higher delays alternating steps.
+        .param("track_a_probability", 1.0) // units: normalized, range: 0..1, default: 1.0. Track A hit probability; lower values randomly skip programmed steps.
+        .param("track_a_mute", 0.0) // units: normalized, range: 0..1, default: 0.0. Track A mute switch; 1 silences the lane.
+        .param("track_a_rotate", 0.0) // units: normalized, range: 0..1, default: 0.0. Track A pattern rotation; shifts the trigger mask around the loop.
+        .param("track_b_steps", 16.0) // units: steps, range: 1..16, default: 16.0. Track B sequence length in steps; shorter lengths loop sooner.
+        .param("track_b_pattern", 0.0) // units: normalized, range: 0..1, default: 0.0. Track B trigger bitmask; set bits choose which steps fire.
+        .param("track_b_clock_div", 1.0) // units: normalized, range: 0..1, default: 1.0. Track B clock divider; higher values make the lane advance slower.
+        .param("track_b_gate_len", 0.5) // units: normalized, range: 0..1, default: 0.5. Track B gate length; higher holds each trigger open longer.
+        .param("track_b_swing", 0.0) // units: normalized, range: 0..1, default: 0.0. Track B swing amount; higher delays alternating steps.
+        .param("track_b_probability", 1.0) // units: normalized, range: 0..1, default: 1.0. Track B hit probability; lower values randomly skip programmed steps.
+        .param("track_b_mute", 0.0) // units: normalized, range: 0..1, default: 0.0. Track B mute switch; 1 silences the lane.
+        .param("track_b_rotate", 0.0) // units: normalized, range: 0..1, default: 0.0. Track B pattern rotation; shifts the trigger mask around the loop.
+        .param("track_c_steps", 16.0) // units: steps, range: 1..16, default: 16.0. Track C sequence length in steps; shorter lengths loop sooner.
+        .param("track_c_pattern", 0.0) // units: normalized, range: 0..1, default: 0.0. Track C trigger bitmask; set bits choose which steps fire.
+        .param("track_c_clock_div", 1.0) // units: normalized, range: 0..1, default: 1.0. Track C clock divider; higher values make the lane advance slower.
+        .param("track_c_gate_len", 0.5) // units: normalized, range: 0..1, default: 0.5. Track C gate length; higher holds each trigger open longer.
+        .param("track_c_swing", 0.0) // units: normalized, range: 0..1, default: 0.0. Track C swing amount; higher delays alternating steps.
+        .param("track_c_probability", 1.0) // units: normalized, range: 0..1, default: 1.0. Track C hit probability; lower values randomly skip programmed steps.
+        .param("track_c_mute", 0.0) // units: normalized, range: 0..1, default: 0.0. Track C mute switch; 1 silences the lane.
+        .param("track_c_rotate", 0.0) // units: normalized, range: 0..1, default: 0.0. Track C pattern rotation; shifts the trigger mask around the loop.
+        .param("track_d_steps", 16.0) // units: steps, range: 1..16, default: 16.0. Track D sequence length in steps; shorter lengths loop sooner.
+        .param("track_d_pattern", 0.0) // units: normalized, range: 0..1, default: 0.0. Track D trigger bitmask; set bits choose which steps fire.
+        .param("track_d_clock_div", 1.0) // units: normalized, range: 0..1, default: 1.0. Track D clock divider; higher values make the lane advance slower.
+        .param("track_d_gate_len", 0.5) // units: normalized, range: 0..1, default: 0.5. Track D gate length; higher holds each trigger open longer.
+        .param("track_d_swing", 0.0) // units: normalized, range: 0..1, default: 0.0. Track D swing amount; higher delays alternating steps.
+        .param("track_d_probability", 1.0) // units: normalized, range: 0..1, default: 1.0. Track D hit probability; lower values randomly skip programmed steps.
+        .param("track_d_mute", 0.0) // units: normalized, range: 0..1, default: 0.0. Track D mute switch; 1 silences the lane.
+        .param("track_d_rotate", 0.0) // units: normalized, range: 0..1, default: 0.0. Track D pattern rotation; shifts the trigger mask around the loop.
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * 4.0 * run;
@@ -315,3 +315,19 @@ define_synthdef("steppy", |builder| {
             [gate_a, gate_b, gate_c, gate_d, clock]
         })
 });
+
+//
+// # Usage: `steppy`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/steppy.vibe" as steppy;
+//
+// let steppy = voice("doc_steppy")
+//     .synth("steppy")
+//     .set_param("bpm", 96.0)
+//     .set_param("track_a_clock_div", 0.5)
+//     .set_param("track_a_gate_len", 0.5)
+//     .set_param("reset", 0.35);
+// steppy.outputs(["gate_a"]).mute();
+// steppy.run();
+// ```

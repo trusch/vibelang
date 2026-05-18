@@ -1,7 +1,7 @@
 // Genre: 70s Rock, Prog | Character: Rototom with tunable, sustained pitch
 define_synthdef("tom_roto")
-    .param("freq", 200.0)
-    .param("amp", 0.8)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Medium sustain
         let amp_env = envelope()
@@ -27,3 +27,18 @@ define_synthdef("tom_roto")
 
         (body + overtone + attack) * amp_env * amp
     });
+
+//
+// # Usage: tom_roto
+//
+// ```rhai
+// import "stdlib/drums/toms/tom_roto.vibe" as tom_roto;
+//
+// let doc_tom_roto = voice("doc_tom_roto")
+//     .synth("tom_roto")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_tom_roto.output("out").to_main();
+// doc_tom_roto.run();
+// ```

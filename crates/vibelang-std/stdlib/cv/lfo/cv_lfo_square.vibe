@@ -24,10 +24,10 @@
 // CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
 
 define_synthdef("cv_lfo_square")
-    .param("rate", 1.0)         // Hz
-    .param("depth_v", 5.0)      // peak amplitude in volts (0..10)
-    .param("pulse_width", 0.5)  // 0..1 duty cycle
-    .param("bipolar", 1.0)      // 1.0 = ±depth, 0.0 = 0..+depth
+    .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("depth_v", 5.0) // units: volts, range: -10..10, default: 5.0. Modulation depth; higher values make the movement more pronounced.
+    .param("pulse_width", 0.5) // units: ratio, range: 0..1, default: 0.5. Pulse width or duty cycle; higher values widen the high portion of the wave.
+    .param("bipolar", 1.0) // units: normalized, range: 0..1, default: 1.0. Bipolar switch; rounded values turn that mode off or on.
     .body(|rate, depth_v, pulse_width, bipolar| {
         // LFPulse output is unipolar 0..1.
         let pulse = lf_pulse_ar(rate, 0.0, pulse_width);
@@ -39,3 +39,19 @@ define_synthdef("cv_lfo_square")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_lfo_square`
+//
+// ```rhai
+// import "stdlib/cv/lfo/cv_lfo_square.vibe" as cv_lfo_square;
+//
+// let cv_lfo_square = voice("doc_cv_lfo_square")
+//     .synth("cv_lfo_square")
+//     .set_param("rate", 2.0)
+//     .set_param("depth_v", 4.0)
+//     .set_param("pulse_width", 0.5)
+//     .set_param("bipolar", 0.5);
+// cv_lfo_square.output("out").to_main();
+// cv_lfo_square.run();
+// ```

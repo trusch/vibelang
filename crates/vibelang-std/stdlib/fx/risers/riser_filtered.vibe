@@ -1,7 +1,7 @@
 // Genre: Techno, Trance | Character: Resonant filtered riser
 define_synthdef("riser_filtered", |builder| {
     builder
-        .param("amp", 0.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
         .body(|amp| {
             // Rise envelope
             let env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("riser_filtered", |builder| {
         })
 });
 
+//
+// # Usage: riser_filtered
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_filtered.vibe" as riser_filtered;
+//
+// let doc_riser_filtered = voice("doc_riser_filtered")
+//     .synth("riser_filtered")
+//     .set_param("amp", 0.5)
+//     ;
+// doc_riser_filtered.output("out").to_main();
+// doc_riser_filtered.run();
+// ```

@@ -6,10 +6,10 @@
 // Lo-Fi Keys - Warm dusty keys
 define_synthdef("lofi_keys", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("dusty", 0.5) // Amount of degradation
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("dusty", 0.5) // units: normalized, range: 0..1, default: 0.5. Dusty coloration; higher values add more lo-fi noise and filtering.
         .body(|freq, amp, gate, dusty| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -39,9 +39,9 @@ define_synthdef("lofi_keys", |builder| {
 // Lo-Fi Piano - Dusty sampled feel
 define_synthdef("lofi_piano", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.4)
@@ -75,9 +75,9 @@ define_synthdef("lofi_piano", |builder| {
 // Lo-Fi Bass - Warm rounded bass
 define_synthdef("lofi_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.15)
@@ -101,9 +101,9 @@ define_synthdef("lofi_bass", |builder| {
 // Lo-Fi Pad - Atmospheric background
 define_synthdef("lofi_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.8, 1.0, 0.8)
@@ -131,9 +131,9 @@ define_synthdef("lofi_pad", |builder| {
 // Lo-Fi Vinyl Crackle - Background texture
 define_synthdef("lofi_crackle", |builder| {
     builder
-        .param("amp", 0.15)
-        .param("gate", 1.0)
-        .param("density", 0.5)
+        .param("amp", 0.15) // units: linear, range: 0..1, default: 0.15. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
         .body(|amp, gate, density| {
             let env = envelope()
                 .asr(0.1, 1.0, 0.1)
@@ -152,3 +152,75 @@ define_synthdef("lofi_crackle", |builder| {
             (filtered_crackle * 0.3 + filtered_hiss) * env * amp
         })
 });
+
+//
+// # Usage: `lofi_keys`
+//
+// ```rhai
+// import "stdlib/modern/lofi.vibe" as lofi;
+//
+// let lofi_keys = voice("doc_lofi_keys")
+//     .synth("lofi_keys")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("dusty", 0.5);
+// lofi_keys.output("out").to_main();
+// lofi_keys.run();
+// ```
+//
+// # Usage: `lofi_piano`
+//
+// ```rhai
+// import "stdlib/modern/lofi.vibe" as lofi;
+//
+// let lofi_piano = voice("doc_lofi_piano")
+//     .synth("lofi_piano")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lofi_piano.output("out").to_main();
+// lofi_piano.run();
+// ```
+//
+// # Usage: `lofi_bass`
+//
+// ```rhai
+// import "stdlib/modern/lofi.vibe" as lofi;
+//
+// let lofi_bass = voice("doc_lofi_bass")
+//     .synth("lofi_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lofi_bass.output("out").to_main();
+// lofi_bass.run();
+// ```
+//
+// # Usage: `lofi_pad`
+//
+// ```rhai
+// import "stdlib/modern/lofi.vibe" as lofi;
+//
+// let lofi_pad = voice("doc_lofi_pad")
+//     .synth("lofi_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// lofi_pad.output("out").to_main();
+// lofi_pad.run();
+// ```
+//
+// # Usage: `lofi_crackle`
+//
+// ```rhai
+// import "stdlib/modern/lofi.vibe" as lofi;
+//
+// let lofi_crackle = voice("doc_lofi_crackle")
+//     .synth("lofi_crackle")
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("density", 0.5);
+// lofi_crackle.output("out").to_main();
+// lofi_crackle.run();
+// ```

@@ -1,8 +1,8 @@
 // Folk instrument | Character: Reedy, bright
 define_synthdef("accordion_keys")
-    .param("freq", 440.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.05, 1.0, 0.1)
@@ -24,3 +24,18 @@ define_synthdef("accordion_keys")
 
         filtered * env * amp
     });
+
+//
+// # Usage: `accordion_keys`
+//
+// ```rhai
+// import "stdlib/keys/accordion_keys.vibe" as accordion_keys;
+//
+// let accordion_keys = voice("doc_accordion_keys")
+//     .synth("accordion_keys")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// accordion_keys.output("out").to_main();
+// accordion_keys.run();
+// ```

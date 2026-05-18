@@ -20,10 +20,10 @@
 
 define_fx("ladder_filter", |builder| {
     builder
-        .param("cutoff", 1000.0)
-        .param("res", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("res", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher values emphasize the cutoff peak.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, cutoff, res, mix, level| {
             // Multi-stage lowpass for ladder characteristic
             let stage1_left = lpf_ar(input[0], cutoff);
@@ -50,3 +50,18 @@ define_fx("ladder_filter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: ladder_filter
+//
+// ```rhai
+// import "stdlib/effects/filters/ladder_filter.vibe" as ladder_filter;
+//
+// let doc_ladder_filter = fx("doc_ladder_filter")
+//     .synth("ladder_filter")
+//     .param("cutoff", 1000.0)
+//     .param("res", 0.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

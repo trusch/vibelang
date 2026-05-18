@@ -1,8 +1,8 @@
 // Genre: Phonk, Memphis Rap | Character: Distorted phonk bass - gritty and heavy
 define_synthdef("bass_phonk")
-    .param("freq", 45.0)
-    .param("amp", 0.9)
-    .param("gate", 1.0)
+    .param("freq", 45.0) // units: Hz, range: 20..20000, default: 45.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.005, 1.0, 0.1)
@@ -21,3 +21,19 @@ define_synthdef("bass_phonk")
 
         lpf_ar(sig, 600.0) * env * amp
     });
+
+//
+// # Usage: bass_phonk
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_phonk.vibe" as bass_phonk;
+//
+// let doc_bass_phonk = voice("doc_bass_phonk")
+//     .synth("bass_phonk")
+//     .set_param("freq", 45.0)
+//     .set_param("amp", 0.9)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_phonk.output("out").to_main();
+// doc_bass_phonk.run();
+// ```

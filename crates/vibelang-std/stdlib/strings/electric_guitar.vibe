@@ -10,11 +10,11 @@
 // Clean Electric Guitar - Fender-style single coil
 define_synthdef("electric_guitar_clean", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("pickup_pos", 0.5)    // 0=bridge, 1=neck
-        .param("tone", 0.6)          // Tone knob
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("pickup_pos", 0.5) // units: normalized, range: 0..1, default: 0.5. Pickup position; higher values sample the string closer to the bridge.
+        .param("tone", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|freq, amp, gate, pickup_pos, tone| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
             let env = envelope()
@@ -73,11 +73,11 @@ define_synthdef("electric_guitar_clean", |builder| {
 // Crunch Electric Guitar - Edge of breakup
 define_synthdef("electric_guitar_crunch", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("gain", 0.5)
-        .param("tone", 0.6)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gain", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("tone", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|freq, amp, gate, gain, tone| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.12)
@@ -125,11 +125,11 @@ define_synthdef("electric_guitar_crunch", |builder| {
 // High Gain Electric Guitar - Metal/Rock distortion
 define_synthdef("electric_guitar_distorted", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("gain", 0.8)
-        .param("tone", 0.5)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gain", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("tone", 0.5) // units: normalized, range: 0..1, default: 0.5. Filter cutoff or tone point; higher keeps more high-frequency brightness.
         .body(|freq, amp, gate, gain, tone| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.08)
@@ -187,10 +187,10 @@ define_synthdef("electric_guitar_distorted", |builder| {
 // Jazz Electric Guitar - Warm, round tone
 define_synthdef("electric_guitar_jazz", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("warmth", 0.7)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("warmth", 0.7) // units: normalized, range: 0..1, default: 0.7. Warmth amount; higher values emphasize low-mid body and soften brightness.
         .body(|freq, amp, gate, warmth| {
             let decay_time = 2.0 + (1.0 / (freq / 100.0));
             let env = envelope()
@@ -241,9 +241,9 @@ define_synthdef("electric_guitar_jazz", |builder| {
 // Funk/Disco Clean Guitar - Bright, percussive
 define_synthdef("electric_guitar_funk", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Short, percussive envelope
             let env = envelope()
@@ -286,10 +286,10 @@ define_synthdef("electric_guitar_funk", |builder| {
 // Power Chord - Thick rhythm guitar
 define_synthdef("power_chord", |builder| {
     builder
-        .param("freq", 82.41)   // Low E default
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("gain", 0.7)
+        .param("freq", 82.41) // units: Hz, range: 20..20000, default: 82.41. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gain", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|freq, amp, gate, gain| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.1)
@@ -332,11 +332,11 @@ define_synthdef("power_chord", |builder| {
 // Wah Guitar - with auto-wah effect
 define_synthdef("electric_guitar_wah", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("wah_rate", 2.0)
-        .param("wah_depth", 0.7)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("wah_rate", 2.0) // units: Hz, range: 0..20, default: 2.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("wah_depth", 0.7) // units: normalized, range: 0..1, default: 0.7. Modulation depth; higher values make the movement more pronounced.
         .body(|freq, amp, gate, wah_rate, wah_depth| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.15)
@@ -371,3 +371,108 @@ define_synthdef("electric_guitar_wah", |builder| {
             output
         })
 });
+
+//
+// # Usage: `electric_guitar_clean`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_clean = voice("doc_electric_guitar_clean")
+//     .synth("electric_guitar_clean")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("pickup_pos", 0.5);
+// electric_guitar_clean.output("out").to_main();
+// electric_guitar_clean.run();
+// ```
+//
+// # Usage: `electric_guitar_crunch`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_crunch = voice("doc_electric_guitar_crunch")
+//     .synth("electric_guitar_crunch")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("gain", 0.5);
+// electric_guitar_crunch.output("out").to_main();
+// electric_guitar_crunch.run();
+// ```
+//
+// # Usage: `electric_guitar_distorted`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_distorted = voice("doc_electric_guitar_distorted")
+//     .synth("electric_guitar_distorted")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("gain", 0.5);
+// electric_guitar_distorted.output("out").to_main();
+// electric_guitar_distorted.run();
+// ```
+//
+// # Usage: `electric_guitar_jazz`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_jazz = voice("doc_electric_guitar_jazz")
+//     .synth("electric_guitar_jazz")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("warmth", 0.7);
+// electric_guitar_jazz.output("out").to_main();
+// electric_guitar_jazz.run();
+// ```
+//
+// # Usage: `electric_guitar_funk`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_funk = voice("doc_electric_guitar_funk")
+//     .synth("electric_guitar_funk")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// electric_guitar_funk.output("out").to_main();
+// electric_guitar_funk.run();
+// ```
+//
+// # Usage: `power_chord`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let power_chord = voice("doc_power_chord")
+//     .synth("power_chord")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("gain", 0.5);
+// power_chord.output("out").to_main();
+// power_chord.run();
+// ```
+//
+// # Usage: `electric_guitar_wah`
+//
+// ```rhai
+// import "stdlib/strings/electric_guitar.vibe" as electric_guitar;
+//
+// let electric_guitar_wah = voice("doc_electric_guitar_wah")
+//     .synth("electric_guitar_wah")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("wah_rate", 2.0);
+// electric_guitar_wah.output("out").to_main();
+// electric_guitar_wah.run();
+// ```

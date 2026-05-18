@@ -39,15 +39,15 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_stages")
-    .param("clock_in", 0.0)
-    .param("length", 6.0)
-    .param("level_scale", 1.0)
-    .param("level0", 0.0)
-    .param("level1", 0.5)
-    .param("level2", 0.2)
-    .param("level3", 0.6)
-    .param("level4", 0.3)
-    .param("level5", 0.7)
+    .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("length", 6.0) // units: selector, range: 0..N, default: 6.0. Selects mode, table, or step count.
+    .param("level_scale", 1.0) // units: linear, range: -1..1, default: 1.0. Envelope level scale; higher values raise the generated CV amplitude.
+    .param("level0", 0.0) // units: linear, range: 0..1, default: 0.0. Band 0 output level; higher makes that resonator louder.
+    .param("level1", 0.5) // units: linear, range: 0..1, default: 0.5. Band 1 output level; higher makes that resonator louder.
+    .param("level2", 0.2) // units: linear, range: 0..1, default: 0.2. Band 2 output level; higher makes that resonator louder.
+    .param("level3", 0.6) // units: linear, range: 0..1, default: 0.6. Band 3 output level; higher makes that resonator louder.
+    .param("level4", 0.3) // units: linear, range: 0..1, default: 0.3. Band 4 output level; higher makes that resonator louder.
+    .param("level5", 0.7) // units: linear, range: 0..1, default: 0.7. Band 5 output level; higher makes that resonator louder.
     .body(|clock_in, length, level_scale,
            level0, level1, level2, level3, level4, level5| {
         // Stepper wraps at max_idx = length-1, so changing length at runtime
@@ -71,3 +71,19 @@ define_synthdef("cv_stages")
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_stages`
+//
+// ```rhai
+// import "stdlib/cv/eurorack/cv_stages.vibe" as cv_stages;
+//
+// let cv_stages = voice("doc_cv_stages")
+//     .synth("cv_stages")
+//     .set_param("clock_in", 1.0)
+//     .set_param("level_scale", 0.5)
+//     .set_param("length", 1.0)
+//     .set_param("level0", 0.5);
+// cv_stages.output("out").to_main();
+// cv_stages.run();
+// ```

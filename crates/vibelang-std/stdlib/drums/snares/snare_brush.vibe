@@ -1,7 +1,7 @@
 // Genre: Jazz, Acoustic | Character: Brush snare with swishing texture
 define_synthdef("snare_brush")
-    .param("freq", 180.0)
-    .param("amp", 0.6)
+    .param("freq", 180.0) // units: Hz, range: 20..20000, default: 180.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Soft decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("snare_brush")
 
         (body + swish + wires) * amp_env * amp
     });
+
+//
+// # Usage: snare_brush
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_brush.vibe" as snare_brush;
+//
+// let doc_snare_brush = voice("doc_snare_brush")
+//     .synth("snare_brush")
+//     .set_param("freq", 180.0)
+//     .set_param("amp", 0.6)
+//     ;
+// doc_snare_brush.output("out").to_main();
+// doc_snare_brush.run();
+// ```

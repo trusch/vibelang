@@ -1,9 +1,9 @@
 // Genre: Dubstep, Bass Music | Character: Pure sine wave sub, clean and deep
 define_synthdef("sub_pure_sine", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.8)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Envelope with slight attack for smoothness
@@ -21,3 +21,18 @@ define_synthdef("sub_pure_sine", |builder| {
         })
 });
 
+//
+// # Usage: sub_pure_sine
+//
+// ```rhai
+// import "stdlib/bass/sub/sub_pure_sine.vibe" as sub_pure_sine;
+//
+// let doc_sub_pure_sine = voice("doc_sub_pure_sine")
+//     .synth("sub_pure_sine")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_sub_pure_sine.output("out").to_main();
+// doc_sub_pure_sine.run();
+// ```

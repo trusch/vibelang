@@ -6,10 +6,10 @@
 // Future Bass Chord - Iconic supersaws
 define_synthdef("future_chord", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("width", 0.6)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("width", 0.6) // units: normalized, range: 0..1, default: 0.6. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, width| {
             let env = envelope()
                 .asr(0.02, 1.0, 0.2)
@@ -40,9 +40,9 @@ define_synthdef("future_chord", |builder| {
 // Future Bass Lead - Bright lead
 define_synthdef("future_lead", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -66,10 +66,10 @@ define_synthdef("future_lead", |builder| {
 // Future Bass Wobble - Sidechain-style pump
 define_synthdef("future_wobble", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("rate", 4.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
         .body(|freq, amp, gate, rate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -96,9 +96,9 @@ define_synthdef("future_wobble", |builder| {
 // Future Bass Pad - Soft atmospheric pad
 define_synthdef("future_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.3)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.3) // units: linear, range: 0..1, default: 0.3. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.5, 1.0, 0.5)
@@ -124,9 +124,9 @@ define_synthdef("future_pad", |builder| {
 // Future Bass Pluck - Short melodic pluck
 define_synthdef("future_pluck", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.05)
@@ -151,3 +151,76 @@ define_synthdef("future_pluck", |builder| {
             filtered * env * decay_env * amp
         })
 });
+
+//
+// # Usage: `future_chord`
+//
+// ```rhai
+// import "stdlib/modern/future_bass.vibe" as future_bass;
+//
+// let future_chord = voice("doc_future_chord")
+//     .synth("future_chord")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("width", 0.6);
+// future_chord.output("out").to_main();
+// future_chord.run();
+// ```
+//
+// # Usage: `future_lead`
+//
+// ```rhai
+// import "stdlib/modern/future_bass.vibe" as future_bass;
+//
+// let future_lead = voice("doc_future_lead")
+//     .synth("future_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// future_lead.output("out").to_main();
+// future_lead.run();
+// ```
+//
+// # Usage: `future_wobble`
+//
+// ```rhai
+// import "stdlib/modern/future_bass.vibe" as future_bass;
+//
+// let future_wobble = voice("doc_future_wobble")
+//     .synth("future_wobble")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("rate", 4.0);
+// future_wobble.output("out").to_main();
+// future_wobble.run();
+// ```
+//
+// # Usage: `future_pad`
+//
+// ```rhai
+// import "stdlib/modern/future_bass.vibe" as future_bass;
+//
+// let future_pad = voice("doc_future_pad")
+//     .synth("future_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// future_pad.output("out").to_main();
+// future_pad.run();
+// ```
+//
+// # Usage: `future_pluck`
+//
+// ```rhai
+// import "stdlib/modern/future_bass.vibe" as future_bass;
+//
+// let future_pluck = voice("doc_future_pluck")
+//     .synth("future_pluck")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// future_pluck.output("out").to_main();
+// future_pluck.run();
+// ```

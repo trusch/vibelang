@@ -1,9 +1,9 @@
 // Genre: Drill, UK Drill | Character: Sliding drill bass with pitch glide
 define_synthdef("bass_drill")
-    .param("freq", 45.0)
-    .param("amp", 0.9)
-    .param("gate", 1.0)
-    .param("slide", 0.3)
+    .param("freq", 45.0) // units: Hz, range: 20..20000, default: 45.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("slide", 0.3) // units: ratio, range: 0..1, default: 0.3. Trombone slide position; higher values lower the tube resonance.
     .body(|freq, amp, gate, slide| {
         let env = envelope()
             .asr(0.01, 1.0, 0.15)
@@ -25,3 +25,20 @@ define_synthdef("bass_drill")
 
         lpf_ar(sig, 500.0) * env * amp
     });
+
+//
+// # Usage: bass_drill
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_drill.vibe" as bass_drill;
+//
+// let doc_bass_drill = voice("doc_bass_drill")
+//     .synth("bass_drill")
+//     .set_param("freq", 45.0)
+//     .set_param("amp", 0.9)
+//     .set_param("gate", 1.0)
+//     .set_param("slide", 0.3)
+//     ;
+// doc_bass_drill.output("out").to_main();
+// doc_bass_drill.run();
+// ```

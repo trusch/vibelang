@@ -32,11 +32,11 @@
 
 define_fx("beat_repeater", |builder| {
     builder
-        .param("capture_seconds", 0.5)
-        .param("retrigger_rate", 4.0)
-        .param("decay", 0.25)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("capture_seconds", 0.5) // units: seconds, range: 0..10, default: 0.5. Capture Seconds amount; higher values emphasize that named musical or electrical behavior.
+        .param("retrigger_rate", 4.0) // units: Hz, range: 0..100, default: 4.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("decay", 0.25) // units: seconds, range: 0..10, default: 0.25. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, capture_seconds, retrigger_rate, decay, mix, level| {
             // 2-second circular buffers (capture_seconds is documentation /
             // user expectation — the retrigger-rate determines what slice
@@ -69,3 +69,18 @@ define_fx("beat_repeater", |builder| {
             ]
         })
 });
+
+//
+// # Usage: beat_repeater
+//
+// ```rhai
+// import "stdlib/effects/glitch/beat_repeater.vibe" as beat_repeater;
+//
+// let doc_beat_repeater = fx("doc_beat_repeater")
+//     .synth("beat_repeater")
+//     .param("capture_seconds", 0.5)
+//     .param("retrigger_rate", 4.0)
+//     .param("decay", 0.25)
+//     .param("mix", 0.5)
+//     .apply();
+// ```

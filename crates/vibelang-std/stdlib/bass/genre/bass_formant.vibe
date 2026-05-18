@@ -1,9 +1,9 @@
 // Genre: Experimental, EDM | Character: Vowel/formant bass with vocal quality
 define_synthdef("bass_formant")
-    .param("freq", 55.0)
-    .param("amp", 0.75)
-    .param("gate", 1.0)
-    .param("vowel", 0.5)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.75) // units: linear, range: 0..1, default: 0.75. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("vowel", 0.5) // units: normalized, range: 0..1, default: 0.5. Vowel/formant position; higher values move the resonant vowels forward.
     .body(|freq, amp, gate, vowel| {
         let env = envelope()
             .asr(0.01, 1.0, 0.12)
@@ -29,3 +29,20 @@ define_synthdef("bass_formant")
 
         sig * env * amp
     });
+
+//
+// # Usage: bass_formant
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_formant.vibe" as bass_formant;
+//
+// let doc_bass_formant = voice("doc_bass_formant")
+//     .synth("bass_formant")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.75)
+//     .set_param("gate", 1.0)
+//     .set_param("vowel", 0.5)
+//     ;
+// doc_bass_formant.output("out").to_main();
+// doc_bass_formant.run();
+// ```

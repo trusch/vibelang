@@ -1,7 +1,7 @@
 // Genre: Orchestral, Cinematic | Character: Concert tom with long resonance
 define_synthdef("tom_concert")
-    .param("freq", 100.0)
-    .param("amp", 0.8)
+    .param("freq", 100.0) // units: Hz, range: 20..20000, default: 100.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Long resonant decay
         let amp_env = envelope()
@@ -28,3 +28,18 @@ define_synthdef("tom_concert")
 
         (body + harm1 + harm2 + attack) * amp_env * amp
     });
+
+//
+// # Usage: tom_concert
+//
+// ```rhai
+// import "stdlib/drums/toms/tom_concert.vibe" as tom_concert;
+//
+// let doc_tom_concert = voice("doc_tom_concert")
+//     .synth("tom_concert")
+//     .set_param("freq", 100.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_tom_concert.output("out").to_main();
+// doc_tom_concert.run();
+// ```

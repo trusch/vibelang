@@ -1,7 +1,7 @@
 // Genre: Marching Band, Orchestral | Character: Tight marching snare with wire buzz
 define_synthdef("snare_marching")
-    .param("freq", 250.0)
-    .param("amp", 0.9)
+    .param("freq", 250.0) // units: Hz, range: 20..20000, default: 250.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Tight, controlled decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("snare_marching")
 
         (body + wires + attack) * amp_env * amp
     });
+
+//
+// # Usage: snare_marching
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_marching.vibe" as snare_marching;
+//
+// let doc_snare_marching = voice("doc_snare_marching")
+//     .synth("snare_marching")
+//     .set_param("freq", 250.0)
+//     .set_param("amp", 0.9)
+//     ;
+// doc_snare_marching.output("out").to_main();
+// doc_snare_marching.run();
+// ```

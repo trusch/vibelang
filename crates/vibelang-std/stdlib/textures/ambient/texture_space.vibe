@@ -1,8 +1,8 @@
 // Genre: Ambient, Sci-Fi | Character: Spacious, ethereal texture
 define_synthdef("texture_space", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.35)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Very long envelope
             let env = envelope()
@@ -31,3 +31,16 @@ define_synthdef("texture_space", |builder| {
         })
 });
 
+//
+// # Usage: `texture_space`
+//
+// ```rhai
+// import "stdlib/textures/ambient/texture_space.vibe" as texture_space;
+//
+// let texture_space = voice("doc_texture_space")
+//     .synth("texture_space")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// texture_space.output("out").to_main();
+// texture_space.run();
+// ```

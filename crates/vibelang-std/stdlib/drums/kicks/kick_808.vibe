@@ -1,7 +1,7 @@
 // Genre: Hip-hop, Trap | Character: Classic 808, deep sub bass with pitch decay
 define_synthdef("kick_808")
-    .param("freq", 60.0)
-    .param("amp", 1.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Main amplitude envelope - 808 character (fixed at 0.5s decay)
         let amp_env = envelope()
@@ -27,3 +27,17 @@ define_synthdef("kick_808")
         (sig + click) * amp
     });
 
+//
+// # Usage: kick_808
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_808.vibe" as kick_808;
+//
+// let doc_kick_808 = voice("doc_kick_808")
+//     .synth("kick_808")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_808.output("out").to_main();
+// doc_kick_808.run();
+// ```

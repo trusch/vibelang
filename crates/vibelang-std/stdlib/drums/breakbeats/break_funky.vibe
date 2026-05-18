@@ -1,8 +1,8 @@
 // Genre: Funk, Hip-hop | Character: Funky Drummer-style kit sound
 define_synthdef("break_funky")
-    .param("freq", 190.0)
-    .param("amp", 0.85)
-    .param("type", 0.0) // 0=kick, 0.5=snare, 1.0=hat
+    .param("freq", 190.0) // units: Hz, range: 20..20000, default: 190.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
+    .param("type", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or algorithm.
     .body(|freq, amp, type_param| {
         // Tight decay
         let decay = 0.25 - type_param * 0.1;
@@ -32,3 +32,19 @@ define_synthdef("break_funky")
 
         (kick + snare_body + snare_noise + hat) * amp_env * amp
     });
+
+//
+// # Usage: break_funky
+//
+// ```rhai
+// import "stdlib/drums/breakbeats/break_funky.vibe" as break_funky;
+//
+// let doc_break_funky = voice("doc_break_funky")
+//     .synth("break_funky")
+//     .set_param("freq", 190.0)
+//     .set_param("amp", 0.85)
+//     .set_param("type", 0.0)
+//     ;
+// doc_break_funky.output("out").to_main();
+// doc_break_funky.run();
+// ```

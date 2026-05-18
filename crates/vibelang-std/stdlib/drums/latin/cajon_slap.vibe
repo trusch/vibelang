@@ -1,7 +1,7 @@
 // Genre: Flamenco, Latin, Acoustic | Character: Cajon slap/edge hit with snare wires
 define_synthdef("cajon_slap")
-    .param("freq", 200.0)
-    .param("amp", 0.8)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Short, snappy decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("cajon_slap")
 
         (body + wires + attack) * amp_env * amp
     });
+
+//
+// # Usage: cajon_slap
+//
+// ```rhai
+// import "stdlib/drums/latin/cajon_slap.vibe" as cajon_slap;
+//
+// let doc_cajon_slap = voice("doc_cajon_slap")
+//     .synth("cajon_slap")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.8)
+//     ;
+// doc_cajon_slap.output("out").to_main();
+// doc_cajon_slap.run();
+// ```

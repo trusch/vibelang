@@ -27,11 +27,11 @@
 
 define_fx("reverb_ducked", |builder| {
     builder
-        .param("time", 2.5)
-        .param("ducking", 0.7)
-        .param("threshold", 0.1)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 2.5) // units: seconds, range: 0..10, default: 2.5. Delay or segment time; higher values make repeats arrive later.
+        .param("ducking", 0.7) // units: ratio, range: 0..1, default: 0.7. Ducking amount; higher values emphasize that named musical or electrical behavior.
+        .param("threshold", 0.1) // units: linear, range: 0..1, default: 0.1. Detection threshold; higher values require a stronger signal before processing opens.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, ducking, threshold, mix, level| {
             // Mono mix of the dry input — feeds both the verb and the sidechain.
             let mono = (input[0] + input[1]) * 0.5;
@@ -70,3 +70,18 @@ define_fx("reverb_ducked", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_ducked
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_ducked.vibe" as reverb_ducked;
+//
+// let doc_reverb_ducked = fx("doc_reverb_ducked")
+//     .synth("reverb_ducked")
+//     .param("time", 2.5)
+//     .param("ducking", 0.7)
+//     .param("threshold", 0.1)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

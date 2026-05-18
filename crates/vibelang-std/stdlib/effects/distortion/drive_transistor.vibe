@@ -29,11 +29,11 @@
 //   level:     Output trim (1.0 = unity)
 
 define_fx("drive_transistor")
-    .param("drive", 6.0)
-    .param("asymmetry", 0.3)
-    .param("lp_freq", 8000.0)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("drive", 6.0) // units: gain, range: 0..20, default: 6.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
+    .param("asymmetry", 0.3) // units: normalized, range: 0..1, default: 0.3. Asymmetry amount; higher values emphasize that named musical or electrical behavior.
+    .param("lp_freq", 8000.0) // units: Hz, range: 20..20000, default: 8000.0. Lp Freq in Hz; higher values move that tone or filter point upward.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, drive, asymmetry, lp_freq, mix, level| {
         // Slight bass shelf cut — transistor stages typically have a coupling
         // cap that thins the bottom; 100 Hz HP approximates that loss without
@@ -67,3 +67,18 @@ define_fx("drive_transistor")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: drive_transistor
+//
+// ```rhai
+// import "stdlib/effects/distortion/drive_transistor.vibe" as drive_transistor;
+//
+// let doc_drive_transistor = fx("doc_drive_transistor")
+//     .synth("drive_transistor")
+//     .param("drive", 6.0)
+//     .param("asymmetry", 0.3)
+//     .param("lp_freq", 8000.0)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

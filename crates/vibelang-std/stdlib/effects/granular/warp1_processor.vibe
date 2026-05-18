@@ -26,11 +26,11 @@
 
 define_fx("warp1_processor", |builder| {
     builder
-        .param("rate", 1.0)
-        .param("freq_scale", 1.0)
-        .param("window_size", 0.2)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 1.0) // units: Hz, range: 0..100, default: 1.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("freq_scale", 1.0) // units: ratio, range: 0..8, default: 1.0. Freq Scale in Hz; higher values move that tone or filter point upward.
+        .param("window_size", 0.2) // units: seconds, range: 0.001..4, default: 0.2. Granular window size in seconds; higher values smear grains over longer slices.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, freq_scale, window_size, mix, level| {
             // ~2s circular buffers, one per channel.
             let buf_l = local_buf_ir(1, 96000);
@@ -57,3 +57,18 @@ define_fx("warp1_processor", |builder| {
             ]
         })
 });
+
+//
+// # Usage: warp1_processor
+//
+// ```rhai
+// import "stdlib/effects/granular/warp1_processor.vibe" as warp1_processor;
+//
+// let doc_warp1_processor = fx("doc_warp1_processor")
+//     .synth("warp1_processor")
+//     .param("rate", 1.0)
+//     .param("freq_scale", 1.0)
+//     .param("window_size", 0.2)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

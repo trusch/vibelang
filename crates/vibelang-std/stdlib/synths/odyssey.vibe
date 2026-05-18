@@ -4,10 +4,10 @@
 // Odyssey Bass - Fat duophonic bass
 define_synthdef("odyssey_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("filter_freq", 700.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_freq", 700.0) // units: Hz, range: 20..20000, default: 700.0. Filter Freq in Hz; higher values move that tone or filter point upward.
         .body(|freq, amp, gate, filter_freq| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.1)
@@ -36,10 +36,10 @@ define_synthdef("odyssey_bass", |builder| {
 // Odyssey Lead - Biting mono lead
 define_synthdef("odyssey_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("resonance", 0.5)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, resonance| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -69,10 +69,10 @@ define_synthdef("odyssey_lead", |builder| {
 // Odyssey Sample Hold - Random stepped modulation
 define_synthdef("odyssey_sh", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.45)
-        .param("gate", 1.0)
-        .param("rate", 8.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.45) // units: linear, range: 0..1, default: 0.45. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("rate", 8.0) // units: Hz, range: 0..100, default: 8.0. Clock or modulation rate in Hz; higher values make motion faster.
         .body(|freq, amp, gate, rate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -94,3 +94,49 @@ define_synthdef("odyssey_sh", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `odyssey_bass`
+//
+// ```rhai
+// import "stdlib/synths/odyssey.vibe" as odyssey;
+//
+// let odyssey_bass = voice("doc_odyssey_bass")
+//     .synth("odyssey_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_freq", 1200.0);
+// odyssey_bass.output("out").to_main();
+// odyssey_bass.run();
+// ```
+//
+// # Usage: `odyssey_lead`
+//
+// ```rhai
+// import "stdlib/synths/odyssey.vibe" as odyssey;
+//
+// let odyssey_lead = voice("doc_odyssey_lead")
+//     .synth("odyssey_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("resonance", 0.5);
+// odyssey_lead.output("out").to_main();
+// odyssey_lead.run();
+// ```
+//
+// # Usage: `odyssey_sh`
+//
+// ```rhai
+// import "stdlib/synths/odyssey.vibe" as odyssey;
+//
+// let odyssey_sh = voice("doc_odyssey_sh")
+//     .synth("odyssey_sh")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("rate", 8.0);
+// odyssey_sh.output("out").to_main();
+// odyssey_sh.run();
+// ```

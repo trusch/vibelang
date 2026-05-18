@@ -1,9 +1,9 @@
 // Genre: Modular, Experimental | Character: LFO module (as audio rate for AM effects)
 define_synthdef("mod_lfo")
-    .param("freq", 5.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
-    .param("wave", 0.0) // 0=sine, 0.5=triangle, 1.0=saw
+    .param("freq", 5.0) // units: Hz, range: 0..20000, default: 5.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("wave", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
     .body(|freq, amp, gate, wave| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -20,3 +20,19 @@ define_synthdef("mod_lfo")
 
         mix * env * amp
     });
+
+//
+// # Usage: `mod_lfo`
+//
+// ```rhai
+// import "stdlib/modular/mod_lfo.vibe" as mod_lfo;
+//
+// let mod_lfo = voice("doc_mod_lfo")
+//     .synth("mod_lfo")
+//     .set_param("freq", 220.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5)
+//     .set_param("wave", 1.0);
+// mod_lfo.output("out").to_main();
+// mod_lfo.run();
+// ```

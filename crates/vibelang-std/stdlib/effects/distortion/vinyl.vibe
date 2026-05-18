@@ -26,13 +26,13 @@
 
 define_fx("vinyl", |builder| {
     builder
-        .param("crackle", 0.05)
-        .param("dust", 0.02)
-        .param("wow", 0.3)
-        .param("flutter", 0.2)
-        .param("wear", 4000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("crackle", 0.05) // units: ratio, range: 0..1, default: 0.05. Crackle amount; higher values emphasize that named musical or electrical behavior.
+        .param("dust", 0.02) // units: ratio, range: 0..1, default: 0.02. Dust amount; higher values emphasize that named musical or electrical behavior.
+        .param("wow", 0.3) // units: ratio, range: 0..1, default: 0.3. Tape wow depth; higher values add slower pitch drift.
+        .param("flutter", 0.2) // units: ratio, range: 0..1, default: 0.2. Tape flutter depth; higher values add faster pitch shimmer.
+        .param("wear", 4000.0) // units: Hz, range: 20..20000, default: 4000.0. Wear amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, crackle, dust, wow, flutter, wear, mix, level| {
             // Wow (slow pitch variation)
             let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
@@ -66,3 +66,18 @@ define_fx("vinyl", |builder| {
             ]
         })
 });
+
+//
+// # Usage: vinyl
+//
+// ```rhai
+// import "stdlib/effects/distortion/vinyl.vibe" as vinyl;
+//
+// let doc_vinyl = fx("doc_vinyl")
+//     .synth("vinyl")
+//     .param("crackle", 0.05)
+//     .param("dust", 0.02)
+//     .param("wow", 0.3)
+//     .param("flutter", 0.2)
+//     .apply();
+// ```

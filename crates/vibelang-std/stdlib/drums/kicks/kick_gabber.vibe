@@ -1,8 +1,8 @@
 // Genre: Hardcore, Gabber | Character: Distorted, aggressive gabber kick
 define_synthdef("kick_gabber")
-    .param("freq", 50.0)
-    .param("amp", 1.0)
-    .param("drive", 4.0)
+    .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
+    .param("drive", 4.0) // units: gain, range: 0..10, default: 4.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
     .body(|freq, amp, drive| {
         // Long decay for that gabber punch
         let amp_env = envelope()
@@ -30,3 +30,19 @@ define_synthdef("kick_gabber")
 
         (distorted + click) * amp_env * amp
     });
+
+//
+// # Usage: kick_gabber
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_gabber.vibe" as kick_gabber;
+//
+// let doc_kick_gabber = voice("doc_kick_gabber")
+//     .synth("kick_gabber")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     .set_param("drive", 4.0)
+//     ;
+// doc_kick_gabber.output("out").to_main();
+// doc_kick_gabber.run();
+// ```

@@ -1,9 +1,9 @@
 // Genre: Liquid DnB, Ambient DnB | Character: Smooth, rolling Reese
 define_synthdef("reese_smooth", |builder| {
     builder
-        .param("freq", 55.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Smooth envelope
@@ -36,3 +36,18 @@ define_synthdef("reese_smooth", |builder| {
         })
 });
 
+//
+// # Usage: reese_smooth
+//
+// ```rhai
+// import "stdlib/bass/reese/reese_smooth.vibe" as reese_smooth;
+//
+// let doc_reese_smooth = voice("doc_reese_smooth")
+//     .synth("reese_smooth")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_reese_smooth.output("out").to_main();
+// doc_reese_smooth.run();
+// ```

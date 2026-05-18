@@ -1,8 +1,8 @@
 // Genre: Drum & Bass, Jungle | Character: Fast, tight, sub-focused
 define_synthdef("kick_dnb", |builder| {
     builder
-        .param("freq", 70.0)
-        .param("amp", 1.0)
+        .param("freq", 70.0) // units: Hz, range: 20..20000, default: 70.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Very short envelope for fast BPM
             let amp_env = envelope()
@@ -32,3 +32,17 @@ define_synthdef("kick_dnb", |builder| {
         })
 });
 
+//
+// # Usage: kick_dnb
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_dnb.vibe" as kick_dnb;
+//
+// let doc_kick_dnb = voice("doc_kick_dnb")
+//     .synth("kick_dnb")
+//     .set_param("freq", 70.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_dnb.output("out").to_main();
+// doc_kick_dnb.run();
+// ```

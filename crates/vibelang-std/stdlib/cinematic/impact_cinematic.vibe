@@ -1,7 +1,7 @@
 // Genre: Trailer, Film | Character: Massive cinematic impact hit
 define_synthdef("impact_cinematic")
-    .param("freq", 40.0)
-    .param("amp", 1.0)
+    .param("freq", 40.0) // units: Hz, range: 20..20000, default: 40.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Impact envelope
         let amp_env = envelope()
@@ -29,3 +29,17 @@ define_synthdef("impact_cinematic")
 
         (sub + noise + ring) * amp_env * amp
     });
+
+//
+// # Usage: `impact_cinematic`
+//
+// ```rhai
+// import "stdlib/cinematic/impact_cinematic.vibe" as impact_cinematic;
+//
+// let impact_cinematic = voice("doc_impact_cinematic")
+//     .synth("impact_cinematic")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// impact_cinematic.output("out").to_main();
+// impact_cinematic.run();
+// ```

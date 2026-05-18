@@ -2,10 +2,10 @@
 
 define_synthdef("lowpass_stereo")
     .input("in", 2)
-    .param("cutoff", 2000.0)
-    .param("resonance", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("cutoff", 2000.0) // units: Hz, range: 20..20000, default: 2000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+    .param("resonance", 0.5) // units: resonance, range: 0..1, default: 0.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let dry_l = p.inputs["in"][0];
         let dry_r = p.inputs["in"][1];
@@ -18,3 +18,19 @@ define_synthdef("lowpass_stereo")
             ((1.0 - mix) * dry_r + mix * wet_r) * p.level
         ]
     });
+
+//
+// # Usage: `lowpass_stereo`
+//
+// ```rhai
+// import "stdlib/processors/filters/lowpass_stereo.vibe" as lowpass_stereo;
+//
+// let lowpass_stereo = voice("doc_lowpass_stereo")
+//     .synth("lowpass_stereo")
+//     .set_param("cutoff", 1800.0)
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45)
+//     .set_param("resonance", 0.35);
+// lowpass_stereo.output("out").to_main();
+// lowpass_stereo.run();
+// ```

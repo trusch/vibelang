@@ -14,9 +14,22 @@
 // in place so the synthdef matches the reference skeleton.
 
 define_synthdef("cv_v5_steady")
-    .param("gate", 1.0)
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|gate| {
         let cv = dc_ar(0.5) * gate;
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_v5_steady`
+//
+// ```rhai
+// import "stdlib/cv/calibration/cv_v5_steady.vibe" as cv_v5_steady;
+//
+// let cv_v5_steady = voice("doc_cv_v5_steady")
+//     .synth("cv_v5_steady")
+//     .set_param("gate", 1.0);
+// cv_v5_steady.output("out").to_main();
+// cv_v5_steady.run();
+// ```

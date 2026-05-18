@@ -1,8 +1,8 @@
 // Genre: Film Score, Classical | Character: Orchestral tutti stinger
 define_synthdef("stinger_orchestral", |builder| {
     builder
-        .param("amp", 0.8)
-        .param("note", 48.0)
+        .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+        .param("note", 48.0) // units: MIDI note, range: 0..127, default: 48.0. MIDI note value; higher values output a higher pitch.
         .body(|amp, note| {
             let env = envelope()
                 .perc(0.02, 1.2)
@@ -32,3 +32,18 @@ define_synthdef("stinger_orchestral", |builder| {
             mix * env * amp * 0.5
         })
 });
+
+//
+// # Usage: stinger_orchestral
+//
+// ```rhai
+// import "stdlib/fx/stingers/stinger_orchestral.vibe" as stinger_orchestral;
+//
+// let doc_stinger_orchestral = voice("doc_stinger_orchestral")
+//     .synth("stinger_orchestral")
+//     .set_param("amp", 0.8)
+//     .set_param("note", 48.0)
+//     ;
+// doc_stinger_orchestral.output("out").to_main();
+// doc_stinger_orchestral.run();
+// ```

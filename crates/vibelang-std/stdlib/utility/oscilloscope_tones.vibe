@@ -2,9 +2,9 @@
 
 // Sweep tone - Frequency sweep for testing
 define_synthdef("sweep_tone")
-    .param("amp", 0.4)
-    .param("gate", 1.0)
-    .param("rate", 0.5)
+    .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("rate", 0.5) // units: Hz, range: 0..100, default: 0.5. Clock or modulation rate in Hz; higher values make motion faster.
     .body(|amp, gate, rate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -21,9 +21,9 @@ define_synthdef("sweep_tone")
 
 // Square test - Square wave test tone
 define_synthdef("square_test")
-    .param("freq", 440.0)
-    .param("amp", 0.35)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -36,9 +36,9 @@ define_synthdef("square_test")
 
 // Saw test - Sawtooth test tone
 define_synthdef("saw_test")
-    .param("freq", 440.0)
-    .param("amp", 0.35)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -51,9 +51,9 @@ define_synthdef("saw_test")
 
 // Triangle test - Triangle wave test tone
 define_synthdef("tri_test")
-    .param("freq", 440.0)
-    .param("amp", 0.4)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 0..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.01)
@@ -63,3 +63,64 @@ define_synthdef("tri_test")
 
         lf_tri_ar(freq) * env * amp
     });
+
+//
+// # Usage: `sweep_tone`
+//
+// ```rhai
+// import "stdlib/utility/oscilloscope_tones.vibe" as oscilloscope_tones;
+//
+// let sweep_tone = voice("doc_sweep_tone")
+//     .synth("sweep_tone")
+//     .set_param("freq", 220.0)
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// sweep_tone.output("out").to_main();
+// sweep_tone.run();
+// ```
+//
+// # Usage: `square_test`
+//
+// ```rhai
+// import "stdlib/utility/oscilloscope_tones.vibe" as oscilloscope_tones;
+//
+// let square_test = voice("doc_square_test")
+//     .synth("square_test")
+//     .set_param("freq", 220.0)
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// square_test.output("out").to_main();
+// square_test.run();
+// ```
+//
+// # Usage: `saw_test`
+//
+// ```rhai
+// import "stdlib/utility/oscilloscope_tones.vibe" as oscilloscope_tones;
+//
+// let saw_test = voice("doc_saw_test")
+//     .synth("saw_test")
+//     .set_param("freq", 220.0)
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// saw_test.output("out").to_main();
+// saw_test.run();
+// ```
+//
+// # Usage: `tri_test`
+//
+// ```rhai
+// import "stdlib/utility/oscilloscope_tones.vibe" as oscilloscope_tones;
+//
+// let tri_test = voice("doc_tri_test")
+//     .synth("tri_test")
+//     .set_param("freq", 220.0)
+//     .set_param("rate", 2.0)
+//     .set_param("gate", 1.0)
+//     .set_param("amp", 0.5);
+// tri_test.output("out").to_main();
+// tri_test.run();
+// ```

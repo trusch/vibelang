@@ -1,7 +1,7 @@
 // Genre: All genres | Character: Reverse cymbal-like transition
 define_synthdef("transition_reverse", |builder| {
     builder
-        .param("amp", 0.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
         .body(|amp| {
             // Reverse envelope (builds up)
             let env = envelope()
@@ -27,3 +27,17 @@ define_synthdef("transition_reverse", |builder| {
             final_filter * env * amp * 0.5
         })
 });
+
+//
+// # Usage: transition_reverse
+//
+// ```rhai
+// import "stdlib/fx/transitions/transition_reverse.vibe" as transition_reverse;
+//
+// let doc_transition_reverse = voice("doc_transition_reverse")
+//     .synth("transition_reverse")
+//     .set_param("amp", 0.5)
+//     ;
+// doc_transition_reverse.output("out").to_main();
+// doc_transition_reverse.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Latin, Caribbean, World | Character: Short guiro accent
 define_synthdef("guiro_short")
-    .param("freq", 3500.0)
-    .param("amp", 0.6)
+    .param("freq", 3500.0) // units: Hz, range: 20..20000, default: 3500.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Quick scrape
         let amp_env = envelope()
@@ -18,3 +18,18 @@ define_synthdef("guiro_short")
 
         scrape * ridges * amp_env * amp
     });
+
+//
+// # Usage: guiro_short
+//
+// ```rhai
+// import "stdlib/drums/latin/guiro_short.vibe" as guiro_short;
+//
+// let doc_guiro_short = voice("doc_guiro_short")
+//     .synth("guiro_short")
+//     .set_param("freq", 3500.0)
+//     .set_param("amp", 0.6)
+//     ;
+// doc_guiro_short.output("out").to_main();
+// doc_guiro_short.run();
+// ```

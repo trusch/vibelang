@@ -1,8 +1,8 @@
 // Genre: 80s Pop, R&B, Electronic | Character: DX7 FM bass - punchy and clear
 define_synthdef("bass_dx7")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.001, 1.0, 0.08)
@@ -29,3 +29,19 @@ define_synthdef("bass_dx7")
 
         sig * env * amp
     });
+
+//
+// # Usage: bass_dx7
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_dx7.vibe" as bass_dx7;
+//
+// let doc_bass_dx7 = voice("doc_bass_dx7")
+//     .synth("bass_dx7")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_dx7.output("out").to_main();
+// doc_bass_dx7.run();
+// ```

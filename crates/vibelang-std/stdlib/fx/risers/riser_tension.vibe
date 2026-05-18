@@ -1,8 +1,8 @@
 // Genre: Cinematic, EDM | Character: Building tension riser
 define_synthdef("riser_tension", |builder| {
     builder
-        .param("amp", 0.6)
-        .param("duration", 4.0)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("duration", 4.0) // units: seconds, range: 0..60, default: 4.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             // Main envelope
             let env = envelope()
@@ -33,3 +33,18 @@ define_synthdef("riser_tension", |builder| {
             resonant * env * amp * 0.6
         })
 });
+
+//
+// # Usage: riser_tension
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_tension.vibe" as riser_tension;
+//
+// let doc_riser_tension = voice("doc_riser_tension")
+//     .synth("riser_tension")
+//     .set_param("amp", 0.6)
+//     .set_param("duration", 4.0)
+//     ;
+// doc_riser_tension.output("out").to_main();
+// doc_riser_tension.run();
+// ```

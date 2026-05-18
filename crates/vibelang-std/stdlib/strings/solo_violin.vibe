@@ -5,10 +5,10 @@
 
 define_synthdef("solo_violin", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("vibrato", 0.6) // Vibrato amount
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vibrato", 0.6) // units: normalized, range: 0..1, default: 0.6. Vibrato depth; higher values make pitch wobble wider.
         .body(|freq, amp, gate, vibrato| {
             // Bowed string envelope
             let env = envelope()
@@ -45,3 +45,19 @@ define_synthdef("solo_violin", |builder| {
             clean * env * amp
         })
 });
+
+//
+// # Usage: `solo_violin`
+//
+// ```rhai
+// import "stdlib/strings/solo_violin.vibe" as solo_violin;
+//
+// let solo_violin = voice("doc_solo_violin")
+//     .synth("solo_violin")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("vibrato", 0.6);
+// solo_violin.output("out").to_main();
+// solo_violin.run();
+// ```

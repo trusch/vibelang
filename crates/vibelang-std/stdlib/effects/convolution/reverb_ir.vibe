@@ -23,10 +23,10 @@
 
 define_fx("reverb_ir", |builder| {
     builder
-        .param("ir_buffer", 0.0)
-        .param("framesize", 2048.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("ir_buffer", 0.0) // units: buffer id, range: 0..N, default: 0.0. Selects impulse response buffer.
+        .param("framesize", 2048.0) // units: samples, range: 1..65536, default: 2048.0. Analysis frame size; higher values use longer convolution or FFT windows.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, ir_buffer, framesize, mix, level| {
             // Reload the kernel whenever ir_buffer changes.
             let trig = changed_kr(ir_buffer, 0.0);
@@ -43,3 +43,18 @@ define_fx("reverb_ir", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_ir
+//
+// ```rhai
+// import "stdlib/effects/convolution/reverb_ir.vibe" as reverb_ir;
+//
+// let doc_reverb_ir = fx("doc_reverb_ir")
+//     .synth("reverb_ir")
+//     .param("ir_buffer", 0.0)
+//     .param("framesize", 2048.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

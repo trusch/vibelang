@@ -1,8 +1,8 @@
 // Genre: Trap, Hip-hop | Character: Boomy 808-style with extra low end
 define_synthdef("kick_trap", |builder| {
     builder
-        .param("freq", 50.0)
-        .param("amp", 1.0)
+        .param("freq", 50.0) // units: Hz, range: 20..20000, default: 50.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Long, boomy envelope
             let amp_env = envelope()
@@ -32,3 +32,17 @@ define_synthdef("kick_trap", |builder| {
         })
 });
 
+//
+// # Usage: kick_trap
+//
+// ```rhai
+// import "stdlib/drums/kicks/kick_trap.vibe" as kick_trap;
+//
+// let doc_kick_trap = voice("doc_kick_trap")
+//     .synth("kick_trap")
+//     .set_param("freq", 50.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_kick_trap.output("out").to_main();
+// doc_kick_trap.run();
+// ```

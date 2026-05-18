@@ -1,8 +1,8 @@
 // Genre: Synthwave, 80s | Character: Classic 80s brass stab
 define_synthdef("synth_80s_brass")
-    .param("freq", 220.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.02, 1.0, 0.15)
@@ -26,3 +26,18 @@ define_synthdef("synth_80s_brass")
         let cutoff = 1000.0 + filt_env * 4000.0;
         rlpf_ar(mix, cutoff, 0.2) * env * amp
     });
+
+//
+// # Usage: `synth_80s_brass`
+//
+// ```rhai
+// import "stdlib/retro/synth_80s_brass.vibe" as synth_80s_brass;
+//
+// let synth_80s_brass = voice("doc_synth_80s_brass")
+//     .synth("synth_80s_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// synth_80s_brass.output("out").to_main();
+// synth_80s_brass.run();
+// ```

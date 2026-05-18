@@ -1,7 +1,7 @@
 // Genre: Pop, EDM | Character: Layered, big stadium clap
 define_synthdef("clap_layered", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Four bursts for thick character
             let burst1_env = envelope()
@@ -34,3 +34,16 @@ define_synthdef("clap_layered", |builder| {
         })
 });
 
+//
+// # Usage: clap_layered
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_layered.vibe" as clap_layered;
+//
+// let doc_clap_layered = voice("doc_clap_layered")
+//     .synth("clap_layered")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_clap_layered.output("out").to_main();
+// doc_clap_layered.run();
+// ```

@@ -5,10 +5,10 @@
 
 define_synthdef("vibraphone", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("vibrato_speed", 5.0) // Motor speed
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("vibrato_speed", 5.0) // units: Hz, range: 0..20, default: 5.0. Vibrato rate in Hz; higher makes pitch modulation faster.
         .body(|freq, amp, gate, vibrato_speed| {
             // Vibes envelope
             let env = envelope()
@@ -43,3 +43,19 @@ define_synthdef("vibraphone", |builder| {
             (bell * motor + mallet) * env * decay_env * amp * 0.6
         })
 });
+
+//
+// # Usage: `vibraphone`
+//
+// ```rhai
+// import "stdlib/bells/vibraphone.vibe" as vibraphone;
+//
+// let vibraphone = voice("doc_vibraphone")
+//     .synth("vibraphone")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("vibrato_speed", 5.0);
+// vibraphone.output("out").to_main();
+// vibraphone.run();
+// ```

@@ -18,17 +18,17 @@
 define_synthdef("erica_snare_drum", |builder| {
     builder
         .output("out", 1)
-        .param("trig", 0.0)                 // 0/1 trigger input that fires the snare
-        .param("gate", 0.0)                 // 0/1 gate input that also fires the snare
-        .param("accent", 0.0)               // 0..1 level boost, pitch lift, and longer decay
-        .param("tune", 180.0)               // body frequency in Hz before tune CV
-        .param("tune_cv", 0.0)              // bipolar pitch CV scaled by tune_cv_amt up to +/-2 octaves
-        .param("noise_tone", 0.5)           // 0 body-heavy to 1 noise-heavy blend
-        .param("snappy", 0.6)               // 0..1 transient/noise brightness and snap length
-        .param("decay", 0.3)                // 0..1 body and noise decay range
-        .param("decay_cv", 0.0)             // bipolar decay CV scaled by decay_cv_amt
-        .param("tune_cv_amt", 0.0)          // 0..1 attenuator for tune_cv depth
-        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv depth
+        .param("trig", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("gate", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("accent", 0.0) // units: normalized, range: 0..1, default: 0.0. Accent strength; higher values make the hit louder and brighter.
+        .param("tune", 180.0) // units: Hz, range: 70..700, default: 180.0. Pitch tuning or sweep amount; higher values raise the drum pitch movement.
+        .param("tune_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Tune CV input; bipolar values modulate the matching panel control.
+        .param("noise_tone", 0.5) // units: normalized, range: 0..1, default: 0.5. Noise Tone amount; higher values emphasize that named musical or electrical behavior.
+        .param("snappy", 0.6) // units: normalized, range: 0..1, default: 0.6. Snare snap amount; higher values add more bright noise crack.
+        .param("decay", 0.3) // units: seconds, range: 0..60, default: 0.3. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("decay_cv", 0.0) // units: seconds, range: 0..60, default: 0.0. Decay CV input; bipolar values modulate the matching panel control.
+        .param("tune_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. TUNE CV AMT attenuator; higher makes the matching CV modulation stronger.
+        .param("decay_cv_amt", 0.0) // units: seconds, range: 0..60, default: 0.0. DECAY CV AMT attenuator; higher makes the matching CV modulation stronger.
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let noise_tone = clip(p.noise_tone, 0.0, 1.0);
@@ -73,3 +73,19 @@ define_synthdef("erica_snare_drum", |builder| {
             [out]
         })
 });
+
+//
+// # Usage: `erica_snare_drum`
+//
+// ```rhai
+// import "stdlib/instruments/eurorack/erica_snare_drum.vibe" as erica_snare_drum;
+//
+// let erica_snare_drum = voice("doc_erica_snare_drum")
+//     .synth("erica_snare_drum")
+//     .set_param("gate", 1.0)
+//     .set_param("decay", 0.35)
+//     .set_param("trig", 1.0)
+//     .set_param("accent", 0.5);
+// erica_snare_drum.output("out").to_main();
+// erica_snare_drum.run();
+// ```

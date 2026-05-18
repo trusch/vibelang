@@ -1,8 +1,8 @@
 // Genre: Classical, Orchestral | Character: Bowed upright bass
 define_synthdef("bass_upright_arco")
-    .param("freq", 80.0)
-    .param("amp", 0.7)
-    .param("gate", 1.0)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Slow attack for bowing
         let env = envelope()
@@ -27,3 +27,19 @@ define_synthdef("bass_upright_arco")
         let sig = body + harm1 + harm2 + harm3 + harm4 + bow_noise;
         lpf_ar(sig, 4000.0) * env * amp
     });
+
+//
+// # Usage: bass_upright_arco
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_upright_arco.vibe" as bass_upright_arco;
+//
+// let doc_bass_upright_arco = voice("doc_bass_upright_arco")
+//     .synth("bass_upright_arco")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_upright_arco.output("out").to_main();
+// doc_bass_upright_arco.run();
+// ```

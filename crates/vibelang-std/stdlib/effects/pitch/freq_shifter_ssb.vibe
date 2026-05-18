@@ -35,9 +35,9 @@
 
 define_fx("freq_shifter_ssb", |builder| {
     builder
-        .param("shift_hz", 50.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("shift_hz", 50.0) // units: Hz, range: -20000..20000, default: 50.0. Shift Hz amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, shift_hz, mix, level| {
             let h_l = channels(hilbert_ar(input[0]), 2);
             let h_r = channels(hilbert_ar(input[1]), 2);
@@ -58,3 +58,17 @@ define_fx("freq_shifter_ssb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: freq_shifter_ssb
+//
+// ```rhai
+// import "stdlib/effects/pitch/freq_shifter_ssb.vibe" as freq_shifter_ssb;
+//
+// let doc_freq_shifter_ssb = fx("doc_freq_shifter_ssb")
+//     .synth("freq_shifter_ssb")
+//     .param("shift_hz", 50.0)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

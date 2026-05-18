@@ -1,8 +1,8 @@
 // Genre: Pop, Commercial | Character: Bright positive stinger
 define_synthdef("stinger_bright", |builder| {
     builder
-        .param("amp", 0.6)
-        .param("note", 72.0)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("note", 72.0) // units: MIDI note, range: 0..127, default: 72.0. MIDI note value; higher values output a higher pitch.
         .body(|amp, note| {
             let env = envelope()
                 .perc(0.001, 0.5)
@@ -29,3 +29,18 @@ define_synthdef("stinger_bright", |builder| {
             mix * env * amp * 0.4
         })
 });
+
+//
+// # Usage: stinger_bright
+//
+// ```rhai
+// import "stdlib/fx/stingers/stinger_bright.vibe" as stinger_bright;
+//
+// let doc_stinger_bright = voice("doc_stinger_bright")
+//     .synth("stinger_bright")
+//     .set_param("amp", 0.6)
+//     .set_param("note", 72.0)
+//     ;
+// doc_stinger_bright.output("out").to_main();
+// doc_stinger_bright.run();
+// ```

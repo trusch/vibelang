@@ -1,7 +1,7 @@
 // Genre: Experimental, IDM | Character: Metallic, inharmonic frequencies
 define_synthdef("hihat_metallic", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Medium envelope
             let env = envelope()
@@ -26,3 +26,16 @@ define_synthdef("hihat_metallic", |builder| {
         })
 });
 
+//
+// # Usage: hihat_metallic
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_metallic.vibe" as hihat_metallic;
+//
+// let doc_hihat_metallic = voice("doc_hihat_metallic")
+//     .synth("hihat_metallic")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_metallic.output("out").to_main();
+// doc_hihat_metallic.run();
+// ```

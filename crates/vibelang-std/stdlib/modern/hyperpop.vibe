@@ -6,10 +6,10 @@
 // Hyperpop Lead - Bright processed lead
 define_synthdef("hyperpop_lead", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("crunch", 0.5)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("crunch", 0.5) // units: normalized, range: 0..1, default: 0.5. Nonlinear drive amount; higher adds harmonic distortion and compression.
         .body(|freq, amp, gate, crunch| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -36,9 +36,9 @@ define_synthdef("hyperpop_lead", |builder| {
 // Hyperpop Chord - Processed chord stab
 define_synthdef("hyperpop_chord", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.001, 1.0, 0.08)
@@ -67,9 +67,9 @@ define_synthdef("hyperpop_chord", |builder| {
 // Hyperpop Bass - Distorted glitchy bass
 define_synthdef("hyperpop_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.003, 1.0, 0.08)
@@ -102,9 +102,9 @@ define_synthdef("hyperpop_bass", |builder| {
 // Hyperpop Synth - Metallic processed synth
 define_synthdef("hyperpop_synth", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -132,8 +132,8 @@ define_synthdef("hyperpop_synth", |builder| {
 // Hyperpop Hihat - Crushed digital hat
 define_synthdef("hyperpop_hat", |builder| {
     builder
-        .param("freq", 12000.0)
-        .param("amp", 0.4)
+        .param("freq", 12000.0) // units: Hz, range: 20..20000, default: 12000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             let env = envelope()
                 .perc(0.001, 0.04)
@@ -152,3 +152,74 @@ define_synthdef("hyperpop_hat", |builder| {
             crunched * env * amp
         })
 });
+
+//
+// # Usage: `hyperpop_lead`
+//
+// ```rhai
+// import "stdlib/modern/hyperpop.vibe" as hyperpop;
+//
+// let hyperpop_lead = voice("doc_hyperpop_lead")
+//     .synth("hyperpop_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("crunch", 0.5);
+// hyperpop_lead.output("out").to_main();
+// hyperpop_lead.run();
+// ```
+//
+// # Usage: `hyperpop_chord`
+//
+// ```rhai
+// import "stdlib/modern/hyperpop.vibe" as hyperpop;
+//
+// let hyperpop_chord = voice("doc_hyperpop_chord")
+//     .synth("hyperpop_chord")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// hyperpop_chord.output("out").to_main();
+// hyperpop_chord.run();
+// ```
+//
+// # Usage: `hyperpop_bass`
+//
+// ```rhai
+// import "stdlib/modern/hyperpop.vibe" as hyperpop;
+//
+// let hyperpop_bass = voice("doc_hyperpop_bass")
+//     .synth("hyperpop_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// hyperpop_bass.output("out").to_main();
+// hyperpop_bass.run();
+// ```
+//
+// # Usage: `hyperpop_synth`
+//
+// ```rhai
+// import "stdlib/modern/hyperpop.vibe" as hyperpop;
+//
+// let hyperpop_synth = voice("doc_hyperpop_synth")
+//     .synth("hyperpop_synth")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// hyperpop_synth.output("out").to_main();
+// hyperpop_synth.run();
+// ```
+//
+// # Usage: `hyperpop_hat`
+//
+// ```rhai
+// import "stdlib/modern/hyperpop.vibe" as hyperpop;
+//
+// let hyperpop_hat = voice("doc_hyperpop_hat")
+//     .synth("hyperpop_hat")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// hyperpop_hat.output("out").to_main();
+// hyperpop_hat.run();
+// ```

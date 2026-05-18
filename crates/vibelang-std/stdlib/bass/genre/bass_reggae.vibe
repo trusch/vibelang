@@ -1,8 +1,8 @@
 // Genre: Reggae, Dub | Character: Deep reggae bass with round tone
 define_synthdef("bass_reggae")
-    .param("freq", 55.0)
-    .param("amp", 0.85)
-    .param("gate", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.02, 1.0, 0.15)
@@ -22,3 +22,19 @@ define_synthdef("bass_reggae")
         // Very warm filtering
         lpf_ar(sig, 800.0) * env * amp
     });
+
+//
+// # Usage: bass_reggae
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_reggae.vibe" as bass_reggae;
+//
+// let doc_bass_reggae = voice("doc_bass_reggae")
+//     .synth("bass_reggae")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.85)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_reggae.output("out").to_main();
+// doc_bass_reggae.run();
+// ```

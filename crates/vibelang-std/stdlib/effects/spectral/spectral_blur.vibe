@@ -20,9 +20,9 @@
 
 define_fx("spectral_blur", |builder| {
     builder
-        .param("bins", 10.0)
-        .param("mix", 0.7)
-        .param("level", 1.0)
+        .param("bins", 10.0) // units: count, range: 1..4096, default: 10.0. Bins amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 0.7) // units: ratio, range: 0..1, default: 0.7. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, bins, mix, level| {
             // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
             let buf_l = local_buf_ir(1.0, 2048.0);
@@ -50,3 +50,17 @@ define_fx("spectral_blur", |builder| {
             ]
         })
 });
+
+//
+// # Usage: spectral_blur
+//
+// ```rhai
+// import "stdlib/effects/spectral/spectral_blur.vibe" as spectral_blur;
+//
+// let doc_spectral_blur = fx("doc_spectral_blur")
+//     .synth("spectral_blur")
+//     .param("bins", 10.0)
+//     .param("mix", 0.7)
+//     .param("level", 1.0)
+//     .apply();
+// ```

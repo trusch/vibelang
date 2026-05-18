@@ -5,9 +5,9 @@
 
 define_synthdef("church_bell", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Bell envelope
             let env = envelope()
@@ -44,3 +44,18 @@ define_synthdef("church_bell", |builder| {
             (bell * 0.4 + strike_filtered) * env * decay_env * amp
         })
 });
+
+//
+// # Usage: `church_bell`
+//
+// ```rhai
+// import "stdlib/bells/church_bell.vibe" as church_bell;
+//
+// let church_bell = voice("doc_church_bell")
+//     .synth("church_bell")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// church_bell.output("out").to_main();
+// church_bell.run();
+// ```

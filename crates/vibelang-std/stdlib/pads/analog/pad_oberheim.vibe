@@ -1,8 +1,8 @@
 // Genre: 80s, Synthpop | Character: Oberheim brass pad - thick and powerful
 define_synthdef("pad_oberheim")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.1, 1.0, 0.2)
@@ -28,3 +28,18 @@ define_synthdef("pad_oberheim")
         let cutoff = 600.0 + filt_env * 3000.0;
         rlpf_ar(mix, cutoff, 0.2) * env * amp
     });
+
+//
+// # Usage: `pad_oberheim`
+//
+// ```rhai
+// import "stdlib/pads/analog/pad_oberheim.vibe" as pad_oberheim;
+//
+// let pad_oberheim = voice("doc_pad_oberheim")
+//     .synth("pad_oberheim")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_oberheim.output("out").to_main();
+// pad_oberheim.run();
+// ```

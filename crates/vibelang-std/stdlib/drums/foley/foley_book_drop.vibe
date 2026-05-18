@@ -1,7 +1,7 @@
 // Genre: Experimental, Lo-fi | Character: Book drop thump
 define_synthdef("foley_book_drop")
-    .param("freq", 100.0)
-    .param("amp", 0.7)
+    .param("freq", 100.0) // units: Hz, range: 20..20000, default: 100.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Soft thump decay
         let amp_env = envelope()
@@ -29,3 +29,18 @@ define_synthdef("foley_book_drop")
 
         (body + paper + impact) * amp_env * amp
     });
+
+//
+// # Usage: foley_book_drop
+//
+// ```rhai
+// import "stdlib/drums/foley/foley_book_drop.vibe" as foley_book_drop;
+//
+// let doc_foley_book_drop = voice("doc_foley_book_drop")
+//     .synth("foley_book_drop")
+//     .set_param("freq", 100.0)
+//     .set_param("amp", 0.7)
+//     ;
+// doc_foley_book_drop.output("out").to_main();
+// doc_foley_book_drop.run();
+// ```

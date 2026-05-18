@@ -1,7 +1,7 @@
 // Genre: Ambient, Downtempo | Character: Long decay, washy
 define_synthdef("hihat_long", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long envelope for washy character
             let env = envelope()
@@ -24,3 +24,16 @@ define_synthdef("hihat_long", |builder| {
         })
 });
 
+//
+// # Usage: hihat_long
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_long.vibe" as hihat_long;
+//
+// let doc_hihat_long = voice("doc_hihat_long")
+//     .synth("hihat_long")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_long.output("out").to_main();
+// doc_hihat_long.run();
+// ```

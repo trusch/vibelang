@@ -28,10 +28,10 @@
 //
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 define_synthdef("cv_seq_random")
-    .param("clock_in", 0.0)
-    .param("scale", 0.0)
-    .param("step_range", 12.0)
-    .param("root", 0.0)
+    .param("clock_in", 0.0) // units: trigger, range: 0..1, default: 0.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("scale", 0.0) // units: selector, range: 0..N, default: 0.0. Selects mode, table, or step count.
+    .param("step_range", 12.0) // units: semitones, range: 0..60, default: 12.0. Step Range amount; higher values emphasize that named musical or electrical behavior.
+    .param("root", 0.0) // units: semitones, range: -60..60, default: 0.0. Scale root offset in semitones; shifts quantized CV around the key center.
     .body(|clock_in, scale, step_range, root| {
         // Brownian random walk (kr), held on the clock edge.
         let walk = brown_noise_kr();
@@ -87,3 +87,19 @@ define_synthdef("cv_seq_random")
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_seq_random`
+//
+// ```rhai
+// import "stdlib/cv/seq/cv_seq_random.vibe" as cv_seq_random;
+//
+// let cv_seq_random = voice("doc_cv_seq_random")
+//     .synth("cv_seq_random")
+//     .set_param("clock_in", 1.0)
+//     .set_param("scale", 1.0)
+//     .set_param("step_range", 0.5)
+//     .set_param("root", 0.5);
+// cv_seq_random.output("out").to_main();
+// cv_seq_random.run();
+// ```

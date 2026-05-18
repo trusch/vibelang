@@ -1,7 +1,7 @@
 // Genre: Funk, Pop | Character: High-pitched, tight piccolo snare
 define_synthdef("snare_piccolo", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Bright, short noise
             let noise_env = envelope()
@@ -28,3 +28,16 @@ define_synthdef("snare_piccolo", |builder| {
         })
 });
 
+//
+// # Usage: snare_piccolo
+//
+// ```rhai
+// import "stdlib/drums/snares/snare_piccolo.vibe" as snare_piccolo;
+//
+// let doc_snare_piccolo = voice("doc_snare_piccolo")
+//     .synth("snare_piccolo")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_snare_piccolo.output("out").to_main();
+// doc_snare_piccolo.run();
+// ```

@@ -9,14 +9,14 @@ define_synthdef("dxg")
     .input("ch2", 2)
     .input("strike2", 1)
     .input("aux", 2)
-    .param("ctrl1", 0.75)
-    .param("ctrl2", 0.75)
-    .param("strike_level", 0.8)
-    .param("strike_decay", 0.45)
-    .param("ch1_gain", 0.8)
-    .param("ch2_gain", 0.8)
-    .param("aux_gain", 0.8)
-    .param("level", 0.85)
+    .param("ctrl1", 0.75) // units: normalized, range: 0..1, default: 0.75. Dual-gate channel 1 control voltage; higher opens that low-pass gate.
+    .param("ctrl2", 0.75) // units: normalized, range: 0..1, default: 0.75. Dual-gate channel 2 control voltage; higher opens that low-pass gate.
+    .param("strike_level", 0.8) // units: linear, range: 0..1, default: 0.8. Strike impulse level; higher makes the LPG hit harder.
+    .param("strike_decay", 0.45) // units: normalized, range: 0..1, default: 0.45. Envelope time or level; higher values make that stage last longer or sustain higher.
+    .param("ch1_gain", 0.8) // units: linear, range: 0..1, default: 0.8. Channel 1 gain trim; higher sends more of that channel to the mix.
+    .param("ch2_gain", 0.8) // units: linear, range: 0..1, default: 0.8. Channel 2 gain trim; higher sends more of that channel to the mix.
+    .param("aux_gain", 0.8) // units: linear, range: 0..1, default: 0.8. Auxiliary input gain; higher sends more aux signal to the mix.
+    .param("level", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
     .body_map(|p| {
         let strike_decay = clip(p.strike_decay, 0.02, 4.0);
         let strike1 = decay2_ar(clip(p.inputs.strike1, 0.0, 1.0), 0.002, strike_decay) * p.strike_level;
@@ -41,3 +41,19 @@ define_synthdef("dxg")
             softclip((ch1_r + ch2_r + aux_r) * p.level)
         ]
     });
+
+//
+// # Usage: `dxg`
+//
+// ```rhai
+// import "stdlib/processors/dynamics/dxg.vibe" as dxg;
+//
+// let dxg = voice("doc_dxg")
+//     .synth("dxg")
+//     .set_param("ch1_gain", 0.5)
+//     .set_param("strike_level", 0.5)
+//     .set_param("strike_decay", 0.5)
+//     .set_param("ctrl1", 0.5);
+// dxg.output("out").to_main();
+// dxg.run();
+// ```

@@ -18,9 +18,9 @@
 
 define_fx("ring_mod", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, freq, mix, level| {
             // Generate modulator (carrier wave)
             let modulator = sin_osc_ar(freq, 0.0);
@@ -38,3 +38,17 @@ define_fx("ring_mod", |builder| {
             ]
         })
 });
+
+//
+// # Usage: ring_mod
+//
+// ```rhai
+// import "stdlib/effects/modulation/ring_mod.vibe" as ring_mod;
+//
+// let doc_ring_mod = fx("doc_ring_mod")
+//     .synth("ring_mod")
+//     .param("freq", 440.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

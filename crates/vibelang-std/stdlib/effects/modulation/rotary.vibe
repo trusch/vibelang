@@ -20,10 +20,10 @@
 
 define_fx("rotary", |builder| {
     builder
-        .param("rate", 6.0)
-        .param("depth", 0.003)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 6.0) // units: Hz, range: 0..100, default: 6.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.003) // units: ratio, range: 0..1, default: 0.003. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, mix, level| {
             // Mix to mono for effect
             let mono = (input[0] + input[1]) * 0.5;
@@ -56,3 +56,18 @@ define_fx("rotary", |builder| {
             ]
         })
 });
+
+//
+// # Usage: rotary
+//
+// ```rhai
+// import "stdlib/effects/modulation/rotary.vibe" as rotary;
+//
+// let doc_rotary = fx("doc_rotary")
+//     .synth("rotary")
+//     .param("rate", 6.0)
+//     .param("depth", 0.003)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

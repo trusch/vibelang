@@ -1,8 +1,8 @@
 // Genre: Sci-Fi, Electronic | Character: Laser-style sweep
 define_synthdef("sweep_laser", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 0.5)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 0.5) // units: seconds, range: 0..60, default: 0.5. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.001, 1.0)
@@ -25,3 +25,18 @@ define_synthdef("sweep_laser", |builder| {
             filtered * env * amp * 0.7
         })
 });
+
+//
+// # Usage: sweep_laser
+//
+// ```rhai
+// import "stdlib/fx/sweeps/sweep_laser.vibe" as sweep_laser;
+//
+// let doc_sweep_laser = voice("doc_sweep_laser")
+//     .synth("sweep_laser")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 0.5)
+//     ;
+// doc_sweep_laser.output("out").to_main();
+// doc_sweep_laser.run();
+// ```

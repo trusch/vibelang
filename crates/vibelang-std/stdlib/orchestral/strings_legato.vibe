@@ -1,8 +1,8 @@
 // Genre: Orchestral, Cinematic | Character: Smooth legato string section
 define_synthdef("strings_legato")
-    .param("freq", 440.0)
-    .param("amp", 0.55)
-    .param("gate", 1.0)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Smooth legato envelope
         let env = envelope()
@@ -24,3 +24,18 @@ define_synthdef("strings_legato")
 
         lpf_ar(mix, 5000.0) * env * amp
     });
+
+//
+// # Usage: `strings_legato`
+//
+// ```rhai
+// import "stdlib/orchestral/strings_legato.vibe" as strings_legato;
+//
+// let strings_legato = voice("doc_strings_legato")
+//     .synth("strings_legato")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// strings_legato.output("out").to_main();
+// strings_legato.run();
+// ```

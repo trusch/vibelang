@@ -1,7 +1,7 @@
 // Genre: Hip-hop, Trap | Character: 808 tom with pitch decay
 define_synthdef("tom_808")
-    .param("freq", 120.0)
-    .param("amp", 0.85)
+    .param("freq", 120.0) // units: Hz, range: 20..20000, default: 120.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // 808 tom decay
         let amp_env = envelope()
@@ -20,3 +20,18 @@ define_synthdef("tom_808")
 
         body * amp_env * amp
     });
+
+//
+// # Usage: tom_808
+//
+// ```rhai
+// import "stdlib/drums/toms/tom_808.vibe" as tom_808;
+//
+// let doc_tom_808 = voice("doc_tom_808")
+//     .synth("tom_808")
+//     .set_param("freq", 120.0)
+//     .set_param("amp", 0.85)
+//     ;
+// doc_tom_808.output("out").to_main();
+// doc_tom_808.run();
+// ```

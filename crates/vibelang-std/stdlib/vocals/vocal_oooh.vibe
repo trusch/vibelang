@@ -1,8 +1,8 @@
 // Genre: Ambient, R&B | Character: "Oooh" choir voice
 define_synthdef("vocal_oooh")
-    .param("freq", 220.0)
-    .param("amp", 0.55)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.55) // units: linear, range: 0..1, default: 0.55. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.2, 1.0, 0.25)
@@ -25,3 +25,18 @@ define_synthdef("vocal_oooh")
 
         sig * env * amp
     });
+
+//
+// # Usage: `vocal_oooh`
+//
+// ```rhai
+// import "stdlib/vocals/vocal_oooh.vibe" as vocal_oooh;
+//
+// let vocal_oooh = voice("doc_vocal_oooh")
+//     .synth("vocal_oooh")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// vocal_oooh.output("out").to_main();
+// vocal_oooh.run();
+// ```

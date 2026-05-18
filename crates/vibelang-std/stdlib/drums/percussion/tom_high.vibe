@@ -1,8 +1,8 @@
 // Genre: All | Character: High tom, resonant
 define_synthdef("tom_high", |builder| {
     builder
-        .param("freq", 200.0)
-        .param("amp", 1.0)
+        .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|freq, amp| {
             // Medium decay
             let amp_env = envelope()
@@ -33,3 +33,17 @@ define_synthdef("tom_high", |builder| {
         })
 });
 
+//
+// # Usage: tom_high
+//
+// ```rhai
+// import "stdlib/drums/percussion/tom_high.vibe" as tom_high;
+//
+// let doc_tom_high = voice("doc_tom_high")
+//     .synth("tom_high")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_tom_high.output("out").to_main();
+// doc_tom_high.run();
+// ```

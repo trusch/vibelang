@@ -1,8 +1,8 @@
 // Genre: Horror, Thriller | Character: Tension drone
 define_synthdef("drone_tension")
-    .param("freq", 55.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(1.0, 1.0, 1.0)
@@ -26,3 +26,18 @@ define_synthdef("drone_tension")
 
         lpf_ar(sig, 800.0) * env * amp
     });
+
+//
+// # Usage: `drone_tension`
+//
+// ```rhai
+// import "stdlib/cinematic/drone_tension.vibe" as drone_tension;
+//
+// let drone_tension = voice("doc_drone_tension")
+//     .synth("drone_tension")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// drone_tension.output("out").to_main();
+// drone_tension.run();
+// ```

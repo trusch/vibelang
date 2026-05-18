@@ -42,147 +42,147 @@ fn _rainmaker_comb_weight(taps, threshold) {
 
 define_synthdef("rainmaker")
     .input("in", 2)
-    .param("time", 500.0)
-    .param("grid", 16.0)
-    .param("feedback", 0.4)
-    .param("feedback_pitch", 0.0)
-    .param("feedback_tone", 0.5)
-    .param("reverse", 0.0)
-    .param("wet_dry", 0.5)
-    .param("tap_level_1", 0.50)
-    .param("tap_level_2", 0.48)
-    .param("tap_level_3", 0.46)
-    .param("tap_level_4", 0.44)
-    .param("tap_level_5", 0.42)
-    .param("tap_level_6", 0.40)
-    .param("tap_level_7", 0.38)
-    .param("tap_level_8", 0.36)
-    .param("tap_level_9", 0.34)
-    .param("tap_level_10", 0.32)
-    .param("tap_level_11", 0.30)
-    .param("tap_level_12", 0.28)
-    .param("tap_level_13", 0.26)
-    .param("tap_level_14", 0.24)
-    .param("tap_level_15", 0.22)
-    .param("tap_level_16", 0.20)
-    .param("tap_pan_1", -1.0)
-    .param("tap_pan_2", 1.0)
-    .param("tap_pan_3", -1.0)
-    .param("tap_pan_4", 1.0)
-    .param("tap_pan_5", -1.0)
-    .param("tap_pan_6", 1.0)
-    .param("tap_pan_7", -1.0)
-    .param("tap_pan_8", 1.0)
-    .param("tap_pan_9", -1.0)
-    .param("tap_pan_10", 1.0)
-    .param("tap_pan_11", -1.0)
-    .param("tap_pan_12", 1.0)
-    .param("tap_pan_13", -1.0)
-    .param("tap_pan_14", 1.0)
-    .param("tap_pan_15", -1.0)
-    .param("tap_pan_16", 1.0)
-    .param("tap_filter_cutoff_1", 5000.0)
-    .param("tap_filter_cutoff_2", 5000.0)
-    .param("tap_filter_cutoff_3", 5000.0)
-    .param("tap_filter_cutoff_4", 5000.0)
-    .param("tap_filter_cutoff_5", 5000.0)
-    .param("tap_filter_cutoff_6", 5000.0)
-    .param("tap_filter_cutoff_7", 5000.0)
-    .param("tap_filter_cutoff_8", 5000.0)
-    .param("tap_filter_cutoff_9", 5000.0)
-    .param("tap_filter_cutoff_10", 5000.0)
-    .param("tap_filter_cutoff_11", 5000.0)
-    .param("tap_filter_cutoff_12", 5000.0)
-    .param("tap_filter_cutoff_13", 5000.0)
-    .param("tap_filter_cutoff_14", 5000.0)
-    .param("tap_filter_cutoff_15", 5000.0)
-    .param("tap_filter_cutoff_16", 5000.0)
-    .param("tap_filter_q_1", 0.5)
-    .param("tap_filter_q_2", 0.5)
-    .param("tap_filter_q_3", 0.5)
-    .param("tap_filter_q_4", 0.5)
-    .param("tap_filter_q_5", 0.5)
-    .param("tap_filter_q_6", 0.5)
-    .param("tap_filter_q_7", 0.5)
-    .param("tap_filter_q_8", 0.5)
-    .param("tap_filter_q_9", 0.5)
-    .param("tap_filter_q_10", 0.5)
-    .param("tap_filter_q_11", 0.5)
-    .param("tap_filter_q_12", 0.5)
-    .param("tap_filter_q_13", 0.5)
-    .param("tap_filter_q_14", 0.5)
-    .param("tap_filter_q_15", 0.5)
-    .param("tap_filter_q_16", 0.5)
-    .param("tap_filter_type_1", 0.0)
-    .param("tap_filter_type_2", 0.0)
-    .param("tap_filter_type_3", 0.0)
-    .param("tap_filter_type_4", 0.0)
-    .param("tap_filter_type_5", 0.0)
-    .param("tap_filter_type_6", 0.0)
-    .param("tap_filter_type_7", 0.0)
-    .param("tap_filter_type_8", 0.0)
-    .param("tap_filter_type_9", 0.0)
-    .param("tap_filter_type_10", 0.0)
-    .param("tap_filter_type_11", 0.0)
-    .param("tap_filter_type_12", 0.0)
-    .param("tap_filter_type_13", 0.0)
-    .param("tap_filter_type_14", 0.0)
-    .param("tap_filter_type_15", 0.0)
-    .param("tap_filter_type_16", 0.0)
-    .param("tap_pitch_1", 0.0)
-    .param("tap_pitch_2", 0.0)
-    .param("tap_pitch_3", 0.0)
-    .param("tap_pitch_4", 0.0)
-    .param("tap_pitch_5", 0.0)
-    .param("tap_pitch_6", 0.0)
-    .param("tap_pitch_7", 0.0)
-    .param("tap_pitch_8", 0.0)
-    .param("tap_pitch_9", 0.0)
-    .param("tap_pitch_10", 0.0)
-    .param("tap_pitch_11", 0.0)
-    .param("tap_pitch_12", 0.0)
-    .param("tap_pitch_13", 0.0)
-    .param("tap_pitch_14", 0.0)
-    .param("tap_pitch_15", 0.0)
-    .param("tap_pitch_16", 0.0)
-    .param("tap_detune_1", 0.0)
-    .param("tap_detune_2", 0.0)
-    .param("tap_detune_3", 0.0)
-    .param("tap_detune_4", 0.0)
-    .param("tap_detune_5", 0.0)
-    .param("tap_detune_6", 0.0)
-    .param("tap_detune_7", 0.0)
-    .param("tap_detune_8", 0.0)
-    .param("tap_detune_9", 0.0)
-    .param("tap_detune_10", 0.0)
-    .param("tap_detune_11", 0.0)
-    .param("tap_detune_12", 0.0)
-    .param("tap_detune_13", 0.0)
-    .param("tap_detune_14", 0.0)
-    .param("tap_detune_15", 0.0)
-    .param("tap_detune_16", 0.0)
-    .param("tap_mute_1", 0.0)
-    .param("tap_mute_2", 0.0)
-    .param("tap_mute_3", 0.0)
-    .param("tap_mute_4", 0.0)
-    .param("tap_mute_5", 0.0)
-    .param("tap_mute_6", 0.0)
-    .param("tap_mute_7", 0.0)
-    .param("tap_mute_8", 0.0)
-    .param("tap_mute_9", 0.0)
-    .param("tap_mute_10", 0.0)
-    .param("tap_mute_11", 0.0)
-    .param("tap_mute_12", 0.0)
-    .param("tap_mute_13", 0.0)
-    .param("tap_mute_14", 0.0)
-    .param("tap_mute_15", 0.0)
-    .param("tap_mute_16", 0.0)
-    .param("comb_size", 100.0)
-    .param("comb_feedback", 0.5)
-    .param("comb_taps", 8.0)
-    .param("comb_density", 0.5)
-    .param("comb_nonlinear", 0.2)
-    .param("comb_mix", 0.3)
+    .param("time", 500.0) // units: ms, range: 1..16000, default: 500.0. Delay or segment time; higher values make repeats arrive later.
+    .param("grid", 16.0) // units: steps, range: 1..32, default: 16.0. Rhythm grid division count; higher values create finer tap spacing.
+    .param("feedback", 0.4) // units: normalized, range: 0..1, default: 0.4. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("feedback_pitch", 0.0) // units: normalized, range: 0..1, default: 0.0. Feedback pitch shift; higher values transpose recirculating repeats upward.
+    .param("feedback_tone", 0.5) // units: normalized, range: 0..1, default: 0.5. Feedback tone color; higher values keep recirculating repeats brighter.
+    .param("reverse", 0.0) // units: normalized, range: 0..1, default: 0.0. Reverse switch; rounded values turn that mode off or on.
+    .param("wet_dry", 0.5) // units: normalized, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("tap_level_1", 0.50) // units: linear, range: 0..1, default: 0.50. Tap 1 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_2", 0.48) // units: linear, range: 0..1, default: 0.48. Tap 2 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_3", 0.46) // units: linear, range: 0..1, default: 0.46. Tap 3 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_4", 0.44) // units: linear, range: 0..1, default: 0.44. Tap 4 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_5", 0.42) // units: linear, range: 0..1, default: 0.42. Tap 5 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_6", 0.40) // units: linear, range: 0..1, default: 0.40. Tap 6 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_7", 0.38) // units: linear, range: 0..1, default: 0.38. Tap 7 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_8", 0.36) // units: linear, range: 0..1, default: 0.36. Tap 8 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_9", 0.34) // units: linear, range: 0..1, default: 0.34. Tap 9 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_10", 0.32) // units: linear, range: 0..1, default: 0.32. Tap 10 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_11", 0.30) // units: linear, range: 0..1, default: 0.30. Tap 11 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_12", 0.28) // units: linear, range: 0..1, default: 0.28. Tap 12 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_13", 0.26) // units: linear, range: 0..1, default: 0.26. Tap 13 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_14", 0.24) // units: linear, range: 0..1, default: 0.24. Tap 14 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_15", 0.22) // units: linear, range: 0..1, default: 0.22. Tap 15 output gain; higher makes that rhythm tap louder.
+    .param("tap_level_16", 0.20) // units: linear, range: 0..1, default: 0.20. Tap 16 output gain; higher makes that rhythm tap louder.
+    .param("tap_pan_1", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 1 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_2", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 2 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_3", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 3 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_4", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 4 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_5", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 5 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_6", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 6 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_7", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 7 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_8", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 8 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_9", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 9 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_10", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 10 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_11", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 11 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_12", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 12 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_13", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 13 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_14", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 14 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_15", -1.0) // units: pan, range: -1..1, default: -1.0. Tap 15 stereo pan; -1 is left, +1 is right.
+    .param("tap_pan_16", 1.0) // units: pan, range: -1..1, default: 1.0. Tap 16 stereo pan; -1 is left, +1 is right.
+    .param("tap_filter_cutoff_1", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 1 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_2", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 2 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_3", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 3 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_4", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 4 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_5", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 5 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_6", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 6 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_7", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 7 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_8", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 8 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_9", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 9 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_10", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 10 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_11", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 11 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_12", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 12 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_13", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 13 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_14", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 14 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_15", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 15 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_cutoff_16", 5000.0) // units: Hz, range: 20..20000, default: 5000.0. Tap 16 filter cutoff in Hz; higher leaves that tap brighter.
+    .param("tap_filter_q_1", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 1 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_2", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 2 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_3", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 3 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_4", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 4 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_5", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 5 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_6", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 6 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_7", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 7 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_8", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 8 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_9", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 9 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_10", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 10 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_11", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 11 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_12", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 12 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_13", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 13 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_14", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 14 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_15", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 15 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_q_16", 0.5) // units: normalized, range: 0..1, default: 0.5. Tap 16 filter resonance; higher narrows and emphasizes the tap tone.
+    .param("tap_filter_type_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 1 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 2 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 3 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 4 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_5", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 5 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_6", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 6 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_7", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 7 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_8", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 8 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_9", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 9 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_10", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 10 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_11", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 11 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_12", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 12 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_13", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 13 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_14", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 14 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_15", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 15 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_filter_type_16", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 16 filter mode selector; rounds between lowpass, bandpass, and highpass.
+    .param("tap_pitch_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 1 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 2 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 3 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 4 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_5", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 5 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_6", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 6 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_7", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 7 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_8", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 8 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_9", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 9 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_10", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 10 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_11", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 11 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_12", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 12 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_13", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 13 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_14", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 14 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_15", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 15 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_pitch_16", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 16 pitch shift in semitones; positive values transpose that repeat upward.
+    .param("tap_detune_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 1 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 2 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 3 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 4 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_5", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 5 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_6", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 6 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_7", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 7 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_8", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 8 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_9", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 9 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_10", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 10 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_11", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 11 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_12", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 12 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_13", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 13 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_14", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 14 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_15", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 15 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_detune_16", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 16 fine detune in semitones; adds small pitch offsets to the repeat.
+    .param("tap_mute_1", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 1 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_2", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 2 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_3", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 3 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_4", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 4 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_5", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 5 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_6", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 6 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_7", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 7 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_8", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 8 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_9", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 9 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_10", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 10 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_11", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 11 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_12", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 12 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_13", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 13 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_14", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 14 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_15", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 15 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("tap_mute_16", 0.0) // units: normalized, range: 0..1, default: 0.0. Tap 16 mute switch; 0 passes the tap, 1 removes it from the pattern.
+    .param("comb_size", 100.0) // units: Hz, range: 20..4000, default: 100.0. Comb resonator frequency in Hz; higher values make the resonant pitch brighter.
+    .param("comb_feedback", 0.5) // units: normalized, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("comb_taps", 8.0) // units: count, range: 1..64, default: 8.0. Number of comb delay taps; higher values create a denser resonator cluster.
+    .param("comb_density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
+    .param("comb_nonlinear", 0.2) // units: normalized, range: 0..1, default: 0.2. Comb drive nonlinearity; higher values add saturation inside the resonator.
+    .param("comb_mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
     .body_map(|p| {
         let dry_l = p.inputs["in"][0];
         let dry_r = p.inputs["in"][1];
@@ -300,3 +300,19 @@ define_synthdef("rainmaker")
             softclip((1.0 - wet_dry) * dry_r + wet_dry * leak_dc_ar(wet_r, 0.995))
         ]
     });
+
+//
+// # Usage: `rainmaker`
+//
+// ```rhai
+// import "stdlib/processors/delays/rainmaker.vibe" as rainmaker;
+//
+// let rainmaker = voice("doc_rainmaker")
+//     .synth("rainmaker")
+//     .set_param("tap_filter_cutoff_1", 1800.0)
+//     .set_param("tap_level_1", 0.5)
+//     .set_param("comb_mix", 0.45)
+//     .set_param("time", 0.5);
+// rainmaker.output("out").to_main();
+// rainmaker.run();
+// ```

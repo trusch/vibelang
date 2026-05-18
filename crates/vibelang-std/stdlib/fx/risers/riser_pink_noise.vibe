@@ -1,7 +1,7 @@
 // Genre: House, Techno | Character: Pink noise riser, warmer than white
 define_synthdef("riser_pink_noise", |builder| {
     builder
-        .param("amp", 0.6)
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long rise
             let env = envelope()
@@ -27,3 +27,16 @@ define_synthdef("riser_pink_noise", |builder| {
         })
 });
 
+//
+// # Usage: riser_pink_noise
+//
+// ```rhai
+// import "stdlib/fx/risers/riser_pink_noise.vibe" as riser_pink_noise;
+//
+// let doc_riser_pink_noise = voice("doc_riser_pink_noise")
+//     .synth("riser_pink_noise")
+//     .set_param("amp", 0.6)
+//     ;
+// doc_riser_pink_noise.output("out").to_main();
+// doc_riser_pink_noise.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: All | Character: Small splash cymbal, quick and bright
 define_synthdef("splash", |builder| {
     builder
-        .param("amp", 0.7)
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
         .body(|amp| {
             // Short decay
             let env = envelope()
@@ -28,3 +28,16 @@ define_synthdef("splash", |builder| {
         })
 });
 
+//
+// # Usage: splash
+//
+// ```rhai
+// import "stdlib/drums/cymbals/splash.vibe" as splash;
+//
+// let doc_splash = voice("doc_splash")
+//     .synth("splash")
+//     .set_param("amp", 0.7)
+//     ;
+// doc_splash.output("out").to_main();
+// doc_splash.run();
+// ```

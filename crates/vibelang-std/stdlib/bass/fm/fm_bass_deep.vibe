@@ -1,10 +1,10 @@
 // Genre: Dubstep, Bass Music | Character: Deep FM bass with sub presence
 define_synthdef("fm_bass_deep", |builder| {
     builder
-        .param("freq", 75.0)
-        .param("fm_amount", 3.0)
-        .param("amp", 0.7)
-        .param("gate", 1.0)
+        .param("freq", 75.0) // units: Hz, range: 20..20000, default: 75.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("fm_amount", 3.0) // units: ratio, range: 0..10, default: 3.0. FM modulation depth; higher values add stronger sidebands and brightness.
+        .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, fm_amount, amp, gate| {
 
             // Envelope
@@ -32,3 +32,19 @@ define_synthdef("fm_bass_deep", |builder| {
         })
 });
 
+//
+// # Usage: fm_bass_deep
+//
+// ```rhai
+// import "stdlib/bass/fm/fm_bass_deep.vibe" as fm_bass_deep;
+//
+// let doc_fm_bass_deep = voice("doc_fm_bass_deep")
+//     .synth("fm_bass_deep")
+//     .set_param("freq", 75.0)
+//     .set_param("fm_amount", 3.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_fm_bass_deep.output("out").to_main();
+// doc_fm_bass_deep.run();
+// ```

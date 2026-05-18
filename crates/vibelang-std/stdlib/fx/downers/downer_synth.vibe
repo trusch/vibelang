@@ -1,8 +1,8 @@
 // Genre: Trance, Progressive | Character: Synth-based downlifter
 define_synthdef("downer_synth", |builder| {
     builder
-        .param("amp", 0.5)
-        .param("duration", 3.0)
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("duration", 3.0) // units: seconds, range: 0..60, default: 3.0. Sound duration in seconds; higher values make the voice or effect last longer.
         .body(|amp, duration| {
             let env = envelope()
                 .perc(0.1, 1.0)
@@ -29,3 +29,18 @@ define_synthdef("downer_synth", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: downer_synth
+//
+// ```rhai
+// import "stdlib/fx/downers/downer_synth.vibe" as downer_synth;
+//
+// let doc_downer_synth = voice("doc_downer_synth")
+//     .synth("downer_synth")
+//     .set_param("amp", 0.5)
+//     .set_param("duration", 3.0)
+//     ;
+// doc_downer_synth.output("out").to_main();
+// doc_downer_synth.run();
+// ```

@@ -27,11 +27,11 @@
 //   level:         Output level trim (1.0 = unity)
 
 define_fx("bitcrush_pro")
-    .param("sample_rate", 8000.0)
-    .param("bits", 8.0)
-    .param("dither_amount", 0.5)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("sample_rate", 8000.0) // units: Hz, range: 1000..48000, default: 8000.0. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("bits", 8.0) // units: bits, range: 1..24, default: 8.0. Random shift-register bit depth; higher values make stepped CV less coarse.
+    .param("dither_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Dither Amount; higher values apply more of that modulation or effect.
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, sample_rate, bits, dither_amount, mix, level| {
         // Pink-noise dither: independent per channel, scaled small enough that
         // it sits below the lowest quantisation step at typical settings.
@@ -58,3 +58,18 @@ define_fx("bitcrush_pro")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: bitcrush_pro
+//
+// ```rhai
+// import "stdlib/effects/character/bitcrush_pro.vibe" as bitcrush_pro;
+//
+// let doc_bitcrush_pro = fx("doc_bitcrush_pro")
+//     .synth("bitcrush_pro")
+//     .param("sample_rate", 8000.0)
+//     .param("bits", 8.0)
+//     .param("dither_amount", 0.5)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

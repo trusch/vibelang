@@ -1,8 +1,8 @@
 // Genre: Ambient, Soul | Character: Humming "Mmm" sound
 define_synthdef("vocal_mmm")
-    .param("freq", 220.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.2, 1.0, 0.3)
@@ -28,3 +28,18 @@ define_synthdef("vocal_mmm")
 
         filtered * env * amp
     });
+
+//
+// # Usage: `vocal_mmm`
+//
+// ```rhai
+// import "stdlib/vocals/vocal_mmm.vibe" as vocal_mmm;
+//
+// let vocal_mmm = voice("doc_vocal_mmm")
+//     .synth("vocal_mmm")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// vocal_mmm.output("out").to_main();
+// vocal_mmm.run();
+// ```

@@ -1,7 +1,7 @@
 // Genre: Experimental, Noise | Character: Noise-based drone
 define_synthdef("drone_noise", |builder| {
     builder
-        .param("amp", 0.35)
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long sustain
             let env = envelope()
@@ -31,3 +31,15 @@ define_synthdef("drone_noise", |builder| {
         })
 });
 
+//
+// # Usage: `drone_noise`
+//
+// ```rhai
+// import "stdlib/textures/drone/drone_noise.vibe" as drone_noise;
+//
+// let drone_noise = voice("doc_drone_noise")
+//     .synth("drone_noise")
+//     .set_param("amp", 0.5);
+// drone_noise.output("out").to_main();
+// drone_noise.run();
+// ```

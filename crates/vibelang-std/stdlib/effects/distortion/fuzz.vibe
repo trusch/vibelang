@@ -20,10 +20,10 @@
 
 define_fx("fuzz", |builder| {
     builder
-        .param("gain", 10.0)
-        .param("tone", 3000.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("gain", 10.0) // units: gain, range: 0..20, default: 10.0. Output level multiplier; higher is louder.
+        .param("tone", 3000.0) // units: Hz, range: 20..20000, default: 3000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, gain, tone, mix, level| {
             // Boost and clip
             let fuzzed_left = (input[0] * gain).tanh();
@@ -46,3 +46,18 @@ define_fx("fuzz", |builder| {
             ]
         })
 });
+
+//
+// # Usage: fuzz
+//
+// ```rhai
+// import "stdlib/effects/distortion/fuzz.vibe" as fuzz;
+//
+// let doc_fuzz = fx("doc_fuzz")
+//     .synth("fuzz")
+//     .param("gain", 10.0)
+//     .param("tone", 3000.0)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

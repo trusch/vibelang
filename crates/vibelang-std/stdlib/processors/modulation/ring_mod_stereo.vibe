@@ -3,8 +3,8 @@
 define_synthdef("ring_mod_stereo")
     .input("carrier", 2)
     .input("modulator", 2)
-    .param("mix", 1.0)
-    .param("level", 1.0)
+    .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body_map(|p| {
         let carrier_l = p.inputs.carrier[0];
         let carrier_r = p.inputs.carrier[1];
@@ -19,3 +19,17 @@ define_synthdef("ring_mod_stereo")
             ((1.0 - mix) * carrier_r + mix * wet_r) * p.level
         ]
     });
+
+//
+// # Usage: `ring_mod_stereo`
+//
+// ```rhai
+// import "stdlib/processors/modulation/ring_mod_stereo.vibe" as ring_mod_stereo;
+//
+// let ring_mod_stereo = voice("doc_ring_mod_stereo")
+//     .synth("ring_mod_stereo")
+//     .set_param("level", 0.5)
+//     .set_param("mix", 0.45);
+// ring_mod_stereo.output("out").to_main();
+// ring_mod_stereo.run();
+// ```

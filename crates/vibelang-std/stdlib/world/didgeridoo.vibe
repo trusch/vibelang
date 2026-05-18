@@ -1,8 +1,8 @@
 // Region: Australian | Character: Deep drone instrument
 define_synthdef("didgeridoo")
-    .param("freq", 55.0)
-    .param("amp", 0.6)
-    .param("gate", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.1, 1.0, 0.2)
@@ -28,3 +28,18 @@ define_synthdef("didgeridoo")
 
         filtered * env * amp
     });
+
+//
+// # Usage: `didgeridoo`
+//
+// ```rhai
+// import "stdlib/world/didgeridoo.vibe" as didgeridoo;
+//
+// let didgeridoo = voice("doc_didgeridoo")
+//     .synth("didgeridoo")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// didgeridoo.output("out").to_main();
+// didgeridoo.run();
+// ```

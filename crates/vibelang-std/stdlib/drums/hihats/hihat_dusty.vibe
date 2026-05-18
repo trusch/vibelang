@@ -1,7 +1,7 @@
 // Genre: Lo-fi Hip-hop | Character: Dusty, lo-fi texture
 define_synthdef("hihat_dusty", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Soft attack and medium decay
             let env = envelope()
@@ -22,3 +22,16 @@ define_synthdef("hihat_dusty", |builder| {
         })
 });
 
+//
+// # Usage: hihat_dusty
+//
+// ```rhai
+// import "stdlib/drums/hihats/hihat_dusty.vibe" as hihat_dusty;
+//
+// let doc_hihat_dusty = voice("doc_hihat_dusty")
+//     .synth("hihat_dusty")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_hihat_dusty.output("out").to_main();
+// doc_hihat_dusty.run();
+// ```

@@ -24,11 +24,11 @@
 
 define_fx("reverb_jpverb", |builder| {
     builder
-        .param("time", 2.0)
-        .param("damp", 0.3)
-        .param("size", 1.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("time", 2.0) // units: seconds, range: 0..10, default: 2.0. Delay or segment time; higher values make repeats arrive later.
+        .param("damp", 0.3) // units: ratio, range: 0..1, default: 0.3. Damping amount; higher values shorten and darken the decay.
+        .param("size", 1.0) // units: ratio, range: 0..1, default: 1.0. Size; higher values use a larger buffer, room, or grain window.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, time, damp, size, mix, level| {
             // Mix stereo input to mono for the reverb input.
             let mono = (input[0] + input[1]) * 0.5;
@@ -55,3 +55,18 @@ define_fx("reverb_jpverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverb_jpverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/reverb_jpverb.vibe" as reverb_jpverb;
+//
+// let doc_reverb_jpverb = fx("doc_reverb_jpverb")
+//     .synth("reverb_jpverb")
+//     .param("time", 2.0)
+//     .param("damp", 0.3)
+//     .param("size", 1.0)
+//     .param("mix", 0.3)
+//     .apply();
+// ```

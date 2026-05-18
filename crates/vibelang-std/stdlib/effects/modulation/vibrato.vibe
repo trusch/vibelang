@@ -20,10 +20,10 @@
 
 define_fx("vibrato", |builder| {
     builder
-        .param("rate", 5.0)
-        .param("depth", 0.002)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 5.0) // units: Hz, range: 0..100, default: 5.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.002) // units: ratio, range: 0..1, default: 0.002. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, mix, level| {
             // LFO for pitch modulation
             let lfo = sin_osc_ar(rate, 0.0);
@@ -44,3 +44,18 @@ define_fx("vibrato", |builder| {
             ]
         })
 });
+
+//
+// # Usage: vibrato
+//
+// ```rhai
+// import "stdlib/effects/modulation/vibrato.vibe" as vibrato;
+//
+// let doc_vibrato = fx("doc_vibrato")
+//     .synth("vibrato")
+//     .param("rate", 5.0)
+//     .param("depth", 0.002)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

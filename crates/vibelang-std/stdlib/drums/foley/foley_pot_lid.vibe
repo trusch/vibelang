@@ -1,7 +1,7 @@
 // Genre: Experimental, Industrial | Character: Metal pot lid cymbal
 define_synthdef("foley_pot_lid")
-    .param("freq", 800.0)
-    .param("amp", 0.6)
+    .param("freq", 800.0) // units: Hz, range: 20..20000, default: 800.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Metallic ring
         let amp_env = envelope()
@@ -24,3 +24,18 @@ define_synthdef("foley_pot_lid")
 
         (body + ring1 + ring2 + ring3 + ring4 + attack) * amp_env * amp
     });
+
+//
+// # Usage: foley_pot_lid
+//
+// ```rhai
+// import "stdlib/drums/foley/foley_pot_lid.vibe" as foley_pot_lid;
+//
+// let doc_foley_pot_lid = voice("doc_foley_pot_lid")
+//     .synth("foley_pot_lid")
+//     .set_param("freq", 800.0)
+//     .set_param("amp", 0.6)
+//     ;
+// doc_foley_pot_lid.output("out").to_main();
+// doc_foley_pot_lid.run();
+// ```

@@ -1,9 +1,9 @@
 // Genre: Experimental, Ambient, IDM | Character: Granular bass texture
 define_synthdef("bass_granular")
-    .param("freq", 60.0)
-    .param("amp", 0.7)
-    .param("gate", 1.0)
-    .param("grain_rate", 20.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("grain_rate", 20.0) // units: Hz, range: 0..100, default: 20.0. Clock or modulation rate in Hz; higher values make motion faster.
     .body(|freq, amp, gate, grain_rate| {
         let env = envelope()
             .asr(0.05, 1.0, 0.2)
@@ -27,3 +27,20 @@ define_synthdef("bass_granular")
 
         lpf_ar(mix, 2000.0) * env * amp
     });
+
+//
+// # Usage: bass_granular
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_granular.vibe" as bass_granular;
+//
+// let doc_bass_granular = voice("doc_bass_granular")
+//     .synth("bass_granular")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.7)
+//     .set_param("gate", 1.0)
+//     .set_param("grain_rate", 20.0)
+//     ;
+// doc_bass_granular.output("out").to_main();
+// doc_bass_granular.run();
+// ```

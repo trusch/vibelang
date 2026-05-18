@@ -1,9 +1,9 @@
 // Genre: Trance, EDM | Character: Heavily detuned, wide and lush
 define_synthdef("pad_detuned", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.35)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.35) // units: linear, range: 0..1, default: 0.35. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Slow attack for pad character
@@ -32,3 +32,17 @@ define_synthdef("pad_detuned", |builder| {
         })
 });
 
+//
+// # Usage: `pad_detuned`
+//
+// ```rhai
+// import "stdlib/pads/lush/pad_detuned.vibe" as pad_detuned;
+//
+// let pad_detuned = voice("doc_pad_detuned")
+//     .synth("pad_detuned")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// pad_detuned.output("out").to_main();
+// pad_detuned.run();
+// ```

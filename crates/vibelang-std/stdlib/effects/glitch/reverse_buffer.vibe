@@ -34,10 +34,10 @@
 
 define_fx("reverse_buffer", |builder| {
     builder
-        .param("window_seconds", 0.5)
-        .param("trigger_rate", 2.0)
-        .param("mix", 0.5)
-        .param("level", 1.0)
+        .param("window_seconds", 0.5) // units: seconds, range: 0..10, default: 0.5. Window Seconds amount; higher values emphasize that named musical or electrical behavior.
+        .param("trigger_rate", 2.0) // units: Hz, range: 0..100, default: 2.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, window_seconds, trigger_rate, mix, level| {
             // 2-second circular buffers per channel (96000 frames @ 48 kHz).
             let buf_l = local_buf_ir(1, 96000);
@@ -64,3 +64,18 @@ define_fx("reverse_buffer", |builder| {
             ]
         })
 });
+
+//
+// # Usage: reverse_buffer
+//
+// ```rhai
+// import "stdlib/effects/glitch/reverse_buffer.vibe" as reverse_buffer;
+//
+// let doc_reverse_buffer = fx("doc_reverse_buffer")
+//     .synth("reverse_buffer")
+//     .param("window_seconds", 0.5)
+//     .param("trigger_rate", 2.0)
+//     .param("mix", 0.5)
+//     .param("level", 1.0)
+//     .apply();
+// ```

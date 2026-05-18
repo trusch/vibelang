@@ -5,9 +5,9 @@
 
 define_synthdef("music_box", |builder| {
     builder
-        .param("freq", 880.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 880.0) // units: Hz, range: 20..20000, default: 880.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             // Quick pluck envelope
             let env = envelope()
@@ -41,3 +41,18 @@ define_synthdef("music_box", |builder| {
             bright * env * decay_env * amp * 0.6
         })
 });
+
+//
+// # Usage: `music_box`
+//
+// ```rhai
+// import "stdlib/bells/music_box.vibe" as music_box;
+//
+// let music_box = voice("doc_music_box")
+//     .synth("music_box")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// music_box.output("out").to_main();
+// music_box.run();
+// ```

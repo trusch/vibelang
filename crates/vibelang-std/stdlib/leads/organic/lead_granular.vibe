@@ -1,9 +1,9 @@
 // Genre: Ambient, Experimental | Character: Granular lead texture
 define_synthdef("lead_granular")
-    .param("freq", 440.0)
-    .param("amp", 0.5)
-    .param("gate", 1.0)
-    .param("density", 0.5)
+    .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("density", 0.5) // units: normalized, range: 0..1, default: 0.5. Event density per second; higher values create more grains, dust, or impulses.
     .body(|freq, amp, gate, density| {
         let env = envelope()
             .asr(0.05, 1.0, 0.2)
@@ -29,3 +29,19 @@ define_synthdef("lead_granular")
 
         sig * env * amp
     });
+
+//
+// # Usage: `lead_granular`
+//
+// ```rhai
+// import "stdlib/leads/organic/lead_granular.vibe" as lead_granular;
+//
+// let lead_granular = voice("doc_lead_granular")
+//     .synth("lead_granular")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("density", 0.5);
+// lead_granular.output("out").to_main();
+// lead_granular.run();
+// ```

@@ -16,12 +16,12 @@
 
 define_fx("shimmer_reverb", |builder| {
     builder
-        .param("size", 0.7)
-        .param("shimmer", 0.4)
-        .param("pitch", 2.0)
-        .param("decay", 0.6)
-        .param("mix", 0.4)
-        .param("level", 1.0)
+        .param("size", 0.7) // units: ratio, range: 0..1, default: 0.7. Size; higher values use a larger buffer, room, or grain window.
+        .param("shimmer", 0.4) // units: ratio, range: 0..1, default: 0.4. Shimmer amount; higher values emphasize that named musical or electrical behavior.
+        .param("pitch", 2.0) // units: semitones, range: -48..48, default: 2.0. Pitch in MIDI-note units; higher values play higher notes.
+        .param("decay", 0.6) // units: seconds, range: 0..10, default: 0.6. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("mix", 0.4) // units: ratio, range: 0..1, default: 0.4. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, size, shimmer, pitch, decay, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -63,3 +63,18 @@ define_fx("shimmer_reverb", |builder| {
             ]
         })
 });
+
+//
+// # Usage: shimmer_reverb
+//
+// ```rhai
+// import "stdlib/effects/reverbs/shimmer_reverb.vibe" as shimmer_reverb;
+//
+// let doc_shimmer_reverb = fx("doc_shimmer_reverb")
+//     .synth("shimmer_reverb")
+//     .param("size", 0.7)
+//     .param("shimmer", 0.4)
+//     .param("pitch", 2.0)
+//     .param("decay", 0.6)
+//     .apply();
+// ```

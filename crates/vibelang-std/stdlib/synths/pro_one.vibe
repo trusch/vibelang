@@ -4,11 +4,11 @@
 // Pro-One Bass - Punchy mono bass
 define_synthdef("pro_one_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("filter_freq", 800.0)
-        .param("resonance", 0.4)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_freq", 800.0) // units: Hz, range: 20..20000, default: 800.0. Filter Freq in Hz; higher values move that tone or filter point upward.
+        .param("resonance", 0.4) // units: resonance, range: 0..1, default: 0.4. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, filter_freq, resonance| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -37,10 +37,10 @@ define_synthdef("pro_one_bass", |builder| {
 // Pro-One Lead - Aggressive lead
 define_synthdef("pro_one_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("pw", 0.3)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("pw", 0.3) // units: ratio, range: 0..1, default: 0.3. PW macro; higher moves that model axis toward its brighter or more open setting.
         .body(|freq, amp, gate, pw| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.12)
@@ -70,10 +70,10 @@ define_synthdef("pro_one_lead", |builder| {
 // Pro-One Sync - Hard sync lead
 define_synthdef("pro_one_sync", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("sync_ratio", 2.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("sync_ratio", 2.0) // units: ratio, range: 0..8, default: 2.0. Frequency ratio; higher values tune the related oscillator or clock upward.
         .body(|freq, amp, gate, sync_ratio| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -94,3 +94,49 @@ define_synthdef("pro_one_sync", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `pro_one_bass`
+//
+// ```rhai
+// import "stdlib/synths/pro_one.vibe" as pro_one;
+//
+// let pro_one_bass = voice("doc_pro_one_bass")
+//     .synth("pro_one_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_freq", 1200.0);
+// pro_one_bass.output("out").to_main();
+// pro_one_bass.run();
+// ```
+//
+// # Usage: `pro_one_lead`
+//
+// ```rhai
+// import "stdlib/synths/pro_one.vibe" as pro_one;
+//
+// let pro_one_lead = voice("doc_pro_one_lead")
+//     .synth("pro_one_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("pw", 0.3);
+// pro_one_lead.output("out").to_main();
+// pro_one_lead.run();
+// ```
+//
+// # Usage: `pro_one_sync`
+//
+// ```rhai
+// import "stdlib/synths/pro_one.vibe" as pro_one;
+//
+// let pro_one_sync = voice("doc_pro_one_sync")
+//     .synth("pro_one_sync")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("sync_ratio", 2.0);
+// pro_one_sync.output("out").to_main();
+// pro_one_sync.run();
+// ```

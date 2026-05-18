@@ -1,7 +1,7 @@
 // Genre: Ambient, Field Recording | Character: Wind-like texture
 define_synthdef("texture_wind", |builder| {
     builder
-        .param("amp", 0.4)
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
         .body(|amp| {
             // Long, sustained envelope
             let env = envelope()
@@ -27,3 +27,15 @@ define_synthdef("texture_wind", |builder| {
         })
 });
 
+//
+// # Usage: `texture_wind`
+//
+// ```rhai
+// import "stdlib/textures/ambient/texture_wind.vibe" as texture_wind;
+//
+// let texture_wind = voice("doc_texture_wind")
+//     .synth("texture_wind")
+//     .set_param("amp", 0.5);
+// texture_wind.output("out").to_main();
+// texture_wind.run();
+// ```

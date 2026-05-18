@@ -1,7 +1,7 @@
 // Genre: 90s Hip-hop, Boom Bap | Character: E-mu SP-1200 kick - crunchy, 12-bit warmth
 define_synthdef("sp1200_kick")
-    .param("freq", 48.0)
-    .param("amp", 1.0)
+    .param("freq", 48.0) // units: Hz, range: 20..20000, default: 48.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         // Punchy decay
         let amp_env = envelope()
@@ -30,3 +30,18 @@ define_synthdef("sp1200_kick")
 
         (body + sub + click) * amp_env * amp
     });
+
+//
+// # Usage: sp1200_kick
+//
+// ```rhai
+// import "stdlib/drums/machines/sp1200_kick.vibe" as sp1200_kick;
+//
+// let doc_sp1200_kick = voice("doc_sp1200_kick")
+//     .synth("sp1200_kick")
+//     .set_param("freq", 48.0)
+//     .set_param("amp", 1.0)
+//     ;
+// doc_sp1200_kick.output("out").to_main();
+// doc_sp1200_kick.run();
+// ```

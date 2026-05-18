@@ -1,9 +1,9 @@
 // Genre: Industrial, Hard Techno | Character: Distorted, aggressive stab
 define_synthdef("stab_distorted", |builder| {
     builder
-        .param("freq", 330.0)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
+        .param("freq", 330.0) // units: Hz, range: 20..20000, default: 330.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
 
             // Aggressive envelope
@@ -37,3 +37,17 @@ define_synthdef("stab_distorted", |builder| {
         })
 });
 
+//
+// # Usage: `stab_distorted`
+//
+// ```rhai
+// import "stdlib/leads/stabs/stab_distorted.vibe" as stab_distorted;
+//
+// let stab_distorted = voice("doc_stab_distorted")
+//     .synth("stab_distorted")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// stab_distorted.output("out").to_main();
+// stab_distorted.run();
+// ```

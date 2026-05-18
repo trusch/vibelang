@@ -16,11 +16,26 @@
 // CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
 
 define_synthdef("cv_scale_offset")
-    .param("cv_in", 0.0)
-    .param("scale", 1.0)
-    .param("offset", 0.0)
+    .param("cv_in", 0.0) // units: volts, range: -10..10, default: 0.0. Sets the incoming CV value.
+    .param("scale", 1.0) // units: selector, range: 0..N, default: 1.0. Selects mode, table, or step count.
+    .param("offset", 0.0) // units: normalized, range: 0..1, default: 0.0. CV offset; higher values shift the scaled output upward.
     .body(|cv_in, scale, offset| {
         let out = cv_in * scale + offset;
         let clipped = clip_ar(out, -1.0, 1.0);
         [clipped]
     });
+
+//
+// # Usage: `cv_scale_offset`
+//
+// ```rhai
+// import "stdlib/cv/util/cv_scale_offset.vibe" as cv_scale_offset;
+//
+// let cv_scale_offset = voice("doc_cv_scale_offset")
+//     .synth("cv_scale_offset")
+//     .set_param("cv_in", 0.5)
+//     .set_param("scale", 1.0)
+//     .set_param("offset", 0.5);
+// cv_scale_offset.output("out").to_main();
+// cv_scale_offset.run();
+// ```

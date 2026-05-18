@@ -10,20 +10,20 @@
 define_synthdef("erica_black_bbd")
     .input("in", 1)
     .output("out", 1)
-    .param("time", 200.0)
-    .param("time_cv", 0.0)
-    .param("time_cv_amt", 0.0)
-    .param("feedback", 0.4)
-    .param("feedback_cv", 0.0)
-    .param("feedback_cv_amt", 0.0)
-    .param("mix", 0.5)
-    .param("mix_cv", 0.0)
-    .param("mix_cv_amt", 0.0)
-    .param("line_blend", 0.5)
-    .param("color", 0.5)
-    .param("lfo_rate", 0.3)
-    .param("lfo_depth", 0.1)
-    .param("clock_noise", 0.05)
+    .param("time", 200.0) // units: ms, range: 5..1500, default: 200.0. Delay or segment time; higher values make repeats arrive later.
+    .param("time_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Time CV input; bipolar values modulate the matching panel control.
+    .param("time_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. TIME CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("feedback", 0.4) // units: normalized, range: 0..1, default: 0.4. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("feedback_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Feedback CV input; bipolar values modulate the matching panel control.
+    .param("feedback_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. FEEDBACK CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("mix", 0.5) // units: ratio, range: 0..1, default: 0.5. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("mix_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Mix CV input; bipolar values modulate the matching panel control.
+    .param("mix_cv_amt", 0.0) // units: linear, range: -1..1, default: 0.0. MIX CV AMT attenuator; higher makes the matching CV modulation stronger.
+    .param("line_blend", 0.5) // units: normalized, range: 0..1, default: 0.5. Delay-line blend; 0 favors the short BBD line and 1 favors the long line.
+    .param("color", 0.5) // units: normalized, range: 0..1, default: 0.5. Color macro; higher values move the model toward its brighter or more complex side.
+    .param("lfo_rate", 0.3) // units: Hz, range: 0..100, default: 0.3. Clock or modulation rate in Hz; higher values make motion faster.
+    .param("lfo_depth", 0.1) // units: normalized, range: 0..1, default: 0.1. Modulation depth; higher values make the movement more pronounced.
+    .param("clock_noise", 0.05) // units: normalized, range: 0..1, default: 0.05. Clock-noise bleed level; higher values add more BBD clock grit.
     .body_map(|p| {
         let dry = p.inputs["in"];
         let time_cv = clip(p.time_cv, -1.0, 1.0) * clip(p.time_cv_amt, 0.0, 1.0);
@@ -62,3 +62,19 @@ define_synthdef("erica_black_bbd")
 
         [softclip((1.0 - mix) * dry + mix * wet)]
     });
+
+//
+// # Usage: `erica_black_bbd`
+//
+// ```rhai
+// import "stdlib/processors/delays/erica_black_bbd.vibe" as erica_black_bbd;
+//
+// let erica_black_bbd = voice("doc_erica_black_bbd")
+//     .synth("erica_black_bbd")
+//     .set_param("lfo_rate", 2.0)
+//     .set_param("clock_noise", 0.5)
+//     .set_param("mix", 0.45)
+//     .set_param("time", 0.5);
+// erica_black_bbd.output("out").to_main();
+// erica_black_bbd.run();
+// ```

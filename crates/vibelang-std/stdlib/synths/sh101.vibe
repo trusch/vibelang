@@ -7,10 +7,10 @@
 // SH-101 Bass - Clean punchy bass
 define_synthdef("sh101_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("filter_env", 0.6)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("filter_env", 0.6) // units: normalized, range: 0..1, default: 0.6. Filter Env amount; higher values emphasize that named musical or electrical behavior.
         .body(|freq, amp, gate, filter_env| {
             let env = envelope()
                 .asr(0.003, 1.0, 0.08)
@@ -40,10 +40,10 @@ define_synthdef("sh101_bass", |builder| {
 // SH-101 Lead - Classic mono lead
 define_synthdef("sh101_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("resonance", 0.4)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("resonance", 0.4) // units: resonance, range: 0..1, default: 0.4. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, resonance| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.12)
@@ -64,10 +64,10 @@ define_synthdef("sh101_lead", |builder| {
 // SH-101 Sync Lead - Hard sync lead
 define_synthdef("sh101_sync", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("sync_ratio", 2.5)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("sync_ratio", 2.5) // units: ratio, range: 0..8, default: 2.5. Frequency ratio; higher values tune the related oscillator or clock upward.
         .body(|freq, amp, gate, sync_ratio| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -92,11 +92,11 @@ define_synthdef("sh101_sync", |builder| {
 // SH-101 Acid - For acid house
 define_synthdef("sh101_acid", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
-        .param("resonance", 0.7)
-        .param("env_mod", 0.8)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("resonance", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("env_mod", 0.8) // units: normalized, range: 0..1, default: 0.8. Env modulation input; bipolar values push that macro around its panel setting.
         .body(|freq, amp, gate, resonance, env_mod| {
             let env = envelope()
                 .asr(0.002, 1.0, 0.05)
@@ -119,3 +119,64 @@ define_synthdef("sh101_acid", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `sh101_bass`
+//
+// ```rhai
+// import "stdlib/synths/sh101.vibe" as sh101;
+//
+// let sh101_bass = voice("doc_sh101_bass")
+//     .synth("sh101_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("filter_env", 0.6);
+// sh101_bass.output("out").to_main();
+// sh101_bass.run();
+// ```
+//
+// # Usage: `sh101_lead`
+//
+// ```rhai
+// import "stdlib/synths/sh101.vibe" as sh101;
+//
+// let sh101_lead = voice("doc_sh101_lead")
+//     .synth("sh101_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("resonance", 0.4);
+// sh101_lead.output("out").to_main();
+// sh101_lead.run();
+// ```
+//
+// # Usage: `sh101_sync`
+//
+// ```rhai
+// import "stdlib/synths/sh101.vibe" as sh101;
+//
+// let sh101_sync = voice("doc_sh101_sync")
+//     .synth("sh101_sync")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("sync_ratio", 2.5);
+// sh101_sync.output("out").to_main();
+// sh101_sync.run();
+// ```
+//
+// # Usage: `sh101_acid`
+//
+// ```rhai
+// import "stdlib/synths/sh101.vibe" as sh101;
+//
+// let sh101_acid = voice("doc_sh101_acid")
+//     .synth("sh101_acid")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("resonance", 0.7);
+// sh101_acid.output("out").to_main();
+// sh101_acid.run();
+// ```

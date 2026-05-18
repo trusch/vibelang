@@ -1,7 +1,7 @@
 // Genre: Pop, Funk | Character: Multiple hands clapping, crowd-like
 define_synthdef("clap_crowd", |builder| {
     builder
-        .param("amp", 1.0)
+        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|amp| {
             // Many slightly offset bursts
             let burst1_env = envelope()
@@ -36,3 +36,16 @@ define_synthdef("clap_crowd", |builder| {
         })
 });
 
+//
+// # Usage: clap_crowd
+//
+// ```rhai
+// import "stdlib/drums/claps/clap_crowd.vibe" as clap_crowd;
+//
+// let doc_clap_crowd = voice("doc_clap_crowd")
+//     .synth("clap_crowd")
+//     .set_param("amp", 1.0)
+//     ;
+// doc_clap_crowd.output("out").to_main();
+// doc_clap_crowd.run();
+// ```

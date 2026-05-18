@@ -42,11 +42,11 @@
 
 define_fx("auto_tune_vibe", |builder| {
     builder
-        .param("scale_root", 0.0)
-        .param("scale_mode", 1.0)
-        .param("snap_strength", 1.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("scale_root", 0.0) // units: semitones, range: 0..11, default: 0.0. Scale Root amount; higher values emphasize that named musical or electrical behavior.
+        .param("scale_mode", 1.0) // units: selector, range: 0..N, default: 1.0. Selects scale mode.
+        .param("snap_strength", 1.0) // units: ratio, range: 0..1, default: 1.0. Snap Strength amount; higher values emphasize that named musical or electrical behavior.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, scale_root, scale_mode, snap_strength, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -87,3 +87,18 @@ define_fx("auto_tune_vibe", |builder| {
             ]
         })
 });
+
+//
+// # Usage: auto_tune_vibe
+//
+// ```rhai
+// import "stdlib/effects/pitch/auto_tune_vibe.vibe" as auto_tune_vibe;
+//
+// let doc_auto_tune_vibe = fx("doc_auto_tune_vibe")
+//     .synth("auto_tune_vibe")
+//     .param("scale_root", 0.0)
+//     .param("scale_mode", 1.0)
+//     .param("snap_strength", 1.0)
+//     .param("mix", 1.0)
+//     .apply();
+// ```

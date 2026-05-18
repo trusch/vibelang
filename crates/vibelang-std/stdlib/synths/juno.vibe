@@ -7,10 +7,10 @@
 // Juno Pad - The iconic lush pad
 define_synthdef("juno_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("chorus", 0.7) // Chorus depth
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("chorus", 0.7) // units: normalized, range: 0..1, default: 0.7. Chorus depth; higher values widen the synth with more modulation.
         .body(|freq, amp, gate, chorus| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -43,9 +43,9 @@ define_synthdef("juno_pad", |builder| {
 // Juno Brass - Classic synth brass
 define_synthdef("juno_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.08, 1.0, 0.1)
@@ -76,9 +76,9 @@ define_synthdef("juno_brass", |builder| {
 // Juno Bass - Punchy analog bass
 define_synthdef("juno_bass", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("amp", 0.6)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.6) // units: linear, range: 0..1, default: 0.6. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.005, 1.0, 0.1)
@@ -107,9 +107,9 @@ define_synthdef("juno_bass", |builder| {
 // Juno Strings - Classic polysynth strings
 define_synthdef("juno_strings", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.3, 1.0, 0.4)
@@ -131,3 +131,61 @@ define_synthdef("juno_strings", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `juno_pad`
+//
+// ```rhai
+// import "stdlib/synths/juno.vibe" as juno;
+//
+// let juno_pad = voice("doc_juno_pad")
+//     .synth("juno_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("chorus", 0.7);
+// juno_pad.output("out").to_main();
+// juno_pad.run();
+// ```
+//
+// # Usage: `juno_brass`
+//
+// ```rhai
+// import "stdlib/synths/juno.vibe" as juno;
+//
+// let juno_brass = voice("doc_juno_brass")
+//     .synth("juno_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// juno_brass.output("out").to_main();
+// juno_brass.run();
+// ```
+//
+// # Usage: `juno_bass`
+//
+// ```rhai
+// import "stdlib/synths/juno.vibe" as juno;
+//
+// let juno_bass = voice("doc_juno_bass")
+//     .synth("juno_bass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// juno_bass.output("out").to_main();
+// juno_bass.run();
+// ```
+//
+// # Usage: `juno_strings`
+//
+// ```rhai
+// import "stdlib/synths/juno.vibe" as juno;
+//
+// let juno_strings = voice("doc_juno_strings")
+//     .synth("juno_strings")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// juno_strings.output("out").to_main();
+// juno_strings.run();
+// ```

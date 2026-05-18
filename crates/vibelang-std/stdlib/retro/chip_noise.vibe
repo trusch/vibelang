@@ -1,7 +1,7 @@
 // Genre: Chiptune, 8-bit | Character: Chip noise channel for drums/sfx
 define_synthdef("chip_noise")
-    .param("freq", 8000.0)
-    .param("amp", 0.5)
+    .param("freq", 8000.0) // units: Hz, range: 20..20000, default: 8000.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
     .body(|freq, amp| {
         let amp_env = envelope()
             .perc(0.001, 0.15)
@@ -13,3 +13,17 @@ define_synthdef("chip_noise")
 
         noise * amp_env * amp
     });
+
+//
+// # Usage: `chip_noise`
+//
+// ```rhai
+// import "stdlib/retro/chip_noise.vibe" as chip_noise;
+//
+// let chip_noise = voice("doc_chip_noise")
+//     .synth("chip_noise")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5);
+// chip_noise.output("out").to_main();
+// chip_noise.run();
+// ```

@@ -33,37 +33,37 @@ define_synthdef("bark_filter", |builder| {
         .output_kr("follow11")
         .output_kr("follow12")
         .output_kr("follow_max")
-        .param("band1", 1.0)
-        .param("band2", 1.0)
-        .param("band3", 1.0)
-        .param("band4", 1.0)
-        .param("band5", 1.0)
-        .param("band6", 1.0)
-        .param("band7", 1.0)
-        .param("band8", 1.0)
-        .param("band9", 1.0)
-        .param("band10", 1.0)
-        .param("band11", 1.0)
-        .param("band12", 1.0)
-        .param("band1_cv", 0.0)
-        .param("band2_cv", 0.0)
-        .param("band3_cv", 0.0)
-        .param("band4_cv", 0.0)
-        .param("band5_cv", 0.0)
-        .param("band6_cv", 0.0)
-        .param("band7_cv", 0.0)
-        .param("band8_cv", 0.0)
-        .param("band9_cv", 0.0)
-        .param("band10_cv", 0.0)
-        .param("band11_cv", 0.0)
-        .param("band12_cv", 0.0)
-        .param("decay", 0.05)
-        .param("center", 6.0)
-        .param("width", 0.5)
-        .param("tilt", 0.0)
-        .param("odd_gain", 1.0)
-        .param("even_gain", 1.0)
-        .param("level", 1.0)
+        .param("band1", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 1 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band2", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 2 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band3", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 3 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band4", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 4 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band5", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 5 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band6", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 6 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band7", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 7 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band8", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 8 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band9", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 9 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band10", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 10 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band11", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 11 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band12", 1.0) // units: normalized, range: 0..1, default: 1.0. Band 12 gain; higher emphasizes that fixed Bark frequency band.
+        .param("band1_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 1 CV trim; positive CV opens that Bark-band gain.
+        .param("band2_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 2 CV trim; positive CV opens that Bark-band gain.
+        .param("band3_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 3 CV trim; positive CV opens that Bark-band gain.
+        .param("band4_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 4 CV trim; positive CV opens that Bark-band gain.
+        .param("band5_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 5 CV trim; positive CV opens that Bark-band gain.
+        .param("band6_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 6 CV trim; positive CV opens that Bark-band gain.
+        .param("band7_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 7 CV trim; positive CV opens that Bark-band gain.
+        .param("band8_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 8 CV trim; positive CV opens that Bark-band gain.
+        .param("band9_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 9 CV trim; positive CV opens that Bark-band gain.
+        .param("band10_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 10 CV trim; positive CV opens that Bark-band gain.
+        .param("band11_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 11 CV trim; positive CV opens that Bark-band gain.
+        .param("band12_cv", 0.0) // units: normalized, range: 0..1, default: 0.0. Band 12 CV trim; positive CV opens that Bark-band gain.
+        .param("decay", 0.05) // units: seconds, range: 0..60, default: 0.05. Envelope time or level; higher values make that stage last longer or sustain higher.
+        .param("center", 6.0) // units: band, range: 1..12, default: 6.0. Focus center for the band or harmonic bank; higher moves emphasis upward.
+        .param("width", 0.5) // units: ratio, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
+        .param("tilt", 0.0) // units: normalized, range: 0..1, default: 0.0. Spectral tilt; negative favors lows and positive favors highs.
+        .param("odd_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Odd-band output gain; higher makes the odd filter bank louder.
+        .param("even_gain", 1.0) // units: linear, range: 0..1, default: 1.0. Even-band output gain; higher makes the even filter bank louder.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body_map(|p| {
             let dry = p.inputs["in"];
             let decay = p.decay.max(0.001);
@@ -198,3 +198,19 @@ define_synthdef("bark_filter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: `bark_filter`
+//
+// ```rhai
+// import "stdlib/processors/filters/bark_filter.vibe" as bark_filter;
+//
+// let bark_filter = voice("doc_bark_filter")
+//     .synth("bark_filter")
+//     .set_param("odd_gain", 0.5)
+//     .set_param("level", 0.5)
+//     .set_param("decay", 0.35)
+//     .set_param("band1", 0.5);
+// bark_filter.output("mix").to_main();
+// bark_filter.run();
+// ```

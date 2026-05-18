@@ -28,13 +28,13 @@
 //   level:       Final output trim (1.0 = unity)
 
 define_fx("delay_modulated_tape")
-    .param("time", 0.45)
-    .param("feedback", 0.55)
-    .param("modulation", 0.6)
-    .param("sat", 0.5)
-    .param("hiss_amount", 0.15)
-    .param("mix", 0.3)
-    .param("level", 1.0)
+    .param("time", 0.45) // units: seconds, range: 0..10, default: 0.45. Delay or segment time; higher values make repeats arrive later.
+    .param("feedback", 0.55) // units: ratio, range: 0..1, default: 0.55. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+    .param("modulation", 0.6) // units: ratio, range: 0..1, default: 0.6. Modulation amount; higher values emphasize that named musical or electrical behavior.
+    .param("sat", 0.5) // units: normalized, range: 0..1, default: 0.5. Sat amount; higher values emphasize that named musical or electrical behavior.
+    .param("hiss_amount", 0.15) // units: ratio, range: 0..1, default: 0.15. Hiss Amount; higher values apply more of that modulation or effect.
+    .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+    .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
     .body(|input, time, feedback, modulation, sat, hiss_amount, mix, level| {
         // Combined wow + flutter, scaled by modulation
         let wow_l = sin_osc_kr(0.5) * modulation * (time * 0.003);
@@ -85,3 +85,18 @@ define_fx("delay_modulated_tape")
             ((1.0 - mix) * input[1] + mix * wet_r) * level
         ]
     });
+
+//
+// # Usage: delay_modulated_tape
+//
+// ```rhai
+// import "stdlib/effects/delays/delay_modulated_tape.vibe" as delay_modulated_tape;
+//
+// let doc_delay_modulated_tape = fx("doc_delay_modulated_tape")
+//     .synth("delay_modulated_tape")
+//     .param("time", 0.45)
+//     .param("feedback", 0.55)
+//     .param("modulation", 0.6)
+//     .param("sat", 0.5)
+//     .apply();
+// ```

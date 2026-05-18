@@ -1,8 +1,8 @@
 // Genre: House, Deep House | Character: Deep house bass - warm and rolling
 define_synthdef("bass_house")
-    .param("freq", 55.0)
-    .param("amp", 0.85)
-    .param("gate", 1.0)
+    .param("freq", 55.0) // units: Hz, range: 20..20000, default: 55.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.85) // units: linear, range: 0..1, default: 0.85. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.01, 1.0, 0.12)
@@ -25,3 +25,19 @@ define_synthdef("bass_house")
         let cutoff = 500.0 + filt_env * 1200.0;
         rlpf_ar(mix, cutoff, 0.2) * env * amp
     });
+
+//
+// # Usage: bass_house
+//
+// ```rhai
+// import "stdlib/bass/genre/bass_house.vibe" as bass_house;
+//
+// let doc_bass_house = voice("doc_bass_house")
+//     .synth("bass_house")
+//     .set_param("freq", 55.0)
+//     .set_param("amp", 0.85)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_house.output("out").to_main();
+// doc_bass_house.run();
+// ```

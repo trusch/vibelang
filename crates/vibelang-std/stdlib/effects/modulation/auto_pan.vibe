@@ -20,10 +20,10 @@
 
 define_fx("auto_pan", |builder| {
     builder
-        .param("rate", 0.25)
-        .param("depth", 0.8)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 0.25) // units: Hz, range: 0..100, default: 0.25. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.8) // units: ratio, range: 0..1, default: 0.8. Modulation depth; higher values make the movement more pronounced.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, mix, level| {
             // LFO for pan position
             let lfo = sin_osc_ar(rate, 0.0);
@@ -44,3 +44,18 @@ define_fx("auto_pan", |builder| {
             ]
         })
 });
+
+//
+// # Usage: auto_pan
+//
+// ```rhai
+// import "stdlib/effects/modulation/auto_pan.vibe" as auto_pan;
+//
+// let doc_auto_pan = fx("doc_auto_pan")
+//     .synth("auto_pan")
+//     .param("rate", 0.25)
+//     .param("depth", 0.8)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

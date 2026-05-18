@@ -19,9 +19,9 @@
 
 define_fx("freq_shift", |builder| {
     builder
-        .param("shift", 5.0)
-        .param("mix", 0.3)
-        .param("level", 1.0)
+        .param("shift", 5.0) // units: semitones, range: -48..48, default: 5.0. Phase shift amount; higher values offset the related output further.
+        .param("mix", 0.3) // units: ratio, range: 0..1, default: 0.3. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, shift, mix, level| {
             // Ring modulation with sine wave creates frequency shifting
             // Positive shift moves frequencies up, negative moves down
@@ -44,3 +44,17 @@ define_fx("freq_shift", |builder| {
             ]
         })
 });
+
+//
+// # Usage: freq_shift
+//
+// ```rhai
+// import "stdlib/effects/modulation/freq_shift.vibe" as freq_shift;
+//
+// let doc_freq_shift = fx("doc_freq_shift")
+//     .synth("freq_shift")
+//     .param("shift", 5.0)
+//     .param("mix", 0.3)
+//     .param("level", 1.0)
+//     .apply();
+// ```

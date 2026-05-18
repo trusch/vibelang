@@ -43,23 +43,23 @@ define_synthdef("dld", |builder| {
         .output_kr("clock")
         .output_kr("loop_a")
         .output_kr("loop_b")
-        .param("ping_hz", 2.0)
-        .param("ping_lock", 1.0)
-        .param("cft_ms", 100.0)
-        .param("time_a", 2.0)
-        .param("feedback_a", 0.5)
-        .param("delay_feed_a", 0.0)
-        .param("mix_a", 0.5)
-        .param("hold_a", 0.0)
-        .param("reverse_a", 0.0)
-        .param("clear_a", 0.0)
-        .param("time_b", 2.0)
-        .param("feedback_b", 0.5)
-        .param("delay_feed_b", 0.0)
-        .param("mix_b", 0.5)
-        .param("hold_b", 0.0)
-        .param("reverse_b", 0.0)
-        .param("clear_b", 0.0)
+        .param("ping_hz", 2.0) // units: Hz, range: 0.05..64, default: 2.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("ping_lock", 1.0) // units: normalized, range: 0..1, default: 1.0. Ping Lock switch; rounded values turn that mode off or on.
+        .param("cft_ms", 100.0) // units: ms, range: 50..200, default: 100.0. Crossfade time in ms; higher values smooth delay-time changes more slowly.
+        .param("time_a", 2.0) // units: selector, range: 0..5, default: 2.0. Channel A loop length selector; 0 is quarter-note and 5 is eight-times ping.
+        .param("feedback_a", 0.5) // units: normalized, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("delay_feed_a", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel A cross-feed amount; higher sends more opposite loop into this delay.
+        .param("mix_a", 0.5) // units: normalized, range: 0..1, default: 0.5. Channel A dry/wet mix; 0 is input only and 1 is loop only.
+        .param("hold_a", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel A hold switch; 1 freezes recording while playback continues.
+        .param("reverse_a", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel A reverse switch; 1 reads the loop backward.
+        .param("clear_a", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel A clear trigger; positive values reset the loop buffer.
+        .param("time_b", 2.0) // units: selector, range: 0..5, default: 2.0. Channel B loop length selector; 0 is quarter-note and 5 is eight-times ping.
+        .param("feedback_b", 0.5) // units: normalized, range: 0..1, default: 0.5. Feedback amount; higher gives longer repeats and can approach self-oscillation.
+        .param("delay_feed_b", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel B cross-feed amount; higher sends more opposite loop into this delay.
+        .param("mix_b", 0.5) // units: normalized, range: 0..1, default: 0.5. Channel B dry/wet mix; 0 is input only and 1 is loop only.
+        .param("hold_b", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel B hold switch; 1 freezes recording while playback continues.
+        .param("reverse_b", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel B reverse switch; 1 reads the loop backward.
+        .param("clear_b", 0.0) // units: normalized, range: 0..1, default: 0.0. Channel B clear trigger; positive values reset the loop buffer.
         .body_map(|p| {
             let in_a = p.inputs.in_a;
             let in_b = p.inputs.in_b;
@@ -155,3 +155,19 @@ define_synthdef("dld", |builder| {
             [out_a, out_b, send_a, send_b, clock, loop_a, loop_b]
         })
 });
+
+//
+// # Usage: `dld`
+//
+// ```rhai
+// import "stdlib/processors/delays/dld.vibe" as dld;
+//
+// let dld = voice("doc_dld")
+//     .synth("dld")
+//     .set_param("mix_a", 0.5)
+//     .set_param("ping_hz", 0.5)
+//     .set_param("ping_lock", 0.5)
+//     .set_param("cft_ms", 80.0);
+// dld.output("out_a").to_main();
+// dld.run();
+// ```

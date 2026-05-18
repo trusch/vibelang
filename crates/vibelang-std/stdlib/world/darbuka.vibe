@@ -1,8 +1,8 @@
 // Genre: Middle Eastern, Arabic | Character: Darbuka/doumbek hand drum
 define_synthdef("darbuka")
-    .param("freq", 200.0)
-    .param("amp", 0.8)
-    .param("type", 0.0) // 0=doum, 0.5=tek, 1.0=ka
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("type", 0.0) // units: selector, range: 0..N, default: 0.0. Selects instrument or tone type.
     .body(|freq, amp, type_param| {
         // Decay based on type
         let decay = 0.3 - type_param * 0.2;
@@ -34,3 +34,18 @@ define_synthdef("darbuka")
 
         (body + slap + attack) * amp_env * amp
     });
+
+//
+// # Usage: `darbuka`
+//
+// ```rhai
+// import "stdlib/world/darbuka.vibe" as darbuka;
+//
+// let darbuka = voice("doc_darbuka")
+//     .synth("darbuka")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("type", 0.0);
+// darbuka.output("out").to_main();
+// darbuka.run();
+// ```

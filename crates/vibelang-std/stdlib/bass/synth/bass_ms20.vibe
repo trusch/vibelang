@@ -1,9 +1,9 @@
 // Genre: Industrial, Techno, Experimental | Character: Korg MS-20 bass - aggressive and nasty
 define_synthdef("bass_ms20")
-    .param("freq", 60.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
-    .param("drive", 2.0)
+    .param("freq", 60.0) // units: Hz, range: 20..20000, default: 60.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+    .param("drive", 2.0) // units: gain, range: 0..10, default: 2.0. Nonlinear drive amount; higher adds harmonic distortion and compression.
     .body(|freq, amp, gate, drive| {
         let env = envelope()
             .asr(0.003, 1.0, 0.1)
@@ -32,3 +32,20 @@ define_synthdef("bass_ms20")
 
         filtered * env * amp
     });
+
+//
+// # Usage: bass_ms20
+//
+// ```rhai
+// import "stdlib/bass/synth/bass_ms20.vibe" as bass_ms20;
+//
+// let doc_bass_ms20 = voice("doc_bass_ms20")
+//     .synth("bass_ms20")
+//     .set_param("freq", 60.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     .set_param("drive", 2.0)
+//     ;
+// doc_bass_ms20.output("out").to_main();
+// doc_bass_ms20.run();
+// ```

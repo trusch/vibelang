@@ -24,12 +24,12 @@
 
 define_fx("lo_fi", |builder| {
     builder
-        .param("bit_depth", 10.0)
-        .param("sample_rate", 16000.0)
-        .param("noise", 0.02)
-        .param("filter_freq", 3500.0)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("bit_depth", 10.0) // units: bits, range: 1..24, default: 10.0. Modulation depth; higher values make the movement more pronounced.
+        .param("sample_rate", 16000.0) // units: Hz, range: 1000..48000, default: 16000.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("noise", 0.02) // units: linear, range: 0..1, default: 0.02. Noise amount; higher values emphasize that named musical or electrical behavior.
+        .param("filter_freq", 3500.0) // units: Hz, range: 20..20000, default: 3500.0. Filter Freq in Hz; higher values move that tone or filter point upward.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, bit_depth, sample_rate, noise, filter_freq, mix, level| {
             // Sample rate reduction
             let rate_reduced_left = latch_ar(input[0], impulse_ar(sample_rate, 0.0));
@@ -63,3 +63,18 @@ define_fx("lo_fi", |builder| {
             ]
         })
 });
+
+//
+// # Usage: lo_fi
+//
+// ```rhai
+// import "stdlib/effects/distortion/lo_fi.vibe" as lo_fi;
+//
+// let doc_lo_fi = fx("doc_lo_fi")
+//     .synth("lo_fi")
+//     .param("bit_depth", 10.0)
+//     .param("sample_rate", 16000.0)
+//     .param("noise", 0.02)
+//     .param("filter_freq", 3500.0)
+//     .apply();
+// ```

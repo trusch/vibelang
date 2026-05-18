@@ -20,10 +20,10 @@
 
 define_fx("moog_filter", |builder| {
     builder
-        .param("cutoff", 1000.0)
-        .param("resonance", 2.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
+        .param("resonance", 2.5) // units: resonance, range: 0..4, default: 2.5. Filter resonance amount; higher emphasizes a narrower frequency peak.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, cutoff, resonance, mix, level| {
             // MoogFF - the classic Moog ladder filter
             let filtered_left = moog_ff_ar(input[0], cutoff, resonance, 0.0);
@@ -38,3 +38,18 @@ define_fx("moog_filter", |builder| {
             ]
         })
 });
+
+//
+// # Usage: moog_filter
+//
+// ```rhai
+// import "stdlib/effects/filters/moog_filter.vibe" as moog_filter;
+//
+// let doc_moog_filter = fx("doc_moog_filter")
+//     .synth("moog_filter")
+//     .param("cutoff", 1000.0)
+//     .param("resonance", 2.5)
+//     .param("mix", 1.0)
+//     .param("level", 1.0)
+//     .apply();
+// ```

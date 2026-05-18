@@ -7,10 +7,10 @@
 // Prophet Pad - Lush analog pad
 define_synthdef("prophet_pad", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
-        .param("spread", 0.5)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("spread", 0.5) // units: normalized, range: 0..1, default: 0.5. Spread width; higher values distribute energy across a wider range.
         .body(|freq, amp, gate, spread| {
             let env = envelope()
                 .asr(0.4, 1.0, 0.5)
@@ -38,9 +38,9 @@ define_synthdef("prophet_pad", |builder| {
 // Prophet Brass - Classic synth brass
 define_synthdef("prophet_brass", |builder| {
     builder
-        .param("freq", 220.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
+        .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.06, 1.0, 0.12)
@@ -71,10 +71,10 @@ define_synthdef("prophet_brass", |builder| {
 // Prophet Lead - Screaming lead
 define_synthdef("prophet_lead", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .param("resonance", 0.4)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.5) // units: linear, range: 0..1, default: 0.5. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
+        .param("resonance", 0.4) // units: resonance, range: 0..1, default: 0.4. Filter resonance amount; higher emphasizes a narrower frequency peak.
         .body(|freq, amp, gate, resonance| {
             let env = envelope()
                 .asr(0.01, 1.0, 0.15)
@@ -98,9 +98,9 @@ define_synthdef("prophet_lead", |builder| {
 // Prophet Strings - Warm polysynth strings
 define_synthdef("prophet_strings", |builder| {
     builder
-        .param("freq", 440.0)
-        .param("amp", 0.4)
-        .param("gate", 1.0)
+        .param("freq", 440.0) // units: Hz, range: 20..20000, default: 440.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("amp", 0.4) // units: linear, range: 0..1, default: 0.4. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, amp, gate| {
             let env = envelope()
                 .asr(0.25, 1.0, 0.4)
@@ -122,3 +122,62 @@ define_synthdef("prophet_strings", |builder| {
             filtered * env * amp
         })
 });
+
+//
+// # Usage: `prophet_pad`
+//
+// ```rhai
+// import "stdlib/synths/prophet.vibe" as prophet;
+//
+// let prophet_pad = voice("doc_prophet_pad")
+//     .synth("prophet_pad")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("spread", 0.5);
+// prophet_pad.output("out").to_main();
+// prophet_pad.run();
+// ```
+//
+// # Usage: `prophet_brass`
+//
+// ```rhai
+// import "stdlib/synths/prophet.vibe" as prophet;
+//
+// let prophet_brass = voice("doc_prophet_brass")
+//     .synth("prophet_brass")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// prophet_brass.output("out").to_main();
+// prophet_brass.run();
+// ```
+//
+// # Usage: `prophet_lead`
+//
+// ```rhai
+// import "stdlib/synths/prophet.vibe" as prophet;
+//
+// let prophet_lead = voice("doc_prophet_lead")
+//     .synth("prophet_lead")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0)
+//     .set_param("resonance", 0.4);
+// prophet_lead.output("out").to_main();
+// prophet_lead.run();
+// ```
+//
+// # Usage: `prophet_strings`
+//
+// ```rhai
+// import "stdlib/synths/prophet.vibe" as prophet;
+//
+// let prophet_strings = voice("doc_prophet_strings")
+//     .synth("prophet_strings")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// prophet_strings.output("out").to_main();
+// prophet_strings.run();
+// ```

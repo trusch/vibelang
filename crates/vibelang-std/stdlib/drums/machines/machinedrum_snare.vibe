@@ -1,8 +1,8 @@
 // Genre: IDM, Techno, Experimental | Character: Elektron Machinedrum-style snare - digital, morphable
 define_synthdef("machinedrum_snare")
-    .param("freq", 200.0)
-    .param("amp", 0.9)
-    .param("metallic", 0.4)
+    .param("freq", 200.0) // units: Hz, range: 20..20000, default: 200.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.9) // units: linear, range: 0..1, default: 0.9. Output level multiplier; higher is louder.
+    .param("metallic", 0.4) // units: ratio, range: 0..1, default: 0.4. Metallic amount; higher values emphasize that named musical or electrical behavior.
     .body(|freq, amp, metallic| {
         // Decay
         let amp_env = envelope()
@@ -36,3 +36,19 @@ define_synthdef("machinedrum_snare")
 
         (body + ring + noise + attack) * amp_env * amp
     });
+
+//
+// # Usage: machinedrum_snare
+//
+// ```rhai
+// import "stdlib/drums/machines/machinedrum_snare.vibe" as machinedrum_snare;
+//
+// let doc_machinedrum_snare = voice("doc_machinedrum_snare")
+//     .synth("machinedrum_snare")
+//     .set_param("freq", 200.0)
+//     .set_param("amp", 0.9)
+//     .set_param("metallic", 0.4)
+//     ;
+// doc_machinedrum_snare.output("out").to_main();
+// doc_machinedrum_snare.run();
+// ```

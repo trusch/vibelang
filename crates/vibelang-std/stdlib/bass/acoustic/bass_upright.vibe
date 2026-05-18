@@ -1,8 +1,8 @@
 // Genre: Jazz, Classical, Acoustic | Character: Double bass/upright bass plucked
 define_synthdef("bass_upright")
-    .param("freq", 80.0)
-    .param("amp", 0.8)
-    .param("gate", 1.0)
+    .param("freq", 80.0) // units: Hz, range: 20..20000, default: 80.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.8) // units: linear, range: 0..1, default: 0.8. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         // Gate-controlled ASR envelope
         let env = envelope()
@@ -29,3 +29,19 @@ define_synthdef("bass_upright")
         let sig = body + harm1 + harm2 + harm3 + attack + buzz;
         lpf_ar(sig, 3000.0) * env * amp
     });
+
+//
+// # Usage: bass_upright
+//
+// ```rhai
+// import "stdlib/bass/acoustic/bass_upright.vibe" as bass_upright;
+//
+// let doc_bass_upright = voice("doc_bass_upright")
+//     .synth("bass_upright")
+//     .set_param("freq", 80.0)
+//     .set_param("amp", 0.8)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_bass_upright.output("out").to_main();
+// doc_bass_upright.run();
+// ```

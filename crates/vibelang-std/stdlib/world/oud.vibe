@@ -1,8 +1,8 @@
 // Genre: Middle Eastern, Arabic | Character: Arabic oud - warm, plucked string
 define_synthdef("oud")
-    .param("freq", 220.0)
-    .param("amp", 0.7)
-    .param("gate", 1.0)
+    .param("freq", 220.0) // units: Hz, range: 20..20000, default: 220.0. Pitch frequency in Hz; higher raises the note or resonator center.
+    .param("amp", 0.7) // units: linear, range: 0..1, default: 0.7. Output level multiplier; higher is louder.
+    .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
     .body(|freq, amp, gate| {
         let env = envelope()
             .asr(0.005, 1.0, 0.15)
@@ -27,3 +27,18 @@ define_synthdef("oud")
 
         lpf_ar(sig, 4000.0) * env * amp
     });
+
+//
+// # Usage: `oud`
+//
+// ```rhai
+// import "stdlib/world/oud.vibe" as oud;
+//
+// let oud = voice("doc_oud")
+//     .synth("oud")
+//     .set_param("freq", 440.0)
+//     .set_param("amp", 0.5)
+//     .set_param("gate", 1.0);
+// oud.output("out").to_main();
+// oud.run();
+// ```

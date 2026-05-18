@@ -1,10 +1,10 @@
 // Genre: Neurofunk, Techno | Character: Aggressive FM bass with high modulation
 define_synthdef("fm_bass_aggressive", |builder| {
     builder
-        .param("freq", 110.0)
-        .param("fm_amount", 5.0)
-        .param("amp", 0.65)
-        .param("gate", 1.0)
+        .param("freq", 110.0) // units: Hz, range: 20..20000, default: 110.0. Pitch frequency in Hz; higher raises the note or resonator center.
+        .param("fm_amount", 5.0) // units: ratio, range: 0..10, default: 5.0. FM modulation depth; higher values add stronger sidebands and brightness.
+        .param("amp", 0.65) // units: linear, range: 0..1, default: 0.65. Output level multiplier; higher is louder.
+        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
         .body(|freq, fm_amount, amp, gate| {
 
             // Punchy envelope
@@ -32,3 +32,19 @@ define_synthdef("fm_bass_aggressive", |builder| {
         })
 });
 
+//
+// # Usage: fm_bass_aggressive
+//
+// ```rhai
+// import "stdlib/bass/fm/fm_bass_aggressive.vibe" as fm_bass_aggressive;
+//
+// let doc_fm_bass_aggressive = voice("doc_fm_bass_aggressive")
+//     .synth("fm_bass_aggressive")
+//     .set_param("freq", 110.0)
+//     .set_param("fm_amount", 5.0)
+//     .set_param("amp", 0.65)
+//     .set_param("gate", 1.0)
+//     ;
+// doc_fm_bass_aggressive.output("out").to_main();
+// doc_fm_bass_aggressive.run();
+// ```
