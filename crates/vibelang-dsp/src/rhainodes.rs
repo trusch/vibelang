@@ -339,6 +339,15 @@ impl NodeRef {
         })
     }
 
+    /// Modulo with a signal divisor.
+    pub fn modulo_node(self, divisor: NodeRef) -> Result<NodeRef> {
+        with_builder(|builder| {
+            let inputs = vec![self.to_input(), divisor.to_input()];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 5) // 5 = mod
+        })
+    }
+
     /// Round to nearest multiple.
     pub fn round_to(self, multiple: f64) -> Result<NodeRef> {
         with_builder(|builder| {
@@ -486,6 +495,7 @@ pub fn register_node_ref(engine: &mut rhai::Engine) {
         .unwrap()
     });
     engine.register_fn("modulo", |a: NodeRef, b: f64| a.modulo(b).unwrap());
+    engine.register_fn("modulo", |a: NodeRef, b: NodeRef| a.modulo_node(b).unwrap());
     engine.register_fn("round_to", |a: NodeRef, b: f64| a.round_to(b).unwrap());
 
     // Interpolation

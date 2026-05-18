@@ -43,16 +43,16 @@
 
 define_fx("vibrato_drift", |builder| {
     builder
-        .param("rate", 5.0)
-        .param("depth", 0.002)
-        .param("drift_amount", 0.5)
-        .param("mix", 1.0)
-        .param("level", 1.0)
+        .param("rate", 5.0) // units: Hz, range: 0..100, default: 5.0. Clock or modulation rate in Hz; higher values make motion faster.
+        .param("depth", 0.002) // units: ratio, range: 0..1, default: 0.002. Modulation depth; higher values make the movement more pronounced.
+        .param("drift_amount", 0.5) // units: ratio, range: 0..1, default: 0.5. Drift Amount; higher values apply more of that modulation or effect.
+        .param("mix", 1.0) // units: ratio, range: 0..1, default: 1.0. Dry/wet balance; 0 is dry and 1 is fully processed.
+        .param("level", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
         .body(|input, rate, depth, drift_amount, mix, level| {
             // Slow Lorenz drift. minfreq/maxfreq of 1-5 Hz keeps the
             // attractor iterating slowly enough that the modulation
             // sounds like long-term wandering, not noise.
-            let chaos = lorenz2_dl_kr(
+            let chaos = lorenz2dl_kr(
                 1.0,            // minfreq
                 5.0,            // maxfreq
                 10.0,           // s
@@ -99,3 +99,18 @@ define_fx("vibrato_drift", |builder| {
             ]
         })
 });
+
+//
+// # Usage: vibrato_drift
+//
+// ```rhai
+// import "stdlib/effects/modulation/vibrato_drift.vibe" as vibrato_drift;
+//
+// let doc_vibrato_drift = fx("doc_vibrato_drift")
+//     .synth("vibrato_drift")
+//     .param("rate", 5.0)
+//     .param("depth", 0.002)
+//     .param("drift_amount", 0.5)
+//     .param("mix", 1.0)
+//     .apply();
+// ```
