@@ -50,7 +50,7 @@ impl LooperBuilder {
         self
     }
 
-    /// Override quantization grid in beats. Default: 0.25 (16th notes).
+    /// Override quantization grid in beats. Default: 0.0 (off).
     pub fn quantize(mut self, beats: f64) -> Self {
         self.quantize_beats = beats.max(0.0625);
         self

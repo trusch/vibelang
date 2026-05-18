@@ -791,7 +791,7 @@ pub struct LooperConfig {
     pub voice_id: VoiceId,
     pub channel: Option<u8>, // Optional MIDI channel filter (0-15)
     pub silence_bars: f64,   // How many bars of silence before playback. Default: 1.0
-    pub quantize_beats: f64, // Quantization grid for recorded notes. Default: 0.25 (16th notes)
+    pub quantize_beats: f64, // Quantization grid for recorded notes. Default: 0.0 (off)
 }
 
 #[cfg(feature = "midi")]
@@ -802,7 +802,7 @@ impl Default for LooperConfig {
             voice_id: VoiceId::default(),
             channel: None,
             silence_bars: 1.0,
-            quantize_beats: 0.25,
+            quantize_beats: 0.0,
         }
     }
 }

@@ -1074,6 +1074,15 @@ pub struct State {
     /// `note_off`. Cleared on voice stop / delete / create (reload); resized
     /// in place when `polyphony` changes on reload.
     pub midi_voice_pool: HashMap<VoiceId, MidiVoicePool>,
+
+    /// Current note generation per `(voice, MIDI note)`.
+    ///
+    /// Pattern playback captures this generation when it starts a note and
+    /// delayed note-offs only release if the same generation is still active.
+    pub voice_note_generations: HashMap<(VoiceId, u8), u64>,
+
+    /// Monotonic source for [`Self::voice_note_generations`].
+    pub next_voice_note_generation: u64,
 }
 
 /// Per-voice voice-allocation pool for a MIDI-output voice — see
@@ -1172,6 +1181,8 @@ impl Default for State {
             ar_to_kr_adapters: HashMap::new(),
             param_triggers: HashMap::new(),
             midi_voice_pool: HashMap::new(),
+            voice_note_generations: HashMap::new(),
+            next_voice_note_generation: 1,
         }
     }
 }

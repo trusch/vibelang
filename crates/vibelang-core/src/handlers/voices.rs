@@ -161,15 +161,18 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: u8,
         polyphony: usize,
         legato: bool,
-    ) -> Result<()> {
-        let events = {
+    ) -> Result<u64> {
+        let (generation, events) = {
             let mut state = self.state.write().await;
-            midi_pool_note_on(&mut state, id, channel, note, velocity, polyphony, legato)
+            let generation = bump_note_generation(&mut state, id, note);
+            let events =
+                midi_pool_note_on(&mut state, id, channel, note, velocity, polyphony, legato);
+            (generation, events)
         };
         for event in events {
             let _ = self.send_midi_event_now(device_id, event).await;
         }
-        Ok(())
+        Ok(generation)
     }
 
     /// Run the unified voice-allocation pool on note-off: free the released
@@ -186,6 +189,7 @@ impl<B: Backend> VoicesHandler<B> {
     ) -> Result<()> {
         let events = {
             let mut state = self.state.write().await;
+            state.voice_note_generations.remove(&(id, note));
             midi_pool_note_off(&mut state, id, channel, note, polyphony)
         };
         for event in events {
@@ -220,20 +224,61 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Lookahead-aware note-on.
     ///
-    /// MIDI-output voices run the stateful voice-allocation pool (see
-    /// [`State::midi_voice_pool`]), which is order-sensitive — every one is
-    /// routed through the immediate path, giving up sub-ms lookahead so the
-    /// pool stays consistent. Audio synths also trigger immediately (SC
-    /// schedules them sample-accurately). The `timestamp` is therefore ignored.
+    /// Sleeps until the scheduler timestamp before entering the immediate
+    /// voice path, preserving the MIDI pool's ordering while honoring pattern
+    /// and melody lookahead.
     #[cfg(feature = "midi")]
     pub async fn note_on_at(
         &self,
         id: VoiceId,
         note: u8,
         velocity: f32,
-        _timestamp: Option<Instant>,
+        timestamp: Option<Instant>,
     ) -> Result<()> {
-        self.note_on(id, note, velocity).await
+        self.note_on_at_tracked(id, note, velocity, timestamp)
+            .await
+            .map(|_| ())
+    }
+
+    /// Lookahead-aware note-on that returns the active note generation.
+    #[cfg(feature = "midi")]
+    pub async fn note_on_at_tracked(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        timestamp: Option<Instant>,
+    ) -> Result<u64> {
+        wait_until_timestamp(timestamp).await;
+
+        let (midi_output, midi_channel, polyphony, mono_legato) = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony as usize,
+                voice.config.mono_legato,
+            )
+        };
+
+        if let Some(device_id) = midi_output {
+            let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+            return self
+                .midi_pool_note_on(
+                    id,
+                    device_id,
+                    midi_channel,
+                    note,
+                    midi_velocity,
+                    polyphony,
+                    mono_legato,
+                )
+                .await;
+        }
+
+        self.note_on(id, note, velocity).await?;
+        self.current_note_generation(id, note).await
     }
 
     /// Lookahead-aware note-on with per-note voice parameters.
@@ -241,16 +286,17 @@ impl<B: Backend> VoicesHandler<B> {
     /// Like [`note_on_at`](Self::note_on_at), but also merges `extra_params`
     /// into the synth creation params (and, for MIDI voices, sends them as CC
     /// messages where mappings exist — handled by `note_on_with_params`). The
-    /// `timestamp` is ignored, see `note_on_at`.
+    /// The scheduler timestamp is honored before dispatch; see `note_on_at`.
     #[cfg(feature = "midi")]
     pub async fn note_on_at_with_params(
         &self,
         id: VoiceId,
         note: u8,
         velocity: f32,
-        _timestamp: Option<Instant>,
+        timestamp: Option<Instant>,
         extra_params: &ParamMap,
     ) -> Result<()> {
+        wait_until_timestamp(timestamp).await;
         self.note_on_with_params(id, note, velocity, extra_params)
             .await
     }
@@ -328,7 +374,8 @@ impl<B: Backend> VoicesHandler<B> {
                         polyphony,
                         mono_legato,
                     )
-                    .await;
+                    .await
+                    .map(|_| ());
             }
         }
 
@@ -407,6 +454,7 @@ impl<B: Backend> VoicesHandler<B> {
             }
 
             let node_id = state.alloc_node_id();
+            bump_note_generation(&mut state, id, note);
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
@@ -445,18 +493,115 @@ impl<B: Backend> VoicesHandler<B> {
     ///
     /// Lookahead-aware note-off.
     ///
-    /// MIDI-output voices run the stateful voice-allocation pool, so every
-    /// note-off is routed through the immediate path (the `timestamp` is
-    /// ignored); see [`note_on_at`](Self::note_on_at).
+    /// Honors the scheduler timestamp before routing through the immediate
+    /// note-off path; see [`note_on_at`](Self::note_on_at).
     #[cfg(feature = "midi")]
     pub async fn note_off_at(
         &self,
         id: VoiceId,
         note: u8,
-        _timestamp: Option<Instant>,
+        timestamp: Option<Instant>,
     ) -> Result<()> {
+        wait_until_timestamp(timestamp).await;
         self.note_off(id, note).await
     }
+
+    /// Release a note only if no newer same-pitch note has superseded it.
+    #[cfg(feature = "midi")]
+    pub async fn note_off_at_if_generation(
+        &self,
+        id: VoiceId,
+        note: u8,
+        generation: u64,
+        timestamp: Option<Instant>,
+    ) -> Result<()> {
+        wait_until_timestamp(timestamp).await;
+
+        enum Release {
+            Audio(Option<NodeId>),
+            #[cfg(feature = "midi")]
+            Midi(MidiDeviceId, Vec<QueuedMidiEvent>),
+        }
+
+        let release = {
+            let mut state = self.state.write().await;
+            let Some(voice) = state.voices.get(&id) else {
+                return Ok(());
+            };
+
+            if state.voice_note_generations.get(&(id, note)).copied() != Some(generation) {
+                return Ok(());
+            }
+
+            let midi_output = voice.config.midi_output;
+            let midi_channel = voice.config.midi_channel;
+            let polyphony = voice.config.polyphony as usize;
+
+            state.voice_note_generations.remove(&(id, note));
+
+            if let Some(device_id) = midi_output {
+                let events = midi_pool_note_off(&mut state, id, midi_channel, note, polyphony);
+                Release::Midi(device_id, events)
+            } else {
+                let node = state
+                    .voices
+                    .get_mut(&id)
+                    .and_then(|voice| voice.note_nodes.remove(&note));
+                Release::Audio(node)
+            }
+        };
+
+        match release {
+            Release::Audio(Some(node_id)) => {
+                self.backend
+                    .set_param(node_id, "gate", 0.0)
+                    .await
+                    .map_err(Error::backend)?;
+            }
+            Release::Audio(None) => {}
+            #[cfg(feature = "midi")]
+            Release::Midi(device_id, events) => {
+                for event in events {
+                    let _ = self.send_midi_event_now(device_id, event).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "midi")]
+    async fn current_note_generation(&self, id: VoiceId, note: u8) -> Result<u64> {
+        let state = self.state.read().await;
+        state
+            .voice_note_generations
+            .get(&(id, note))
+            .copied()
+            .ok_or(Error::VoiceNotFound(id))
+    }
+}
+
+#[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
+async fn wait_until_timestamp(timestamp: Option<Instant>) {
+    if let Some(timestamp) = timestamp {
+        tokio::time::sleep_until(tokio::time::Instant::from_std(timestamp)).await;
+    }
+}
+
+#[cfg(all(feature = "midi", target_arch = "wasm32"))]
+async fn wait_until_timestamp(_timestamp: Option<Instant>) {}
+
+fn bump_note_generation(state: &mut State, id: VoiceId, note: u8) -> u64 {
+    let generation = state.next_voice_note_generation;
+    state.next_voice_note_generation = state.next_voice_note_generation.saturating_add(1).max(1);
+    state.voice_note_generations.insert((id, note), generation);
+    generation
+}
+
+fn clear_voice_note_generations(state: &mut State, id: VoiceId) {
+    state
+        .voice_note_generations
+        .retain(|(voice_id, _), _| *voice_id != id);
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -511,6 +656,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // and override defaults at the merge step in apply_reload.
         let voice_group = config.group;
         let defaults = default_routes_for_voice(voice_group, &ports);
+        clear_voice_note_generations(&mut state, id);
 
         // Store state
         state.voices.insert(
@@ -559,6 +705,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
                 _ => {
                     state.midi_voice_pool.remove(&id);
+                    clear_voice_note_generations(&mut state, id);
                     None
                 }
             }
@@ -588,6 +735,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Story 5: drop the voice's default routes so the next reload's
             // merge step doesn't carry them forward against a deleted voice.
             state.take_voice_default_routes(id);
+            clear_voice_note_generations(&mut state, id);
             let midi_channel = voice.config.midi_channel;
             let pool_events = midi_pool_clear(&mut state, id, midi_channel);
             let pool_cleanup = voice.config.midi_output.map(|dev| (dev, pool_events));
@@ -643,6 +791,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             route_nodes.extend(state.take_voice_input_route_nodes(id));
             state.take_voice_param_routes(id);
             state.take_voice_default_routes(id);
+            clear_voice_note_generations(&mut state, id);
             let midi_channel = voice.config.midi_channel;
             let pool_events = midi_pool_clear(&mut state, id, midi_channel);
             let pool_cleanup = voice.config.midi_output.map(|dev| (dev, pool_events));
@@ -874,6 +1023,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
                 (voice.config.midi_output, voice.config.midi_channel)
             };
+            clear_voice_note_generations(&mut state, id);
             let pool_events = midi_pool_clear(&mut state, id, midi_channel);
             let pool_cleanup = midi_output.map(|dev| (dev, pool_events));
 
@@ -937,7 +1087,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                         polyphony,
                         mono_legato,
                     )
-                    .await;
+                    .await
+                    .map(|_| ());
             }
         }
 
@@ -1022,6 +1173,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
 
             let node_id = state.alloc_node_id();
+            bump_note_generation(&mut state, id, note);
 
             // Update voice state
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -1084,6 +1236,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
         let node_to_release = {
             let mut state = self.state.write().await;
+            state.voice_note_generations.remove(&(id, note));
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             voice.note_nodes.remove(&note)
         };
@@ -1534,12 +1687,7 @@ fn apply_owned_output_bus_params(voice: &VoiceState, params: &mut ParamMap) {
         for (index, (_, bus)) in voice.output_buses.iter().enumerate() {
             params.insert(format!("out{}", index), bus.raw() as f32);
         }
-    } else if synthdef_params.contains_key("out")
-        && voice
-            .output_buses
-            .first()
-            .is_some_and(|(name, _)| name != "out")
-    {
+    } else if synthdef_params.contains_key("out") {
         if let Some((_, bus)) = voice.output_buses.first() {
             params.insert("out".to_string(), bus.raw() as f32);
         }
@@ -2459,6 +2607,7 @@ mod tests {
         use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
         use crate::types::MidiDeviceId;
         use std::sync::Mutex;
+        use std::time::Duration;
 
         const DEV: u8 = 7;
 
@@ -2512,6 +2661,90 @@ mod tests {
                 });
             }
             out
+        }
+
+        fn drained_scheduled(
+            rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
+        ) -> Vec<(Instant, &'static str, u8, u8, u8)> {
+            let mut out = Vec::new();
+            while let Ok(scheduled) = rx.try_recv() {
+                let timestamp = scheduled.timestamp;
+                out.push(match scheduled.event {
+                    QueuedMidiEvent::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    } => (timestamp, "on", channel, note, velocity),
+                    QueuedMidiEvent::NoteOff { channel, note } => {
+                        (timestamp, "off", channel, note, 0)
+                    }
+                    other => panic!("unexpected MIDI event: {:?}", other),
+                });
+            }
+            out
+        }
+
+        #[tokio::test]
+        async fn note_on_at_honors_future_timestamp() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let target = Instant::now() + Duration::from_millis(20);
+
+            handler.note_on_at(v, 60, 1.0, Some(target)).await.unwrap();
+
+            let events = drained_scheduled(&rx);
+            assert_eq!(events.len(), 1);
+            assert_eq!(
+                (events[0].1, events[0].2, events[0].3, events[0].4),
+                ("on", 0, 60, 127)
+            );
+            assert!(events[0].0 >= target);
+        }
+
+        #[tokio::test]
+        async fn note_off_at_honors_future_timestamp() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap();
+            let _ = drained(&rx);
+            let target = Instant::now() + Duration::from_millis(20);
+            handler.note_off_at(v, 60, Some(target)).await.unwrap();
+
+            let events = drained_scheduled(&rx);
+            assert_eq!(events.len(), 1);
+            assert_eq!(
+                (events[0].1, events[0].2, events[0].3, events[0].4),
+                ("off", 0, 60, 0)
+            );
+            assert!(events[0].0 >= target);
+        }
+
+        #[tokio::test]
+        async fn stale_delayed_same_pitch_note_off_does_not_release_retrigger() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            let stale_generation = handler.note_on_at_tracked(v, 60, 1.0, None).await.unwrap();
+            let fresh_generation = handler.note_on_at_tracked(v, 60, 0.5, None).await.unwrap();
+
+            assert_ne!(stale_generation, fresh_generation);
+            assert_eq!(drained(&rx), vec![("on", 0, 60, 127), ("on", 0, 60, 63)]);
+
+            handler
+                .note_off_at_if_generation(v, 60, stale_generation, None)
+                .await
+                .unwrap();
+            assert!(
+                drained(&rx).is_empty(),
+                "stale delayed note-off must not release the fresh same-pitch note"
+            );
+
+            handler
+                .note_off_at_if_generation(v, 60, fresh_generation, None)
+                .await
+                .unwrap();
+            assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
         }
 
         // Acceptance #1: overlapping stream A on, B on, A off ⇒

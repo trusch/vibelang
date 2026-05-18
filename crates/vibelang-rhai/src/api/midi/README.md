@@ -147,7 +147,7 @@ midi_device("Keystep")
     .looper()
     .channel(1)           // optional, 1-16
     .silence(2.0)        // bars of silence before playback, default 1.0
-    .quantize(0.25)      // beat grid, default 0.25 (16ths)
+    .quantize(0.25)      // beat grid, default 0.0 (off)
     .to(piano_voice);
 ```
 

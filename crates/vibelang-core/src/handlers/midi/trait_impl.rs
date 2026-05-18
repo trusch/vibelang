@@ -90,10 +90,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
             .port_name(port)
             .unwrap_or_else(|_| format!("Unknown {}", id.0));
 
-        // Legacy channel for backward compatibility
         let tx = self.tx.clone();
 
-        // New infrastructure: event queue sender and clock for timestamp calibration
+        // Timestamped input queue and clock for timestamp calibration.
         let event_sender = self.event_queue.sender();
         let midi_clock = Arc::clone(&self.midi_clock);
         let device_id = id;
@@ -119,12 +118,12 @@ impl<B: Backend> Midi for MidiHandler<B> {
                         };
 
                         if !event_sender.try_send(timestamped_event) {
-                            tracing::warn!("[MIDI] Event queue full, dropping event");
-                        }
-
-                        // Also send to legacy channel for backward compatibility
-                        if let Some(legacy_msg) = convert_new_to_legacy_message(&new_msg) {
-                            let _ = tx.blocking_send((device_id, legacy_msg));
+                            tracing::warn!(
+                                "[MIDI] Event queue full, falling back to legacy input channel"
+                            );
+                            if let Some(legacy_msg) = convert_new_to_legacy_message(&new_msg) {
+                                let _ = tx.blocking_send((device_id, legacy_msg));
+                            }
                         }
                     }
                 },

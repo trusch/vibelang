@@ -43,15 +43,23 @@ impl MidiRecordingManager {
         msg: &MidiMessage,
         state: &Arc<RwLock<State>>,
     ) {
+        let current_beat = {
+            let state = state.read().await;
+            state.current_beat
+        };
+        self.record_message_at_beat(device_id, msg, current_beat)
+            .await;
+    }
+
+    pub async fn record_message_at_beat(
+        &self,
+        device_id: MidiDeviceId,
+        msg: &MidiMessage,
+        current_beat: crate::types::Beat,
+    ) {
         let mut recordings = self.recordings.write().await;
         if let Some(recording) = recordings.get_mut(&device_id) {
             if recording.is_recording {
-                // Get current beat from state
-                let current_beat = {
-                    let state = state.read().await;
-                    state.current_beat
-                };
-
                 match msg {
                     MidiMessage::NoteOn {
                         channel,

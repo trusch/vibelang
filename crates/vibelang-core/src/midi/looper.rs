@@ -7,6 +7,7 @@ use crate::reload::LooperConfig;
 use crate::traits::PatternConfig;
 use crate::types::ids::{MidiDeviceId, PatternId, VoiceId};
 use crate::types::time::Beat;
+use crate::validation::Validate;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -247,12 +248,11 @@ impl LooperManager {
         let mut actions = Vec::new();
 
         for inst in self.instances.values_mut() {
-            let LooperPhase::Capturing {
-                last_note_off_beat: Some(last_off),
-            } = inst.phase
-            else {
+            let LooperPhase::Capturing { last_note_off_beat } = inst.phase else {
                 continue;
             };
+
+            let threshold = inst.config.silence_bars * time_sig_numerator as f64;
 
             // Don't count silence while the user is still holding keys.
             // `last_note_off_beat` only tracks the most recent release; if
@@ -260,25 +260,45 @@ impl LooperManager {
             // would otherwise expire mid-performance and snap the loop
             // closed underneath them. Require *all* notes off for the
             // full silence window before finalising.
-            if inst.recording.pending_count() > 0 {
-                continue;
-            }
+            let finalize_at = if inst.recording.pending_count() > 0 {
+                let silence_anchor = last_note_off_beat.unwrap_or(inst.recording.start_beat);
+                let silence_beats = current_beat - silence_anchor.to_f64();
+                if silence_beats < threshold * 2.0 {
+                    continue;
+                }
 
-            let silence_beats = current_beat - last_off.to_f64();
-            let threshold = inst.config.silence_bars * time_sig_numerator as f64;
+                let orphaned = inst
+                    .recording
+                    .close_pending_notes_at(Beat::from_f64(current_beat));
+                tracing::warn!(
+                    "Looper synthesized note-offs for orphaned pending notes: {:?}",
+                    orphaned
+                );
+                actions.extend(
+                    orphaned
+                        .iter()
+                        .map(|(note, _channel)| LooperAction::NoteOff {
+                            voice_id: inst.config.voice_id,
+                            note: *note,
+                        }),
+                );
+                Beat::from_f64(current_beat)
+            } else {
+                let Some(last_off) = last_note_off_beat else {
+                    continue;
+                };
+                let silence_beats = current_beat - last_off.to_f64();
+                if silence_beats < threshold {
+                    continue;
+                }
+                last_off
+            };
 
-            if silence_beats < threshold {
-                continue;
-            }
-
-            // Silence threshold reached — finalise the recording AT the last
-            // note-off, not at the current tick. Stopping at the current tick
-            // bakes the silence_bars wait period into the recording length,
-            // so the loop replays your music followed by a bar of dead air.
-            // Cutting at the last note-off makes the loop length the actual
-            // played duration; the nearest-bar quantization below then snaps
-            // it to a musical loop boundary.
-            inst.recording.stop(last_off);
+            // Silence threshold reached — for normal captures, finalise at
+            // the last note-off rather than baking the silence wait into the
+            // loop. If pending notes were orphaned, the fallback synthesized
+            // their note-offs at the current beat and finalises there.
+            inst.recording.stop(finalize_at);
 
             // Quantize loop length to the nearest bar (minimum 1 bar).
             let bar_beats = time_sig_numerator as f64;
@@ -305,6 +325,16 @@ impl LooperManager {
                 // off the bar grid every iteration.
                 Beat::from_f64(loop_length_beats),
             );
+
+            if let Err(err) = config.validate() {
+                tracing::warn!(
+                    "Looper generated invalid pattern {:?}: {:?}; returning to idle",
+                    pattern_name,
+                    err
+                );
+                inst.phase = LooperPhase::Idle;
+                continue;
+            }
 
             inst.phase = LooperPhase::Playing {
                 pattern_id,
@@ -438,6 +468,34 @@ mod tests {
     }
 
     #[test]
+    fn stuck_pending_notes_are_synthesized_after_extended_silence() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.25,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+
+        assert!(manager.tick(1.9, 4).is_empty());
+
+        let actions = manager.tick(2.1, 4);
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOff { note: 60, .. })));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Playing { .. }
+        ));
+    }
+
+    #[test]
     fn test_note_on_during_playback_restarts_capture() {
         let (mut manager, device_id) = setup(make_config(1, 1));
 
@@ -514,6 +572,28 @@ mod tests {
         } else {
             panic!("expected Playing phase");
         }
+    }
+
+    #[test]
+    fn invalid_generated_pattern_does_not_enter_playing_phase() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.25,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 70_000.0);
+
+        let actions = manager.tick(70_002.0, 4);
+
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
     }
 
     #[test]

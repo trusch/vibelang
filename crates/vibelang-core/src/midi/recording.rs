@@ -238,8 +238,16 @@ impl MidiRecording {
         self.end_beat = Some(end_beat);
 
         // Close any pending notes with duration to end
+        self.close_pending_notes_at(end_beat);
+    }
+
+    /// Close pending note-ons at the given absolute beat and return the
+    /// orphaned `(note, channel)` pairs that were synthesized.
+    pub fn close_pending_notes_at(&mut self, end_beat: Beat) -> Vec<(u8, u8)> {
         let relative_end = Beat::from_f64(end_beat.to_f64() - self.start_beat.to_f64());
-        for (_key, index) in self.pending_notes.drain() {
+        let mut closed = Vec::new();
+        for (key, index) in self.pending_notes.drain() {
+            closed.push(key);
             if let Some(recorded_note) = self.notes.get_mut(index) {
                 if recorded_note.duration.is_none() {
                     let duration =
@@ -248,6 +256,7 @@ impl MidiRecording {
                 }
             }
         }
+        closed
     }
 
     /// Get the total duration of the recording in beats.
@@ -284,6 +293,22 @@ impl MidiRecording {
         }
     }
 
+    fn clamp_quantized_onset(beat: f64, grid: f64, length_beats: f64) -> f64 {
+        if length_beats <= 0.0 || beat < length_beats {
+            return beat;
+        }
+
+        if grid > 0.0 {
+            let mut clamped = beat;
+            while clamped >= length_beats {
+                clamped -= grid;
+            }
+            clamped.max(0.0)
+        } else {
+            (length_beats - f64::EPSILON).max(0.0)
+        }
+    }
+
     /// Convert the recording to a PatternConfig.
     ///
     /// # Arguments
@@ -306,11 +331,18 @@ impl MidiRecording {
     ) -> PatternConfig {
         let mut config = PatternConfig::new(name, voice, length);
 
+        let length_beats = length.to_f64();
+
         for note in &self.notes {
+            let raw_on = note.beat.to_f64();
             let beat_pos = if quantize_beats > 0.0 {
-                Self::quantize_beat(note.beat.to_f64(), quantize_beats)
+                Self::clamp_quantized_onset(
+                    Self::quantize_beat(raw_on, quantize_beats),
+                    quantize_beats,
+                    length_beats,
+                )
             } else {
-                note.beat.to_f64()
+                Self::clamp_quantized_onset(raw_on, 0.0, length_beats)
             };
 
             // Create step with note parameters.
@@ -329,12 +361,13 @@ impl MidiRecording {
 
             // Add duration if available
             if let Some(dur) = note.duration {
-                let dur_val = if quantize_beats > 0.0 {
-                    Self::quantize_beat(dur.to_f64(), quantize_beats)
+                let gate = if quantize_beats > 0.0 {
+                    let q_off = Self::quantize_beat(raw_on + dur.to_f64(), quantize_beats);
+                    q_off - beat_pos
                 } else {
                     dur.to_f64()
                 };
-                step = step.with_param("gate", dur_val.max(0.1) as f32);
+                step = step.with_param("gate", gate.max(0.1) as f32);
             }
 
             config.steps.push(step);
@@ -462,6 +495,79 @@ mod tests {
         assert_eq!(pattern.steps.len(), 2);
         assert!((pattern.steps[0].beat.to_f64() - 0.0).abs() < 0.001);
         assert!((pattern.steps[1].beat.to_f64() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn quantized_note_at_loop_end_is_clamped_inside_pattern_length() {
+        let device_id = MidiDeviceId::new(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO);
+
+        recording.record_note_on(60, 100, 0, Beat::from_f64(3.90));
+        recording.record_note_off(60, 0, Beat::from_f64(3.95));
+        recording.stop(Beat::from_f64(4.0));
+
+        let pattern =
+            recording.to_pattern("test_pattern", 0.25, VoiceId::new(1), Beat::from_f64(4.0));
+
+        assert_eq!(pattern.steps.len(), 1);
+        assert!(pattern.steps[0].beat.to_f64() < 4.0);
+        assert!((pattern.steps[0].beat.to_f64() - 3.75).abs() < 0.001);
+        assert!((pattern.steps[0].params["gate"] - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn paired_quantization_derives_gate_from_quantized_note_off() {
+        let device_id = MidiDeviceId::new(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO);
+
+        recording.record_note_on(60, 100, 0, Beat::from_f64(3.80));
+        recording.record_note_off(60, 0, Beat::from_f64(4.05));
+        recording.stop(Beat::from_f64(4.05));
+
+        let pattern =
+            recording.to_pattern("test_pattern", 0.25, VoiceId::new(1), Beat::from_f64(4.0));
+
+        assert_eq!(pattern.steps.len(), 1);
+        assert!((pattern.steps[0].beat.to_f64() - 3.75).abs() < 0.001);
+        assert!((pattern.steps[0].params["gate"] - 0.25).abs() < 0.001);
+        assert!(
+            ((pattern.steps[0].beat.to_f64() + pattern.steps[0].params["gate"] as f64) - 4.0).abs()
+                < 0.001
+        );
+    }
+
+    #[test]
+    fn quantization_ties_round_forward_for_note_on_and_off() {
+        let device_id = MidiDeviceId::new(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO);
+
+        recording.record_note_on(60, 100, 0, Beat::from_f64(0.125));
+        recording.record_note_off(60, 0, Beat::from_f64(0.375));
+        recording.stop(Beat::from_f64(1.0));
+
+        let pattern =
+            recording.to_pattern("test_pattern", 0.25, VoiceId::new(1), Beat::from_f64(4.0));
+
+        assert_eq!(pattern.steps.len(), 1);
+        assert!((pattern.steps[0].beat.to_f64() - 0.25).abs() < 0.001);
+        assert!((pattern.steps[0].params["gate"] - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn quantization_tie_at_zero_keeps_zero_onset() {
+        let device_id = MidiDeviceId::new(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO);
+
+        recording.record_note_on(60, 100, 0, Beat::from_f64(0.0));
+        recording.record_note_off(60, 0, Beat::from_f64(0.125));
+        recording.stop(Beat::from_f64(1.0));
+
+        let pattern =
+            recording.to_pattern("test_pattern", 0.25, VoiceId::new(1), Beat::from_f64(4.0));
+
+        assert_eq!(pattern.steps.len(), 1);
+        assert!((pattern.steps[0].beat.to_f64() - 0.0).abs() < 0.001);
+        assert!((pattern.steps[0].params["gate"] - 0.25).abs() < 0.001);
     }
 
     #[test]

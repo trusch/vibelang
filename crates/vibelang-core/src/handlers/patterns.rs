@@ -279,10 +279,11 @@ impl<B: Backend> PatternsHandler<B> {
             #[cfg(feature = "midi")]
             if let Some(note) = trigger.note {
                 let velocity = trigger.params.get("amp").copied().unwrap_or(1.0);
-                let _ = self
+                let note_generation = self
                     .voices
-                    .note_on_at(trigger.voice_id, note, velocity, Some(trigger.timestamp))
-                    .await;
+                    .note_on_at_tracked(trigger.voice_id, note, velocity, Some(trigger.timestamp))
+                    .await
+                    .ok();
 
                 // Schedule the matching note-off after the step's gate. Without
                 // this, MIDI sustains the note forever — the polyphony pool
@@ -292,7 +293,7 @@ impl<B: Backend> PatternsHandler<B> {
                 // stopped in the meantime, `stop()` already sweeps held notes,
                 // so the redundant note-off here is benign (or no-op if the
                 // pattern was deleted).
-                if let Some(gate) = trigger.gate_dur {
+                if let (Some(gate), Some(note_generation)) = (trigger.gate_dur, note_generation) {
                     let voices = self.voices.clone();
                     let state = self.state.clone();
                     let pattern_id = trigger.pattern_id;
@@ -307,7 +308,9 @@ impl<B: Backend> PatternsHandler<B> {
                             .map(|p| p.playing)
                             .unwrap_or(false);
                         if still_playing {
-                            let _ = voices.note_off_at(voice_id, note, None).await;
+                            let _ = voices
+                                .note_off_at_if_generation(voice_id, note, note_generation, None)
+                                .await;
                         }
                     });
                 }

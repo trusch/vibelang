@@ -58,7 +58,7 @@ use crate::compat::RwLock;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, JitterCompensator, KeyboardRouteBuilder, MidiClock,
     MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
-    MidiRecording, NoteRouteBuilder, ScheduledMidiEvent,
+    MidiRecording, NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
@@ -77,6 +77,7 @@ use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 /// Handler for MIDI operations.
@@ -623,9 +624,8 @@ impl<B: Backend> MidiHandler<B> {
             self.handle_message(device_id, msg).await;
         }
 
-        // Process MIDI 2.0 messages from the event queue
-
-        self.process_midi2_events().await;
+        // Process timestamped MIDI events from the event queue.
+        self.process_timestamped_events().await;
 
         // Tick looper manager — detects silence and triggers playback conversion.
         let (current_beat, time_sig_num) = {
@@ -720,31 +720,60 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    /// Process MIDI 2.0 events from the event queue.
-    async fn process_midi2_events(&self) {
+    /// Process timestamped MIDI events from the event queue.
+    async fn process_timestamped_events(&self) {
         // Drain events from the queue
         let events = self.event_queue.drain();
 
         for event in events {
-            // Only process MIDI 2.0 specific messages that weren't converted to legacy
             if event.message.is_midi2() {
                 self.handle_midi2_message(event.device_id, &event.message)
+                    .await;
+            } else if let Some(msg) = types::convert_new_to_legacy_message(&event.message) {
+                let event_beat = self.event_arrival_beat(&event).await;
+                self.handle_message_at_beat(event.device_id, msg, Some(event_beat))
                     .await;
             }
         }
     }
 
+    async fn event_arrival_beat(&self, event: &TimestampedMidiEvent) -> f64 {
+        let state = self.state.read().await;
+        beat_at_event_arrival(
+            event.received_at,
+            Instant::now(),
+            state.current_beat.to_f64(),
+            state.tempo,
+            state.playing,
+        )
+    }
+
     /// Handle a single MIDI message.
     async fn handle_message(&self, device_id: MidiDeviceId, msg: MidiMessage) {
+        self.handle_message_at_beat(device_id, msg, None).await;
+    }
+
+    async fn handle_message_at_beat(
+        &self,
+        device_id: MidiDeviceId,
+        msg: MidiMessage,
+        event_beat: Option<f64>,
+    ) {
         // First, invoke callbacks
         self.callback_manager
             .invoke_callbacks(device_id, &msg)
             .await;
 
         // Record events if recording is active for this device
-        self.recording_manager
-            .record_message(device_id, &msg, &self.state)
-            .await;
+        if let Some(event_beat) = event_beat {
+            self.recording_manager
+                .record_message_at_beat(device_id, &msg, crate::types::Beat::from_f64(event_beat))
+                .await;
+        } else {
+            self.recording_manager
+                .record_message(device_id, &msg, &self.state)
+                .await;
+        }
 
         // Then process routing
         let routing_arc = self.routing_manager.routing();
@@ -756,11 +785,11 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 velocity,
             } => {
-                self.handle_note_on(&routing, device_id, *channel, *note, *velocity)
+                self.handle_note_on(&routing, device_id, *channel, *note, *velocity, event_beat)
                     .await;
             }
             MidiMessage::NoteOff { channel, note } => {
-                self.handle_note_off(&routing, device_id, *channel, *note)
+                self.handle_note_off(&routing, device_id, *channel, *note, event_beat)
                     .await;
             }
             MidiMessage::ControlChange { channel, cc, value } => {
@@ -836,6 +865,7 @@ impl<B: Backend> MidiHandler<B> {
         channel: u8,
         note: u8,
         velocity: u8,
+        event_beat: Option<f64>,
     ) {
         // Defensive: a "NoteOn velocity 0" is the running-status idiom for a
         // note-off. The legacy input path already maps it via
@@ -850,7 +880,7 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 channel
             );
-            self.handle_note_off(routing, device_id, channel, note)
+            self.handle_note_off(routing, device_id, channel, note, event_beat)
                 .await;
             return;
         }
@@ -866,6 +896,7 @@ impl<B: Backend> MidiHandler<B> {
                 let state = self.state.read().await;
                 (state.current_beat.to_f64(), state.time_sig.numerator)
             };
+            let capture_beat = event_beat.unwrap_or(current_beat);
             let actions = {
                 let mut mgr = self
                     .looper_manager
@@ -876,7 +907,7 @@ impl<B: Backend> MidiHandler<B> {
                     channel,
                     note,
                     velocity,
-                    current_beat,
+                    capture_beat,
                     time_sig_num,
                 )
             };
@@ -1006,6 +1037,7 @@ impl<B: Backend> MidiHandler<B> {
         device_id: MidiDeviceId,
         channel: u8,
         note: u8,
+        event_beat: Option<f64>,
     ) {
         // If a looper is configured for this device, route exclusively through it.
         if self
@@ -1018,12 +1050,13 @@ impl<B: Backend> MidiHandler<B> {
                 let state = self.state.read().await;
                 state.current_beat.to_f64()
             };
+            let capture_beat = event_beat.unwrap_or(current_beat);
             let actions = {
                 let mut mgr = self
                     .looper_manager
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                mgr.handle_note_off(device_id, channel, note, current_beat)
+                mgr.handle_note_off(device_id, channel, note, capture_beat)
             };
             self.dispatch_looper_actions(actions).await;
             return;
@@ -1686,6 +1719,244 @@ impl<B: Backend> MidiHandler<B> {
         }
 
         Ok(())
+    }
+}
+
+fn beat_at_event_arrival(
+    received_at: Instant,
+    processing_at: Instant,
+    processing_beat: f64,
+    tempo: f64,
+    playing: bool,
+) -> f64 {
+    if !playing {
+        return processing_beat;
+    }
+
+    let queued_secs = processing_at
+        .checked_duration_since(received_at)
+        .unwrap_or_default()
+        .as_secs_f64();
+    (processing_beat - queued_secs * tempo / 60.0).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{AddAction, Backend, BufferInfo};
+    use crate::compat::{channel, RwLock};
+    use crate::midi::{Channel, Velocity};
+    use crate::reload::LooperConfig;
+    use crate::types::{Beat, BufferId, NodeId, ParamMap, VoiceId};
+    use async_trait::async_trait;
+    use std::path::Path;
+    use std::time::Duration;
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+
+    impl std::error::Error for MockError {}
+
+    struct MockBackend;
+
+    #[async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 44100,
+                channels: 2,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    #[test]
+    fn arrival_beat_subtracts_handler_delay_when_transport_is_playing() {
+        let processing_at = Instant::now();
+        let received_at = processing_at - Duration::from_millis(100);
+
+        let beat = beat_at_event_arrival(received_at, processing_at, 4.2, 120.0, true);
+
+        assert!((beat - 4.0).abs() < 0.001, "beat was {beat}");
+    }
+
+    #[tokio::test]
+    async fn timestamped_input_uses_arrival_beat_for_looper_capture() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let handler = MidiHandler::new(Arc::new(MockBackend), Arc::clone(&state), runtime_tx);
+
+        handler
+            .reconcile_loopers(&[LooperConfig {
+                device_id,
+                voice_id,
+                channel: None,
+                silence_bars: 0.25,
+                quantize_beats: 0.0,
+            }])
+            .await;
+
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(4.20);
+            state.tempo = 120.0;
+            state.playing = true;
+        }
+
+        let note_on_received_at = Instant::now() - Duration::from_millis(100);
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            1,
+            note_on_received_at,
+            device_id,
+            NewMidiMessage::NoteOn {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::from_midi1(100),
+            },
+        )));
+        handler.tick().await;
+
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(4.55);
+        }
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            2,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::NoteOff {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::ZERO,
+            },
+        )));
+        handler.tick().await;
+
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(5.70);
+        }
+        handler.tick().await;
+
+        let mut pattern = None;
+        while let Ok(msg) = runtime_rx.try_recv() {
+            if let Message::Pattern(PatternMessage::Create { config, .. }) = msg {
+                pattern = Some(config);
+            }
+        }
+        let pattern = pattern.expect("looper should create a pattern");
+        let gate = pattern.steps[0].params["gate"];
+
+        assert!(
+            gate > 0.45,
+            "gate {gate} should include delayed note-on arrival time"
+        );
+        assert!(
+            gate < 0.65,
+            "gate {gate} should stay near the timestamp-derived duration"
+        );
     }
 }
 
