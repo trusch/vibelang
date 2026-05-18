@@ -159,100 +159,6 @@ pub fn merge_default_routes(user: &RouteMap, defaults: &RouteMap) -> RouteMap {
     merged
 }
 
-/// Drop count-based default audio routes for voices that are used purely as
-/// modulation sources.
-///
-/// Two activation paths:
-///
-/// 1. **Heuristic** — a voice qualifies as "modulation-only" when (a) the
-///    script installed *no* explicit user routes against any of its ports
-///    (`user_routes` carries no `(voice, *)` key) and (b) at least one of
-///    the voice's ports appears as a *source* in any of the param-route
-///    maps (SET via `.to_param` / `.to_param_audio`, BEND via
-///    `.modulate_by`, or TRIGGER via `.to_trigger`). For such voices, the
-///    implicit default `Group(voice_group)` mix would dump the voice's raw
-///    waveform into the surrounding group's audio bus — audible bleed for
-///    an LFO whose only purpose is modulating another voice's param.
-///
-/// 2. **Explicit flag** — `is_modulator_only_fn(vid)` returning true forces
-///    suppression regardless of the heuristic conditions, even when an
-///    explicit `RouteDest::{Group,Main,Muted}` user route is present and
-///    even when there are no outgoing param routes. The user's explicit
-///    routes still apply via [`merge_default_routes`]; only the implicit
-///    default is dropped. This is the escape hatch for voices that legit
-///    have both a wet audio destination (e.g. a recording group) and a
-///    modulation role, where the heuristic's "any explicit route disables
-///    me" rule would leave the implicit group mix in place.
-///
-/// The check is per-voice (not per-port): the typical case is a
-/// single-output LFO synthdef whose one port is being used for modulation.
-///
-/// `voice_name_fn` is used purely for the `tracing::info!` line emitted on
-/// activation (one per suppressed voice).
-pub fn suppress_modulation_only_defaults(
-    defaults: &RouteMap,
-    user_routes: &RouteMap,
-    set: &ParamRouteMap,
-    bend: &ParamRouteMap,
-    trigger: &ParamRouteMap,
-    voice_name_fn: impl Fn(VoiceId) -> Option<String>,
-    is_modulator_only_fn: impl Fn(VoiceId) -> bool,
-    is_audible_ar_route_fn: impl Fn(VoiceId, &str, &RouteDest) -> bool,
-) -> RouteMap {
-    let voices_with_audible_user_route: HashSet<VoiceId> = user_routes
-        .iter()
-        .filter_map(|((voice, port), dests)| {
-            dests
-                .iter()
-                .any(|dest| is_audible_ar_route_fn(*voice, port, dest))
-                .then_some(*voice)
-        })
-        .collect();
-
-    let mut param_route_counts: HashMap<VoiceId, usize> = HashMap::new();
-    for map in [set, bend, trigger] {
-        for ((vid, _), targets) in map {
-            *param_route_counts.entry(*vid).or_insert(0) += targets.len();
-        }
-    }
-
-    let mut suppressed: HashSet<VoiceId> = HashSet::new();
-    let mut suppressed_via_flag: HashSet<VoiceId> = HashSet::new();
-    let mut filtered = RouteMap::new();
-    for (key, dests) in defaults {
-        let (vid, _) = key;
-        let has_param = param_route_counts.contains_key(vid);
-        let has_user_audio = voices_with_audible_user_route.contains(vid);
-        let explicit_flag = is_modulator_only_fn(*vid);
-        if explicit_flag || (has_param && !has_user_audio) {
-            suppressed.insert(*vid);
-            if explicit_flag {
-                suppressed_via_flag.insert(*vid);
-            }
-        } else {
-            filtered.insert(key.clone(), dests.clone());
-        }
-    }
-
-    for vid in &suppressed {
-        let count = param_route_counts.get(vid).copied().unwrap_or(0);
-        let name = voice_name_fn(*vid).unwrap_or_else(|| format!("{:?}", vid));
-        let reason = if suppressed_via_flag.contains(vid) {
-            "explicit modulator_only() flag"
-        } else {
-            "modulation-only"
-        };
-        tracing::info!(
-            "Voice '{}': skipping default audio routing — {} ({} outgoing param routes)",
-            name,
-            reason,
-            count
-        );
-    }
-
-    filtered
-}
-
 /// Difference between two route maps, computed at `(voice, port, dest)`-edge
 /// granularity.
 ///
@@ -2068,7 +1974,7 @@ mod tests {
     use super::*;
     use crate::backend::BufferInfo;
     use crate::compat::Instant;
-    use crate::state::{GroupState, VoiceState};
+    use crate::state::{GroupState, VoiceRole, VoiceState};
     use crate::traits::VoiceConfig;
     use crate::types::{BufferId, ParamMap};
     use std::collections::HashMap;
@@ -2835,6 +2741,7 @@ mod tests {
                 VoiceState {
                     id: voice_id,
                     config: VoiceConfig::new("v", "test_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: Vec::new(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -3281,6 +3188,7 @@ mod tests {
                 VoiceState {
                     id: target_id,
                     config: VoiceConfig::new("target", "target_synth", group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: vec![NodeId::new(9001)],
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -3296,6 +3204,7 @@ mod tests {
                 VoiceState {
                     id: source_id,
                     config: VoiceConfig::new("source", "source_synth", group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: Vec::new(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -3845,6 +3754,7 @@ mod tests {
                     VoiceState {
                         id: vid,
                         config: VoiceConfig::new(&format!("src{}", i), "kr_synth", voice_group_id),
+                        role: VoiceRole::Audible,
                         active_nodes: Vec::new(),
                         note_nodes: HashMap::new(),
                         round_robin_position: 0,
@@ -3866,6 +3776,7 @@ mod tests {
                 VoiceState {
                     id: target_voice,
                     config: VoiceConfig::new("target", "ar_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: target_nodes.clone(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -4583,6 +4494,7 @@ mod tests {
                             "ar_source_synth",
                             voice_group_id,
                         ),
+                        role: VoiceRole::Audible,
                         active_nodes: Vec::new(),
                         note_nodes: HashMap::new(),
                         round_robin_position: 0,
@@ -4604,6 +4516,7 @@ mod tests {
                 VoiceState {
                     id: target_voice,
                     config: VoiceConfig::new("ar_target", "ar_target_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: target_nodes.clone(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -4812,6 +4725,7 @@ mod tests {
                 VoiceState {
                     id: target_a,
                     config: VoiceConfig::new("ta", "dual_target_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: vec![a_node],
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -4825,6 +4739,7 @@ mod tests {
                 VoiceState {
                     id: target_b,
                     config: VoiceConfig::new("tb", "dual_target_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: vec![b_node],
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -5014,6 +4929,7 @@ mod tests {
                             "tr_synth",
                             voice_group_id,
                         ),
+                        role: VoiceRole::Audible,
                         active_nodes: Vec::new(),
                         note_nodes: HashMap::new(),
                         round_robin_position: 0,
@@ -5035,6 +4951,7 @@ mod tests {
                 VoiceState {
                     id: target_voice,
                     config: VoiceConfig::new("kick", "ar_synth", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: target_nodes.clone(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
@@ -5308,6 +5225,7 @@ mod tests {
                 VoiceState {
                     id: kr_source_id,
                     config: VoiceConfig::new("kr_src_conflict", "conflicting_kr", voice_group_id),
+                    role: VoiceRole::Audible,
                     active_nodes: Vec::new(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,

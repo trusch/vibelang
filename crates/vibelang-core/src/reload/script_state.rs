@@ -1575,7 +1575,7 @@ impl std::error::Error for ParamRouteConflict {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{GroupState, VoiceState};
+    use crate::state::{GroupState, VoiceRole, VoiceState};
     use crate::types::{BusId, NodeId};
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::layer::SubscriberExt;
@@ -1672,6 +1672,7 @@ mod tests {
             VoiceState {
                 id: voice_id,
                 config: VoiceConfig::new("target", &synthdef, group_id),
+                role: VoiceRole::Audible,
                 active_nodes: Vec::new(),
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,

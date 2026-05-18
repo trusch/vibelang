@@ -82,9 +82,14 @@ pub use script_state::{
 };
 
 // Types available on all platforms (for order_group_creations)
-use crate::handlers::{compute_input_route_diff, merge_default_routes};
+use crate::handlers::{
+    compute_input_route_diff, default_routes_for_voice, merge_default_routes, ParamRouteMap,
+    RouteDest, RouteMap,
+};
+use crate::state::VoiceRole;
 use crate::types::GroupId;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use vibelang_dsp::PortRate;
 
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
@@ -152,8 +157,151 @@ impl ChangeQuant {
     }
 }
 
+fn route_source_count_for_voice(voice_id: VoiceId, maps: [&ParamRouteMap; 3]) -> usize {
+    maps.into_iter()
+        .flat_map(|map| map.iter())
+        .filter(|((source_voice, _), _)| *source_voice == voice_id)
+        .map(|(_, targets)| targets.len())
+        .sum()
+}
+
+fn output_rate(
+    current: &State,
+    new: &ScriptState,
+    voice_id: VoiceId,
+    port_name: &str,
+) -> Option<PortRate> {
+    let config = new.voices.get(&voice_id)?;
+    current
+        .synthdef_outputs(&config.synthdef)
+        .into_iter()
+        .find(|port| port.name == port_name)
+        .map(|port| port.rate)
+}
+
+fn has_audible_ar_route(current: &State, new: &ScriptState, voice_id: VoiceId) -> bool {
+    new.routes.iter().any(|((route_voice, port_name), dests)| {
+        *route_voice == voice_id
+            && matches!(
+                output_rate(current, new, voice_id, port_name),
+                Some(PortRate::Ar)
+            )
+            && dests
+                .iter()
+                .any(|dest| matches!(dest, RouteDest::Group(_) | RouteDest::Main))
+    })
+}
+
+fn has_kr_or_tr_user_route(current: &State, new: &ScriptState, voice_id: VoiceId) -> bool {
+    new.routes.iter().any(|((route_voice, port_name), _)| {
+        *route_voice == voice_id
+            && matches!(
+                output_rate(current, new, voice_id, port_name),
+                Some(PortRate::Kr | PortRate::Tr)
+            )
+    })
+}
+
+fn calculate_voice_roles(current: &State, new: &ScriptState) -> HashMap<VoiceId, VoiceRole> {
+    let param_maps = [
+        &new.param_routes_set,
+        &new.param_routes_bend,
+        &new.param_routes_trigger,
+    ];
+
+    new.voices
+        .iter()
+        .map(|(voice_id, config)| {
+            let has_mod_route = route_source_count_for_voice(*voice_id, param_maps) > 0
+                || has_kr_or_tr_user_route(current, new, *voice_id);
+            let role = if config.modulator_only
+                || (has_mod_route && !has_audible_ar_route(current, new, *voice_id))
+            {
+                VoiceRole::ModulatorOnly
+            } else {
+                VoiceRole::Audible
+            };
+            (*voice_id, role)
+        })
+        .collect()
+}
+
+fn default_output_routes_for_script_state(current: &State, new: &ScriptState) -> RouteMap {
+    let mut defaults = RouteMap::new();
+    for (voice_id, config) in &new.voices {
+        if config.sfz_instrument.is_none()
+            && !config.synthdef.is_empty()
+            && !current.synthdefs.contains(&config.synthdef)
+        {
+            continue;
+        }
+        let ports = current.synthdef_outputs(&config.synthdef);
+        for (port_name, dests) in default_routes_for_voice(config.group, &ports) {
+            defaults.insert((*voice_id, port_name), dests);
+        }
+    }
+    defaults
+}
+
+fn effective_output_routes(
+    current: &State,
+    new: &ScriptState,
+    voice_roles: &HashMap<VoiceId, VoiceRole>,
+) -> RouteMap {
+    let defaults = default_output_routes_for_script_state(current, new);
+    let mut filtered = RouteMap::new();
+    let mut suppressed: HashSet<VoiceId> = HashSet::new();
+    let param_maps = [
+        &new.param_routes_set,
+        &new.param_routes_bend,
+        &new.param_routes_trigger,
+    ];
+
+    for (key, dests) in defaults {
+        let (voice_id, _) = key;
+        if voice_roles.get(&voice_id) == Some(&VoiceRole::ModulatorOnly) {
+            suppressed.insert(voice_id);
+        } else {
+            filtered.insert(key, dests);
+        }
+    }
+
+    for voice_id in suppressed {
+        let count = route_source_count_for_voice(voice_id, param_maps);
+        let name = new
+            .voices
+            .get(&voice_id)
+            .map(|config| config.name.clone())
+            .or_else(|| {
+                current
+                    .voices
+                    .get(&voice_id)
+                    .map(|voice| voice.config.name.clone())
+            })
+            .unwrap_or_else(|| format!("{:?}", voice_id));
+        let reason = if new
+            .voices
+            .get(&voice_id)
+            .map(|config| config.modulator_only)
+            .unwrap_or(false)
+        {
+            "explicit modulator_only() flag"
+        } else {
+            "VoiceRole::ModulatorOnly"
+        };
+        tracing::info!(
+            "Voice '{}': skipping default audio routing — {} ({} outgoing param routes)",
+            name,
+            reason,
+            count
+        );
+    }
+
+    merge_default_routes(&new.routes, &filtered)
+}
+
 /// Calculate the diff between current runtime state and new script state.
-pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
+pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &RouteMap) -> ReloadDiff {
     let mut diff = ReloadDiff::default();
 
     // Tempo
@@ -277,8 +425,20 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
         }
     }
 
-    let effective_output_routes = merge_default_routes(&new.routes, &current.default_routes);
-    diff.output_routes = diff::diff_routes(&current.default_routes, &effective_output_routes);
+    diff.voice_roles = calculate_voice_roles(current, new);
+    diff.voice_role_changes = diff
+        .voice_roles
+        .iter()
+        .filter(|(id, role)| {
+            current
+                .voices
+                .get(id)
+                .map(|voice| voice.role != **role)
+                .unwrap_or(false)
+        })
+        .count();
+    diff.effective_output_routes = effective_output_routes(current, new, &diff.voice_roles);
+    diff.output_routes = diff::diff_routes(current_routes, &diff.effective_output_routes);
     diff.param_routes_set = diff::diff_param_routes_with_shaping(
         &current.param_routes_set,
         &new.param_routes_set,
@@ -440,7 +600,7 @@ mod tests {
         let current = State::default(); // tempo = 120
         let new = ScriptState::new().with_tempo(140.0);
 
-        let diff = calculate_diff(&current, &new);
+        let diff = calculate_diff(&current, &new, &RouteMap::new());
 
         assert_eq!(diff.tempo_changed, Some(140.0));
     }
@@ -450,7 +610,7 @@ mod tests {
         let current = State::default();
         let new = ScriptState::new(); // Same tempo
 
-        let diff = calculate_diff(&current, &new);
+        let diff = calculate_diff(&current, &new, &RouteMap::new());
 
         assert!(!diff.has_changes());
     }

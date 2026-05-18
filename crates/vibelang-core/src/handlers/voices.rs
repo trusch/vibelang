@@ -5,7 +5,7 @@ use crate::compat::{Instant, RwLock};
 use crate::handlers::default_routes_for_voice;
 #[cfg(feature = "midi")]
 use crate::state::MidiVoicePool;
-use crate::state::{State, VoiceState};
+use crate::state::{State, VoiceRole, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{BusId, ControlBusId, NodeId, ParamMap, VoiceId};
 use crate::validation::Validate;
@@ -658,12 +658,19 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let defaults = default_routes_for_voice(voice_group, &ports);
         clear_voice_note_generations(&mut state, id);
 
+        let role = if config.modulator_only {
+            VoiceRole::ModulatorOnly
+        } else {
+            VoiceRole::Audible
+        };
+
         // Store state
         state.voices.insert(
             id,
             VoiceState {
                 id,
                 config,
+                role,
                 active_nodes: Vec::new(),
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,

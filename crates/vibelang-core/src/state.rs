@@ -76,6 +76,16 @@ pub struct GroupState {
     pub output_channels: Option<u32>,
 }
 
+/// Runtime routing role for a voice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum VoiceRole {
+    /// Voice may receive implicit audible defaults.
+    #[default]
+    Audible,
+    /// Voice is intended only as a modulation source; implicit audible defaults are suppressed.
+    ModulatorOnly,
+}
+
 /// Internal state for a voice.
 #[derive(Clone, Debug)]
 pub struct VoiceState {
@@ -84,6 +94,9 @@ pub struct VoiceState {
 
     /// Configuration.
     pub config: VoiceConfig,
+
+    /// Effective routing role derived during reload diffing.
+    pub role: VoiceRole,
 
     /// Active synth node IDs (for polyphony).
     pub active_nodes: Vec<NodeId>,

@@ -13,7 +13,9 @@ use async_trait::async_trait;
 use vibelang_core::compat::Instant;
 use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget};
 use vibelang_core::message::{ReloadMessage, SynthDefMessage, VoiceMessage};
-use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId};
+use vibelang_core::{
+    AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId, VoiceRole,
+};
 use vibelang_dsp::{get_synthdef_outputs, GraphIR, InputPort, OutputPort, ParamSpec, PortRate};
 use vibelang_rhai::ScriptEngine;
 
@@ -1025,18 +1027,33 @@ async fn script_muted_kr_route_does_not_unsuppress_modulation_only_audio_default
     "#;
     apply_script(&mut runtime, script).await;
 
-    let source_audio_bus = {
+    let (source_audio_bus, target, target_node, summer_bus) = {
         let state = runtime.state().read().await;
         let src = VoiceId::new(fnv1a_id("mod_only_mixed_src"));
-        state
-            .voices
-            .get(&src)
-            .expect("source voice should exist")
+        let target = VoiceId::new(fnv1a_id("mod_only_target_voice"));
+        let src_voice = state.voices.get(&src).expect("source voice should exist");
+        assert_eq!(
+            src_voice.role,
+            VoiceRole::ModulatorOnly,
+            "only kr routes plus a muted kr dummy should derive ModulatorOnly"
+        );
+        let source_audio_bus = src_voice
             .output_buses
             .iter()
             .find(|(name, _)| name == "audio")
             .map(|(_, bus)| bus.raw() as f32)
-            .expect("source audio bus should exist")
+            .expect("source audio bus should exist");
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("param-route summer should remain materialized");
+        assert_eq!(summer.sources.len(), 1);
+        (
+            source_audio_bus,
+            target,
+            active_voice_node(&state, "mod_only_target_voice"),
+            summer.bus.raw(),
+        )
     };
     let leaked_default = runtime.backend().synth_creates().iter().any(|create| {
         create.def == "port_to_group_link_2"
@@ -1045,6 +1062,14 @@ async fn script_muted_kr_route_does_not_unsuppress_modulation_only_audio_default
     assert!(
         !leaked_default,
         "muting a kr dummy port must not make the implicit ar default audible"
+    );
+    assert!(
+        runtime.backend().param_maps().contains(&ParamMapCall {
+            node: target_node,
+            param: "freq".to_string(),
+            bus: summer_bus,
+        }),
+        "ModulatorOnly default suppression must not break the live param-route mapping for {target:?}"
     );
 }
 

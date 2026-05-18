@@ -352,7 +352,7 @@ pub fn reconcile_voice_ports(
 mod tests {
     use super::*;
     use crate::handlers::ParamRouteTarget;
-    use crate::state::{GroupState, VoiceState};
+    use crate::state::{GroupState, VoiceRole, VoiceState};
     use crate::traits::VoiceConfig;
     use crate::types::{GroupId, ParamMap};
     use std::collections::HashMap;
@@ -489,6 +489,7 @@ mod tests {
             VoiceState {
                 id: voice_id,
                 config: VoiceConfig::new("v", synth, group_id),
+                role: VoiceRole::Audible,
                 active_nodes: Vec::new(),
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,

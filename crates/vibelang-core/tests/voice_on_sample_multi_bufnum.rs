@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, GroupId, GroupState, NodeId, ParamMap, SampleId,
-    SampleInfo, State, VoiceConfig, VoiceId, VoiceState, Voices,
+    SampleInfo, State, VoiceConfig, VoiceId, VoiceRole, VoiceState, Voices,
 };
 
 #[derive(Debug)]
@@ -171,6 +171,7 @@ fn install_sample_voice(
         VoiceState {
             id: voice_id,
             config,
+            role: VoiceRole::Audible,
             active_nodes: Vec::new(),
             note_nodes: Default::default(),
             round_robin_position: 0,

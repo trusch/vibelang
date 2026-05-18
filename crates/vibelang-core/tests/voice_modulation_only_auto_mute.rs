@@ -1,6 +1,6 @@
 //! Heuristic auto-mute for modulation-only voices (Story B).
 //!
-//! Acceptance tests for [`suppress_modulation_only_defaults`]:
+//! Acceptance tests for diff-time [`VoiceRole::ModulatorOnly`] default suppression:
 //! a voice used purely as a modulation source (its outputs only feed
 //! `.to_param` / `.to_param_audio` / `.modulate_by` / `.to_trigger`)
 //! should NOT have its count-based default `Group(voice_group)` mix
@@ -36,12 +36,12 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing_subscriber::layer::SubscriberExt;
 use vibelang_core::handlers::{
-    merge_default_routes, suppress_modulation_only_defaults, ParamRouteMap, ParamRouteTarget,
-    RouteDest, RouteMap, RoutesHandler, VoicesHandler,
+    ParamRouteMap, ParamRouteTarget, RouteDest, RouteMap, RoutesHandler, VoicesHandler,
 };
+use vibelang_core::reload::ScriptState;
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, GroupId, GroupState, NodeId, ParamMap, State,
-    VoiceConfig, VoiceId, Voices,
+    VoiceConfig, VoiceId, VoiceRole, Voices,
 };
 use vibelang_dsp::OutputPort;
 
@@ -345,51 +345,31 @@ async fn add_group(state: &Arc<RwLock<State>>, id: u32, name: &str) -> (GroupId,
     (group_id, bus.0)
 }
 
-/// Run the same suppress → merge → diff → finalize sequence the runtime
-/// executes in `Runtime::apply_reload` Phase 4.7. `param_routes_set` /
-/// `_bend` / `_trigger` mirror the script's desired-state maps that
-/// would be carried in [`reload::ScriptState`] at reload time.
-async fn suppress_merge_diff_finalize(
+/// Run the same diff-time effective-route computation and finalize sequence
+/// the runtime executes in `Runtime::apply_reload` Phase 4.7.
+async fn diff_effective_routes_finalize(
     h: &Harness,
     user_routes: &RouteMap,
     set: &ParamRouteMap,
     bend: &ParamRouteMap,
     trigger: &ParamRouteMap,
-) -> RouteMap {
-    let merged = {
+) -> (RouteMap, std::collections::HashMap<VoiceId, VoiceRole>) {
+    let diff = {
         let s = h.state.read().await;
-        let filtered = suppress_modulation_only_defaults(
-            &s.default_routes,
-            user_routes,
-            set,
-            bend,
-            trigger,
-            |vid| s.voices.get(&vid).map(|v| v.config.name.clone()),
-            |vid| {
-                s.voices
-                    .get(&vid)
-                    .map(|v| v.config.modulator_only)
-                    .unwrap_or(false)
-            },
-            |vid, port, dest| {
-                if !matches!(dest, RouteDest::Group(_) | RouteDest::Main) {
-                    return false;
-                }
-                let Some(voice) = s.voices.get(&vid) else {
-                    return false;
-                };
-                s.synthdef_outputs(&voice.config.synthdef)
-                    .into_iter()
-                    .any(|output| {
-                        output.name == port && matches!(output.rate, vibelang_dsp::PortRate::Ar)
-                    })
-            },
-        );
-        merge_default_routes(user_routes, &filtered)
+        let mut script = ScriptState::new();
+        for (voice_id, voice) in &s.voices {
+            script.add_voice(*voice_id, voice.config.clone());
+        }
+        script.routes = user_routes.clone();
+        script.param_routes_set = set.clone();
+        script.param_routes_bend = bend.clone();
+        script.param_routes_trigger = trigger.clone();
+        vibelang_core::reload::calculate_diff(&s, &script, &RouteMap::new())
     };
-    let diff = RoutesHandler::<MockBackend>::diff(&RouteMap::new(), &merged);
-    h.routes.finalize(&diff).await.unwrap();
-    merged
+    h.routes.finalize(&diff.output_routes).await.unwrap();
+    let merged = diff.effective_output_routes.clone();
+    let roles = diff.voice_roles.clone();
+    (merged, roles)
 }
 
 // =========================================================================
@@ -435,7 +415,7 @@ async fn voice_with_only_param_routes_not_mixed() {
     );
 
     let (captured, _guard) = install_tracing_capture();
-    let merged = suppress_merge_diff_finalize(
+    let (merged, roles) = diff_effective_routes_finalize(
         &h,
         &RouteMap::new(),
         &set,
@@ -444,6 +424,7 @@ async fn voice_with_only_param_routes_not_mixed() {
     )
     .await;
     let log_lines = captured.lines();
+    assert_eq!(roles.get(&voice), Some(&VoiceRole::ModulatorOnly));
 
     // Default for ("voice", "out") was dropped, so the merged map is
     // empty (no user routes either) and finalize spawned nothing.
@@ -464,7 +445,7 @@ async fn voice_with_only_param_routes_not_mixed() {
     let info_match = log_lines.iter().any(|l| {
         l.contains("Voice 'lfo'")
             && l.contains("skipping default audio routing")
-            && l.contains("modulation-only")
+            && l.contains("VoiceRole::ModulatorOnly")
             && l.contains("1 outgoing param routes")
     });
     assert!(
@@ -513,7 +494,7 @@ async fn voice_with_param_and_audio_routes_still_mixed() {
     );
 
     let (captured, _guard) = install_tracing_capture();
-    let _merged = suppress_merge_diff_finalize(
+    let (_merged, roles) = diff_effective_routes_finalize(
         &h,
         &user_routes,
         &set,
@@ -522,6 +503,7 @@ async fn voice_with_param_and_audio_routes_still_mixed() {
     )
     .await;
     let log_lines = captured.lines();
+    assert_eq!(roles.get(&voice), Some(&VoiceRole::Audible));
 
     // One mixer spawned, bound to the user's explicit destination bus.
     // The presence of `.to_param` does NOT prevent the audio route from
@@ -565,7 +547,7 @@ async fn voice_with_only_audio_routes_unaffected() {
     // No param routes anywhere, no user routes — the count-based
     // default must come through the helper untouched.
     let (captured, _guard) = install_tracing_capture();
-    let merged = suppress_merge_diff_finalize(
+    let (merged, roles) = diff_effective_routes_finalize(
         &h,
         &RouteMap::new(),
         &ParamRouteMap::new(),
@@ -574,6 +556,7 @@ async fn voice_with_only_audio_routes_unaffected() {
     )
     .await;
     let log_lines = captured.lines();
+    assert_eq!(roles.get(&voice), Some(&VoiceRole::Audible));
 
     assert_eq!(
         merged[&(voice, "out".to_string())],
@@ -629,7 +612,7 @@ async fn voice_modulator_only_skips_audio() {
     // No user routes, no param routes — the heuristic alone would NOT
     // fire here. Only the explicit flag triggers suppression.
     let (captured, _guard) = install_tracing_capture();
-    let merged = suppress_merge_diff_finalize(
+    let (merged, roles) = diff_effective_routes_finalize(
         &h,
         &RouteMap::new(),
         &ParamRouteMap::new(),
@@ -638,6 +621,7 @@ async fn voice_modulator_only_skips_audio() {
     )
     .await;
     let log_lines = captured.lines();
+    assert_eq!(roles.get(&voice), Some(&VoiceRole::ModulatorOnly));
 
     assert!(
         merged.is_empty(),
@@ -694,7 +678,7 @@ async fn voice_modulator_only_with_audio_route_still_skips_implicit() {
     );
 
     let (captured, _guard) = install_tracing_capture();
-    let merged = suppress_merge_diff_finalize(
+    let (merged, roles) = diff_effective_routes_finalize(
         &h,
         &user_routes,
         &ParamRouteMap::new(),
@@ -703,6 +687,7 @@ async fn voice_modulator_only_with_audio_route_still_skips_implicit() {
     )
     .await;
     let log_lines = captured.lines();
+    assert_eq!(roles.get(&voice), Some(&VoiceRole::ModulatorOnly));
 
     // Merged map should contain ONLY the user's explicit destination —
     // the implicit `Group(voice_group)` default has been suppressed by

@@ -94,9 +94,8 @@ pub struct VoiceConfig {
     /// mix into `rec` only and skip the implicit default.
     ///
     /// Set via the Rhai `modulator_only()` chain method on
-    /// [`crate::api::voice::Voice`](https://docs.rs/) — paired with the
-    /// auto-mute heuristic in
-    /// [`crate::handlers::routes::suppress_modulation_only_defaults`].
+    /// [`crate::api::voice::Voice`](https://docs.rs/) and translated into
+    /// [`crate::state::VoiceRole::ModulatorOnly`] during reload diffing.
     pub modulator_only: bool,
 
     /// MIDI output device (if routing to external MIDI).

@@ -31,7 +31,7 @@ use vibelang_core::handlers::{
 };
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, BusId, GroupId, GroupState, NodeId, ParamMap, State,
-    VoiceConfig, VoiceId, VoiceState,
+    VoiceConfig, VoiceId, VoiceRole, VoiceState,
 };
 use vibelang_dsp::{OutputPort, PortRate};
 
@@ -237,6 +237,7 @@ async fn insert_voice(
         VoiceState {
             id: voice_id,
             config: VoiceConfig::new(voice_name, synthdef, voice_group),
+            role: VoiceRole::Audible,
             active_nodes,
             note_nodes: HashMap::new(),
             round_robin_position: 0,

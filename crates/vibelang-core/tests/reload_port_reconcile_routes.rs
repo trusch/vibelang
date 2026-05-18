@@ -38,7 +38,7 @@ use vibelang_core::handlers::{RouteDest, RouteMap, RoutesHandler};
 use vibelang_core::reload::reconcile_voice_ports;
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, GroupId, GroupState, NodeId, ParamMap, State,
-    VoiceConfig, VoiceId, VoiceState,
+    VoiceConfig, VoiceId, VoiceRole, VoiceState,
 };
 use vibelang_dsp::OutputPort;
 
@@ -278,6 +278,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
             VoiceState {
                 id: voice,
                 config: VoiceConfig::new("v", SYNTH, voice_group),
+                role: VoiceRole::Audible,
                 active_nodes: Vec::new(),
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,

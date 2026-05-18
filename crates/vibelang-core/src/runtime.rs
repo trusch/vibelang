@@ -32,11 +32,10 @@ use crate::compat::{timeout, Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
-    default_routes_for_voice, merge_default_routes, suppress_modulation_only_defaults,
-    EffectsHandler, FadesHandler, GroupsHandler, InputRouteMap, InputRouteSrc, MelodiesHandler,
-    ParamRoute, ParamRouteDiff, ParamRouteMap, PatternsHandler, RouteMap, RoutesHandler,
-    SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler, TransportHandler,
-    VoicesHandler,
+    default_routes_for_voice, EffectsHandler, FadesHandler, GroupsHandler, InputRouteMap,
+    InputRouteSrc, MelodiesHandler, ParamRoute, ParamRouteDiff, ParamRouteMap, PatternsHandler,
+    RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
+    TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -53,7 +52,7 @@ use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
 use crate::reload;
 #[cfg(feature = "midi")]
 use crate::reload::MidiOutputMessage;
-use crate::state::State;
+use crate::state::{State, VoiceRole};
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
 #[cfg(not(target_arch = "wasm32"))]
@@ -812,43 +811,6 @@ impl<B: Backend> Runtime<B> {
         routes
     }
 
-    async fn effective_output_routes(&self, new_state: &reload::ScriptState) -> RouteMap {
-        let state = self.state.read().await;
-        let filtered_defaults = suppress_modulation_only_defaults(
-            &state.default_routes,
-            &new_state.routes,
-            &new_state.param_routes_set,
-            &new_state.param_routes_bend,
-            &new_state.param_routes_trigger,
-            |vid| state.voices.get(&vid).map(|v| v.config.name.clone()),
-            |vid| {
-                state
-                    .voices
-                    .get(&vid)
-                    .map(|v| v.config.modulator_only)
-                    .unwrap_or(false)
-            },
-            |vid, port, dest| {
-                if !matches!(
-                    dest,
-                    crate::handlers::RouteDest::Group(_) | crate::handlers::RouteDest::Main
-                ) {
-                    return false;
-                }
-                let Some(voice) = state.voices.get(&vid) else {
-                    return false;
-                };
-                state
-                    .synthdef_outputs(&voice.config.synthdef)
-                    .into_iter()
-                    .any(|output| {
-                        output.name == port && matches!(output.rate, vibelang_dsp::PortRate::Ar)
-                    })
-            },
-        );
-        merge_default_routes(&new_state.routes, &filtered_defaults)
-    }
-
     /// Apply a live reload from a new script state.
     ///
     /// This calculates the minimal diff between current and new state,
@@ -1111,12 +1073,27 @@ impl<B: Backend> Runtime<B> {
         changed
     }
 
+    async fn apply_voice_roles(&self, roles: &std::collections::HashMap<VoiceId, VoiceRole>) {
+        if roles.is_empty() {
+            return;
+        }
+
+        let mut state = self.state.write().await;
+        for (voice_id, role) in roles {
+            if let Some(voice) = state.voices.get_mut(voice_id) {
+                voice.role = *role;
+            }
+        }
+    }
+
     async fn apply_reload(&mut self, mut new_state: reload::ScriptState) -> Result<()> {
         let pending_port_reconciles = self.pending_voice_port_reconciles(&mut new_state).await;
+        self.apply_voice_port_reconciles(&pending_port_reconciles)
+            .await;
         // Calculate diff
         let mut diff = {
             let current = self.state.read().await;
-            reload::calculate_diff(&current, &new_state)
+            reload::calculate_diff(&current, &new_state, &self.current_routes)
         };
         let structurally_recreated_voices = self
             .structurally_recreated_voice_ids(&diff, &new_state)
@@ -1195,11 +1172,11 @@ impl<B: Backend> Runtime<B> {
         diff.param_routes_bend = param_bend_diff;
         diff.param_routes_trigger = param_trigger_diff;
         diff.voice_port_reconciles = pending_port_reconciles.len();
-
-        self.apply_voice_port_reconciles(&pending_port_reconciles)
-            .await;
-        let early_merged_routes = self.effective_output_routes(&new_state).await;
-        diff.output_routes = reload::diff_routes(&self.current_routes, &early_merged_routes);
+        let mut route_base = self.current_routes.clone();
+        for voice_id in &structurally_recreated_voices {
+            route_base.retain(|(id, _), _| id != voice_id);
+        }
+        diff.output_routes = reload::diff_routes(&route_base, &diff.effective_output_routes);
         diff.input_routes = {
             let state = self.state.read().await;
             crate::handlers::compute_input_route_diff(&state.input_routes, &input_routes)
@@ -1938,6 +1915,7 @@ impl<B: Backend> Runtime<B> {
                         voice.config.polyphony = new_config.polyphony;
                         voice.config.round_robin_count = new_config.round_robin_count;
                         voice.config.choke_group = new_config.choke_group.clone();
+                        voice.config.modulator_only = new_config.modulator_only;
                         voice.config.mono_legato = new_config.mono_legato;
                         #[cfg(feature = "midi")]
                         {
@@ -2056,11 +2034,9 @@ impl<B: Backend> Runtime<B> {
         // user entries winning on conflicts. We diff against — and persist —
         // this merged map so a later reload sees defaults as already-applied
         // and a removal of a user route correctly falls back to the default.
-        let merged_routes = self.effective_output_routes(&new_state).await;
-        for voice_id in &structurally_recreated_voices {
-            self.current_routes.retain(|(id, _), _| id != voice_id);
-        }
-        let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &merged_routes);
+        self.apply_voice_roles(&diff.voice_roles).await;
+        let merged_routes = diff.effective_output_routes.clone();
+        let route_diff = diff.output_routes.clone();
         if !route_diff.is_empty() {
             tracing::debug!(
                 "Reload: finalizing routes (additions={}, removals={})",

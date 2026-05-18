@@ -24,7 +24,7 @@ use tokio::sync::RwLock;
 use vibelang_core::handlers::{ParamRoute, ParamRouteDiff, ParamRouteTarget, RoutesHandler};
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, BusId, EffectId, EffectState, GroupId, GroupState,
-    NodeId, ParamMap, State, VoiceConfig, VoiceId, VoiceState,
+    NodeId, ParamMap, State, VoiceConfig, VoiceId, VoiceRole, VoiceState,
 };
 use vibelang_dsp::{OutputPort, PortRate};
 
@@ -221,6 +221,7 @@ async fn insert_voice(
         VoiceState {
             id: voice_id,
             config: VoiceConfig::new("v", synthdef, voice_group),
+            role: VoiceRole::Audible,
             active_nodes: Vec::new(),
             note_nodes: HashMap::new(),
             round_robin_position: 0,

@@ -308,6 +308,15 @@ pub struct ReloadDiff {
     /// Output route changes.
     pub output_routes: RouteDiff,
 
+    /// Effective output route map computed during diffing.
+    pub effective_output_routes: crate::handlers::RouteMap,
+
+    /// Desired voice roles computed during diffing.
+    pub voice_roles: HashMap<crate::types::VoiceId, crate::state::VoiceRole>,
+
+    /// Existing voices whose derived role changed.
+    pub voice_role_changes: usize,
+
     /// SET parameter route changes.
     pub param_routes_set: ParamRouteDiff,
 
@@ -390,6 +399,9 @@ impl Default for ReloadDiff {
                 unchanged: HashSet::new(),
             },
             output_routes: RouteDiff::default(),
+            effective_output_routes: crate::handlers::RouteMap::new(),
+            voice_roles: HashMap::new(),
+            voice_role_changes: 0,
             param_routes_set: ParamRouteDiff::default(),
             param_routes_bend: ParamRouteDiff::default(),
             param_routes_trigger: ParamRouteDiff::default(),
@@ -422,6 +434,7 @@ impl ReloadDiff {
             || self.sfz.has_changes()
             || self.fades.has_changes()
             || !self.output_routes.is_empty()
+            || self.voice_role_changes > 0
             || self.param_routes_have_changes()
             || !self.input_routes.is_empty()
             || self.voice_port_reconciles > 0
@@ -523,6 +536,9 @@ impl ReloadDiff {
                 self.output_routes.additions.len(),
                 self.output_routes.removals.len()
             ));
+        }
+        if self.voice_role_changes > 0 {
+            parts.push(format!("voice_roles(~{})", self.voice_role_changes));
         }
         if !self.param_routes_set.is_empty() {
             parts.push(format!(
