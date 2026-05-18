@@ -41,6 +41,13 @@ sample.wav
 *.tmp
 *.log
 *.bak
+tmp-*.txt
+
+# Audio capture session directories under examples/
+examples/**/captures/
+
+# VS Code extension build artifacts
+vscode-extension/*.vsix
 
 # Node modules (vscode extension)
 node_modules/
