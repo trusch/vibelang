@@ -2,6 +2,12 @@
 //
 // `pressN` params are patchable pressure values in 0..1. Each pad emits a
 // slewed pressure CV and a held +5 V gate when pressure crosses `threshold`.
+//
+// Public interface:
+//   pressure1/gate1 .. pressure4/gate4: kr pressure CV and +5 V-style gate per pad.
+//   press1..press4  : 0..1 pressure inputs, usually mapped from touch/CV logic.
+//   threshold       : 0..1 gate threshold shared by all pads.
+//   slew            : seconds for pressure attack/release lag.
 
 define_synthdef("prss_pnt", |builder| {
     builder

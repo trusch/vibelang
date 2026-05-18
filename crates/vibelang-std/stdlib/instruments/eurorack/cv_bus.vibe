@@ -3,6 +3,14 @@
 // Patch CV into `in1..in4` via `.to_param` or `.modulate_by`. Each channel has
 // attenuate/offset controls. `norm12`, `norm23`, and `norm34` add the previous
 // bus into the next bus, approximating a normalled utility row.
+//
+// Public interface:
+//   in1..in4       : kr CV inputs to patch with `.to_param` or `.modulate_by`.
+//   atten1..atten4 : per-channel gain, default 1.0; bipolar values invert.
+//   offset1..offset4: DC offsets added after attenuation.
+//   norm12/norm23/norm34: normalled sends from previous bus to next, default on.
+//   bus1..bus4     : clipped -1..1 per-channel kr outputs.
+//   sum            : clipped kr sum of all four bus outputs.
 
 define_synthdef("cv_bus", |builder| {
     builder

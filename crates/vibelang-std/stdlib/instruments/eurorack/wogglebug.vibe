@@ -13,6 +13,20 @@
 // internals before decimating back to kr outputs with `a2k_kr`. The same path
 // is selected automatically above roughly 20 Hz, keeping high-rate modulation
 // usable while preserving the existing kr port routing surface.
+//
+// Public interface:
+//   influence      : mono audio/CV input that perturbs the stepped source.
+//   stepped        : kr sample-and-hold random voltage.
+//   smooth         : kr lagged/Lorenz-smoothed random voltage.
+//   woggle         : kr coupled stepped/smooth/ringing random voltage.
+//   clock          : kr +5 V-style clock at `rate`.
+//   woggle_clock   : kr random-width clock pulses.
+//   rate           : clock/sample rate in Hz; >=20 Hz selects the audio-rate path.
+//   depth_v        : output depth in volts, mapped to 0..1 by /10.
+//   bipolar        : 0 unipolar, 1 bipolar random CV outputs.
+//   chaos          : 0 loose/smooth to 1 tightly coupled chaotic motion.
+//   heart          : 0 small excursions to 1 wide chaotic excursions.
+//   vc_rate        : 0 normal kr path, 1 force audio-rate clock/sample path.
 
 define_synthdef("wogglebug", |builder| {
     builder

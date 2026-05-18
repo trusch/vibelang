@@ -12,6 +12,22 @@
 // practical runtime curve morph: 0 = squared/log-like, 0.5 = Decay2's native
 // exponential, 1 = sqrt/exp-like. This is not a segment-accurate Maths curve
 // circuit, but it makes the shape controls musically useful with current UGens.
+//
+// Public interface:
+//   ch1/ch4        : kr function outputs, clipped -1..1.
+//   ch2/ch3        : kr attenuverter/offset utility outputs.
+//   sum/or/inv     : kr combined outputs from all four channels.
+//   eorN/eocN      : kr 5 ms timing pulses for channels 1 and 4.
+//   riseN/fallN    : base segment times in seconds for channels 1 and 4.
+//   riseN_cv/fallN_cv: bipolar timing CV inputs.
+//   riseN_cv_scale/fallN_cv_scale: bipolar CV depth, clipped to +/-1 after
+//                   multiplication.
+//   shapeN         : 0 squared/log-like, 0.5 native exponential, 1 sqrt/exp-like.
+//   cycleN         : 0 one-shot trigger mode; >0 cycles at 1/(rise+fall).
+//   trigN          : 0/1 trigger input for channels 1 and 4.
+//   ch2/ch3        : direct utility CV inputs, usually mapped from another kr port.
+//   chN_scale      : 0..1 knob mapped to -1..+1 attenuverter gain.
+//   chN_offset     : DC offset added after scaling.
 
 define_synthdef("maths", |builder| {
     builder

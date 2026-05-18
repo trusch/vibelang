@@ -37,6 +37,18 @@
 //   trigger    : 0/1 trigger or gate input.
 //   clock      : 0/1 external clock input.
 //   ratio      : clock ratio table index.
+//
+// Public interface:
+//   low/slope/shape/high: mono audio-rate outputs; meaning follows output_mode
+//                 but names stay stable for routing.
+//   freq        : Hz in looping mode, envelope time reference otherwise.
+//   shape/slope/smoothness/shift: 0..1 panel controls passed to the Tides core.
+//   ramp_mode   : rounded public enum above, default looping.
+//   output_mode : rounded public enum above, default amplitude.
+//   range       : 0 audio range, 1 control range.
+//   trigger     : 0/1 trigger or gate input to the core.
+//   clock       : 0/1 external clock input.
+//   ratio       : clock ratio table index.
 
 define_synthdef("tides2", |builder| {
     builder

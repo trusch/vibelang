@@ -24,6 +24,22 @@
 //     not the exact Beads hardware feedback path.
 //   - `space` is a small FreeVerb send after the granular core.
 // Manual reference: https://pichenettes.github.io/mutable-instruments-documentation/modules/beads/manual/
+//
+// Public interface:
+//   in          : stereo audio input folded into the granular core.
+//   left/right  : mono audio outputs after quality, feedback, and space stages.
+//   time        : 0..1 grain position; `spread_time` adds random drift.
+//   pitch       : semitone transposition, clipped to +/-24; `spread_pitch` adds
+//                 random pitch scatter up to roughly +/-12 semitones.
+//   size/shape/density: 0..1 grain size, texture, and density controls.
+//   seed_mode   : enum above; `seed` is a trigger/gate CV for modes 1/2.
+//   quality     : enum above; 0 clean, 1 tape-like, 2 darker degraded.
+//   freeze      : 0/1 latch for the Clouds freeze input.
+//   feedback    : 0..0.9 local feedback amount.
+//   dry_wet     : 0..1 dry/granular blend.
+//   space       : 0..1 post-core reverb send.
+//   spread_time/spread_pitch/spread_size: 0..1 randomizers for the matching
+//                 grain controls.
 
 define_synthdef("beads", |builder| {
     builder

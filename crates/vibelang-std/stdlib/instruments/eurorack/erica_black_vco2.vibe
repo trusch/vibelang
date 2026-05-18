@@ -3,6 +3,23 @@
 // Approximation: simultaneous sine, triangle, saw, pulse, sub, and expander
 // mix outputs with octave switching, pulse-width CV, saw wavefold shaping,
 // linear/exponential FM, trigger-reset hard sync, and two internal LFO bends.
+//
+// Public interface:
+//   out/mix         : mono expander mix; both carry the same mixed oscillator.
+//   sine/tri/saw/pulse/sub: mono raw waveform taps.
+//   freq           : base Hz when `voct` is 0, default 110.
+//   voct           : MIDI-note-style pitch source; nonzero replaces `freq`.
+//   octave         : rounded -2..+2 octave switch.
+//   pw             : pulse width 0.05..0.95 after `pw_cv` modulation.
+//   saw_shape      : 0 clean saw to 1 folded saw.
+//   fm             : 0..1 FM amount; `fm_in` is bipolar CV, clipped +/-5.
+//   fm_mode        : 0 linear Hz offset, 1 exponential octave-style FM.
+//   reset_mode     : 0 free oscillators, 1 hard-sync to `reset_trig`.
+//   reset_trig     : 0/1 sync trigger.
+//   lfo1_rate/lfo2_rate: internal pitch LFO rates in Hz.
+//   lfo1_depth/lfo2_depth: 0..1 internal pitch LFO depths.
+//   pw_cv/pw_cv_amt: bipolar pulse-width CV and 0..1 attenuator.
+//   mix_sine..mix_sub: 0..1 expander mix levels, normalized when sum exceeds 1.
 
 fn _erica_black_vco2_fold(x) {
     1.0 - abs(wrap_ar(x + 1.0, 0.0, 4.0) - 2.0)

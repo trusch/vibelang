@@ -10,6 +10,23 @@
 //   3 drumhead  1.00, 1.59, 2.14, 2.30, 2.65, 2.92
 //   4 membrane  1.00, 1.36, 1.71, 2.08, 2.30, 2.65
 //   5 plate     1.00, 2.08, 3.41, 5.00, 7.15, 9.50
+//
+// Public interface:
+//   out            : mono physical-model audio output.
+//   trig           : 0/1 trigger input.
+//   vel            : 0..1 exciter velocity.
+//   pitch          : MIDI pitch, clipped 12..120 after `pitch_cv`.
+//   freq           : direct Hz override when >0, clipped 20..6000.
+//   x/y            : 0..1 object damping/decay and tone/inharmonicity controls.
+//   exciter_mode   : rounded 0 mallet, 1 noise, 2 stick.
+//   exciter_decay  : exciter decay seconds, clipped to 5..50 ms.
+//   object_mode    : rounded 0..5 modal object enum above.
+//   saturation     : 0..1 soft drive.
+//   bitcrush       : 0 clean to 1 reduced sample-rate/bit-depth.
+//   pitch_cv       : bipolar pitch CV; `pitch_cv_amt` scales up to +/-24 semitones.
+//   x_cv/y_cv      : bipolar CVs summed into x/y through matching attenuators.
+//   mod_cv         : bipolar macro CV added half-strength to both x and y.
+//   *_cv_amt       : 0..1 attenuators for the matching CV inputs.
 
 define_synthdef("plonk", |builder| {
     builder

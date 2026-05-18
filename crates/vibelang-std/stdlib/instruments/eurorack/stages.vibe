@@ -14,6 +14,20 @@
 // `group1..group3` output the segment value selected by that group's current
 // stage counter. EOR/EOC are +5 V-style kr pulses scaled to 0.5 in the stdlib
 // CV convention.
+//
+// Public interface:
+//   seg1..seg6      : kr direct segment outputs, scaled by `scale`.
+//   group1..group3  : kr active grouped outputs.
+//   eor/eoc         : kr 5 ms timing pulses for active segment/group endings.
+//   clock/reset     : shared 0/1 advance and reset inputs.
+//   scale           : 0..2 multiplier for segment values.
+//   seg_N_type      : rounded segment type enum above.
+//   seg_N_loop      : 0 one-shot, 1 loop segment or grouped cycle behavior.
+//   seg_N_primary   : 0..1 time/level/rate control by segment type.
+//   seg_N_secondary : 0..1 curve/slew/shape control by segment type.
+//   seg_N_gate      : 0/1 held gate for hold segments.
+//   seg_N_trigger   : 0/1 segment trigger/advance input.
+//   seg_N_group_with_prev: 0 starts a new group, 1 chains to previous segment.
 
 fn _stages_gate(x) {
     clip_kr(round(x), 0.0, 1.0)

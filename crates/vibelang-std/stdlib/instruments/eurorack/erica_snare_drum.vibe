@@ -3,6 +3,17 @@
 // Approximation: dual sine body oscillators, 4 kHz filtered noise, short snap
 // transient, trigger/gate firing, accent level/decay boost, and attenuated
 // tune/decay CV params.
+//
+// Public interface:
+//   out            : mono snare audio output.
+//   trig/gate      : 0/1 trigger inputs; either fires the snare.
+//   accent         : 0..1 level boost, slight pitch lift, and longer decay.
+//   tune           : body frequency in Hz, clipped to 70..700 after CV.
+//   tune_cv        : bipolar pitch CV; `tune_cv_amt` scales up to +/-2 oct.
+//   noise_tone     : 0 body-heavy to 1 noise-heavy blend.
+//   snappy         : 0..1 transient/noise brightness.
+//   decay          : 0..1 body/noise decay range.
+//   decay_cv       : bipolar decay CV; `decay_cv_amt` scales up to +/-2 oct.
 
 define_synthdef("erica_snare_drum", |builder| {
     builder

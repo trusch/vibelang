@@ -4,6 +4,18 @@
 // `div_mult_N` is bipolar: negative values divide (/1../32), positive values
 // multiply (x1..x16), and zero falls back to 1:1. Outputs are +5 V-style kr
 // gates scaled to the library's +/-1 CV range.
+//
+// Public interface:
+//   ch1..ch4       : kr divided/multiplied clock outputs.
+//   tap            : kr master tap clock output.
+//   bpm            : master tempo in beats per minute.
+//   div_mult_1..4  : rounded divider/multiplier selectors, -32..+16.
+//   reset          : 0/1 reset trigger for all clock phases.
+//   run            : 0 stops outputs, 1 runs.
+//   pulse_width    : duty cycle, clipped to 0.001..0.95.
+//   trigger_delay_ch_1..4: per-channel delay in seconds, applied as phase offset.
+//   mute_1..4      : 0 active, 1 muted.
+//   tap            : 0/1 tap/reset trigger input into the master phase.
 
 define_synthdef("qcd", |builder| {
     builder

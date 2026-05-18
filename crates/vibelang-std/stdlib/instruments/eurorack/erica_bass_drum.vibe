@@ -3,6 +3,19 @@
 // Approximation: sine body with exponential pitch sweep, shaped attack noise,
 // gate sustain mode, accent level/pitch boost, and voltage-style params for
 // pitch/decay/drive modulation.
+//
+// Public interface:
+//   out/noise       : mono full kick and isolated attack-noise audio outputs.
+//   trig/gate       : 0/1 trigger inputs; `gate` also holds a sustained tail.
+//   accent          : 0..1 level and pitch emphasis.
+//   pitch           : base body frequency in Hz, clipped to 20..220.
+//   pitch_cv        : bipolar pitch CV; `pitch_cv_amt` scales up to +/-2 oct.
+//   tune_depth      : pitch-sweep depth in semitones, clipped to 0..36.
+//   tune_decay      : pitch-sweep decay seconds, clipped to 5..500 ms.
+//   attack          : 0..1 beater/noise brightness and click length.
+//   decay           : amp decay seconds before CV, clipped to 40 ms..4 s.
+//   decay_cv        : bipolar decay CV; `decay_cv_amt` scales up to +/-2 oct.
+//   drive           : 0..1 soft saturation; `drive_cv`/`drive_cv_amt` modulate it.
 
 define_synthdef("erica_bass_drum", |builder| {
     builder

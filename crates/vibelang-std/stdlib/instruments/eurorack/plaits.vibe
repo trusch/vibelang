@@ -27,6 +27,18 @@
 // `trigger` defaults to 0 for sustained/manual control. A positive trigger
 // fires Plaits' internal envelope/LPG; `level`, `decay`, and `lpg_colour`
 // shape the internal low-pass gate.
+//
+// Public interface:
+//   out/aux        : mono main and model-specific alternate audio outputs.
+//   pitch          : pitch in MIDI note units.
+//   engine         : rounded 0..23 engine enum above.
+//   harmonics/timbre/morph: 0..1 model controls.
+//   trigger        : positive trigger/gate for the internal exciter/LPG.
+//   level          : 0..1 internal LPG level.
+//   fm_mod/timbre_mod/morph_mod: bipolar CV-style modulation inputs passed to
+//                  the Plaits core.
+//   decay          : 0..1 internal envelope decay.
+//   lpg_colour     : 0..1 low-pass gate color.
 
 define_synthdef("plaits", |builder| {
     builder

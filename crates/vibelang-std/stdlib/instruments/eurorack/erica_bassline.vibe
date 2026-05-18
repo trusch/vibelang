@@ -3,6 +3,26 @@
 // Approximation: AS3340-style triangle/square VCO, transistor suboscillator,
 // short BBD-detune delay thickening, Acidbox-inspired LP/BP filter, separate
 // VCF/VCA decay envelopes, accent, beef drive, and patchable CV-style params.
+//
+// Public interface:
+//   out/main        : same mono filtered bassline output for default/main routes.
+//   tri/square/sub  : raw oscillator taps before filter/VCA.
+//   gate/accent     : 0/1 note gate and accent amount.
+//   voct            : MIDI-note-style pitch source, default 36; used when
+//                     `freq` is 0.
+//   freq            : direct Hz override when >0, clipped to 15..8000 after FM.
+//   wave            : 0 triangle, 1 square.
+//   sub_level       : 0..1 suboscillator amount in the filter feed.
+//   detune          : 0..1 short delay thickening amount.
+//   cutoff          : filter cutoff Hz, modulated by envelope and CV.
+//   cutoff_cv       : bipolar CV; `cutoff_cv_amt` scales it up to +/-24 semitones.
+//   resonance       : 0..0.99 filter resonance.
+//   filter_mode     : 0 low-pass, 1 band-pass.
+//   vcf_decay/vca_decay: 0..1 envelope times for filter and amp.
+//   vcf_env_amt     : 0..1 filter envelope depth.
+//   level           : 0..1 output VCA level.
+//   fm/fm_cv        : 0..1 FM depth and bipolar CV, up to +/-12 semitones.
+//   beef            : 0..1 pre-filter drive.
 
 define_synthdef("erica_bassline", |builder| {
     builder

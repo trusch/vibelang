@@ -3,6 +3,18 @@
 // Approximation: live-modulatable ADSR with per-stage CV attenuators, a
 // retrigger input, +5 V-style timing pulses, and looped attack-decay cycling
 // while `loop_gate` and `gate` are both high. `env` is unipolar 0..1.
+//
+// Public interface:
+//   env             : kr unipolar ADSR output, scaled by `level`.
+//   eoa/eod/eor     : kr 5 ms end-of-attack, end-of-decay, end-of-release pulses.
+//   gate            : 0/1 held gate; falling edge starts release.
+//   trigger         : retrigger input while gate is high or low.
+//   attack/decay/release: stage times in seconds, clipped to >=1 ms after CV.
+//   sustain         : sustain level 0..1 after CV.
+//   level           : final output level 0..1.
+//   attack_cv/decay_cv/sustain_cv/release_cv: bipolar stage CV inputs.
+//   *_cv_amt        : 0..1 attenuators for the matching stage CV.
+//   loop_gate       : rounded 0/1; when high, gate runs attack-decay looping.
 
 fn _erica_vc_eg_gate(x) {
     schmidt_kr(x, 0.05, 0.25)

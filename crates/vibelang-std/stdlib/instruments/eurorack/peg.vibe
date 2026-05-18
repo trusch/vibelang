@@ -2,6 +2,20 @@
 //
 // Dual ping-locked envelopes with skewed rise/fall timing, curve morphing,
 // unipolar/bipolar scaling, OR mix, and per-channel timing trigger taps.
+//
+// Public interface:
+//   env_a/env_b     : kr envelope outputs, unipolar or bipolar by channel.
+//   env5_a/env5_b   : half-scale versions for +5 V-style CV patches.
+//   or              : kr max of env_a/env_b.
+//   eor/eof/half_r  : kr 5 ms timing pulses for end-of-rise, end-of-fall, and
+//                     half-rise per channel.
+//   ping_a/ping_b   : trigger inputs; measured period drives envelope length.
+//   div_mult_a/b    : -3..-1 divide, 0 unity, 1..3 multiply ping period.
+//   skew_a/b        : 0..1 rise/fall split.
+//   curve_a/b       : -1..1 curve exponent, negative softer, positive snappier.
+//   scale_a/b       : 0..1 output level.
+//   bipolar_a/b     : 0 unipolar 0..1, 1 bipolar -1..1.
+//   cycle_a/b       : 0 one ping cycle, 1 free cycle from the measured period.
 
 define_synthdef("peg", |builder| {
     builder

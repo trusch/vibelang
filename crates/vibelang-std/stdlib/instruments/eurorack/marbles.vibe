@@ -40,6 +40,27 @@
 //   the old `bias_t` around its 0.5 default; `x_bias`/`x_spread` do the same
 //   for the old X controls. `length` continues to feed the non-Deja-Vu X memory
 //   blend used by the earlier stdlib implementation.
+//
+// Public interface:
+//   t1/t2/t3       : audio-rate trigger outputs, +5 V-style gate pulses.
+//   x1/x2/x3       : audio-rate stepped random CV outputs.
+//   clock          : master period in seconds; smaller is faster.
+//   bias_t/spread_t: legacy trigger bias and spread, 0..1.
+//   bias_x/spread_x: legacy X voltage bias and spread, 0..1.
+//   length         : legacy X memory blend length.
+//   quant_steps    : chromatic quantizer divisions for `x_scale=0`.
+//   t_model        : rounded trigger model enum above.
+//   t_rate         : master clock multiplier, practical 0.05..4 after scaling.
+//   t_bias         : additive trigger bias around 0.5.
+//   t_jitter       : 0..1 timing looseness for trigger streams.
+//   deja_vu_t      : 0 fresh trigger randomness, >=0.5 loops T memory.
+//   length_t       : rounded trigger loop length, 1..32 cells.
+//   x_mode         : 0 continuous-ish, 1 quantized, 2 stepped/noisy blend.
+//   x_scale        : rounded X scale enum above.
+//   x_spread/x_bias: X distribution width and center, 0..1.
+//   x_steps        : 0 smooth random voltages, higher values add stair-stepping.
+//   deja_vu_x      : 0 fresh X randomness, >=0.5 loops X memory.
+//   length_x       : rounded X loop length, 1..32 cells.
 
 define_synthdef("marbles", |builder| {
     builder

@@ -10,6 +10,20 @@
 //   4 drum           pad_a = press trigger, pad_b = pressure*position velocity
 //   5 switch         pad_a = latched gate, pad_b = inverted latched gate
 //   6 LFO            pad_a = gated encoder-rate LFO, pad_b = touch gate
+//
+// Public interface:
+//   padN_a/padN_b   : kr dual CV outputs for pad N, meaning depends on mode_N.
+//   pressure_N      : 0..1 touch pressure; crosses `threshold` for gate/trigger.
+//   position_N      : 0..1 X/Y strip position or mode-specific selector.
+//   encoder_N       : 0..1 encoder value; transposes keys, selects chord roots,
+//                     or sets LFO rate depending on mode.
+//   mode_N          : rounded mode enum above.
+//   slew_N          : 0..1 lag time for pressure/position/encoder smoothing.
+//   voltage_N       : -1..1 stored CV for voltage-memory mode.
+//   chord_mode      : rounded 0 major, 1 minor, 2 sus4, 3 diminished, 4 augmented.
+//   keyboard_scale  : rounded 0 chromatic, 1 major, 2 minor, 3 major pentatonic,
+//                     4 minor pentatonic, 5 whole-tone.
+//   threshold       : 0..1 touch gate threshold shared by all pads.
 
 fn _tetrapad_mask(value, target) {
     1.0 - clip_kr(abs(value - target), 0.0, 1.0)

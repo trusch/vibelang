@@ -3,6 +3,21 @@
 // Approximation: BPM-derived master phasor with run/reset, divided clock,
 // shuffled alternate pulses, random gated clock, and reset-chain pulse output.
 // Outputs are +5 V-style kr gates scaled to the library's +/-1 CV range.
+//
+// Public interface:
+//   clock          : kr master gate at `bpm`.
+//   div            : kr divided gate; `division` rounds to 1, 2, 4, or 8.
+//   shuffle        : kr shuffled alternate-pulse gate.
+//   random         : kr random gate stream clocked by `random_rate`.
+//   reset          : kr 5 ms reset pulse from `reset_in`.
+//   bpm            : tempo in beats per minute, clipped to 30..300.
+//   run            : 0 stops all clocks, 1 runs.
+//   division       : divider selector, rounded and clipped to 1..8.
+//   shuffle        : 0..0.5 delay of alternating master pulses.
+//   duty           : gate duty cycle, clipped to 0.05..0.95.
+//   random_rate    : Hz for the independent random gate source.
+//   reset_in       : trigger/gate input with Schmitt thresholding.
+//   reset_mode     : 0 hard reset immediately, 1 queue reset to division edge.
 
 define_synthdef("erica_vc_clock", |builder| {
     builder

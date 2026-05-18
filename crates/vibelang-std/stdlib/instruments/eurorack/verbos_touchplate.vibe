@@ -1,4 +1,21 @@
 // Verbos Touchplate Keyboard - pressure keyboard and tunable CV row.
+//
+// Public interface:
+//   pitch           : kr V/oct pitch from `key` and `octave`.
+//   gate/trigger    : kr held gate and 10 ms trigger from `pressure`.
+//   pressure        : kr slewed 0..1 pressure CV.
+//   bend            : kr bipolar bend CV, clipped -1..1.
+//   tune_cv         : kr selected tune row voltage.
+//   tune_gate/tune_pressure: kr gate and pressure outputs for the tune row.
+//   key             : rounded 0..31 keyboard key index.
+//   octave          : rounded 0..3 octave offset.
+//   pressure        : 0..1 main touch pressure.
+//   bend            : -1..1 pitch bend CV.
+//   tune_key        : rounded 0..7 selector for tune1..tune8.
+//   tune_pressure   : 0..1 pressure for the tune row.
+//   tune1..tune8    : tune row voltages, clipped -2..2.
+//   threshold       : 0..1 gate threshold for both pressure lanes.
+//   slew            : 0..1 pitch/pressure lag amount.
 
 define_synthdef("verbos_touchplate", |builder| {
     builder

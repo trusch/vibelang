@@ -18,6 +18,21 @@
 //   odd  - first Rings output, conventionally routed as the odd resonator bank
 //   even - second Rings output, conventionally routed as the even resonator bank
 //   sum  - odd + even mono mix for simple single-port patches
+//
+// Public interface:
+//   in              : mono external excitation audio.
+//   odd/even/sum    : mono audio outputs described above.
+//   pit             : pitch in MIDI note units.
+//   structure       : 0..1 resonator structure.
+//   brightness      : 0..1 exciter/resonator brightness.
+//   damping         : 0..1 decay damping.
+//   position        : 0..1 excitation position.
+//   model           : rounded model enum above.
+//   polyphony       : polyphony selector passed to the Rings core.
+//   internal_exciter: 0 external input, 1 use internal exciter.
+//   bypass          : 0 resonator, 1 bypass through the core.
+//   gain            : output gain multiplier.
+//   trigger         : 0/1 trigger for the internal exciter.
 
 define_synthdef("rings", |builder| {
     builder

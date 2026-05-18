@@ -1,4 +1,21 @@
 // Verbos Random Sampling - Buchla 266-style uncertainty source.
+//
+// Public interface:
+//   white/pink/metallic: mono audio noise outputs scaled by `noise_level`.
+//   fluct_a/fluct_b : kr fluctuating random voltages.
+//   quant_a/quant_b : kr quantized random voltages sampled by the clock.
+//   gate            : kr random +5 V-style gate pulses.
+//   asr1..asr4      : kr analog-shift-register taps.
+//   rate            : internal random clock Hz.
+//   rate_cv/rate_cv_amt: CV and 0..1 attenuator for `rate`.
+//   bits            : rounded quantizer depth, 1..8 bits.
+//   distribution    : 0 uniform, 1 more centered/Gaussian-ish random.
+//   clock_in        : 0 internal clock, 1 use `clock_trig`.
+//   clock_trig      : external 0/1 sample clock.
+//   sample_in       : external ASR source; near zero falls back to internal noise.
+//   depth_v         : output depth in volts, mapped to 0..1 by /10.
+//   bipolar         : 0 unipolar, 1 bipolar random CV outputs.
+//   noise_level     : 0..1 audio noise output level.
 
 define_synthdef("verbos_random_sampling", |builder| {
     builder

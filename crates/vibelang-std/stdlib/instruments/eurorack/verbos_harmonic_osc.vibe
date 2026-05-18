@@ -1,4 +1,22 @@
 // Verbos Harmonic Oscillator - 8-partial additive VCO with named audio taps.
+//
+// Public interface:
+//   mix            : mono additive mix of partial1..partial8.
+//   tri/saw/square : mono raw waveform taps at the effective oscillator pitch.
+//   partial1..partial8: mono sine partial taps before final output gain.
+//   freq           : fundamental Hz before FM.
+//   amp            : final audio gain, gated by the ASR envelope.
+//   gate           : 0/1 envelope gate.
+//   fm_lin/fm_lin_scale: linear Hz offset and scale.
+//   fm_exp/fm_exp_scale: exponential octave offset and scale.
+//   harm1..harm8   : 0..1 base partial levels.
+//   harmN_cv/harmN_cv_scale: bipolar CV and scale for partial N level.
+//   center         : 1..8 spectral focus center.
+//   center_cv/center_cv_scale: CV and scale for spectral center.
+//   width          : 0 narrow focus, 1 broad harmonic spread.
+//   width_cv/width_cv_scale: CV and scale for width.
+//   tilt           : -1 low-partial emphasis to +1 high-partial emphasis.
+//   tilt_cv/tilt_cv_scale: CV and scale for tilt.
 
 define_synthdef("verbos_harmonic_osc", |builder| {
     builder

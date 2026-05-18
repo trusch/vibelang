@@ -5,6 +5,20 @@
 // offsets a channel by eighth-period steps. `width` is the fixed gate pulse
 // duration in seconds. Outputs are +5 V-style gates scaled to the library's
 // ±1 CV range.
+//
+// Public interface:
+//   ch1..ch6       : kr phase-locked clock outputs.
+//   bpm            : master tempo in beats per minute.
+//   run            : 0 stops clocks, 1 runs.
+//   reset          : 0/1 reset trigger.
+//   reset_on_scene : 0 keep phase on scene changes, 1 reset on scene changes.
+//   mod            : nonnegative tempo multiplier.
+//   scene          : rounded 0..3 multiplier-table selector.
+//   variation      : -1..1 phase variation shared across channels.
+//   width          : pulse width in seconds, clipped to 1 ms..1 s.
+//   mult1..mult6   : scene-0 ratio trims for each channel.
+//   shift1..shift6 : phase offsets in eighth-period steps, clipped 0..7.
+//   mute1..mute6   : 0 active, 1 muted per channel.
 
 define_synthdef("tempi", |builder| {
     builder

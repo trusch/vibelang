@@ -3,6 +3,16 @@
 // Four independent kr function channels expose AD, AHR, cycling envelope,
 // burst, and LFO modes. Outputs are unipolar 0..+10 V-style function CVs;
 // EOR/EOF taps are +5 V-style 5 ms timing pulses.
+//
+// Public interface:
+//   env1..env4     : kr function outputs, level-scaled and clipped -1..1.
+//   eor1/eof1..eor4/eof4: kr 5 ms end-of-rise/end-of-fall pulses.
+//   trig_N         : 0/1 trigger/gate input for channel N.
+//   rise_N/fall_N  : 0..1 rise/fall times; together define cycle length.
+//   shape_N        : -1..1 curve exponent, negative softer, positive snappier.
+//   mode_N         : rounded 0 AD, 1 AHR, 2 cycle, 3 burst, 4 LFO.
+//   level_N        : 0..1 channel output level.
+//   link_N         : rounded 0/1; channels 2..4 can fire from previous EOR/EOF.
 
 fn _quadrax_gate(x) {
     clip_kr(x, 0.0, 1.0)

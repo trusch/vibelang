@@ -15,6 +15,16 @@
 //   3 quartic-out - fast start, slow finish.
 //   4 sine        - sinusoidal ease-in/out.
 //   5 bounce      - ease-out bounce response.
+//
+// Public interface:
+//   in1..in4       : mono audio/CV inputs, decimated to kr inside the module.
+//   out1..out4     : per-channel kr VCA/morpher outputs.
+//   mix            : kr sum of out1..out4.
+//   frame          : 0..1 keyframe scan position.
+//   frame_cv       : bipolar frame CV; `frame_cv_amt` scales it before clipping.
+//   level_1..level_4: 0..1 channel input gains.
+//   easing_1..easing_4: enum above for interpolation per channel.
+//   kf_N_1..kf_N_8 : eight 0..1 keyframe levels for channel N.
 
 fn _frames_mask(value, target) {
     1.0 - clip_kr(abs(value - target), 0.0, 1.0)

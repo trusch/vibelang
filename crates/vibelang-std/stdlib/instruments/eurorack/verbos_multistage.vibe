@@ -1,4 +1,21 @@
 // Verbos Voltage Multistage - 8-stage dual-row CV sequencer/function generator.
+//
+// Public interface:
+//   cv_a/cv_b      : kr stage-row CV outputs, clipped -5..5.
+//   gate           : kr +5 V-style gate pulse for active stages.
+//   ref            : kr ramp reference for the active stage clock.
+//   stage1_gate..stage8_gate: kr gate pulse for each selected stage.
+//   advance        : 0/1 manual advance trigger.
+//   strobe         : 0 sequencer mode, 1 address stage from `analog`.
+//   analog         : 0..1 direct stage address, mapped to 1..8.
+//   enable         : 0 disables gates/advance, 1 enables.
+//   sustain        : 1 holds current stage, 0 advances.
+//   time_cv        : bipolar clock-rate CV.
+//   clock_rate     : internal clock Hz.
+//   time_cv_amt    : 0..1 amount for `time_cv`.
+//   start/stop     : rounded 1..8 sequence range; order is normalized.
+//   stage_a1..stage_a8/stage_b1..stage_b8: per-stage row voltages, -5..5.
+//   mode1..mode8   : rounded 0 active, 1 off, 2 slide for each stage.
 
 define_synthdef("verbos_multistage", |builder| {
     builder

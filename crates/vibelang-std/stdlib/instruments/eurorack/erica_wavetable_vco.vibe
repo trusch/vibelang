@@ -3,6 +3,20 @@
 // Approximation: the hardware stores 16 banks of 16 waves. This model builds
 // those cells from additive harmonic recipes, with bank/wave CV surf, wave
 // morph, bit-depth reduction, VCA level, and separate sub oscillator outputs.
+//
+// Public interface:
+//   main/sub1/sub2 : mono main wavetable output plus octave-down sub taps.
+//   freq           : base Hz when `voct` is 0, default 110.
+//   voct           : MIDI-note-style pitch source; nonzero replaces `freq`.
+//   bank           : 0..15 wavetable bank, interpolates to next bank.
+//   wave           : 0..15 wave index inside the bank.
+//   morph          : 0..1 blend between current and next wave.
+//   bitcrush       : 0 clean to 1 reduced bit depth/sample-rate color.
+//   vca            : 0..1 output and sub level.
+//   sub_shape      : 0 square, 0.5 triangle, 1 sine sub shape.
+//   sub1_level/sub2_level: 0..1 levels for octave -1 and -2 subs.
+//   bank_cv/wave_cv/bitcrush_cv: bipolar CV inputs for matching controls.
+//   *_cv_amt       : 0..1 attenuators; bank/wave CV span the full 0..15 range.
 
 fn _erica_wt_sub_shape(freq, shape) {
     let shape = clip(shape, 0.0, 1.0);

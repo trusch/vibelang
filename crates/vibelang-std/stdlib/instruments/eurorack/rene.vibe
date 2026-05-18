@@ -3,8 +3,24 @@
 // Ports: cv (V/oct), gate, x_gate, y_gate. X/Y can be stepped by clocks or
 // addressed by `x_cv`/`y_cv` when `cv_addr` is raised. `mode` selects grid,
 // snake, free, or seeded-random traversal; `memory` blends in a short
-// shift-register history; `quantize` snaps to the 12-bit `scale_mask`.
+// shift-register buffer; `quantize` snaps to the 12-bit `scale_mask`.
 // Deferred hardware features: touch programming and preset save/load.
+//
+// Public interface:
+//   cv             : kr pitch CV in V/oct around MIDI note 60.
+//   gate           : kr combined X/Y +5 V-style gate.
+//   x_gate/y_gate  : kr axis gate taps.
+//   clock_x/clock_y: 0/1 clock inputs for X/Y movement.
+//   reset          : 0/1 reset for sequence counters.
+//   x_cv/y_cv      : 0..1 address CVs selecting 0..3 when `cv_addr` is high.
+//   cv_addr        : 0 clocked path, 1 direct CV addressing.
+//   mode           : rounded 0 cartesian, 1 snake, 2 free, 3 seeded random.
+//   quantize       : 0 raw notes, 1 snap to `scale_mask`.
+//   scale_mask     : 12-bit pitch-class mask; 2741 is a major-like default.
+//   access_x/access_y: 4-bit masks for active columns/rows.
+//   memory         : 0 current note, 1 average of short shift-register buffer.
+//   random_seed    : integer seed term for random mode.
+//   note00..note33 : MIDI note values for the 4x4 grid, row-major by XY index.
 
 define_synthdef("rene", |builder| {
     builder

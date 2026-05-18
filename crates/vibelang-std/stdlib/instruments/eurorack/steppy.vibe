@@ -3,6 +3,21 @@
 // Four independent tracks share a tempo-derived sixteenth-note master phasor.
 // Track patterns are 16-bit masks, with bit 0 = step 0. Outputs are +5 V-style
 // gates scaled to the library's +/-1 CV range.
+//
+// Public interface:
+//   gate_a..gate_d : kr gate outputs for tracks A..D.
+//   clock          : kr master sixteenth-note clock output.
+//   bpm            : tempo in beats per minute.
+//   reset          : 0/1 reset trigger for all tracks.
+//   run            : 0 stops sequencer, 1 runs.
+//   track_X_steps  : rounded active length, 1..16 steps.
+//   track_X_pattern: 16-bit gate mask, bit 0 = step 0.
+//   track_X_clock_div: rounded 1..16 speed divisor/multiplier in the step math.
+//   track_X_gate_len: 0.05..0.95 step duty cycle.
+//   track_X_swing  : 0..0.5 delay of alternating steps.
+//   track_X_probability: 0..1 deterministic probability threshold per step.
+//   track_X_mute   : 0 active, 1 muted.
+//   track_X_rotate : rounded -15..15 pattern rotation.
 
 define_synthdef("steppy", |builder| {
     builder

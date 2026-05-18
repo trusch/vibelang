@@ -3,6 +3,18 @@
 // Approximation: seven related pulse oscillators plus filtered noise through a
 // resonant bandpass, separate closed/open envelopes, accent gain, attenuated
 // tone/decay CV params, and open-hat choking of the closed channel.
+//
+// Public interface:
+//   out/ch/oh       : mono hat mix, closed hat tap, and open hat tap.
+//   ch_trig/oh_trig : 0/1 trigger inputs for closed/open hats.
+//   accent          : 0..1 shared level boost.
+//   tone            : 0..1 filter brightness; `tone_cv` is bipolar and scaled by
+//                     `tone_cv_amt`.
+//   ch_decay        : closed decay knob, mapped to 15..300 ms after CV.
+//   ch_decay_cv/ch_decay_cv_amt: bipolar CV and 0..1 attenuator for closed decay.
+//   oh_decay        : open decay knob, mapped to 80 ms..1.5 s after CV.
+//   oh_decay_cv/oh_decay_cv_amt: bipolar CV and 0..1 attenuator for open decay.
+//   exclusive       : 0 allows overlap, 1 lets open hat choke the closed hat.
 
 define_synthdef("erica_hi_hats", |builder| {
     builder
