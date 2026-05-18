@@ -7,10 +7,10 @@
 // SAO mode (mode = 2.0) reads from the array buffer with bilinear
 // (slide, focus) interpolation. With no captured spectrum loaded the
 // oscillator falls back to the 1/k partial weighting documented in
-// spectraphon_oscillator.vibe — clean enough to drive a drone with.
+// spectraphon.vibe — clean enough to drive a drone with.
 // No analyzer voice is needed in SAO mode.
 
-import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 define_group("pad_wash", || {
@@ -23,7 +23,7 @@ define_group("pad_wash", || {
 let pad_array = allocate_buffer("pad_arrays", 65536, 1);
 
 let pad = voice("pad_osc")
-    .synth("spectraphon_oscillator")
+    .synth("spectraphon")
     .set_param("freq", 110.0)
     .set_param("partials", 0.7)
     .set_param("amp", 0.4)

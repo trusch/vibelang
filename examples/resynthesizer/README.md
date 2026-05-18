@@ -54,39 +54,32 @@ RUST_LOG=info ./target/release/vibe examples/resynthesizer/main.vibe
 
 ## Topology
 
-`main.vibe` instantiates two Spectraphon synthdefs explicitly — one
-`spectraphon_analyzer` (real FFT + per-harmonic BinData tap) and one
-`spectraphon_oscillator` per side (64-partial additive bank with
-mode-dispatched SAM/SAO behavior). Side A runs as an SAO oscillator (mode
-= 2.0); side B runs as a SAM-live oscillator (mode = 0.0) fed by a single
-analyzer that taps side A's clean sine output. Side A's clean sine also
-drives a Morphagene SOS/granular leg whose direct playback path is muted
-because the worktree's Morphagene buffer reader still fails standalone.
+`main.vibe` instantiates one public Spectraphon voice. The `spectraphon`
+synthdef contains both the real FFT/BinData analyzer and the 64-partial additive
+bank; this demo runs it as an SAO oscillator (mode = 2.0) with the built-in
+fallback spectrum. Its clean sine also drives a Morphagene SOS/granular leg
+whose direct playback path is muted because the worktree's Morphagene buffer
+reader still fails standalone.
 
-Side A and side B's odd/even outputs feed X-PAN's four named inputs. The
-main X-PAN output runs through QPAS, DXG, and Mimeophon; Mimeophon is the
-final processor on the main rack material before the rack group reaches
-the main bus. TEMPI, Rene, MATHS, and Wogglebug run as control-rate voices
-that clock and bend the source, blend, filter, gate, and delay parameters.
-All running voices live in the single `rack` group.
+Spectraphon's odd, sub, even, and sine outputs feed X-PAN's four named inputs.
+The main X-PAN output runs through QPAS, DXG, and Mimeophon; Mimeophon is the
+final processor on the main rack material before the rack group reaches the
+main bus. TEMPI, Rene, MATHS, and Wogglebug run as control-rate voices that
+clock and bend the source, blend, filter, gate, and delay parameters. All
+running voices live in the single `rack` group.
 
 ```text
 SOURCE LAYER
-  spec_a_osc (mode=2.0 SAO) --+--> sine ----> Morphagene SOS leg
-                              |        \----> spec_b_analyzer.analyze
-                              +--> odd ----> X-PAN ch1_a
-                              +--> even ---> X-PAN ch2_a
-                              +--> sub  ---> (audible only in SAO)
-
-  spec_b_analyzer (FFT + BinData) writes mag_buf
-
-  spec_b_osc (mode=0.0 SAM live) reads mag_buf
-                              --+--> odd ----> X-PAN ch1_b
-                                +--> even ---> X-PAN ch2_b
+  spectraphon_voice (mode=2.0 SAO)
+                              --+--> sine ----> Morphagene SOS leg
+                                +--> odd -----> X-PAN ch1_a
+                                +--> sub -----> X-PAN ch1_b
+                                +--> even ----> X-PAN ch2_a
+                                +--> sine ----> X-PAN ch2_b
 
 MODULATION LAYER (kr)
   TEMPI -> Rene clocks, MATHS triggers, Morphagene clk, Mimeophon repeats
-  Rene  -> Spectraphon side A/B pitch, Morphagene organize, QPAS radiate
+  Rene  -> Spectraphon pitch, Morphagene organize, QPAS radiate
   MATHS -> Morphagene gene/morph, Spectraphon slide/focus, QPAS Q, DXG ctrl
   Wogglebug -> Spectraphon partials, X-PAN fade, QPAS cutoff, Mimeophon color
 
@@ -101,7 +94,7 @@ These are the most useful parameters to edit while `-w` hot reload is running:
 | Voice | Params | What changes |
 |---|---|---|
 | `morphagene_reel` | `organize`, `vari_speed`, `gene_size`, `slide`, `morph` | Source splice position, speed, grain size, and smear. |
-| `spectraphon_resynth` | `freq_a`, `freq_b`, `partials_a`, `partials_b`, `slide_a`, `focus_b` | Resynthesized pitch, partial density, and spectral motion. |
+| `spectraphon_voice` | `freq`, `partials`, `slide`, `focus`, `amp` | Resynthesized pitch, partial density, articulation, and spectral motion. |
 | `woggle_motion` | `rate`, `depth_v`, `chaos` | Amount and speed of random drift across the whole rack. |
 | `maths_functions` | `rise1`, `fall1`, `rise4`, `fall4`, `cycle1`, `cycle4` | Envelope/LFO timing for grain, FM, Q, and gate movement. |
 | `touch_macro` | `press1`, `press2`, `press3`, `press4`, `slew` | Manual macro pressure for aux blend, delay mix, and DXG opening. |

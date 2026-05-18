@@ -8,7 +8,7 @@
 //! synthdef recompiles.
 //!
 //! Used by synthdefs that need persistent audio-rate scratch memory —
-//! e.g. `spectraphon_side`'s 65,536-float Array of stored magnitudes.
+//! e.g. `spectraphon`'s 65,536-float Array of stored magnitudes.
 //!
 //! Buffer alloc/free is handled inline by the reload pipeline in
 //! [`crate::Runtime::apply_reload`] via the backend's

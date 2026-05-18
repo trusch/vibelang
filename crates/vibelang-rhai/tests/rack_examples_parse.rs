@@ -22,6 +22,23 @@ fn rack_examples(root: &Path) -> Vec<PathBuf> {
     examples
 }
 
+fn spectraphon_examples(root: &Path) -> Vec<PathBuf> {
+    let mut examples = std::fs::read_dir(root.join("examples"))
+        .expect("examples directory should be readable")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("spectraphon_") && name.ends_with(".vibe"))
+        })
+        .collect::<Vec<_>>();
+    examples.sort();
+    examples
+}
+
 fn execute_example(path: &Path, root: &Path) {
     let stdlib_root = root.join("crates/vibelang-std");
     let stdlib_dir = stdlib_root.join("stdlib");
@@ -52,6 +69,20 @@ fn rack_example_script_executes() {
     assert!(
         !examples.is_empty(),
         "expected at least one examples/*/main.vibe rack example"
+    );
+
+    for example in examples {
+        execute_example(&example, &root);
+    }
+}
+
+#[test]
+fn spectraphon_example_scripts_execute() {
+    let root = project_root();
+    let examples = spectraphon_examples(&root);
+    assert!(
+        !examples.is_empty(),
+        "expected at least one examples/spectraphon_*.vibe example"
     );
 
     for example in examples {

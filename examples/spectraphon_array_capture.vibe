@@ -2,16 +2,14 @@
 // it back as SAO.
 //
 // Walks through the full Spectraphon Array workflow on a single side using
-// the explicit two-synthdef surface:
+// the public `spectraphon` synthdef:
 //
-//   Bars 0–7   Capture: `cap_analyzer` (FFT + BinData) writes the magnitude
-//              spectrum of JACK input ch 0 into `mag_buf`. `cap_osc` runs
-//              in `mode = 1.0` (SAM capture) so it reads the live magnitudes
-//              AND writes them into the shared array buffer at the
-//              (slide, focus, array_idx) cell. Two slow fades sweep
-//              `slide` across [0, 1] (one full pass) and `focus` across
-//              [0, 1] (two passes), filling the 8×8 grid in a serpentine
-//              pattern over 8 bars.
+//   Bars 0-7   Capture: `cap_osc` analyzes a saw source patched into
+//              `.input("analyze")`, reads those live magnitudes, and writes
+//              them into the shared array buffer at the
+//              (slide, focus, array_idx) cell. Two slow fades sweep `slide`
+//              across [0, 1] (one full pass) and `focus` across [0, 1]
+//              (two passes), filling the 8x8 grid over 8 bars.
 //
 //   Bar 8      Voice swap: `cap_osc` fades its amp to 0 AND its mode from
 //              1.0 (sam_capture) to 0.0 (sam_live), so the array writes
@@ -25,18 +23,12 @@
 //              each cell is revisited from new directions and the bilinear
 //              interpolation between cells becomes audible.
 //
-// Hardware-input requirement: this example only produces interesting
-// output if there is audible signal on JACK input ch 0 during bars 0–7.
-// Patch a synth, voice, or microphone in. With silence on the input the
-// captured Array stores `mag[k] ≈ 0`, and SAO playback is silent — that
-// is the correct "no input → no spectrum" behaviour, not a bug.
-//
 // Array memory uses a script-allocated buffer wired into `array_buf`, so
 // captures survive hot-reload as long as the `allocate_buffer` call stays
 // in the script.
 
-import "stdlib/instruments/spectral/spectraphon_analyzer.vibe";
-import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
+import "stdlib/utility/test_tones.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(80);
@@ -44,34 +36,36 @@ set_tempo(80);
 let arr = allocate_buffer("array_capture_arrays", 65536, 1);
 
 let capture_demo = define_group("ArrayCapture", || {
-    // Capture leg: analyzer + oscillator in SAM-capture mode share mag_buf
-    // and write into the SAO array buffer.
+    let source = voice("cap_source")
+        .synth("test_saw")
+        .set_param("freq", 110.0)
+        .set_param("amp", 0.20);
+    source.output("out").mute();
+
+    // Capture leg: a single Spectraphon voice analyzes `source` and writes
+    // the live magnitude bank into the SAO array buffer.
     let cap_fft = allocate_buffer("cap_fft", 2048, 1);
     let cap_mag = allocate_buffer("cap_mag", 64, 1);
 
-    let cap_analyzer = voice("cap_analyzer")
-        .synth("spectraphon_analyzer")
-        .set_param("fft_buf", cap_fft.bufnum)
-        .set_param("mag_buf", cap_mag.bufnum)
-        .set_param("f0_analyze", 50.0);
-    cap_analyzer.output("noop").mute();
-
     let cap_osc = voice("cap_osc")
-        .synth("spectraphon_oscillator")
+        .synth("spectraphon")
         .set_param("freq", 110.0)
         .set_param("partials", 0.85)
         .set_param("amp", 0.25)
         .set_param("mode", 1.0)
+        .set_param("fft_buf", cap_fft.bufnum)
         .set_param("mag_buf", cap_mag.bufnum)
+        .set_param("f0_analyze", 50.0)
         .set_param("array_buf", arr.bufnum)
         .set_param("slide", 0.0)
         .set_param("focus", 0.0)
         .set_param("array_idx", 0.0)
         .gain(db(-9));
+    cap_osc.input("analyze").from(source, "out");
 
     // Playback leg: pure SAO read of the captured array buffer.
     let play_osc = voice("play_osc")
-        .synth("spectraphon_oscillator")
+        .synth("spectraphon")
         .set_param("freq", 110.0)
         .set_param("partials", 0.85)
         .set_param("amp", 0.0)
@@ -91,7 +85,7 @@ let capture_demo = define_group("ArrayCapture", || {
     play_osc.output("even").to_current_group();
     play_osc.output("sub").mute();
 
-    cap_analyzer.run();
+    source.run();
     cap_osc.run();
     play_osc.run();
 
@@ -109,7 +103,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .apply();
 
     fade("cap_f0")
-        .on_voice("cap_analyzer")
+        .on_voice("cap_osc")
         .param("f0_analyze")
         .from(50.0)
         .to(800.0)
@@ -135,23 +129,6 @@ let capture_demo = define_group("ArrayCapture", || {
         .over_bars(4)
         .curve("linear")
         .apply();
-    fade("cap_analyze_focus_a")
-        .on_voice("cap_analyzer")
-        .param("focus")
-        .from(0.0)
-        .to(1.0)
-        .over_bars(4)
-        .curve("linear")
-        .apply();
-    fade("cap_analyze_focus_b")
-        .on_voice("cap_analyzer")
-        .param("focus")
-        .from(0.0)
-        .to(1.0)
-        .over_bars(4)
-        .curve("linear")
-        .apply();
-
     // Voice swap at bar 8: silence the capture leg AND switch its mode
     // from sam_capture (1.0) to sam_live (0.0) so the array writes stop.
     fade("cap_amp_off")
@@ -232,8 +209,6 @@ sequence("array_capture")
     .clip(bars(0)..bars(8),  fade("cap_f0"))
     .clip(bars(0)..bars(4),  fade("cap_focus_a"))
     .clip(bars(4)..bars(8),  fade("cap_focus_b"))
-    .clip(bars(0)..bars(4),  fade("cap_analyze_focus_a"))
-    .clip(bars(4)..bars(8),  fade("cap_analyze_focus_b"))
     // Voice swap
     .clip(bars(8)..bars(9),  fade("cap_amp_off"))
     .clip(bars(8)..bars(9),  fade("cap_mode_off"))

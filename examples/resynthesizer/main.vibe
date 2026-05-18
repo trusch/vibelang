@@ -1,26 +1,16 @@
-// ReSynthesizer demo — explicit two-synthdef Spectraphon patch.
+// ReSynthesizer demo — single-synthdef Spectraphon patch.
 //
-// Two stdlib synthdefs make up the Spectraphon side of this rack:
+// The `spectraphon` stdlib synthdef includes the analyzer and the 64-partial
+// additive bank. This patch uses one sustained Spectraphon voice in SAO
+// playback (mode = 2.0); its sine, sub, odd, and even outputs provide the
+// stereo source material.
 //
-//   spectraphon_analyzer    real-FFT magnitude tap; one BinData read per
-//                           harmonic, output written to a shared mag buffer
-//   spectraphon_oscillator  64-partial additive bank with three operating
-//                           modes selected at create time via `mode`:
-//                             mode = 0.0  SAM live      reads mag buffer
-//                             mode = 1.0  SAM capture   live read + writes
-//                                                       into array buffer
-//                             mode = 2.0  SAO playback  bilinear read from
-//                                                       array buffer
+// Morphagene SOS/granular leg reads Spectraphon's sine output for grain
+// content; its direct playback path is muted because the worktree's Morphagene
+// buffer reader still fails standalone.
 //
-// Side A runs SAO (no analyzer). Side B runs SAM live and is analyzed from
-// side A's clean sine output — that is the resynthesis chain.
-//
-// Morphagene SOS/granular leg reads side A's sine for grain content; its
-// direct playback path is muted because the worktree's Morphagene buffer
-// reader still fails standalone.
-//
-// CV: TEMPI clocks Rene/MATHS, Wogglebug roams, all of them shape side A,
-// side B, Morphagene, X-PAN, QPAS, DXG and Mimeophon params via scaled
+// CV: TEMPI clocks Rene/MATHS, Wogglebug roams, all of them shape
+// Spectraphon, Morphagene, X-PAN, QPAS, DXG and Mimeophon params via scaled
 // kr-to-param routes.
 
 import "stdlib/instruments/sampler/morphagene.vibe";
@@ -32,8 +22,7 @@ import "stdlib/processors/mixers/x_pan.vibe";
 import "stdlib/processors/filters/qpas.vibe";
 import "stdlib/processors/dynamics/dxg.vibe";
 import "stdlib/processors/delays/mimeophon.vibe";
-import "stdlib/instruments/spectral/spectraphon_analyzer.vibe";
-import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
 
 set_tempo(96);
 
@@ -98,74 +87,27 @@ tempi.output("ch2").to_param(rene, "clock_y");
 tempi.output("ch3").to_param(maths, "trig1");
 tempi.output("ch4").to_param(maths, "trig4");
 
-// ----- Spectraphon side A: SAO playback -----
+// ----- Spectraphon: SAO playback -----
 //
-// Side A runs from a fixed Array buffer (filled to the SAO fallback 1/k
-// spectrum on first cell, no live capture). No analyzer voice is needed in
-// SAO mode.
+// With no Array buffer patched, SAO mode uses the synthdef's 1/k fallback
+// spectrum. Rene/Maths/Wogglebug drive pitch, articulation, and brightness.
 
-let spec_a_array = allocate_buffer("spec_a_arrays", 65536, 1);
-
-let spec_a_osc = voice("spec_a_osc")
-    .synth("spectraphon_oscillator")
+let spec = voice("spectraphon_voice")
+    .synth("spectraphon")
     .group("rack")
     .set_param("freq", 92.5)
-    .set_param("partials", 0.58)
+    .set_param("partials", 0.66)
     .set_param("slide", 0.46)
     .set_param("focus", 0.54)
     .set_param("amp", 0.42)
     .set_param("mode", 2.0)
-    .set_param("array_buf", spec_a_array.bufnum)
     .gain(db(-24));
 
-// ----- Spectraphon side B: SAM live, fed by side A's clean sine -----
-//
-// Side B's analyzer needs three shared buffers: the FFT chain buffer (pre-
-// allocated to avoid the scsynth /s_new wedge on fft_kr graphs), the per-
-// partial magnitude buffer (written by analyzer, read by oscillator), and
-// an Array buffer (unused in SAM live but the synthdef still expects a
-// valid bufnum).
-
-let spec_b_fft = allocate_buffer("spec_b_fft", 2048, 1);
-let spec_b_mag = allocate_buffer("spec_b_mag", 64, 1);
-let spec_b_array = allocate_buffer("spec_b_arrays", 65536, 1);
-
-let spec_b_analyzer = voice("spec_b_analyzer")
-    .synth("spectraphon_analyzer")
-    .group("rack")
-    .set_param("fft_buf", spec_b_fft.bufnum)
-    .set_param("mag_buf", spec_b_mag.bufnum)
-    .set_param("f0_analyze", 100.0);
-spec_b_analyzer.output("noop").mute();
-
-// routing_mode=2 from the old rack maps to side B = side A * 1.4983
-// (perfect-fifth follow). Compute it once here; the .scale/.offset routes
-// below modulate around this baseline.
-let spec_b_freq = 92.5 * 1.4983;
-
-let spec_b_osc = voice("spec_b_osc")
-    .synth("spectraphon_oscillator")
-    .group("rack")
-    .set_param("freq", spec_b_freq)
-    .set_param("partials", 0.72)
-    .set_param("slide", 0.58)
-    .set_param("focus", 0.42)
-    .set_param("amp", 0.42)
-    .set_param("mode", 0.0)
-    .set_param("mag_buf", spec_b_mag.bufnum)
-    .set_param("array_buf", spec_b_array.bufnum)
-    .gain(db(-24));
-
-spec_b_analyzer.input("analyze").from(spec_a_osc, "sine");
-
-rene.output("cv").to_param(spec_a_osc, "freq").scale(105.0).offset(120.0);
-rene.output("cv").to_param(spec_b_osc, "freq").scale(92.0).offset(180.0);
-woggle.output("stepped").to_param(spec_a_osc, "partials").scale(0.34).offset(0.58);
-woggle.output("woggle").to_param(spec_b_osc, "partials").scale(0.30).offset(0.56);
-maths.output("ch1").to_param(spec_a_osc, "slide").scale(0.44).offset(0.32);
-maths.output("ch4").to_param(spec_b_osc, "focus").scale(0.48).offset(0.28);
-maths.output("ch1").to_param(spec_a_osc, "amp").scale(0.55).offset(0.20);
-maths.output("ch4").to_param(spec_b_osc, "amp").scale(0.45).offset(0.16);
+rene.output("cv").to_param(spec, "freq").scale(105.0).offset(120.0);
+woggle.output("stepped").to_param(spec, "partials").scale(0.34).offset(0.58);
+maths.output("ch1").to_param(spec, "slide").scale(0.44).offset(0.32);
+maths.output("ch4").to_param(spec, "focus").scale(0.48).offset(0.28);
+maths.output("ch1").to_param(spec, "amp").scale(0.55).offset(0.20);
 
 // ----- Morphagene SOS/granular leg -----
 
@@ -184,7 +126,7 @@ let morph = voice("morph")
     .set_param("amp", 0.0)
     .set_param("auto_level", 0.0);
 
-morph.input("sos").from(spec_a_osc, "sine");
+morph.input("sos").from(spec, "sine");
 
 rene.output("cv").to_param(morph, "organize").scale(0.16).offset(0.22);
 woggle.output("smooth").to_param(morph, "slide").scale(0.38).offset(0.22);
@@ -205,10 +147,10 @@ let xpan = voice("blend")
     .set_param("ch1_pan", -1.0)
     .set_param("ch2_pan", 1.0)
     .set_param("level", 6.3);
-xpan.input("ch1_a").from(spec_a_osc, "odd");
-xpan.input("ch1_b").from(spec_b_osc, "odd");
-xpan.input("ch2_a").from(spec_a_osc, "even");
-xpan.input("ch2_b").from(spec_b_osc, "even");
+xpan.input("ch1_a").from(spec, "odd");
+xpan.input("ch1_b").from(spec, "sub");
+xpan.input("ch2_a").from(spec, "even");
+xpan.input("ch2_b").from(spec, "sine");
 
 woggle.output("smooth").to_param(xpan, "ch1_fade").scale(0.35).offset(0.34);
 maths.output("ch1").to_param(xpan, "ch2_fade").scale(0.45).offset(0.42);
@@ -278,18 +220,16 @@ tempi.output("ch6").to_param(echo, "repeats").scale(0.06).offset(0.86);
 // ----- Run -----
 
 // Spectraphon pitch and articulation come from the rene/maths CV chain
-// (kr-to-param routes above); these voices run as sustained instances, NOT
-// per-note `/s_new` spawns. Do not layer a `melody(...).on(spec_a_osc)` on
-// top — it would clobber the run() instance.
+// (kr-to-param routes above). It runs as a sustained instance, NOT per-note
+// `/s_new` spawns. Do not layer a `melody(...).on(spec)` on top — it would
+// clobber the run() instance.
 
 tempi.run();
 rene.run();
 maths.run();
 woggle.run();
 morph.run();
-spec_a_osc.run();
-spec_b_analyzer.run();
-spec_b_osc.run();
+spec.run();
 xpan.run();
 qpas.run();
 echo.run();

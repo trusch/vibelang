@@ -71,7 +71,7 @@ material, not the final tagged release notes.
   and silent sources. A stereo input named `in` can default to the parent group
   pre-fader bus for inline processor workflows.
 - **Expanded modular stdlib catalogue**: recent additions include
-  ReSynthesizer core modules (`spectraphon_dual`, `morphagene`, MATHS, TEMPI,
+  ReSynthesizer core modules (`spectraphon`, `morphagene`, MATHS, TEMPI,
   Rene, Wogglebug, PrssPnt, CV Bus, X-PAN, QPAS, DXG, Mimeophon), Erica Techno
   System modules, Mutable/Verbos/Intellijel rack modules, and related
   performance examples under `examples/`.
@@ -101,11 +101,11 @@ material, not the final tagged release notes.
   zombie state.
 - **BufWr UGen codegen**: BufWr's input ordering and num_outputs encoding
   were wrong; running synths could not write to server buffers. With the
-  codegen fix, Spectraphon's analyzer chain populates `mag_buf` for real and
-  buffer-bake flows actually capture audio.
-- **Spectraphon SAM gain normalization**: SAM oscillator's partial-bank sum
-  is now unit-spectrum normalized at read time so analyzer-driven partial
-  banks do not saturate the output bus.
+  codegen fix, Spectraphon's inline SAM analyzer populates `mag_buf` for real
+  and buffer-bake flows actually capture audio.
+- **Spectraphon SAM gain normalization**: Spectraphon's partial-bank sum is
+  now unit-spectrum normalized at read time so analyzer-driven partial banks do
+  not saturate the output bus.
 - **TEMPI gate generator**: replaces a narrow phase-window comparator
   (unreliable at kr sample rate) with wrap-edge detection, so clock pulses
   fire reliably regardless of `width` parameter or kr alignment.
@@ -271,7 +271,7 @@ ReSynthesizer-specific listening checks:
   QPAS, DXG, and Mimeophon contribute audible changes when their documented
   parameters are edited.
 - While watch mode is running, edit `morphagene_reel.organize`,
-  `spectraphon_resynth.partials_a`, `qpas_filter.cutoff`, and
+  `spectraphon_voice.partials`, `qpas_filter.cutoff`, and
   `mimeophon_space.mix`; expected outcome is hot-reload without killing audio
   and a clear timbral change for each edit.
 - Run one full smoke pass with a fresh temporary stdlib cache, then one live

@@ -33,7 +33,7 @@ input jacks. Declare inputs with `.input(...)`, read them in `body_map` as
 `target.input("name").from(source)`.
 
 Worked example: `examples/spectraphon_multiout.vibe` (committed at
-`2f03112`) wires the four ports of `spectraphon_side` (`sine`, `sub`,
+`2f03112`) wires the four ports of `spectraphon` (`sine`, `sub`,
 `odd`, `even`) into different destinations — clean fundamental and
 sub-CV to main, odd partials to a dry mix group, even partials through
 a dedicated reverb group.
@@ -161,7 +161,7 @@ port, one for the FX-bound port → sub-group). See §3b.
 
 ```rhai
 let v = voice("spec")
-    .synth("spectraphon_side")
+    .synth("spectraphon")
     .group("leads");
 
 v.output("sine").to_main();                 // dry fundamental → main
@@ -219,7 +219,7 @@ let evens_fx = group("evens_fx")
 let leads = group("leads");
 
 let v = voice("spec")
-    .synth("spectraphon_side")
+    .synth("spectraphon")
     .group(leads);
 
 v.output("even").to(evens_fx);    // wet: through reverb + delay → leads
@@ -776,7 +776,7 @@ The committed multi-output proof-of-life is the canonical reference for
 the v1 surface:
 
 ```rhai
-import "stdlib/instruments/spectral/spectraphon_side.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(72);
@@ -793,7 +793,7 @@ define_group("fx_evens", || {
 });
 
 let v = voice("spec")
-    .synth("spectraphon_side")
+    .synth("spectraphon")
     .group("leads")
     .set_param("partials", 0.85)
     // ... params ...
@@ -970,7 +970,7 @@ non-crossed bullets are deferred non-features.
   four v3 features (`.scale` / `.offset`, `.to_param_audio`,
   `.output_tr` + `.to_trigger`, multi-target `.to(...)`) in a single
   patch.
-* `crates/vibelang-std/stdlib/instruments/spectral/spectraphon_side.vibe`
+* `crates/vibelang-std/stdlib/instruments/spectral/spectraphon.vibe`
   — multi-port spectral synthdef (ar).
 * `crates/vibelang-std/stdlib/instruments/eurorack/maths.vibe`
   — multi-port CV synthdef with kr ports `ch1..ch4`.

@@ -1,5 +1,5 @@
 {
-  "version": "2026-05-17T10:38:55.408Z",
+  "version": "2026-05-18T08:25:58.185Z",
   "synthdefs": [
     {
       "name": "acid_303_classic",
@@ -11208,21 +11208,49 @@
       ]
     },
     {
-      "name": "spectraphon_analyzer",
+      "name": "spectraphon",
       "type": "instrument",
-      "description": "Spectraphon analyzer - real FFT + one BinData read per harmonic.",
+      "description": "Spectraphon — SAM/SAO analyzer plus additive bank.",
       "category": "instruments",
       "subcategory": "spectral",
-      "importPath": "stdlib/instruments/spectral/spectraphon_analyzer.vibe",
-      "sourcePath": "instruments/spectral/spectraphon_analyzer.vibe",
+      "importPath": "stdlib/instruments/spectral/spectraphon.vibe",
+      "sourcePath": "instruments/spectral/spectraphon.vibe",
       "params": [
         {
-          "name": "f0_analyze",
-          "default": 200
+          "name": "freq",
+          "default": 220
+        },
+        {
+          "name": "partials",
+          "default": 1
+        },
+        {
+          "name": "slide",
+          "default": 0.5
         },
         {
           "name": "focus",
           "default": 0.5
+        },
+        {
+          "name": "amp",
+          "default": 0.3
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "mode",
+          "default": 0
+        },
+        {
+          "name": "array_idx",
+          "default": 0
+        },
+        {
+          "name": "f0_analyze",
+          "default": 200
         },
         {
           "name": "fft_buf",
@@ -11233,153 +11261,12 @@
           "default": 0
         },
         {
+          "name": "array_buf",
+          "default": 0
+        },
+        {
           "name": "active",
           "default": 1
-        },
-        {
-          "name": "gate",
-          "default": 1
-        }
-      ]
-    },
-    {
-      "name": "spectraphon_sam_live_oscillator",
-      "type": "instrument",
-      "description": "Spectraphon SAM oscillator - live FFT magnitude consumer.",
-      "category": "instruments",
-      "subcategory": "spectral",
-      "importPath": "stdlib/instruments/spectral/spectraphon_sam_oscillator.vibe",
-      "sourcePath": "instruments/spectral/spectraphon_sam_oscillator.vibe",
-      "params": [
-        {
-          "name": "freq",
-          "default": 220
-        },
-        {
-          "name": "partials",
-          "default": 1
-        },
-        {
-          "name": "slide",
-          "default": 0.5
-        },
-        {
-          "name": "focus",
-          "default": 0.5
-        },
-        {
-          "name": "amp",
-          "default": 0.3
-        },
-        {
-          "name": "gate",
-          "default": 1
-        },
-        {
-          "name": "array_idx",
-          "default": 0
-        },
-        {
-          "name": "mag_buf",
-          "default": 0
-        },
-        {
-          "name": "array_buf",
-          "default": 0
-        }
-      ]
-    },
-    {
-      "name": "spectraphon_sam_oscillator",
-      "type": "instrument",
-      "description": "Spectraphon SAM oscillator - live FFT magnitude consumer.",
-      "category": "instruments",
-      "subcategory": "spectral",
-      "importPath": "stdlib/instruments/spectral/spectraphon_sam_oscillator.vibe",
-      "sourcePath": "instruments/spectral/spectraphon_sam_oscillator.vibe",
-      "params": [
-        {
-          "name": "freq",
-          "default": 220
-        },
-        {
-          "name": "partials",
-          "default": 1
-        },
-        {
-          "name": "slide",
-          "default": 0.5
-        },
-        {
-          "name": "focus",
-          "default": 0.5
-        },
-        {
-          "name": "amp",
-          "default": 0.3
-        },
-        {
-          "name": "gate",
-          "default": 1
-        },
-        {
-          "name": "capture",
-          "default": 0
-        },
-        {
-          "name": "array_idx",
-          "default": 0
-        },
-        {
-          "name": "mag_buf",
-          "default": 0
-        },
-        {
-          "name": "array_buf",
-          "default": 0
-        }
-      ]
-    },
-    {
-      "name": "spectraphon_sao_oscillator",
-      "type": "instrument",
-      "description": "Spectraphon SAO oscillator - Array playback additive bank.",
-      "category": "instruments",
-      "subcategory": "spectral",
-      "importPath": "stdlib/instruments/spectral/spectraphon_sao_oscillator.vibe",
-      "sourcePath": "instruments/spectral/spectraphon_sao_oscillator.vibe",
-      "params": [
-        {
-          "name": "freq",
-          "default": 220
-        },
-        {
-          "name": "partials",
-          "default": 1
-        },
-        {
-          "name": "slide",
-          "default": 0.5
-        },
-        {
-          "name": "focus",
-          "default": 0.5
-        },
-        {
-          "name": "amp",
-          "default": 0.3
-        },
-        {
-          "name": "gate",
-          "default": 1
-        },
-        {
-          "name": "array_idx",
-          "default": 0
-        },
-        {
-          "name": "array_buf",
-          "default": 0
         }
       ]
     },

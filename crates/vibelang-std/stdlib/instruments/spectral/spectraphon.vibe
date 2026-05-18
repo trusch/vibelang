@@ -1,21 +1,36 @@
-// Spectraphon oscillator — merged SAM/SAO additive bank.
+// Spectraphon — SAM/SAO analyzer plus additive bank.
 //
-// One synthdef covers all three operating modes of the hardware oscillator
+// One public synthdef covers all three operating modes of one hardware-style
 // side, switched at instantiation time via the `mode` param:
 //
-//   mode = 0.0   SAM live      read `mag_buf` analyzer magnitudes
-//   mode = 1.0   SAM capture   read live magnitudes AND write them into
+//   mode = 0.0   SAM live      analyze `analyze` and read live magnitudes
+//   mode = 1.0   SAM capture   analyze `analyze`, read live magnitudes, and
+//                              write them into
 //                              `array_buf` at the (slide, focus, array_idx)
 //                              cell, so a later SAO pass can play them back
 //   mode = 2.0   SAO playback  read `array_buf` with bilinear interpolation
 //                              across (slide, focus)
 //
-// Pair this with `spectraphon_analyzer` to drive `mag_buf` from live audio
-// input; the analyzer voice runs alongside the oscillator voice and shares
-// the mag buffer. SAO mode runs without an analyzer voice.
+// For SAM and SAM-capture patches, route audio into `.input("analyze")`.
+// Script-allocated `fft_buf` and `mag_buf` buffers are optional but useful:
+// `fft_buf` avoids using local FFT memory, and `mag_buf` lets live magnitudes
+// survive hot reload. SAO mode can leave `analyze` unpatched and only needs
+// `array_buf`.
 //
 // Outputs: sine (clean fundamental), sub (saw at 0.5×freq, only in SAO),
 // odd / even (partial banks split as on hardware).
+
+fn _spectraphon_write_mag(k, chain, f0_analyze, focus, mag_buf, active) {
+    let bin_per_hz = 2048.0 / 44100.0;
+    let mag_scale = 0.001953125;
+    let bin_max = 1023.0;
+    let lag_t = 0.02;
+    let bin_width = 0.5 + focus * 3.5;
+    let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+    let mag_centre = channels(bin_data_kr(chain, centre_bin, bin_width), 2)[0];
+    let mag = lag_kr(mag_centre * mag_scale, lag_t) * active;
+    buf_wr_kr(mag, mag_buf, k - 1.0, 0);
+}
 
 fn _spectraphon_mag_norm(mag_buf) {
     let k = 1.0;
@@ -27,8 +42,9 @@ fn _spectraphon_mag_norm(mag_buf) {
     return 3.5 / max(mag_sum, 1.0);
 }
 
-define_synthdef("spectraphon_oscillator", |builder| {
+define_synthdef("spectraphon", |builder| {
     builder
+        .input("analyze", 1)
         .output("sine")
         .output("sub")
         .output("odd")
@@ -41,9 +57,13 @@ define_synthdef("spectraphon_oscillator", |builder| {
         .param("gate", 1.0)
         .param("mode", 0.0)
         .param("array_idx", 0.0)
+        .param("f0_analyze", 200.0)
+        .param("fft_buf", 0.0)
         .param("mag_buf", 0.0)
         .param("array_buf", 0.0)
+        .param("active", 1.0)
         .body_map(|p| {
+            let analyze_in = p.inputs["analyze"];
             let freq = p.freq;
             let partials = p.partials;
             let slide = p.slide;
@@ -52,8 +72,11 @@ define_synthdef("spectraphon_oscillator", |builder| {
             let gate = p.gate;
             let mode = clip(p.mode, 0.0, 2.0);
             let array_idx = p.array_idx;
+            let f0_analyze = p.f0_analyze;
+            let fft_buf = p.fft_buf;
             let mag_buf = p.mag_buf;
             let array_buf = p.array_buf;
+            let active = clip(p.active, 0.0, 1.0) * clip(gate, 0.0, 1.0);
 
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -68,10 +91,29 @@ define_synthdef("spectraphon_oscillator", |builder| {
             let is_sam = 1.0 - is_sao;
             let mode_off_capture = (mode - 1.0) * (mode - 1.0);
             let is_capture = clip(1.0 - mode_off_capture * 1000.0, 0.0, 1.0);
+            let analyze_active = active * is_sam;
+
+            let has_fft = clip((fft_buf - 1.0) * 1000.0, 0.0, 1.0);
+            let fallback_fft_buf = local_buf_ir(1.0, 2048.0);
+            let fft_mem = fft_buf * has_fft
+                        + fallback_fft_buf * (1.0 - has_fft);
+            let has_mag = clip((mag_buf - 1.0) * 1000.0, 0.0, 1.0);
+            let fallback_mag_buf = local_buf_ir(1.0, 64.0);
+            let mag_mem = mag_buf * has_mag
+                        + fallback_mag_buf * (1.0 - has_mag);
+
+            let chain = fft_kr(fft_mem, analyze_in, 0.5, 1.0, 1.0, 0.0);
+            let analyze_focus = clip(focus, 0.0, 1.0);
+            let analyze_k = 1.0;
+            _spectraphon_write_mag(analyze_k, chain, f0_analyze, analyze_focus, mag_mem, analyze_active);
+            for i in 2..65 {
+                let k = i.to_float();
+                _spectraphon_write_mag(k, chain, f0_analyze, analyze_focus, mag_mem, analyze_active);
+            }
 
             let n = 64.0;
             let scale = partials * n;
-            let mag_norm = _spectraphon_mag_norm(mag_buf);
+            let mag_norm = _spectraphon_mag_norm(mag_mem);
 
             let has_array = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
             let fallback_array_buf = local_buf_ir(1.0, 1.0);
@@ -112,7 +154,7 @@ define_synthdef("spectraphon_oscillator", |builder| {
             // commit 161c052, scsynth no longer wedges on /s_new for this
             // graph.
             let k = 1.0;
-            let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
+            let mag_live = buf_rd_kr(1, mag_mem, k - 1.0, 0, 1) * mag_norm;
             let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                             + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
@@ -124,7 +166,7 @@ define_synthdef("spectraphon_oscillator", |builder| {
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
+                let mag_live = buf_rd_kr(1, mag_mem, k - 1.0, 0, 1) * mag_norm;
                 let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                                 + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                                 + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
@@ -137,7 +179,7 @@ define_synthdef("spectraphon_oscillator", |builder| {
             }
 
             let k = 2.0;
-            let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
+            let mag_live = buf_rd_kr(1, mag_mem, k - 1.0, 0, 1) * mag_norm;
             let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                             + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
@@ -149,7 +191,7 @@ define_synthdef("spectraphon_oscillator", |builder| {
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
+                let mag_live = buf_rd_kr(1, mag_mem, k - 1.0, 0, 1) * mag_norm;
                 let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                                 + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                                 + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)

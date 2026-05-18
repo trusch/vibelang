@@ -40,7 +40,7 @@ default output routing, target-first input patching, terminal verbs, plural /
 index sugar, and reload semantics (rename = remove + add with warning).
 
 A worked four-port example lives at
-`crates/vibelang-std/stdlib/instruments/spectral/spectraphon_side.vibe`
+`crates/vibelang-std/stdlib/instruments/spectral/spectraphon.vibe`
 (synthdef) and `examples/spectraphon_multiout.vibe` (script-side
 routing patch).
 

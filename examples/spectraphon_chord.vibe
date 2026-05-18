@@ -6,7 +6,7 @@
 // computed explicitly from side A's at script time. No analyzers needed
 // in SAO mode.
 
-import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(72);
@@ -19,7 +19,7 @@ let chord = define_group("SpectraChord", || {
     let arr_b = allocate_buffer("chord_array_b", 65536, 1);
 
     let osc_a = voice("chord_a")
-        .synth("spectraphon_oscillator")
+        .synth("spectraphon")
         .set_param("freq", freq_a)
         .set_param("partials", 0.85)
         .set_param("slide", 0.6)
@@ -30,7 +30,7 @@ let chord = define_group("SpectraChord", || {
         .gain(db(-9));
 
     let osc_b = voice("chord_b")
-        .synth("spectraphon_oscillator")
+        .synth("spectraphon")
         .set_param("freq", freq_b)
         .set_param("partials", 0.85)
         .set_param("slide", 0.6)

@@ -10,7 +10,7 @@ and [`make-noise-resynthesizer-manual-sources.md`](make-noise-resynthesizer-manu
 
 | Area | Modules | Status |
 |---|---|---|
-| Spectral/time-domain core | `spectraphon_side`, `spectraphon_dual`, `morphagene` | Landed as practical audio instruments with named outputs, named SAM/SOS inputs, and buffer-backed workflows where needed. |
+| Spectral/time-domain core | `spectraphon`, `morphagene` | Landed as practical audio instruments with named outputs, named SAM/SOS inputs, and buffer-backed workflows where needed. |
 | Control and modulation | `maths`, `wogglebug`, `tempi`, `rene`, `prss_pnt`, `cv_bus` | Landed as control-rate voices with patchable params and kr output ports for `.to_param(...)` / `.modulate_by(...)` workflows. |
 | Stereo processors | `x_pan`, `qpas`, `dxg`, `mimeophon` | Landed as named-input processors for patching stereo signal paths around the core voices. |
 
@@ -24,16 +24,15 @@ catalogue in
 [`../crates/vibelang-std/stdlib/README.md`](../crates/vibelang-std/stdlib/README.md#approximation-caveats).
 
 SAM analysis and Morphagene SOS recording now read declared named inputs
-(`analyze`, `analyze_a`, `analyze_b`, `sos`) instead of hardwired hardware input
-0. Unpatched named inputs are silent, so legacy scripts that depended on
-implicit hardware input 0 need an explicit input route.
+(`analyze`, `sos`) instead of hardwired hardware input 0. Unpatched named
+inputs are silent, so legacy scripts that depended on implicit hardware input 0
+need an explicit input route.
 
 ## Reference imports
 
 | Module | Import path |
 |---|---|
-| Spectraphon side | `stdlib/instruments/spectral/spectraphon_side.vibe` |
-| Spectraphon dual | `stdlib/instruments/spectral/spectraphon_dual.vibe` |
+| Spectraphon | `stdlib/instruments/spectral/spectraphon.vibe` |
 | Morphagene | `stdlib/instruments/sampler/morphagene.vibe` |
 | MATHS | `stdlib/instruments/eurorack/maths.vibe` |
 | Wogglebug | `stdlib/instruments/eurorack/wogglebug.vibe` |

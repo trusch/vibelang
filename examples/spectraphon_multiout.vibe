@@ -1,6 +1,6 @@
 // Spectraphon multi-output routing demo.
 //
-// Demonstrates the four named output ports on `spectraphon_oscillator`
+// Demonstrates the four named output ports on `spectraphon`
 // (sine, sub, odd, even) and the `voice.output(name).to(group)` /
 // `.to_main()` per-port routing surface, plus the `allocate_buffer(name,
 // frames, channels)` API that gives the synthdef Array memory whose
@@ -28,7 +28,7 @@
 // between reloads — any captured magnitudes (SAM-capture mode) stay
 // readable in SAO mode after editing the synthdef body.
 
-import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(72);
@@ -47,7 +47,7 @@ define_group("fx_evens", || {
 let arr = allocate_buffer("spec_arrays", 65536, 1);
 
 let v = voice("spec")
-    .synth("spectraphon_oscillator")
+    .synth("spectraphon")
     .group("leads")
     .set_param("partials", 0.85)
     .set_param("slide", 0.55)

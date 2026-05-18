@@ -14,8 +14,8 @@
 //! let arr = allocate_buffer("spec_arrays", 65536, 1);
 //!
 //! voice("spec")
-//!     .synth("spectraphon_side")
-//!     .set_param("bufnum", arr.bufnum);
+//!     .synth("spectraphon")
+//!     .set_param("array_buf", arr.bufnum);
 //! ```
 //!
 //! ## ID derivation
