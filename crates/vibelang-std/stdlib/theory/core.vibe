@@ -313,3 +313,58 @@ fn parse_int(str) {
     }
 }
 
+// ============================================================================
+// Pitch-Class & Scale-Mask Utilities
+// ============================================================================
+
+// Extract the pitch class (0..11) from a note. Accepts either a MIDI integer
+// (octave is ignored) or a note-name string. Strings work with or without an
+// octave suffix: "C", "C#", "Eb", "F4", "Bb-1" all yield a pitch class.
+fn note_to_pitch_class(note) {
+    if note.is_string() {
+        let has_octave = false;
+        let len = note.len();
+        for i in 0..len {
+            let c = note[i].to_string();
+            if c == "-" || (c >= "0" && c <= "9") {
+                has_octave = true;
+                break;
+            }
+        }
+        let with_octave = if has_octave { note } else { `${note}0` };
+        let midi = note_to_midi(with_octave);
+        let pc = midi % 12;
+        if pc < 0 { pc += 12; }
+        return pc;
+    }
+    // Integer (or float) MIDI number — pitch class is value mod 12.
+    let n = if note.is_int() { note } else { note.to_int() };
+    let pc = n % 12;
+    if pc < 0 { pc += 12; }
+    return pc;
+}
+
+// Build a 12-bit pitch-class bitmask suitable for Rene's `scale_mask` param
+// from a list of notes. Each item can be a note-name string ("C", "Eb", "F#4")
+// or a MIDI integer (octave ignored). Returns a float because that's what the
+// synthdef param expects.
+//
+// Examples:
+//   scale_mask_from_notes(["C", "D", "Eb", "F", "G", "Ab", "Bb"])  // C minor
+//   scale_mask_from_notes([60, 62, 64, 65, 67, 69, 71])            // C major
+fn scale_mask_from_notes(notes) {
+    let active = [false, false, false, false, false, false,
+                  false, false, false, false, false, false];
+    for note in notes {
+        let pc = note_to_pitch_class(note);
+        active[pc] = true;
+    }
+    let mask = 0.0;
+    let bit = 1.0;
+    for i in 0..12 {
+        if active[i] { mask += bit; }
+        bit *= 2.0;
+    }
+    return mask;
+}
+

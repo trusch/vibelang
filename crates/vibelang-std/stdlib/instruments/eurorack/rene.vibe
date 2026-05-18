@@ -1,13 +1,19 @@
 // Make Noise Rene — practical 4x4 cartesian kr sequencer with path memory.
 //
-// Ports: cv (V/oct), gate, x_gate, y_gate. X/Y can be stepped by clocks or
-// addressed by `x_cv`/`y_cv` when `cv_addr` is raised. `mode` selects grid,
-// snake, free, or seeded-random traversal; `memory` blends in a short
-// shift-register buffer; `quantize` snaps to the 12-bit `scale_mask`.
+// X/Y can be stepped by clocks or addressed by `x_cv`/`y_cv` when `cv_addr`
+// is raised. `mode` selects grid, snake, free, or seeded-random traversal;
+// `memory` blends in a short shift-register buffer.
+//
+// Two pitch outputs run side-by-side: `cv` snaps to the 12-bit `scale_mask`,
+// `cv_raw` is the unquantized grid value. Patch whichever (or both) the
+// downstream voice needs. Use the `scale_mask_from_notes(["C", "D", ...])`
+// helper from `stdlib/theory/core.vibe` instead of hand-rolling the bitmask.
+//
 // Deferred hardware features: touch programming and preset save/load.
 //
 // Public interface:
-//   cv             : kr pitch CV in V/oct around MIDI note 60.
+//   cv             : kr scale-quantized pitch CV in V/oct around MIDI note 60.
+//   cv_raw         : kr unquantized pitch CV in V/oct around MIDI note 60.
 //   gate           : kr combined X/Y +5 V-style gate.
 //   x_gate/y_gate  : kr axis gate taps.
 //   clock_x/clock_y: 0/1 clock inputs for X/Y movement.
@@ -15,8 +21,8 @@
 //   x_cv/y_cv      : 0..1 address CVs selecting 0..3 when `cv_addr` is high.
 //   cv_addr        : 0 clocked path, 1 direct CV addressing.
 //   mode           : rounded 0 cartesian, 1 snake, 2 free, 3 seeded random.
-//   quantize       : 0 raw notes, 1 snap to `scale_mask`.
-//   scale_mask     : 12-bit pitch-class mask; 2741 is a major-like default.
+//   scale_mask     : 12-bit pitch-class mask; 2741 = major. Use
+//                    `scale_mask_from_notes([...])` from theory/core.vibe.
 //   access_x/access_y: 4-bit masks for active columns/rows.
 //   memory         : 0 current note, 1 average of short shift-register buffer.
 //   random_seed    : integer seed term for random mode.
@@ -25,6 +31,7 @@
 define_synthdef("rene", |builder| {
     builder
         .output_kr("cv")
+        .output_kr("cv_raw")
         .output_kr("gate")
         .output_kr("x_gate")
         .output_kr("y_gate")
@@ -35,7 +42,6 @@ define_synthdef("rene", |builder| {
         .param("y_cv", 0.0)
         .param("cv_addr", 0.0)
         .param("mode", 0.0)
-        .param("quantize", 0.0)
         .param("scale_mask", 2741.0)
         .param("access_x", 15.0)
         .param("access_y", 15.0)
@@ -191,17 +197,27 @@ define_synthdef("rene", |builder| {
                     + (midi_round + delta11) * q11
             ) / q_sum.max(1.0);
             let quantized_midi = q_midi * scale_on + midi_round * (1.0 - scale_on);
-            let quantize = clip(p.quantize, 0.0, 1.0);
-            let pitch_midi = midi * (1.0 - quantize) + quantized_midi * quantize;
 
-            let held_midi = latch_kr(pitch_midi, clock_any);
-            let shift1 = latch_kr(held_midi, pulse_divider_kr(clock_any, 2.0, 0.0));
-            let shift2 = latch_kr(held_midi, pulse_divider_kr(clock_any, 3.0, 1.0));
-            let shift3 = latch_kr(held_midi, pulse_divider_kr(clock_any, 4.0, 2.0));
+            // Both pitch outputs run through the same shift-register memory
+            // pipeline so `cv` and `cv_raw` stay in sync per clock edge.
+            let clk2 = pulse_divider_kr(clock_any, 2.0, 0.0);
+            let clk3 = pulse_divider_kr(clock_any, 3.0, 1.0);
+            let clk4 = pulse_divider_kr(clock_any, 4.0, 2.0);
             let memory = clip(p.memory, 0.0, 1.0);
-            let memory_midi = held_midi * (1.0 - memory)
-                + ((shift1 + shift2 + shift3) / 3.0) * memory;
-            let cv = clip_kr((memory_midi - 60.0) / 12.0, -5.0, 5.0);
+
+            let held_raw = latch_kr(midi, clock_any);
+            let memory_raw = held_raw * (1.0 - memory)
+                + ((latch_kr(held_raw, clk2)
+                    + latch_kr(held_raw, clk3)
+                    + latch_kr(held_raw, clk4)) / 3.0) * memory;
+            let cv_raw = clip_kr((memory_raw - 60.0) / 12.0, -5.0, 5.0);
+
+            let held_q = latch_kr(quantized_midi, clock_any);
+            let memory_q = held_q * (1.0 - memory)
+                + ((latch_kr(held_q, clk2)
+                    + latch_kr(held_q, clk3)
+                    + latch_kr(held_q, clk4)) / 3.0) * memory;
+            let cv = clip_kr((memory_q - 60.0) / 12.0, -5.0, 5.0);
 
             let access_x = floor(clip(p.access_x, 0.0, 15.0));
             let access_y = floor(clip(p.access_y, 0.0, 15.0));
@@ -240,6 +256,6 @@ define_synthdef("rene", |builder| {
             );
             let gate = clip_kr(x_gate + y_gate, -1.0, 1.0);
 
-            [cv, gate, x_gate, y_gate]
+            [cv, cv_raw, gate, x_gate, y_gate]
         })
 });
