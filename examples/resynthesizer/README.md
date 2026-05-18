@@ -94,7 +94,7 @@ These are the most useful parameters to edit while `-w` hot reload is running:
 | Voice | Params | What changes |
 |---|---|---|
 | `morphagene_reel` | `organize`, `vari_speed`, `gene_size`, `slide`, `morph` | Source splice position, speed, grain size, and smear. |
-| `spectraphon_voice` | `freq`, `partials`, `slide`, `focus`, `amp` | Resynthesized pitch, partial density, articulation, and spectral motion. |
+| `spectraphon_voice` | `freq`, `v_oct`, `partials`, `slide`, `focus`, `amp` | Tuning (Hz), 1V/oct transposition CV, partial density, articulation, and spectral motion. |
 | `woggle_motion` | `rate`, `depth_v`, `chaos` | Amount and speed of random drift across the whole rack. |
 | `maths_functions` | `rise1`, `fall1`, `rise4`, `fall4`, `cycle1`, `cycle4` | Envelope/LFO timing for grain, FM, Q, and gate movement. |
 | `touch_macro` | `press1`, `press2`, `press3`, `press4`, `slew` | Manual macro pressure for aux blend, delay mix, and DXG opening. |

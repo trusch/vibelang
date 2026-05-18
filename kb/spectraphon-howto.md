@@ -41,7 +41,7 @@ spec.run();
 |---|---|
 | Input | `analyze` (mono audio) |
 | Outputs | `sine`, `sub`, `odd`, `even` |
-| Core params | `freq`, `partials`, `slide`, `focus`, `amp`, `gate`, `mode`, `array_idx` |
+| Core params | `freq`, `v_oct`, `partials`, `slide`, `focus`, `amp`, `gate`, `mode`, `array_idx` |
 | Buffer params | `fft_buf`, `mag_buf`, `array_buf` |
 | Analyzer params | `f0_analyze`, `active` |
 
@@ -49,6 +49,16 @@ For SAM and SAM-capture patches, `fft_buf` and `mag_buf` are optional but useful
 script-owned buffers. `fft_buf` keeps FFT-chain memory explicit, and `mag_buf`
 keeps the live magnitude bank stable across hot reload. `array_buf` stores SAO
 Array data.
+
+`freq` is the base tuning in Hz; `v_oct` is a 1V/oct exponential
+transposition input (default 0 = no shift). Route a v/oct CV source
+(e.g. `rene.cv`, which is `(midi - 60) / 12` clipped to ±5 V) directly
+into `v_oct` instead of linearly scaling it into `freq`:
+
+```vibe
+spec.set_param("freq", 261.63); // C4 base
+rene.output("cv").to_param(spec, "v_oct");
+```
 
 ```vibe
 import "stdlib/utility/test_tones.vibe";
