@@ -812,10 +812,6 @@ impl<B: Backend> Runtime<B> {
         routes
     }
 
-    async fn input_routes_need_finalize(&self, desired: &InputRouteMap) -> bool {
-        self.state.read().await.input_routes != *desired
-    }
-
     async fn effective_output_routes(&self, new_state: &reload::ScriptState) -> RouteMap {
         let state = self.state.read().await;
         let filtered_defaults = suppress_modulation_only_defaults(
@@ -1118,7 +1114,7 @@ impl<B: Backend> Runtime<B> {
     async fn apply_reload(&mut self, mut new_state: reload::ScriptState) -> Result<()> {
         let pending_port_reconciles = self.pending_voice_port_reconciles(&mut new_state).await;
         // Calculate diff
-        let diff = {
+        let mut diff = {
             let current = self.state.read().await;
             reload::calculate_diff(&current, &new_state)
         };
@@ -1129,19 +1125,19 @@ impl<B: Backend> Runtime<B> {
         let (mut param_set_diff, mut param_bend_diff, mut param_trigger_diff) = {
             let state = self.state.read().await;
             (
-                RoutesHandler::<B>::diff_params_with_shaping(
+                reload::diff_param_routes_with_shaping(
                     &state.param_routes_set,
                     &new_state.param_routes_set,
                     &state.param_route_set_shaping,
                     &new_state.param_route_set_shaping,
                 ),
-                RoutesHandler::<B>::diff_params_with_shaping(
+                reload::diff_param_routes_with_shaping(
                     &state.param_routes_bend,
                     &new_state.param_routes_bend,
                     &state.param_route_bend_shaping,
                     &new_state.param_route_bend_shaping,
                 ),
-                RoutesHandler::<B>::diff_params(
+                reload::diff_param_routes(
                     &state.param_routes_trigger,
                     &new_state.param_routes_trigger,
                 ),
@@ -1195,29 +1191,23 @@ impl<B: Backend> Runtime<B> {
                 );
             }
         }
-        let param_routes_changed = !param_set_diff.is_empty()
-            || !param_bend_diff.is_empty()
-            || !param_trigger_diff.is_empty();
+        diff.param_routes_set = param_set_diff;
+        diff.param_routes_bend = param_bend_diff;
+        diff.param_routes_trigger = param_trigger_diff;
+        diff.voice_port_reconciles = pending_port_reconciles.len();
 
-        let voice_ports_reconciled = self
-            .apply_voice_port_reconciles(&pending_port_reconciles)
+        self.apply_voice_port_reconciles(&pending_port_reconciles)
             .await;
         let early_merged_routes = self.effective_output_routes(&new_state).await;
-        let output_routes_changed =
-            !RoutesHandler::<B>::diff(&self.current_routes, &early_merged_routes).is_empty();
+        diff.output_routes = reload::diff_routes(&self.current_routes, &early_merged_routes);
+        diff.input_routes = {
+            let state = self.state.read().await;
+            crate::handlers::compute_input_route_diff(&state.input_routes, &input_routes)
+        };
 
         // If no changes, return early - patterns continue playing seamlessly
         // (Phase 6 only starts patterns that aren't already playing)
-        if !diff.has_changes()
-            && !param_routes_changed
-            && !output_routes_changed
-            && !voice_ports_reconciled
-        {
-            if self.input_routes_need_finalize(&input_routes).await {
-                if let Err(e) = self.routes.finalize_input_routes(&input_routes).await {
-                    tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
-                }
-            }
+        if !diff.has_changes() {
             tracing::debug!("Reload: no changes detected, playback continues");
             return Ok(());
         }
@@ -2603,22 +2593,22 @@ impl<B: Backend> Runtime<B> {
         // have node ids. The handler creates its dedicated summer group at the
         // root head, so summer/link synths still execute before target
         // voices/effects read their mapped params.
-        if param_routes_changed {
+        if diff.param_routes_have_changes() {
             tracing::debug!(
                 "Reload: finalizing param routes (set +{} -{}, bend +{} -{}, trigger +{} -{})",
-                param_set_diff.additions.len(),
-                param_set_diff.removals.len(),
-                param_bend_diff.additions.len(),
-                param_bend_diff.removals.len(),
-                param_trigger_diff.additions.len(),
-                param_trigger_diff.removals.len(),
+                diff.param_routes_set.additions.len(),
+                diff.param_routes_set.removals.len(),
+                diff.param_routes_bend.additions.len(),
+                diff.param_routes_bend.removals.len(),
+                diff.param_routes_trigger.additions.len(),
+                diff.param_routes_trigger.removals.len(),
             );
             if let Err(e) = self
                 .routes
                 .finalize_params_with_shaping(
-                    &param_set_diff,
-                    &param_bend_diff,
-                    &param_trigger_diff,
+                    &diff.param_routes_set,
+                    &diff.param_routes_bend,
+                    &diff.param_routes_trigger,
                     &new_state.param_route_set_shaping,
                     &new_state.param_route_bend_shaping,
                 )

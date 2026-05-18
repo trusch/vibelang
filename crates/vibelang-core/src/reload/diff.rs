@@ -6,6 +6,12 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
+use crate::handlers::{
+    InputRouteDiff, ParamRoute, ParamRouteDiff, ParamRouteMap, ParamRouteTarget, Route, RouteDiff,
+    RouteMap,
+};
+use crate::types::VoiceId;
+
 /// Result of diffing an entity type.
 ///
 /// Contains lists of entities to create, delete, and update.
@@ -97,6 +103,124 @@ where
     diff
 }
 
+/// Compute the additions and removals between two route maps at
+/// `(voice, port, dest)`-edge granularity.
+pub fn diff_routes(old: &RouteMap, new: &RouteMap) -> RouteDiff {
+    let mut diff = RouteDiff::default();
+
+    for ((voice_id, port_name), new_dests) in new {
+        let old_dests = old.get(&(*voice_id, port_name.clone()));
+        for d in new_dests {
+            let in_old = old_dests.map(|v| v.iter().any(|x| x == d)).unwrap_or(false);
+            if !in_old {
+                diff.additions.push(Route {
+                    voice_id: *voice_id,
+                    port_name: port_name.clone(),
+                    dest: d.clone(),
+                });
+            }
+        }
+    }
+
+    for ((voice_id, port_name), old_dests) in old {
+        let new_dests = new.get(&(*voice_id, port_name.clone()));
+        for d in old_dests {
+            let in_new = new_dests.map(|v| v.iter().any(|x| x == d)).unwrap_or(false);
+            if !in_new {
+                diff.removals.push(Route {
+                    voice_id: *voice_id,
+                    port_name: port_name.clone(),
+                    dest: d.clone(),
+                });
+            }
+        }
+    }
+
+    diff
+}
+
+/// Compute the additions and removals between two Param-route maps.
+pub fn diff_param_routes(old: &ParamRouteMap, new: &ParamRouteMap) -> ParamRouteDiff {
+    let mut diff = ParamRouteDiff::default();
+
+    for ((src_voice, src_port), new_targets) in new {
+        let old_targets = old.get(&(*src_voice, src_port.clone()));
+        for (tgt, tgt_param) in new_targets {
+            let in_old = old_targets
+                .map(|v| v.iter().any(|t| t.0 == *tgt && t.1 == *tgt_param))
+                .unwrap_or(false);
+            if !in_old {
+                diff.additions.push(ParamRoute {
+                    source_voice: *src_voice,
+                    source_port: src_port.clone(),
+                    target: *tgt,
+                    target_param: tgt_param.clone(),
+                });
+            }
+        }
+    }
+
+    for ((src_voice, src_port), old_targets) in old {
+        let new_targets = new.get(&(*src_voice, src_port.clone()));
+        for (tgt, tgt_param) in old_targets {
+            let in_new = new_targets
+                .map(|v| v.iter().any(|t| t.0 == *tgt && t.1 == *tgt_param))
+                .unwrap_or(false);
+            if !in_new {
+                diff.removals.push(ParamRoute {
+                    source_voice: *src_voice,
+                    source_port: src_port.clone(),
+                    target: *tgt,
+                    target_param: tgt_param.clone(),
+                });
+            }
+        }
+    }
+
+    diff
+}
+
+/// Compute param-route changes, including per-source scale/offset edits
+/// for routes whose source/target edge did not otherwise change.
+pub fn diff_param_routes_with_shaping(
+    old: &ParamRouteMap,
+    new: &ParamRouteMap,
+    old_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    new_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+) -> ParamRouteDiff {
+    let mut diff = diff_param_routes(old, new);
+
+    for ((src_voice, src_port), new_targets) in new {
+        let old_targets = old.get(&(*src_voice, src_port.clone()));
+        for (target, target_param) in new_targets {
+            let in_old = old_targets
+                .map(|targets| {
+                    targets.iter().any(|(old_target, old_param)| {
+                        *old_target == *target && *old_param == *target_param
+                    })
+                })
+                .unwrap_or(false);
+            if !in_old {
+                continue;
+            }
+
+            let key = (*src_voice, src_port.clone(), *target, target_param.clone());
+            let old_shape = old_shaping.get(&key).copied().unwrap_or((1.0, 0.0));
+            let new_shape = new_shaping.get(&key).copied().unwrap_or((1.0, 0.0));
+            if old_shape != new_shape {
+                diff.updates.push(ParamRoute {
+                    source_voice: *src_voice,
+                    source_port: src_port.clone(),
+                    target: *target,
+                    target_param: target_param.clone(),
+                });
+            }
+        }
+    }
+
+    diff
+}
+
 /// Parameter-level diff for in-place updates.
 #[derive(Clone, Debug, Default)]
 pub struct ParamDiff {
@@ -180,6 +304,24 @@ pub struct ReloadDiff {
 
     /// Fade changes.
     pub fades: EntityDiff<crate::types::FadeId, crate::traits::FadeConfig>,
+
+    /// Output route changes.
+    pub output_routes: RouteDiff,
+
+    /// SET parameter route changes.
+    pub param_routes_set: ParamRouteDiff,
+
+    /// BEND parameter route changes.
+    pub param_routes_bend: ParamRouteDiff,
+
+    /// TRIGGER parameter route changes.
+    pub param_routes_trigger: ParamRouteDiff,
+
+    /// Named input route changes.
+    pub input_routes: InputRouteDiff,
+
+    /// Pending voice output-port reconciles.
+    pub voice_port_reconciles: usize,
 }
 
 impl Default for ReloadDiff {
@@ -247,11 +389,24 @@ impl Default for ReloadDiff {
                 updated: HashMap::new(),
                 unchanged: HashSet::new(),
             },
+            output_routes: RouteDiff::default(),
+            param_routes_set: ParamRouteDiff::default(),
+            param_routes_bend: ParamRouteDiff::default(),
+            param_routes_trigger: ParamRouteDiff::default(),
+            input_routes: InputRouteDiff::default(),
+            voice_port_reconciles: 0,
         }
     }
 }
 
 impl ReloadDiff {
+    /// Check if there are any parameter-route changes.
+    pub fn param_routes_have_changes(&self) -> bool {
+        !self.param_routes_set.is_empty()
+            || !self.param_routes_bend.is_empty()
+            || !self.param_routes_trigger.is_empty()
+    }
+
     /// Check if there are any changes.
     pub fn has_changes(&self) -> bool {
         self.tempo_changed.is_some()
@@ -266,6 +421,10 @@ impl ReloadDiff {
             || self.buffers.has_changes()
             || self.sfz.has_changes()
             || self.fades.has_changes()
+            || !self.output_routes.is_empty()
+            || self.param_routes_have_changes()
+            || !self.input_routes.is_empty()
+            || self.voice_port_reconciles > 0
     }
 
     /// Get a summary of changes for logging.
@@ -358,6 +517,50 @@ impl ReloadDiff {
                 self.fades.updated.len()
             ));
         }
+        if !self.output_routes.is_empty() {
+            parts.push(format!(
+                "output_routes(+{} -{})",
+                self.output_routes.additions.len(),
+                self.output_routes.removals.len()
+            ));
+        }
+        if !self.param_routes_set.is_empty() {
+            parts.push(format!(
+                "param_routes_set(+{} -{} ~{})",
+                self.param_routes_set.additions.len(),
+                self.param_routes_set.removals.len(),
+                self.param_routes_set.updates.len()
+            ));
+        }
+        if !self.param_routes_bend.is_empty() {
+            parts.push(format!(
+                "param_routes_bend(+{} -{} ~{})",
+                self.param_routes_bend.additions.len(),
+                self.param_routes_bend.removals.len(),
+                self.param_routes_bend.updates.len()
+            ));
+        }
+        if !self.param_routes_trigger.is_empty() {
+            parts.push(format!(
+                "param_routes_trigger(+{} -{} ~{})",
+                self.param_routes_trigger.additions.len(),
+                self.param_routes_trigger.removals.len(),
+                self.param_routes_trigger.updates.len()
+            ));
+        }
+        if !self.input_routes.is_empty() {
+            parts.push(format!(
+                "input_routes(+{} -{})",
+                self.input_routes.additions.len(),
+                self.input_routes.removals.len()
+            ));
+        }
+        if self.voice_port_reconciles > 0 {
+            parts.push(format!(
+                "voice_port_reconciles({})",
+                self.voice_port_reconciles
+            ));
+        }
 
         if parts.is_empty() {
             "no changes".to_string()
@@ -370,6 +573,8 @@ impl ReloadDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::{InputRoute, InputRouteSrc, ParamRouteTarget, RouteDest};
+    use crate::types::{GroupId, VoiceId};
 
     #[test]
     fn test_entity_diff_empty() {
@@ -502,5 +707,55 @@ mod tests {
     fn test_reload_diff_summary() {
         let diff = ReloadDiff::default();
         assert_eq!(diff.summary(), "no changes");
+    }
+
+    #[test]
+    fn reload_diff_has_changes_for_output_route_only_change() {
+        let mut diff = ReloadDiff::default();
+        diff.output_routes.additions.push(Route {
+            voice_id: VoiceId::new(1),
+            port_name: "out".to_string(),
+            dest: RouteDest::Group(GroupId::new(2)),
+        });
+
+        assert!(diff.has_changes());
+    }
+
+    #[test]
+    fn reload_diff_has_changes_for_param_route_only_change() {
+        let mut diff = ReloadDiff::default();
+        diff.param_routes_set.additions.push(ParamRoute {
+            source_voice: VoiceId::new(1),
+            source_port: "env".to_string(),
+            target: ParamRouteTarget::Voice(VoiceId::new(2)),
+            target_param: "cutoff".to_string(),
+        });
+
+        assert!(diff.has_changes());
+    }
+
+    #[test]
+    fn reload_diff_has_changes_for_input_route_only_change() {
+        let mut diff = ReloadDiff::default();
+        diff.input_routes.additions.push(InputRoute {
+            voice_id: VoiceId::new(2),
+            port_name: "in".to_string(),
+            src: InputRouteSrc::Voice(VoiceId::new(1), "out".to_string()),
+        });
+
+        assert!(diff.has_changes());
+    }
+
+    #[test]
+    fn reload_diff_has_changes_for_port_reconcile_only_change() {
+        let mut diff = ReloadDiff::default();
+        diff.voice_port_reconciles = 1;
+
+        assert!(diff.has_changes());
+    }
+
+    #[test]
+    fn reload_diff_has_no_changes_for_empty_diff() {
+        assert!(!ReloadDiff::default().has_changes());
     }
 }

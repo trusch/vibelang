@@ -61,7 +61,10 @@ mod port_diff;
 mod script_state;
 
 pub use bus_pool::BusAllocator;
-pub use diff::{diff_entities, EntityDiff, ParamDiff, ReloadDiff};
+pub use diff::{
+    diff_entities, diff_param_routes, diff_param_routes_with_shaping, diff_routes, EntityDiff,
+    ParamDiff, ReloadDiff,
+};
 pub use port_diff::{diff_port_set, reconcile_voice_ports, PortReconcile, PortSetDiff};
 pub use script_state::{
     reconcile_voice_input_ports, BodyContribution, EffectConfig, GroupAliasError, GroupAliasTarget,
@@ -78,6 +81,7 @@ pub use script_state::{
 };
 
 // Types available on all platforms (for order_group_creations)
+use crate::handlers::{compute_input_route_diff, merge_default_routes};
 use crate::types::GroupId;
 use std::collections::HashSet;
 
@@ -271,6 +275,24 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             }
         }
     }
+
+    let effective_output_routes = merge_default_routes(&new.routes, &current.default_routes);
+    diff.output_routes = diff::diff_routes(&current.default_routes, &effective_output_routes);
+    diff.param_routes_set = diff::diff_param_routes_with_shaping(
+        &current.param_routes_set,
+        &new.param_routes_set,
+        &current.param_route_set_shaping,
+        &new.param_route_set_shaping,
+    );
+    diff.param_routes_bend = diff::diff_param_routes_with_shaping(
+        &current.param_routes_bend,
+        &new.param_routes_bend,
+        &current.param_route_bend_shaping,
+        &new.param_route_bend_shaping,
+    );
+    diff.param_routes_trigger =
+        diff::diff_param_routes(&current.param_routes_trigger, &new.param_routes_trigger);
+    diff.input_routes = compute_input_route_diff(&current.input_routes, &new.input_routes);
 
     diff
 }
