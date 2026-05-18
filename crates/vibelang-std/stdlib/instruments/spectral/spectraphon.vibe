@@ -107,7 +107,10 @@ define_synthdef("spectraphon", |builder| {
             let mag_mem = mag_buf * has_mag
                         + fallback_mag_buf * (1.0 - has_mag);
 
-            let chain = fft_kr(fft_mem, analyze_in, 0.5, 1.0, 1.0, 0.0);
+            // Gate the FFT chain on SAM modes so SAO playback (mode=2)
+            // doesn't run BinData on whatever's at an unpatched `analyze`
+            // input — that was crashing scsynth in JoshPVUGens.
+            let chain = fft_kr(fft_mem, analyze_in * is_sam, 0.5, 1.0, is_sam, 0.0);
             let analyze_focus = clip(focus, 0.0, 1.0);
             let analyze_k = 1.0;
             _spectraphon_write_mag(analyze_k, chain, f0_analyze, analyze_focus, mag_mem, analyze_active);
