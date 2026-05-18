@@ -321,7 +321,8 @@ fn parse_int(str) {
 // (octave is ignored) or a note-name string. Strings work with or without an
 // octave suffix: "C", "C#", "Eb", "F4", "Bb-1" all yield a pitch class.
 fn note_to_pitch_class(note) {
-    if note.is_string() {
+    let t = type_of(note);
+    if t == "string" {
         let has_octave = false;
         let len = note.len();
         for i in 0..len {
@@ -338,7 +339,7 @@ fn note_to_pitch_class(note) {
         return pc;
     }
     // Integer (or float) MIDI number — pitch class is value mod 12.
-    let n = if note.is_int() { note } else { note.to_int() };
+    let n = if t == "i64" { note } else { note.to_int() };
     let pc = n % 12;
     if pc < 0 { pc += 12; }
     return pc;
