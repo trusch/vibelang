@@ -1,20 +1,25 @@
-// ReSynthesizer-style rack patch.
+// ReSynthesizer demo - one-group rack patch.
 //
 // Signal flow:
-//   Generated reel source + spectral partial banks
-//     (reel stereo bus feeds Spectraphon analyze_a/analyze_b)
-//     -> X-PAN spectral/granular crossfade and stereo blend
-//     -> QPAS animated filter
-//     -> DXG low-pass gate
-//     -> Mimeophon stereo delay
-//     -> main bus
+//   Spectraphon SAO side -> Spectraphon SAM side
+//       -> X-PAN spectral blend
+//       -> QPAS -> Mimeophon halo/repeater
+//       -> rack group
+//
+//   Morphagene is patched as a one-group SOS/granular leg fed from the
+//   Spectraphon source. Its direct playback path is muted here because the
+//   current worktree's Morphagene buffer reader still fails standalone.
+//
+// CV:
+//   Tempi clocks Rene and Maths. Rene, Maths, and Wogglebug shape Morphagene,
+//   Spectraphon, X-PAN, QPAS, DXG, and Mimeophon params via scaled/offset
+//   kr-to-param routes.
 
-import "stdlib/instruments/eurorack/maths.vibe";
-import "stdlib/instruments/eurorack/wogglebug.vibe";
+import "stdlib/instruments/sampler/morphagene.vibe";
 import "stdlib/instruments/eurorack/tempi.vibe";
 import "stdlib/instruments/eurorack/rene.vibe";
-import "stdlib/instruments/eurorack/prss_pnt.vibe";
-import "stdlib/instruments/eurorack/cv_bus.vibe";
+import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/instruments/eurorack/wogglebug.vibe";
 import "stdlib/processors/mixers/x_pan.vibe";
 import "stdlib/processors/filters/qpas.vibe";
 import "stdlib/processors/dynamics/dxg.vibe";
@@ -23,439 +28,221 @@ import "stdlib/instruments/spectral/spectraphon_dual.vibe" as spectraphon;
 
 set_tempo(96);
 
-// Local glue: named inputs can read a whole stereo group bus, while X-PAN's
-// crossfade channels expect mono voice outputs. These taps convert raw stereo
-// source groups into mono control points without changing stdlib modules.
-define_synthdef("resynth_bus_tap_mono", |builder| {
-    builder
-        .input("in", 2)
-        .output("out")
-        .param("balance", 0.0)
-        .param("level", 1.0)
-        .body_map(|p| {
-            let bal = clip(p.balance, -1.0, 1.0);
-            let left_gain = (1.0 - bal) * 0.5;
-            let right_gain = (1.0 + bal) * 0.5;
-            let mono = p.inputs["in"][0] * left_gain + p.inputs["in"][1] * right_gain;
-            [softclip(mono * p.level)]
-        })
-});
-
-// Simple pitched lead so Rene's quantized CV is unambiguously audible.
-// Stays inside the rack but bypasses the spectraphon partial-bank smear.
-// Rene-style sequenced lead. Each melody note triggers an ASR envelope
-// via `gate`, so the rack hears discrete pitched note-ons instead of a
-// drone. We avoid the kr-to-param /n_map path here because it does not
-// land in this build (verified in isolation); driving via the melody()
-// API installs each note as a fresh /s_new with the correct freq.
-define_synthdef("resynth_lead_voice", |builder| {
-    builder
-        .param("freq", 220.0)
-        .param("amp", 0.32)
-        .param("gate", 1.0)
-        .body_map(|p| {
-            let env = envelope()
-                .adsr(0.006, 0.16, 0.0, 0.08)
-                .gate(p.gate)
-                .cleanup_on_finish()
-                .build();
-            let f = clip(p.freq, 40.0, 2000.0);
-            let core = saw_ar(f) * 0.45 + pulse_ar(f * 2.0, 0.34) * 0.25;
-            let sub = sin_osc_ar(f * 0.5) * 0.20;
-            let mix = lpf_ar(core + sub, 1400.0 + env * 4200.0);
-            let body = clip(mix * env * p.amp, -0.95, 0.95);
-            let pan = clip((f - 360.0) / 720.0, -0.55, 0.55);
-            let right_body = delay_c_ar(body, 0.035, 0.010 + (1.0 + pan) * 0.004);
-            [
-                softclip(body * (0.82 - pan * 0.20)),
-                softclip(right_body * (0.82 + pan * 0.20))
-            ]
-        })
-});
-
-define_synthdef("resynth_stereo_articulator", |builder| {
-    builder
-        .input("in", 2)
-        .param("bpm", 96.0)
-        .param("width", 0.42)
-        .param("pulse_depth", 0.60)
-        .param("level", 0.72)
-        .body_map(|p| {
-            let in_l = p.inputs["in"][0];
-            let in_r = p.inputs["in"][1];
-            let mid = (in_l + in_r) * 0.5;
-            let natural_side = (in_l - in_r) * 0.5;
-            let beat_hz = clip(p.bpm / 60.0, 0.25, 4.0);
-            let phrase_trig = impulse_ar(beat_hz * 0.5, 0.0);
-            let pluck = clip(decay2_ar(phrase_trig, 0.010, 0.24), 0.0, 1.0);
-            let breath = 0.5 + sin_osc_ar(beat_hz * 0.125, 0.0) * 0.5;
-            let width = clip(p.width, 0.0, 1.0);
-            let pulse_depth = clip(p.pulse_depth, 0.0, 0.92);
-            let gate = 1.0 - pulse_depth + pulse_depth * (0.08 + pluck * 0.92);
-            let haas_l = delay_c_ar(mid, 0.045, 0.006 + breath * 0.005);
-            let haas_r = delay_c_ar(mid, 0.045, 0.018 + breath * 0.007);
-            let created_side = (haas_l - haas_r) * width;
-            let side = natural_side + created_side;
-            [
-                softclip((mid + side) * gate * p.level),
-                softclip((mid - side) * gate * p.level)
-            ]
-        })
-});
-
-define_synthdef("resynth_reel_source", |builder| {
-    builder
-        .output("left")
-        .output("right")
-        .param("organize", 0.0)
-        .param("clk", 0.0)
-        .param("vari_speed", 0.0)
-        .param("slide", 0.0)
-        .param("gene_size", 0.0)
-        .param("morph", 0.0)
-        .param("amp", 0.6)
-        .body_map(|p| {
-            let organize = clip(p.organize, 0.0, 1.0);
-            let slide = clip(p.slide, 0.0, 1.0);
-            let gene_size = clip(p.gene_size, 0.0, 1.0);
-            let morph = clip(p.morph, 0.0, 1.0);
-            let speed = clip(p.vari_speed, -1.0, 1.0);
-            let amp = clip(p.amp, 0.0, 2.0);
-
-            let scan = clip(organize * 0.65 + slide * 0.35, 0.0, 1.0);
-            let base = 58.0 + scan * 148.0 + speed * 38.0;
-            let fold = 1.0 + morph * 2.4;
-            let smear = 0.18 + gene_size * 0.42;
-
-            let core_l = saw_ar(base) * (1.0 - morph)
-                       + pulse_ar(base * fold, 0.42) * morph;
-            let core_r = saw_ar(base * 1.007) * (1.0 - morph)
-                       + pulse_ar(base * fold * 0.997, 0.58) * morph;
-            let air = pink_noise_ar() * smear;
-            let tone_l = lpf_ar(core_l + air, 900.0 + scan * 3600.0);
-            let tone_r = lpf_ar(core_r + air * 0.85, 1100.0 + slide * 3300.0);
-            [softclip(tone_l * amp), softclip(tone_r * amp)]
-        })
-});
-
-define_group("ctrl", || { });
-define_group("raw_morphagene", || { });
-define_group("raw_spectral_odd", || { });
-define_group("raw_spectral_even", || { });
-define_group("melody", || { });
-define_group("taps", || { });
 define_group("rack", || { });
+group("rack").gain(db(-16));
 
-group("ctrl").gain(0.0);
-group("raw_morphagene").gain(db(-30));
-group("raw_spectral_odd").gain(db(-32));
-group("raw_spectral_even").gain(db(-32));
-group("melody").gain(db(-20));
-group("taps").gain(db(-32));
-group("rack").gain(db(0));
+let morph_reel = allocate_buffer("resynth_morph_reel", 96000, 1);
 
-let tempi = voice("tempi_master")
+// ----- CV chain -----
+
+let tempi = voice("clk")
     .synth("tempi")
-    .group("ctrl")
-    .modulator_only()
+    .group("rack")
     .set_param("bpm", get_tempo())
+    .set_param("width", 0.05)
     .set_param("mult1", 1.0)
-    .set_param("mult2", 0.75)
+    .set_param("mult2", 0.5)
     .set_param("mult3", 2.0)
-    .set_param("mult4", 3.0)
-    .set_param("mult5", 0.5)
-    .set_param("mult6", 2.0);
+    .set_param("mult4", 0.25)
+    .set_param("mult5", 0.125)
+    .set_param("mult6", 3.0)
+    .set_param("shift2", 2.0)
+    .set_param("shift4", 4.0);
 
-let rene = voice("rene_cartesian")
+let rene = voice("seq")
     .synth("rene")
-    .group("ctrl")
-    .modulator_only()
+    .group("rack")
     .set_param("quantize", 1.0)
     .set_param("scale_mask", 1453.0)
-    .set_param("note00", 65.0)
-    .set_param("note01", 67.0)
-    .set_param("note02", 72.0)
-    .set_param("note03", 74.0)
-    .set_param("note10", 69.0)
-    .set_param("note11", 72.0)
-    .set_param("note12", 76.0)
-    .set_param("note13", 79.0)
-    .set_param("note20", 60.0)
-    .set_param("note21", 65.0)
-    .set_param("note22", 72.0)
-    .set_param("note23", 77.0)
-    .set_param("note30", 67.0)
-    .set_param("note31", 70.0)
-    .set_param("note32", 74.0)
-    .set_param("note33", 82.0);
+    .set_param("mode", 1.0)
+    .set_param("memory", 0.18)
+    .set_param("note00", 60.0).set_param("note01", 64.0)
+    .set_param("note02", 67.0).set_param("note03", 72.0)
+    .set_param("note10", 62.0).set_param("note11", 65.0)
+    .set_param("note12", 69.0).set_param("note13", 74.0)
+    .set_param("note20", 55.0).set_param("note21", 60.0)
+    .set_param("note22", 67.0).set_param("note23", 76.0)
+    .set_param("note30", 57.0).set_param("note31", 62.0)
+    .set_param("note32", 69.0).set_param("note33", 79.0);
 
-let woggle = voice("woggle_motion")
+let maths = voice("env")
+    .synth("maths")
+    .group("rack")
+    .set_param("rise1", 0.004).set_param("fall1", 0.28)
+    .set_param("shape1", 0.72).set_param("cycle1", 0.0)
+    .set_param("rise4", 0.018).set_param("fall4", 0.82)
+    .set_param("shape4", 0.42).set_param("cycle4", 0.0)
+    .set_param("ch2", 0.32).set_param("ch2_scale", 0.85)
+    .set_param("ch3", -0.18).set_param("ch3_scale", 0.35);
+
+let woggle = voice("wog")
     .synth("wogglebug")
-    .group("ctrl")
-    .modulator_only()
-    .set_param("rate", 3.0)
-    .set_param("depth_v", 7.2)
-    .set_param("chaos", 0.80)
+    .group("rack")
+    .set_param("rate", 1.9)
+    .set_param("depth_v", 4.5)
+    .set_param("chaos", 0.62)
+    .set_param("heart", 0.82)
     .set_param("bipolar", 1.0);
 
-let maths = voice("maths_functions")
-    .synth("maths")
-    .group("ctrl")
-    .modulator_only()
-    .set_param("rise1", 0.12)
-    .set_param("fall1", 0.72)
-    .set_param("shape1", 0.85)
-    .set_param("cycle1", 0.85)
-    .set_param("rise4", 0.04)
-    .set_param("fall4", 1.45)
-    .set_param("shape4", 0.25)
-    .set_param("cycle4", 0.55)
-    .set_param("ch2", 0.35)
-    .set_param("ch2_scale", 0.6)
-    .set_param("ch3", -0.25)
-    .set_param("ch3_scale", 0.45);
-
-let press = voice("touch_macro")
-    .synth("prss_pnt")
-    .group("ctrl")
-    .modulator_only()
-    .set_param("press1", 0.62)
-    .set_param("press2", 0.38)
-    .set_param("press3", 0.25)
-    .set_param("press4", 0.72)
-    .set_param("threshold", 0.08)
-    .set_param("slew", 0.08);
-
-let cvbus = voice("cv_bus_mix")
-    .synth("cv_bus")
-    .group("ctrl")
-    .modulator_only()
-    .set_param("atten1", 0.85)
-    .set_param("atten2", 0.65)
-    .set_param("atten3", 0.45)
-    .set_param("atten4", 0.35)
-    .set_param("offset1", 0.10)
-    .set_param("offset2", 0.20)
-    .set_param("offset3", 0.05)
-    .set_param("offset4", 0.0)
-    .set_param("norm12", 0.45)
-    .set_param("norm23", 0.25)
-    .set_param("norm34", 0.15);
-
-tempi.output("ch4").to_param(rene, "clock_x");
+tempi.output("ch1").to_param(rene, "clock_x");
 tempi.output("ch2").to_param(rene, "clock_y");
-maths.param("trig1").modulate_by(tempi, "ch3");
+tempi.output("ch3").to_param(maths, "trig1");
 tempi.output("ch4").to_param(maths, "trig4");
 
-woggle.output("smooth").to_param(cvbus, "in1").scale(0.8).offset(0.0);
-maths.output("sum").to_param(cvbus, "in2").scale(0.7).offset(0.0);
-press.output("pressure1").to_param(cvbus, "in3").scale(0.8).offset(0.0);
-rene.output("cv").to_param(cvbus, "in4").scale(0.65).offset(0.0);
+// ----- Spectraphon source/resynthesizer -----
 
-let morph = voice("morphagene_reel")
-    .synth("resynth_reel_source")
-    .group("raw_morphagene")
-    .set_param("organize", 0.25)
-    .set_param("vari_speed", 0.7937)
-    .set_param("slide", 0.10)
-    .set_param("gene_size", 0.24)
-    .set_param("morph", 0.50)
-    .set_param("amp", 0.12)
-    .gain(db(-6));
-morph.outputs(["left", "right"]).to(group("raw_morphagene"));
-
-// Real-FFT Spectraphon dual via the pure-vibe helper.
-// Each side runs a private analyzer (FFT + 64 BinData) writing a 64-frame
-// magnitude buffer that drives the side's 64-partial additive oscillator.
-let spec = spectraphon::spectraphon_dual("spectraphon_resynth", "sam", "sam");
-spec = spectraphon::spectraphon_group(spec, "raw_spectral_odd");
-spec = spectraphon::spectraphon_gain(spec, db(-8));
-spec = spectraphon::spectraphon_set_param(spec, "freq_a", 146.8);
-spec = spectraphon::spectraphon_set_param(spec, "freq_b", 220.0);
-spec = spectraphon::spectraphon_set_param(spec, "amp", 0.12);
+let spec = spectraphon::spectraphon_dual("respec", "sao", "sam");
+spec = spectraphon::spectraphon_group(spec, "rack");
+spec = spectraphon::spectraphon_gain(spec, db(-24));
+spec = spectraphon::spectraphon_set_param(spec, "freq_a", 92.5);
+spec = spectraphon::spectraphon_set_param(spec, "freq_b", 138.6);
+spec = spectraphon::spectraphon_set_param(spec, "amp", 0.42);
 spec = spectraphon::spectraphon_set_param(spec, "routing_mode", 2.0);
-spec = spectraphon::spectraphon_set_param(spec, "partials_a", 0.72);
-spec = spectraphon::spectraphon_set_param(spec, "partials_b", 0.58);
-spec = spectraphon::spectraphon_set_param(spec, "slide_a", 0.44);
-spec = spectraphon::spectraphon_set_param(spec, "slide_b", 0.63);
-spec = spectraphon::spectraphon_set_param(spec, "focus_a", 0.52);
-spec = spectraphon::spectraphon_set_param(spec, "focus_b", 0.38);
+spec = spectraphon::spectraphon_set_param(spec, "partials_a", 0.58);
+spec = spectraphon::spectraphon_set_param(spec, "partials_b", 0.72);
+spec = spectraphon::spectraphon_set_param(spec, "slide_a", 0.46);
+spec = spectraphon::spectraphon_set_param(spec, "slide_b", 0.58);
+spec = spectraphon::spectraphon_set_param(spec, "focus_a", 0.54);
+spec = spectraphon::spectraphon_set_param(spec, "focus_b", 0.42);
 
-spectraphon::spectraphon_output(spec, "odd_a").to(group("raw_spectral_odd"));
-spectraphon::spectraphon_output(spec, "odd_b").to(group("raw_spectral_odd"));
-spectraphon::spectraphon_output(spec, "even_a").to(group("raw_spectral_even"));
-spectraphon::spectraphon_output(spec, "even_b").to(group("raw_spectral_even"));
-spec.oscillator_a.output("sine").to(group("melody"));
-spec.oscillator_a.output("sub").mute();
-spec.oscillator_b.output("sine").to(group("melody"));
-spec.oscillator_b.output("sub").mute();
+spectraphon::spectraphon_input(spec, "analyze_b").from(spec.oscillator_a, "sine");
 
-// CV routes hit the underlying per-side oscillator voices directly (Rhai
-// object_map field access yields the live voice handle; the param-route
-// registry resolves by VoiceId so passing through the map field is safe).
-rene.output("cv").to_param(spec.oscillator_a, "freq").scale(255.0).offset(90.0);
-rene.output("cv").to_param(spec.oscillator_b, "freq").scale(210.0).offset(180.0);
-woggle.output("stepped").to_param(spec.oscillator_a, "partials").scale(0.36).offset(0.46);
-woggle.output("woggle").to_param(spec.oscillator_b, "partials").scale(0.34).offset(0.40);
-cvbus.output("bus1").to_param(spec.oscillator_a, "slide").scale(0.48).offset(0.34);
-cvbus.output("bus2").to_param(spec.oscillator_b, "focus").scale(0.52).offset(0.26);
+rene.output("cv").to_param(spec.oscillator_a, "freq").scale(105.0).offset(120.0);
+rene.output("cv").to_param(spec.oscillator_b, "freq").scale(92.0).offset(180.0);
+woggle.output("stepped").to_param(spec.oscillator_a, "partials").scale(0.34).offset(0.58);
+woggle.output("woggle").to_param(spec.oscillator_b, "partials").scale(0.30).offset(0.56);
+maths.output("ch1").to_param(spec.oscillator_a, "slide").scale(0.44).offset(0.32);
+maths.output("ch4").to_param(spec.oscillator_b, "focus").scale(0.48).offset(0.28);
+maths.output("ch1").to_param(spec.oscillator_a, "amp").scale(0.55).offset(0.20);
+maths.output("ch4").to_param(spec.oscillator_b, "amp").scale(0.45).offset(0.16);
 
-tempi.output("ch5").to_param(morph, "clk");
-rene.output("cv").to_param(morph, "organize").scale(0.42).offset(0.42);
-rene.output("cv").to_param(morph, "vari_speed").scale(0.6).offset(-0.3);
-maths.output("ch1").to_param(morph, "gene_size").scale(0.36).offset(0.05);
-maths.output("ch4").to_param(morph, "morph").scale(0.42).offset(0.28);
-woggle.output("stepped").to_param(morph, "slide").scale(0.42).offset(0.16);
+// ----- Morphagene SOS/granular leg -----
 
-let odd_tap = voice("tap_spectral_odd")
-    .synth("resynth_bus_tap_mono")
-    .group("taps")
-    .set_param("balance", -0.75)
-    .set_param("level", 0.9);
-odd_tap.input("in").from(group("raw_spectral_odd"));
-
-let even_tap = voice("tap_spectral_even")
-    .synth("resynth_bus_tap_mono")
-    .group("taps")
-    .set_param("balance", 0.75)
-    .set_param("level", 0.9);
-even_tap.input("in").from(group("raw_spectral_even"));
-
-let morph_tap_l = voice("tap_morphagene_left")
-    .synth("resynth_bus_tap_mono")
-    .group("taps")
-    .set_param("balance", -1.0)
-    .set_param("level", 0.75);
-morph_tap_l.input("in").from(group("raw_morphagene"));
-
-let morph_tap_r = voice("tap_morphagene_right")
-    .synth("resynth_bus_tap_mono")
-    .group("taps")
-    .set_param("balance", 1.0)
-    .set_param("level", 0.75);
-morph_tap_r.input("in").from(group("raw_morphagene"));
-
-spectraphon::spectraphon_input(spec, "analyze_a").from(morph_tap_l);
-spectraphon::spectraphon_input(spec, "analyze_b").from(morph_tap_r);
-
-let lead = voice("rene_lead")
-    .synth("resynth_lead_voice")
+let morph = voice("morph")
+    .synth("morphagene")
     .group("rack")
-    .set_param("amp", 1.05)
-    .gain(db(4));
+    .modulator_only()
+    .set_param("bufnum", morph_reel.bufnum)
+    .set_param("num_splices", 1.0)
+    .set_param("organize", 0.0)
+    .set_param("sos", 0.5)
+    .set_param("vari_speed", 0.7937)
+    .set_param("slide", 0.0)
+    .set_param("gene_size", 0.10)
+    .set_param("morph", 0.38)
+    .set_param("amp", 0.0)
+    .set_param("auto_level", 0.0);
 
-// Rene-cartesian 16-note sequence in C minor pentatonic, mirroring the
-// 4×4 grid Rene is configured with: x sweeps within a row, y advances
-// across rows. Each "."  is a rest; we space at sixteenth notes (16 per
-// bar at 96 BPM → 4.8 Hz step, matches the Rene clock_x rate).
-melody("rene_cartesian_lead")
-    .on(lead)
-    .notes(
-        "C4 . . G4 | . F4 . . | C4 . C5 . | . Bb4 C5 ."
-    )
-    .start();
+morph.input("sos").from(spec.oscillator_a, "sine");
+spectraphon::spectraphon_input(spec, "analyze_a").from(morph, "left");
 
-let xpan = voice("xpan_motion")
+rene.output("cv").to_param(morph, "organize").scale(0.16).offset(0.22);
+woggle.output("smooth").to_param(morph, "slide").scale(0.38).offset(0.22);
+maths.output("ch1").to_param(morph, "gene_size").scale(0.42).offset(0.18);
+maths.output("ch4").to_param(morph, "morph").scale(0.32).offset(0.52);
+tempi.output("ch5").to_param(morph, "clk");
+
+// ----- X-PAN granular/spectral blend -----
+
+let xpan = voice("blend")
     .synth("x_pan")
     .group("rack")
-    .set_param("ch1_gain", 0.72)
-    .set_param("ch2_gain", 0.56)
-    .set_param("aux_gain", 0.40)
-    .set_param("level", 0.72);
-xpan.input("ch1_a").from(odd_tap);
-xpan.input("ch1_b").from(even_tap);
-xpan.input("ch2_a").from(morph_tap_l);
-xpan.input("ch2_b").from(odd_tap);
-xpan.input("aux").from(group("melody"));
-xpan.output("out").mute();
+    .set_param("ch1_gain", 15.0)
+    .set_param("ch2_gain", 15.0)
+    .set_param("aux_gain", 0.0)
+    .set_param("ch1_fade", 0.38)
+    .set_param("ch2_fade", 0.56)
+    .set_param("ch1_pan", -1.0)
+    .set_param("ch2_pan", 1.0)
+    .set_param("level", 6.3);
+xpan.input("ch1_a").from(spec.oscillator_a, "odd");
+xpan.input("ch1_b").from(spec.oscillator_b, "odd");
+xpan.input("ch2_a").from(spec.oscillator_a, "even");
+xpan.input("ch2_b").from(spec.oscillator_b, "even");
 
-let qpas = voice("qpas_filter")
+woggle.output("smooth").to_param(xpan, "ch1_fade").scale(0.35).offset(0.34);
+maths.output("ch1").to_param(xpan, "ch2_fade").scale(0.45).offset(0.42);
+
+morph.output("eosg").mute();
+
+// ----- QPAS filter -----
+
+let qpas = voice("filt")
     .synth("qpas")
     .group("rack")
-    .set_param("cutoff", 1600.0)
-    .set_param("q", 0.42)
-    .set_param("radiate", 0.35)
-    .set_param("mode", 3.0)
-    .set_param("input_gain", 0.72)
-    .set_param("mix", 0.92)
-    .set_param("level", 0.86);
-qpas.input("in").from(xpan);
-qpas.output("out").mute();
+    .set_param("cutoff", 1700.0)
+    .set_param("q", 0.34)
+    .set_param("radiate", 0.42)
+    .set_param("smile", 0.62)
+    .set_param("frown", -0.22)
+    .set_param("mode", 0.0)
+    .set_param("input_gain", 0.86)
+    .set_param("mix", 0.88)
+    .set_param("level", 0.10);
+qpas.input("in").from(xpan, "out");
 
-let dxg = voice("dxg_gate")
+woggle.output("smooth").to_param(qpas, "cutoff").scale(3600.0).offset(1200.0);
+maths.output("ch1").to_param(qpas, "q").scale(0.46).offset(0.20);
+rene.output("x_gate").to_param(qpas, "radiate").scale(0.58).offset(0.18);
+
+// ----- DXG low-pass gate, configured but skipped in the audible route -----
+
+let dxg = voice("vca")
     .synth("dxg")
     .group("rack")
-    .set_param("ctrl1", 0.10)
-    .set_param("ctrl2", 0.08)
-    .set_param("strike_level", 0.65)
-    .set_param("strike_decay", 0.24)
-    .set_param("ch1_gain", 0.84)
-    .set_param("ch2_gain", 0.32)
-    .set_param("aux_gain", 0.10)
-    .set_param("level", 0.82);
-dxg.input("ch1").from(qpas);
-dxg.input("ch2").from(group("raw_morphagene"));
-dxg.output("out").mute();
+    .set_param("ctrl1", 0.02)
+    .set_param("ctrl2", 0.01)
+    .set_param("strike_level", 0.0)
+    .set_param("strike_decay", 0.36)
+    .set_param("ch1_gain", 12.0)
+    .set_param("ch2_gain", 3.0)
+    .set_param("aux_gain", 0.0)
+    .set_param("level", 4.0);
+dxg.input("ch1").from(qpas, "out");
+dxg.input("ch2").from(xpan, "out");
 
-let echo = voice("mimeophon_space")
+maths.output("ch1").to_param(dxg, "ctrl1").scale(1.0).offset(0.02);
+maths.output("ch4").to_param(dxg, "ctrl2").scale(0.76).offset(0.01);
+
+// ----- Mimeophon delay with audible halos -----
+
+let echo = voice("echo")
     .synth("mimeophon")
     .group("rack")
-    .set_param("time", 0.27)
-    .set_param("zone", 1.0)
-    .set_param("repeats", 0.40)
-    .set_param("skew", 0.18)
-    .set_param("color", -0.15)
-    .set_param("halo", 0.34)
-    .set_param("mix", 0.30)
-    .set_param("level", 0.55)
-    .gain(db(-8));
-echo.input("in").from(dxg);
-echo.output("out").mute();
+    .set_param("time", 0.40)
+    .set_param("zone", 0.0)
+    .set_param("repeats", 0.94)
+    .set_param("skew", 0.75)
+    .set_param("color", -0.18)
+    .set_param("halo", 0.90)
+    .set_param("halftime", 0.0)
+    .set_param("mix", 1.0)
+    .set_param("level", 16.0);
+echo.input("in").from(qpas, "out");
+echo.output("out").to_current_group();
 
-let output_stage = voice("resynth_output_stage")
-    .synth("resynth_stereo_articulator")
-    .group("rack")
-    .set_param("bpm", get_tempo())
-    .set_param("width", 0.58)
-    .set_param("pulse_depth", 0.88)
-    .set_param("level", 0.82)
-    .gain(db(-5));
-output_stage.input("in").from(echo);
+rene.output("y_gate").to_param(echo, "skew").scale(0.44).offset(0.12);
+woggle.output("smooth").to_param(echo, "color").scale(0.44).offset(-0.20);
+tempi.output("ch6").to_param(echo, "repeats").scale(0.06).offset(0.86);
 
-cvbus.output("bus3").to_param(xpan, "ch1_fade").scale(0.62).offset(0.48);
-maths.output("inv").to_param(xpan, "ch1_pan").scale(0.82).offset(-0.10);
-woggle.output("smooth").to_param(xpan, "ch2_pan").scale(0.92).offset(0.06);
-press.output("pressure2").to_param(xpan, "aux_gain").scale(0.42).offset(0.24);
-
-cvbus.output("sum").to_param(qpas, "cutoff").scale(5600.0).offset(420.0);
-rene.output("x_gate").to_param(qpas, "radiate").scale(0.55).offset(0.18);
-maths.output("eor4").to_param(qpas, "q").scale(0.65).offset(0.18);
-
-rene.output("gate").to_param(dxg, "ctrl1").scale(0.86).offset(0.05);
-rene.output("y_gate").to_param(dxg, "ctrl2").scale(0.62).offset(0.04);
-
-rene.output("y_gate").to_param(echo, "skew").scale(0.48).offset(0.08);
-cvbus.output("bus2").to_param(echo, "zone").scale(2.6).offset(0.25);
-press.output("pressure3").to_param(echo, "mix").scale(0.24).offset(0.18);
-tempi.output("ch6").to_param(echo, "repeats").scale(0.16).offset(0.36);
+// ----- Run -----
 
 tempi.run();
 rene.run();
-woggle.run();
 maths.run();
-press.run();
-cvbus.run();
+woggle.run();
 morph.run();
 spec = spectraphon::spectraphon_run(spec);
-odd_tap.run();
-even_tap.run();
-morph_tap_l.run();
-morph_tap_r.run();
-// `lead` is not .run()-ed: the melody() above spawns voice instances
-// per note via /s_new. A standalone run() would create a permanent
-// instance with gate=1 that competes with the per-note triggers.
+melody("spec_a_phrase")
+    .on(spec.oscillator_a)
+    .notes("C2 - G2 - | Eb2 - Bb2 - | C3 - G2 Eb2 | - Bb2 - G2")
+    .gate(0.85)
+    .start();
+melody("spec_b_phrase")
+    .on(spec.oscillator_b)
+    .notes("- G2 - D3 | Bb2 - F3 - | - C3 - G2 | Eb3 - Bb2 -")
+    .gate(0.82)
+    .start();
 xpan.run();
 qpas.run();
-dxg.run();
 echo.run();
-output_stage.run();

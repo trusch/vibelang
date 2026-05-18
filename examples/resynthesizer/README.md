@@ -54,24 +54,29 @@ RUST_LOG=info ./target/release/vibe examples/resynthesizer/main.vibe
 
 ## Topology
 
-`main.vibe` bakes a short Morphagene reel, plays it as a granular stereo source,
-and also taps it into Spectraphon dual SAM inputs for frequency-domain
-resynthesis. The dry Morphagene layer and Spectraphon odd/even partial banks are
-collapsed through mono taps into X-PAN, then processed by QPAS, DXG, and
-Mimeophon before the rack group reaches the main bus. TEMPI, Rene, MATHS,
-Wogglebug, PrssPnt, and CV Bus run as control-rate voices that clock and bend
-the source, blend, filter, gate, and delay parameters.
+`main.vibe` allocates one short script buffer, bakes it with the stdlib
+`morphagene_reel_fill` synthdef, plays that Reel through stdlib Morphagene as a
+granular stereo source, and routes Morphagene's `left`/`right` outputs directly
+into Spectraphon dual SAM inputs for frequency-domain resynthesis. Spectraphon's
+odd/even side outputs feed X-PAN's mono named inputs directly, while Morphagene
+dry and Spectraphon sine side outputs are paired by hard-panned stdlib X-PAN
+voices before they feed stereo-only aux inputs. The main X-PAN output runs
+through QPAS, DXG, and Mimeophon, with Mimeophon as the final processor on the
+main rack material before the rack group reaches the main bus. TEMPI, Rene,
+MATHS, Wogglebug, PrssPnt, and CV Bus run as control-rate voices that clock and
+bend the source, blend, filter, gate, and delay parameters. All running voices
+live in the single `rack` group.
 
 ```text
 SOURCE LAYER
-  Morphagene reel/grains -----> raw_morphagene group --+--> morph tap
-         |                                             |
-         +--> Spectraphon analyze_a/analyze_b          +--> X-PAN aux
-                      |
-  Spectraphon dual odd/even banks
-         |                  |
-         +--> raw_spectral_odd  --> odd tap  --+
-         +--> raw_spectral_even --> even tap --+--> X-PAN ch1/ch2
+  baked Reel -> Morphagene grains left/right --+--> Spectraphon analyze_a/analyze_b
+                                               +--> dry hard-L/R pair -> X-PAN aux / DXG ch2
+
+  Spectraphon dual SAM odd/even/sine outputs
+         |
+         +--> odd_a/odd_b  -> X-PAN ch1_a/ch1_b
+         +--> even_a/even_b -> X-PAN ch2_a/ch2_b
+         +--> sine_a/sine_b -> sine hard-L/R pair -> DXG aux
 
 MODULATION LAYER (kr)
   TEMPI -> Rene clocks, MATHS triggers, Morphagene clk, Mimeophon repeats
