@@ -1,25 +1,29 @@
 // Spectraphon Array capture — capture an Array from audio input, then play
 // it back as SAO.
 //
-// Walks through the full Spectraphon Array workflow on a single side:
+// Walks through the full Spectraphon Array workflow on a single side using
+// the explicit two-synthdef surface:
 //
-//   Bars 0–7   SAM + capture (`mode = "sam_capture"`)
-//              Real-time FFT analyses JACK audio input ch 0; the per-frame
-//              `mag[1..64]` is written into the Array cell at
-//              (floor(slide·8), floor(focus·8)). Two slow fades sweep
+//   Bars 0–7   Capture: `cap_analyzer` (FFT + BinData) writes the magnitude
+//              spectrum of JACK input ch 0 into `mag_buf`. `cap_osc` runs
+//              in `mode = 1.0` (SAM capture) so it reads the live magnitudes
+//              AND writes them into the shared array buffer at the
+//              (slide, focus, array_idx) cell. Two slow fades sweep
 //              `slide` across [0, 1] (one full pass) and `focus` across
 //              [0, 1] (two passes), filling the 8×8 grid in a serpentine
 //              pattern over 8 bars.
 //
-//   Bar 8      Voice swap from the SAM-capture helper to an SAO helper.
-//              The SAO bank reads the captured Array via bilinear interpolation
-//              across (slide, focus) instead of the live FFT.
+//   Bar 8      Voice swap: `cap_osc` fades its amp to 0 AND its mode from
+//              1.0 (sam_capture) to 0.0 (sam_live), so the array writes
+//              stop and the captured spectrum is frozen. `play_osc`
+//              (mode = 2.0, SAO) fades its amp from 0 to 0.25.
 //
-//   Bars 8–15  SAO playback. A second pair of fades scans the captured
-//              Array in a different trajectory than the capture — diagonal
-//              vs. serpentine — so each cell is revisited from new
-//              directions and the bilinear interpolation between cells
-//              becomes audible.
+//   Bars 8–15  SAO playback: `play_osc` reads the captured array via
+//              bilinear interpolation across (slide, focus). A second
+//              pair of fades scans the captured Array in a different
+//              trajectory than the capture — diagonal vs. serpentine — so
+//              each cell is revisited from new directions and the bilinear
+//              interpolation between cells becomes audible.
 //
 // Hardware-input requirement: this example only produces interesting
 // output if there is audible signal on JACK input ch 0 during bars 0–7.
@@ -27,58 +31,76 @@
 // captured Array stores `mag[k] ≈ 0`, and SAO playback is silent — that
 // is the correct "no input → no spectrum" behaviour, not a bug.
 //
-// Array memory uses a script-allocated buffer wired into `bufnum`, so captures
-// survive hot-reload as long as the `allocate_buffer` call stays in the script.
-//
-// References: kb/spectraphon-howto.md ("spectraphon_side", "Array memory")
-//             and kb/spectraphon-synthdef-plan.md §3.b, §6.C.
+// Array memory uses a script-allocated buffer wired into `array_buf`, so
+// captures survive hot-reload as long as the `allocate_buffer` call stays
+// in the script.
 
-import "stdlib/instruments/spectral/spectraphon_side.vibe" as spectraphon;
+import "stdlib/instruments/spectral/spectraphon_analyzer.vibe";
+import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(80);
 
-let arr = allocate_buffer("array_capture_spec_arrays", 65536, 1);
+let arr = allocate_buffer("array_capture_arrays", 65536, 1);
 
-// Two helper voices share one Array buffer. `spec_cap` owns the SAM capture
-// path for bars 0-7; `spec_play` owns SAO playback from bar 8 onward.
 let capture_demo = define_group("ArrayCapture", || {
-    let cap = spectraphon::spectraphon_side("spec_cap", "sam_capture");
-    cap = spectraphon::spectraphon_set_param(cap, "freq", 110.0);
-    cap = spectraphon::spectraphon_set_param(cap, "partials", 0.85);
-    cap = spectraphon::spectraphon_set_param(cap, "bufnum", arr.bufnum);
-    cap = spectraphon::spectraphon_set_param(cap, "array_idx", 0.0);
-    cap = spectraphon::spectraphon_set_param(cap, "slide", 0.0);
-    cap = spectraphon::spectraphon_set_param(cap, "focus", 0.0);
-    cap = spectraphon::spectraphon_set_param(cap, "amp", 0.25);
-    cap = spectraphon::spectraphon_gain(cap, db(-9));
-    cap = spectraphon::spectraphon_run(cap);
+    // Capture leg: analyzer + oscillator in SAM-capture mode share mag_buf
+    // and write into the SAO array buffer.
+    let cap_fft = allocate_buffer("cap_fft", 2048, 1);
+    let cap_mag = allocate_buffer("cap_mag", 64, 1);
 
-    let play = spectraphon::spectraphon_side("spec_play", "sao");
-    play = spectraphon::spectraphon_set_param(play, "freq", 110.0);
-    play = spectraphon::spectraphon_set_param(play, "partials", 0.85);
-    play = spectraphon::spectraphon_set_param(play, "bufnum", arr.bufnum);
-    play = spectraphon::spectraphon_set_param(play, "array_idx", 0.0);
-    play = spectraphon::spectraphon_set_param(play, "slide", 0.0);
-    play = spectraphon::spectraphon_set_param(play, "focus", 0.0);
-    play = spectraphon::spectraphon_set_param(play, "amp", 0.0);
-    play = spectraphon::spectraphon_gain(play, db(-9));
-    play = spectraphon::spectraphon_run(play);
+    let cap_analyzer = voice("cap_analyzer")
+        .synth("spectraphon_analyzer")
+        .set_param("fft_buf", cap_fft.bufnum)
+        .set_param("mag_buf", cap_mag.bufnum)
+        .set_param("f0_analyze", 50.0);
+    cap_analyzer.output("noop").mute();
 
-    spectraphon::spectraphon_outputs_to_current_group(cap, ["sine", "odd", "even"]);
-    spectraphon::spectraphon_output(cap, "sub").mute();
-    spectraphon::spectraphon_outputs_to_current_group(play, ["sine", "odd", "even"]);
-    spectraphon::spectraphon_output(play, "sub").mute();
+    let cap_osc = voice("cap_osc")
+        .synth("spectraphon_oscillator")
+        .set_param("freq", 110.0)
+        .set_param("partials", 0.85)
+        .set_param("amp", 0.25)
+        .set_param("mode", 1.0)
+        .set_param("mag_buf", cap_mag.bufnum)
+        .set_param("array_buf", arr.bufnum)
+        .set_param("slide", 0.0)
+        .set_param("focus", 0.0)
+        .set_param("array_idx", 0.0)
+        .gain(db(-9));
 
-    melody("hold_cap").on(cap.oscillator).notes("A2").apply();
-    melody("hold_play").on(play.oscillator).notes("A2").apply();
+    // Playback leg: pure SAO read of the captured array buffer.
+    let play_osc = voice("play_osc")
+        .synth("spectraphon_oscillator")
+        .set_param("freq", 110.0)
+        .set_param("partials", 0.85)
+        .set_param("amp", 0.0)
+        .set_param("mode", 2.0)
+        .set_param("array_buf", arr.bufnum)
+        .set_param("slide", 0.0)
+        .set_param("focus", 0.0)
+        .set_param("array_idx", 0.0)
+        .gain(db(-9));
+
+    cap_osc.output("sine").to_current_group();
+    cap_osc.output("odd").to_current_group();
+    cap_osc.output("even").to_current_group();
+    cap_osc.output("sub").mute();
+    play_osc.output("sine").to_current_group();
+    play_osc.output("odd").to_current_group();
+    play_osc.output("even").to_current_group();
+    play_osc.output("sub").mute();
+
+    cap_analyzer.run();
+    cap_osc.run();
+    play_osc.run();
 
     // ---- Capture phase fades (bars 0–7) -----------------------------
     //
     // Slide does one slow pass 0 → 1 across all 8 bars of capture so
     // every column of the 8×8 grid gets visited.
     fade("cap_slide")
-        .on_voice("spec_cap__oscillator")
+        .on_voice("cap_osc")
         .param("slide")
         .from(0.0)
         .to(1.0)
@@ -87,7 +109,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .apply();
 
     fade("cap_f0")
-        .on_voice("spec_cap__analyzer")
+        .on_voice("cap_analyzer")
         .param("f0_analyze")
         .from(50.0)
         .to(800.0)
@@ -96,12 +118,9 @@ let capture_demo = define_group("ArrayCapture", || {
         .apply();
 
     // Focus does two faster passes (0 → 1, 0 → 1) over the same 8 bars
-    // so every cell in the 8×8 grid is hit at least once. (The serpentine
-    // doesn't quite cover all 64 cells uniformly — corners and the
-    // diagonal get more frames than the centre — but every cell index
-    // is reached.)
+    // so every cell in the 8×8 grid is hit at least once.
     fade("cap_focus_a")
-        .on_voice("spec_cap__oscillator")
+        .on_voice("cap_osc")
         .param("focus")
         .from(0.0)
         .to(1.0)
@@ -109,7 +128,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("linear")
         .apply();
     fade("cap_focus_b")
-        .on_voice("spec_cap__oscillator")
+        .on_voice("cap_osc")
         .param("focus")
         .from(0.0)
         .to(1.0)
@@ -117,7 +136,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("linear")
         .apply();
     fade("cap_analyze_focus_a")
-        .on_voice("spec_cap__analyzer")
+        .on_voice("cap_analyzer")
         .param("focus")
         .from(0.0)
         .to(1.0)
@@ -125,7 +144,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("linear")
         .apply();
     fade("cap_analyze_focus_b")
-        .on_voice("spec_cap__analyzer")
+        .on_voice("cap_analyzer")
         .param("focus")
         .from(0.0)
         .to(1.0)
@@ -133,24 +152,26 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("linear")
         .apply();
 
+    // Voice swap at bar 8: silence the capture leg AND switch its mode
+    // from sam_capture (1.0) to sam_live (0.0) so the array writes stop.
     fade("cap_amp_off")
-        .on_voice("spec_cap__oscillator")
+        .on_voice("cap_osc")
         .param("amp")
         .from(0.25)
         .to(0.0)
         .over_bars(1)
         .curve("step")
         .apply();
-    fade("capture_off")
-        .on_voice("spec_cap__oscillator")
-        .param("capture")
+    fade("cap_mode_off")
+        .on_voice("cap_osc")
+        .param("mode")
         .from(1.0)
         .to(0.0)
         .over_bars(1)
         .curve("step")
         .apply();
     fade("play_amp_on")
-        .on_voice("spec_play__oscillator")
+        .on_voice("play_osc")
         .param("amp")
         .from(0.0)
         .to(0.25)
@@ -159,13 +180,8 @@ let capture_demo = define_group("ArrayCapture", || {
         .apply();
 
     // ---- Playback phase fades (bars 8–15) ---------------------------
-    //
-    // Diagonal scan across the captured Array — slide and focus both
-    // sweep 0 → 1 → 0 over 8 bars. Different trajectory than the capture
-    // so the bilinear interpolation between cells is audible (each cell
-    // is approached from a new corner).
     fade("play_slide_up")
-        .on_voice("spec_play__oscillator")
+        .on_voice("play_osc")
         .param("slide")
         .from(0.0)
         .to(1.0)
@@ -173,7 +189,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("sine_in_out")
         .apply();
     fade("play_slide_down")
-        .on_voice("spec_play__oscillator")
+        .on_voice("play_osc")
         .param("slide")
         .from(1.0)
         .to(0.0)
@@ -182,7 +198,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .apply();
 
     fade("play_focus_up")
-        .on_voice("spec_play__oscillator")
+        .on_voice("play_osc")
         .param("focus")
         .from(0.0)
         .to(1.0)
@@ -190,7 +206,7 @@ let capture_demo = define_group("ArrayCapture", || {
         .curve("sine_in_out")
         .apply();
     fade("play_focus_down")
-        .on_voice("spec_play__oscillator")
+        .on_voice("play_osc")
         .param("focus")
         .from(1.0)
         .to(0.0)
@@ -211,8 +227,6 @@ let capture_demo = define_group("ArrayCapture", || {
 // start at bar 8 so the SAO scan begins immediately after the swap lands.
 sequence("array_capture")
     .loop_bars(16)
-    .clip(bars(0)..bars(16), melody("hold_cap"))
-    .clip(bars(0)..bars(16), melody("hold_play"))
     // Capture phase
     .clip(bars(0)..bars(8),  fade("cap_slide"))
     .clip(bars(0)..bars(8),  fade("cap_f0"))
@@ -222,7 +236,7 @@ sequence("array_capture")
     .clip(bars(4)..bars(8),  fade("cap_analyze_focus_b"))
     // Voice swap
     .clip(bars(8)..bars(9),  fade("cap_amp_off"))
-    .clip(bars(8)..bars(9),  fade("capture_off"))
+    .clip(bars(8)..bars(9),  fade("cap_mode_off"))
     .clip(bars(8)..bars(9),  fade("play_amp_on"))
     // Playback phase
     .clip(bars(8)..bars(12), fade("play_slide_up"))

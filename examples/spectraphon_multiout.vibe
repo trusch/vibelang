@@ -1,16 +1,16 @@
-// Spectraphon multi-output routing demo (Multi-output Story 12)
-// + script-allocated Array buffer (hot-reload-safe Story C memory).
+// Spectraphon multi-output routing demo.
 //
-// Demonstrates the four named output ports on `spectraphon_side` and the
-// `voice.output(name).to(group)` / `.to_main()` Rhai routing surface
-// (Story 8 of the multi-output / CV-routing epic), plus the
-// `allocate_buffer(name, frames, channels)` API that gives the synthdef
-// 65,536 floats of Array memory whose contents survive hot-reload.
+// Demonstrates the four named output ports on `spectraphon_oscillator`
+// (sine, sub, odd, even) and the `voice.output(name).to(group)` /
+// `.to_main()` per-port routing surface, plus the `allocate_buffer(name,
+// frames, channels)` API that gives the synthdef Array memory whose
+// contents survive hot-reload.
 //
 // Topology:
 //
 //   sine ─────────────────────────────────► main bus  (raw fundamental)
-//   sub  ─────────────────────────────────► main bus  (DC-coupled CV path)
+//   sub  ─────────────────────────────────► main bus  (saw at 0.5×freq,
+//                                                      only audible in SAO)
 //   odd  ──► leads (mix bus)               ─► main bus
 //   even ──► fx_evens (reverb_jpverb)      ─► main bus
 //
@@ -18,29 +18,23 @@
 // even-bank harmonics are the "shimmery" partials that benefit from heavy
 // reverb, while the odd bank stays present and articulated. Sending only
 // `even` through the reverb bus keeps the fundamental tight and lets the
-// reverb wash decorate the upper-spectrum content.
-//
-// The `sine` and `sub` ports route straight to the main hardware output
-// (bypassing any group-level FX) so the clean fundamental and CV-style
-// sub stay un-coloured.
+// reverb wash decorate the upper-spectrum content. `sine` and `sub` route
+// straight to main so the clean fundamental and the saw sub stay
+// un-coloured by group-level FX.
 //
 // Array memory: `allocate_buffer("spec_arrays", 65536, 1)` registers a
 // top-level mono buffer with the runtime. The same call in a future
-// reload returns the same `bufnum` (deterministic name → ID mapping in
-// the Rhai layer), so SC does NOT free the buffer between reloads —
-// any captured magnitudes (SAM capture mode) stay readable in
-// SAO mode after editing the synthdef body.
+// reload returns the same `bufnum`, so SC does NOT free the buffer
+// between reloads — any captured magnitudes (SAM-capture mode) stay
+// readable in SAO mode after editing the synthdef body.
 
-import "stdlib/instruments/spectral/spectraphon_side.vibe" as spectraphon;
+import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(72);
 
-// Mix-only group for the odd-bank summed signal. No group-level FX —
-// the odd partials stay dry and articulated.
 define_group("leads", || { });
 
-// FX group for the even-bank: a long, lush jpverb wash.
 define_group("fx_evens", || {
     fx("evens_verb")
         .synth("reverb_jpverb")
@@ -50,34 +44,23 @@ define_group("fx_evens", || {
         .apply();
 });
 
-// Allocate the shared Array memory. 16 arrays × 8×8 grid × 64 partials
-// = 65,536 floats. The buffer survives hot-reload as long as this call
-// stays in the script — captured Arrays persist across synthdef edits.
 let arr = allocate_buffer("spec_arrays", 65536, 1);
 
-// One spectraphon_side voice driving all four ports. `.group("leads")` sets
-// the *default* group for any port that isn't explicitly routed; we then
-// override per-port below.
-let v = spectraphon::spectraphon_side("spec", "sao");
-v = spectraphon::spectraphon_group(v, "leads");
-v = spectraphon::spectraphon_set_param(v, "partials", 0.85);
-v = spectraphon::spectraphon_set_param(v, "slide", 0.55);
-v = spectraphon::spectraphon_set_param(v, "focus", 0.45);
-v = spectraphon::spectraphon_set_param(v, "amp", 0.25);
-v = spectraphon::spectraphon_set_param(v, "bufnum", arr.bufnum);      // override the helper's default Array buffer
-v = spectraphon::spectraphon_gain(v, db(-9));
-v = spectraphon::spectraphon_run(v);
+let v = voice("spec")
+    .synth("spectraphon_oscillator")
+    .group("leads")
+    .set_param("partials", 0.85)
+    .set_param("slide", 0.55)
+    .set_param("focus", 0.45)
+    .set_param("freq", 220.0)
+    .set_param("amp", 0.25)
+    .set_param("mode", 2.0)
+    .set_param("array_buf", arr.bufnum)
+    .gain(db(-9));
 
-// Per-port routing. `odd` reuses the voice's current group ("leads") via
-// `to_current_group()` — saves a redundant `group(...)` handle lookup when
-// the destination is the same group already set on the voice.
-spectraphon::spectraphon_output(v, "sine").to_main();
-spectraphon::spectraphon_output(v, "sub").to_main();
-spectraphon::spectraphon_output(v, "odd").to_current_group();
-spectraphon::spectraphon_output(v, "even").to(group("fx_evens"));
+v.output("sine").to_main();
+v.output("sub").to_main();
+v.output("odd").to_current_group();
+v.output("even").to(group("fx_evens"));
 
-// Hold a 3-note arpeggio through the multi-bus topology.
-melody("spec_arp")
-    .on(v.oscillator)
-    .notes("A3 C4 E4")
-    .start();
+v.run();

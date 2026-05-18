@@ -1,8 +1,16 @@
-// Spectraphon drone — single-side SAO hello-world.
-// Uses the built-in SAO fallback spectrum so the patch makes sound without
-// hardware input, then routes the odd/even banks through a long jpverb tail.
+// Spectraphon drone — single SAO oscillator hello-world.
+//
+// Uses the built-in SAO fallback spectrum (1/k harmonic series when the
+// array buffer is empty), then routes the odd/even banks through a long
+// jpverb tail.
+//
+// SAO mode (mode = 2.0) reads from the array buffer with bilinear
+// (slide, focus) interpolation. With no captured spectrum loaded the
+// oscillator falls back to the 1/k partial weighting documented in
+// spectraphon_oscillator.vibe — clean enough to drive a drone with.
+// No analyzer voice is needed in SAO mode.
 
-import "stdlib/instruments/spectral/spectraphon_side.vibe" as spectraphon;
+import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 define_group("pad_wash", || {
@@ -12,11 +20,19 @@ define_group("pad_wash", || {
         .param("mix", 0.5);
 });
 
-let pad = spectraphon::spectraphon_side("pad", "sao");
-pad = spectraphon::spectraphon_set_param(pad, "freq", 110.0);
-pad = spectraphon::spectraphon_set_param(pad, "partials", 0.7);
-pad = spectraphon::spectraphon_set_param(pad, "amp", 0.4);
-pad = spectraphon::spectraphon_run(pad);
+let pad_array = allocate_buffer("pad_arrays", 65536, 1);
 
-spectraphon::spectraphon_outputs_to(pad, ["odd", "even"], group("pad_wash"));
-spectraphon::spectraphon_outputs_mute(pad, ["sine", "sub"]);
+let pad = voice("pad_osc")
+    .synth("spectraphon_oscillator")
+    .set_param("freq", 110.0)
+    .set_param("partials", 0.7)
+    .set_param("amp", 0.4)
+    .set_param("mode", 2.0)
+    .set_param("array_buf", pad_array.bufnum);
+
+pad.output("odd").to(group("pad_wash"));
+pad.output("even").to(group("pad_wash"));
+pad.output("sine").mute();
+pad.output("sub").mute();
+
+pad.run();

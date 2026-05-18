@@ -1,47 +1,56 @@
-// Spectraphon Story F1 — dual-side chord patch with FM and Follow.
+// Spectraphon dual-side chord patch.
 //
-// Demonstrates `spectraphon_dual`'s two distinguishing features over
-// stacking two `spectraphon_side` voices:
-//
-//   1. The audio-rate FM bus between the two sides — each side's clean
-//      reference sine modulates the other side's f0 with depth scaled
-//      by the carrier (`a_fm_index`, `b_fm_index`).
-//   2. The Follow-mode pitch ratio menu (`routing_mode`) — sets B's
-//      pitch as a fixed musical interval above A.
-//
-// The four named outputs (`odd_a`, `even_a`, `odd_b`, `even_b`) are routed
-// into the group together for a summed chord texture. With `routing_mode=2`
-// (perfect fifth) and a touch of FM index,
-// the sides produce the spectral chord families described in
-// `kb/spectraphon-synthdef-plan.md` §3.e.
-//
-// See also: kb/spectraphon-howto.md §6, §7, §8c.
+// Two SAO oscillators tuned a perfect fifth apart (B = A · 1.4983),
+// fed by separate Array buffers and summed into a reverb wash. With the
+// previous `routing_mode` follow-helper gone, side B's frequency is
+// computed explicitly from side A's at script time. No analyzers needed
+// in SAO mode.
 
-import "stdlib/instruments/spectral/spectraphon_dual.vibe" as spectraphon;
+import "stdlib/instruments/spectral/spectraphon_oscillator.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(72);
 
-// Side A drives the chord root. Side B follows A at +7 semitones
-// (`routing_mode = 2.0`); freq_b is unused while Follow is engaged.
-// `partials = 0.85` reveals 54 of 64 partials at the per-partial mask;
-// `focus = 0.7` then multiplies the reveal scale by 1.55× (denser
-// timbre) per the dual synthdef's focus_scale mapping.
-let chord = define_group("SpectraChord", || {
-    let v = spectraphon::spectraphon_dual("dual", "sao", "sao");
-    v = spectraphon::spectraphon_set_param(v, "freq_a", 110.0);        // A2
-    v = spectraphon::spectraphon_set_param(v, "partials_a", 0.85);
-    v = spectraphon::spectraphon_set_param(v, "partials_b", 0.85);
-    v = spectraphon::spectraphon_set_param(v, "slide_a", 0.6);         // tilt toward odd partials
-    v = spectraphon::spectraphon_set_param(v, "slide_b", 0.6);
-    v = spectraphon::spectraphon_set_param(v, "focus_a", 0.7);         // moderately dense
-    v = spectraphon::spectraphon_set_param(v, "focus_b", 0.7);
-    v = spectraphon::spectraphon_set_param(v, "routing_mode", 2.0);    // B = A · 1.4983 (perfect fifth)
-    v = spectraphon::spectraphon_set_param(v, "amp", 0.22);
-    v = spectraphon::spectraphon_gain(v, db(-9));
-    v = spectraphon::spectraphon_run(v);
+let freq_a = 110.0;                  // A2
+let freq_b = freq_a * 1.4983;        // ~perfect fifth above
 
-    spectraphon::spectraphon_outputs_to_current_group(v, ["odd_a", "even_a", "odd_b", "even_b"]);
+let chord = define_group("SpectraChord", || {
+    let arr_a = allocate_buffer("chord_array_a", 65536, 1);
+    let arr_b = allocate_buffer("chord_array_b", 65536, 1);
+
+    let osc_a = voice("chord_a")
+        .synth("spectraphon_oscillator")
+        .set_param("freq", freq_a)
+        .set_param("partials", 0.85)
+        .set_param("slide", 0.6)
+        .set_param("focus", 0.7)
+        .set_param("amp", 0.22)
+        .set_param("mode", 2.0)
+        .set_param("array_buf", arr_a.bufnum)
+        .gain(db(-9));
+
+    let osc_b = voice("chord_b")
+        .synth("spectraphon_oscillator")
+        .set_param("freq", freq_b)
+        .set_param("partials", 0.85)
+        .set_param("slide", 0.6)
+        .set_param("focus", 0.7)
+        .set_param("amp", 0.22)
+        .set_param("mode", 2.0)
+        .set_param("array_buf", arr_b.bufnum)
+        .gain(db(-9));
+
+    osc_a.output("odd").to_current_group();
+    osc_a.output("even").to_current_group();
+    osc_a.output("sine").mute();
+    osc_a.output("sub").mute();
+    osc_b.output("odd").to_current_group();
+    osc_b.output("even").to_current_group();
+    osc_b.output("sine").mute();
+    osc_b.output("sub").mute();
+
+    osc_a.run();
+    osc_b.run();
 
     fx("chord_verb")
         .synth("reverb_jpverb")

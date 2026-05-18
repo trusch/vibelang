@@ -54,35 +54,41 @@ RUST_LOG=info ./target/release/vibe examples/resynthesizer/main.vibe
 
 ## Topology
 
-`main.vibe` allocates one short script buffer, bakes it with the stdlib
-`morphagene_reel_fill` synthdef, plays that Reel through stdlib Morphagene as a
-granular stereo source, and routes Morphagene's `left`/`right` outputs directly
-into Spectraphon dual SAM inputs for frequency-domain resynthesis. Spectraphon's
-odd/even side outputs feed X-PAN's mono named inputs directly, while Morphagene
-dry and Spectraphon sine side outputs are paired by hard-panned stdlib X-PAN
-voices before they feed stereo-only aux inputs. The main X-PAN output runs
-through QPAS, DXG, and Mimeophon, with Mimeophon as the final processor on the
-main rack material before the rack group reaches the main bus. TEMPI, Rene,
-MATHS, Wogglebug, PrssPnt, and CV Bus run as control-rate voices that clock and
-bend the source, blend, filter, gate, and delay parameters. All running voices
-live in the single `rack` group.
+`main.vibe` instantiates two Spectraphon synthdefs explicitly — one
+`spectraphon_analyzer` (real FFT + per-harmonic BinData tap) and one
+`spectraphon_oscillator` per side (64-partial additive bank with
+mode-dispatched SAM/SAO behavior). Side A runs as an SAO oscillator (mode
+= 2.0); side B runs as a SAM-live oscillator (mode = 0.0) fed by a single
+analyzer that taps side A's clean sine output. Side A's clean sine also
+drives a Morphagene SOS/granular leg whose direct playback path is muted
+because the worktree's Morphagene buffer reader still fails standalone.
+
+Side A and side B's odd/even outputs feed X-PAN's four named inputs. The
+main X-PAN output runs through QPAS, DXG, and Mimeophon; Mimeophon is the
+final processor on the main rack material before the rack group reaches
+the main bus. TEMPI, Rene, MATHS, and Wogglebug run as control-rate voices
+that clock and bend the source, blend, filter, gate, and delay parameters.
+All running voices live in the single `rack` group.
 
 ```text
 SOURCE LAYER
-  baked Reel -> Morphagene grains left/right --+--> Spectraphon analyze_a/analyze_b
-                                               +--> dry hard-L/R pair -> X-PAN aux / DXG ch2
+  spec_a_osc (mode=2.0 SAO) --+--> sine ----> Morphagene SOS leg
+                              |        \----> spec_b_analyzer.analyze
+                              +--> odd ----> X-PAN ch1_a
+                              +--> even ---> X-PAN ch2_a
+                              +--> sub  ---> (audible only in SAO)
 
-  Spectraphon dual SAM odd/even/sine outputs
-         |
-         +--> odd_a/odd_b  -> X-PAN ch1_a/ch1_b
-         +--> even_a/even_b -> X-PAN ch2_a/ch2_b
-         +--> sine_a/sine_b -> sine hard-L/R pair -> DXG aux
+  spec_b_analyzer (FFT + BinData) writes mag_buf
+
+  spec_b_osc (mode=0.0 SAM live) reads mag_buf
+                              --+--> odd ----> X-PAN ch1_b
+                                +--> even ---> X-PAN ch2_b
 
 MODULATION LAYER (kr)
   TEMPI -> Rene clocks, MATHS triggers, Morphagene clk, Mimeophon repeats
-  Rene  -> Spectraphon pitch, Morphagene organize, CV Bus
-  MATHS -> Morphagene gene/morph, Spectraphon FM, QPAS Q, DXG ctrl
-  Wogglebug + PrssPnt + CV Bus -> pan, fade, radiate, cutoff, zone, mix
+  Rene  -> Spectraphon side A/B pitch, Morphagene organize, QPAS radiate
+  MATHS -> Morphagene gene/morph, Spectraphon slide/focus, QPAS Q, DXG ctrl
+  Wogglebug -> Spectraphon partials, X-PAN fade, QPAS cutoff, Mimeophon color
 
 STEREO PROCESSOR CHAIN
   X-PAN -> QPAS -> DXG -> Mimeophon -> rack group -> main bus
