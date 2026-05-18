@@ -23,7 +23,7 @@ import "stdlib/processors/filters/qpas.vibe";
 import "stdlib/processors/dynamics/dxg.vibe";
 import "stdlib/processors/delays/mimeophon.vibe";
 import "stdlib/instruments/spectral/spectraphon.vibe";
-import "stdlib/theory/core.vibe";
+import "stdlib/theory/core.vibe" as theory;
 
 set_tempo(96);
 
@@ -53,7 +53,7 @@ let tempi = voice("clk")
 let rene = voice("seq")
     .synth("rene")
     .group("rack")
-    .set_param("scale_mask", scale_mask_from_notes(["C", "D", "Eb", "F", "G", "Ab", "Bb"]))
+    .set_param("scale_mask", theory::scale_mask_from_notes(["C", "D", "Eb", "F", "G", "Ab", "Bb"]))
     .set_param("mode", 1.0)
     .set_param("memory", 0.18)
     .set_param("note00", 60.0).set_param("note01", 64.0)
