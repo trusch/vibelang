@@ -17,7 +17,7 @@
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget, RouteDest};
-use vibelang_core::reload::ParamRouteConflict;
+use vibelang_core::reload::{ParamRouteConflict, ParamRouteKind};
 use vibelang_core::types::VoiceId;
 use vibelang_dsp::{get_synthdef_outputs, get_synthdef_param_defaults, OutputPort, PortRate};
 
@@ -126,59 +126,21 @@ impl RouteHandle {
     /// [`ScriptState::param_routes`](vibelang_core::reload::ScriptState::param_routes),
     /// which feeds [`RoutesHandler::finalize_params`](vibelang_core::handlers::RoutesHandler::finalize_params)'s
     /// `/n_map` pipeline at reload time.
-    pub fn to_param(
-        mut self,
-        target: Voice,
-        param_name: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
+    pub fn to_param(self, target: Voice, param_name: String) -> Result<Self, Box<EvalAltResult>> {
         let mut target = target;
         target.resolve_name();
         let target_name = target.name.clone();
         let target_synth = target.get_synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Kr => {}
-            Some(p) => {
-                return Err(ar_rate_to_param_error(&self.port_name, &src_synth, p.rate));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let target_id = context::get_or_create_voice_id(&target_name);
-        let target = ParamRouteTarget::Voice(target_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_set(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_param", &c));
-        }
-        self.last_param_target = Some((target, param_name));
-        Ok(self)
+        self.to_param_target(
+            ParamRouteKind::Set,
+            ParamSourceValidation::ToParam,
+            "to_param",
+            ParamRouteTarget::Voice(target_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
     }
 
     /// Install a CV-to-param route from this audio-rate output port to the
@@ -199,7 +161,7 @@ impl RouteHandle {
     /// routes from the same source share that adapter rather than each
     /// allocating a new kr bus.
     pub fn to_param_audio(
-        mut self,
+        self,
         target: Voice,
         param_name: String,
     ) -> Result<Self, Box<EvalAltResult>> {
@@ -207,54 +169,16 @@ impl RouteHandle {
         target.resolve_name();
         let target_name = target.name.clone();
         let target_synth = target.get_synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Ar => {}
-            Some(p) => {
-                return Err(kr_or_tr_rate_to_param_audio_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let target_id = context::get_or_create_voice_id(&target_name);
-        let target = ParamRouteTarget::Voice(target_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_set(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_param_audio", &c));
-        }
-        self.last_param_target = Some((target, param_name));
-        Ok(self)
+        self.to_param_target(
+            ParamRouteKind::Set,
+            ParamSourceValidation::ToParamAudio,
+            "to_param_audio",
+            ParamRouteTarget::Voice(target_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
     }
 
     /// Install a CV-to-param route from this **trigger-rate** (`Tr`) output
@@ -279,53 +203,16 @@ impl RouteHandle {
         target.resolve_name();
         let target_name = target.name.clone();
         let target_synth = target.get_synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Tr => {}
-            Some(p) => {
-                return Err(non_tr_rate_to_trigger_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let target_id = context::get_or_create_voice_id(&target_name);
-        let target = ParamRouteTarget::Voice(target_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_trigger(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_trigger", &c));
-        }
-        Ok(self)
+        self.to_param_target(
+            ParamRouteKind::Trigger,
+            ParamSourceValidation::ToTrigger,
+            "to_trigger",
+            ParamRouteTarget::Voice(target_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
     }
 
     /// Set the per-source `scale` factor on the most-recently-installed
@@ -378,117 +265,41 @@ impl RouteHandle {
     /// Fx-target variant of [`Self::to_param`]. Same semantics, but the
     /// route's target is an [`Fx`]'s param instead of a Voice's. Rhai
     /// dispatches by argument type so the surface verb is just `.to_param`.
-    pub fn to_param_fx(
-        mut self,
-        target: Fx,
-        param_name: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
+    pub fn to_param_fx(self, target: Fx, param_name: String) -> Result<Self, Box<EvalAltResult>> {
         let target_name = target.id.clone();
         let target_synth = target.synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Kr => {}
-            Some(p) => {
-                return Err(ar_rate_to_param_error(&self.port_name, &src_synth, p.rate));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let effect_id = context::get_or_create_effect_id(&target_name);
-        let target = ParamRouteTarget::Effect(effect_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_set(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_param", &c));
-        }
-        self.last_param_target = Some((target, param_name));
-        Ok(self)
+        self.to_param_target(
+            ParamRouteKind::Set,
+            ParamSourceValidation::ToParam,
+            "to_param",
+            ParamRouteTarget::Effect(effect_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
     }
 
     /// Fx-target variant of [`Self::to_param_audio`]. ar source coerced to
     /// kr via the shared `a2k_adapter_1`, then routed into the target fx's
     /// param via the same summer infrastructure as voice targets.
     pub fn to_param_audio_fx(
-        mut self,
+        self,
         target: Fx,
         param_name: String,
     ) -> Result<Self, Box<EvalAltResult>> {
         let target_name = target.id.clone();
         let target_synth = target.synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Ar => {}
-            Some(p) => {
-                return Err(kr_or_tr_rate_to_param_audio_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let effect_id = context::get_or_create_effect_id(&target_name);
-        let target = ParamRouteTarget::Effect(effect_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_set(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_param_audio", &c));
-        }
-        self.last_param_target = Some((target, param_name));
-        Ok(self)
+        self.to_param_target(
+            ParamRouteKind::Set,
+            ParamSourceValidation::ToParamAudio,
+            "to_param_audio",
+            ParamRouteTarget::Effect(effect_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
     }
 
     /// Fx-target variant of [`Self::to_trigger`]. Tr-rate sources forward
@@ -497,51 +308,41 @@ impl RouteHandle {
     pub fn to_trigger_fx(self, target: Fx, param_name: String) -> Result<Self, Box<EvalAltResult>> {
         let target_name = target.id.clone();
         let target_synth = target.synth_name();
-
-        let src_synth = source_synthdef_name(self.voice_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == self.port_name) {
-            Some(p) if p.rate == PortRate::Tr => {}
-            Some(p) => {
-                return Err(non_tr_rate_to_trigger_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
-            }
-            None => {
-                return Err(missing_source_port_error(
-                    &self.port_name,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&target_synth);
-        if !target_params.contains_key(&param_name) {
-            return Err(unknown_target_param_error(
-                &target_name,
-                &target_synth,
-                &param_name,
-                &target_params,
-            ));
-        }
-
         let effect_id = context::get_or_create_effect_id(&target_name);
-        let target = ParamRouteTarget::Effect(effect_id);
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_trigger(
-                    self.voice_id,
-                    self.port_name.clone(),
-                    target,
-                    param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("to_trigger", &c));
+        self.to_param_target(
+            ParamRouteKind::Trigger,
+            ParamSourceValidation::ToTrigger,
+            "to_trigger",
+            ParamRouteTarget::Effect(effect_id),
+            target_name,
+            target_synth,
+            param_name,
+        )
+    }
+
+    fn to_param_target(
+        mut self,
+        kind: ParamRouteKind,
+        validation: ParamSourceValidation,
+        verb: &'static str,
+        target: ParamRouteTarget,
+        target_name: String,
+        target_synth: String,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        install_param_route(
+            kind,
+            self.voice_id,
+            self.port_name.clone(),
+            target,
+            &target_name,
+            &target_synth,
+            param_name.clone(),
+            validation,
+            verb,
+        )?;
+        if kind != ParamRouteKind::Trigger {
+            self.last_param_target = Some((target, param_name));
         }
         Ok(self)
     }
@@ -552,6 +353,116 @@ impl RouteHandle {
             state.set_route(self.voice_id, self.port_name.clone(), dest);
         });
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ParamSourceValidation {
+    ToParam,
+    ToParamAudio,
+    ToTrigger,
+    ModulateBy,
+}
+
+impl ParamSourceValidation {
+    fn required_rate(self) -> PortRate {
+        match self {
+            Self::ToParam | Self::ModulateBy => PortRate::Kr,
+            Self::ToParamAudio => PortRate::Ar,
+            Self::ToTrigger => PortRate::Tr,
+        }
+    }
+
+    fn source_rate_error(self, port: &str, synth: &str, rate: PortRate) -> Box<EvalAltResult> {
+        match self {
+            Self::ToParam => ar_rate_to_param_error(port, synth, rate),
+            Self::ToParamAudio => kr_or_tr_rate_to_param_audio_error(port, synth, rate),
+            Self::ToTrigger => non_tr_rate_to_trigger_error(port, synth, rate),
+            Self::ModulateBy => modulate_by_ar_rate_error(port, synth, rate),
+        }
+    }
+
+    fn missing_source_port_error(
+        self,
+        port: &str,
+        synth: &str,
+        outputs: &[OutputPort],
+    ) -> Box<EvalAltResult> {
+        match self {
+            Self::ModulateBy => modulate_by_missing_source_port_error(port, synth, outputs),
+            Self::ToParam | Self::ToParamAudio | Self::ToTrigger => {
+                missing_source_port_error(port, synth, outputs)
+            }
+        }
+    }
+
+    fn unknown_target_param_error(
+        self,
+        target_name: &str,
+        target_synth: &str,
+        param: &str,
+        available: &std::collections::HashMap<String, f32>,
+    ) -> Box<EvalAltResult> {
+        match self {
+            Self::ModulateBy => {
+                modulate_by_unknown_target_param_error(target_name, target_synth, param, available)
+            }
+            Self::ToParam | Self::ToParamAudio | Self::ToTrigger => {
+                unknown_target_param_error(target_name, target_synth, param, available)
+            }
+        }
+    }
+}
+
+fn install_param_route(
+    kind: ParamRouteKind,
+    source_voice: VoiceId,
+    source_port: String,
+    target: ParamRouteTarget,
+    target_name: &str,
+    target_synth: &str,
+    target_param: String,
+    validation: ParamSourceValidation,
+    conflict_verb: &str,
+) -> Result<(), Box<EvalAltResult>> {
+    let src_synth = source_synthdef_name(source_voice);
+    let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+    match src_outputs.iter().find(|p| p.name == source_port) {
+        Some(p) if p.rate == validation.required_rate() => {}
+        Some(p) => return Err(validation.source_rate_error(&source_port, &src_synth, p.rate)),
+        None => {
+            return Err(validation.missing_source_port_error(
+                &source_port,
+                &src_synth,
+                &src_outputs,
+            ))
+        }
+    }
+
+    let target_params = get_synthdef_param_defaults(target_synth);
+    if !target_params.contains_key(&target_param) {
+        return Err(validation.unknown_target_param_error(
+            target_name,
+            target_synth,
+            &target_param,
+            &target_params,
+        ));
+    }
+
+    let conflict = context::with_state(|state| {
+        state
+            .add_param_route(
+                kind,
+                source_voice,
+                source_port,
+                target,
+                target_param.clone(),
+            )
+            .err()
+    });
+    if let Some(c) = conflict {
+        return Err(param_route_conflict_error(conflict_verb, &c));
+    }
+    Ok(())
 }
 
 /// Render a `ParamRouteConflict` as a Rhai EvalAltResult error, scoped by the
@@ -780,45 +691,17 @@ impl ParamHandle {
         source.resolve_name();
         let source_id = context::get_or_create_voice_id(&source.name);
 
-        let src_synth = source_synthdef_name(source_id);
-        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
-        match src_outputs.iter().find(|p| p.name == port) {
-            Some(p) if p.rate == PortRate::Kr => {}
-            Some(p) => {
-                return Err(modulate_by_ar_rate_error(&port, &src_synth, p.rate));
-            }
-            None => {
-                return Err(modulate_by_missing_source_port_error(
-                    &port,
-                    &src_synth,
-                    &src_outputs,
-                ));
-            }
-        }
-
-        let target_params = get_synthdef_param_defaults(&self.target_synth);
-        if !target_params.contains_key(&self.param_name) {
-            return Err(modulate_by_unknown_target_param_error(
-                &self.target_name,
-                &self.target_synth,
-                &self.param_name,
-                &target_params,
-            ));
-        }
-
-        let conflict = context::with_state(|state| {
-            state
-                .add_param_route_bend(
-                    source_id,
-                    port.clone(),
-                    self.target,
-                    self.param_name.clone(),
-                )
-                .err()
-        });
-        if let Some(c) = conflict {
-            return Err(param_route_conflict_error("modulate_by", &c));
-        }
+        install_param_route(
+            ParamRouteKind::Bend,
+            source_id,
+            port.clone(),
+            self.target,
+            &self.target_name,
+            &self.target_synth,
+            self.param_name.clone(),
+            ParamSourceValidation::ModulateBy,
+            "modulate_by",
+        )?;
         self.last_modulate_source = Some((source_id, port));
         Ok(self)
     }
@@ -1905,7 +1788,7 @@ mod tests {
                     .param_route_set_shaping
                     .get(&key)
                     .copied()
-                    .expect("shaping entry seeded by add_param_route_set");
+                    .expect("shaping entry seeded by add_param_route");
                 assert_eq!(scale, 1.0);
                 assert_eq!(offset, 0.0);
             });
@@ -1940,7 +1823,7 @@ mod tests {
                     .param_route_bend_shaping
                     .get(&key)
                     .copied()
-                    .expect("shaping entry seeded by add_param_route_bend");
+                    .expect("shaping entry seeded by add_param_route");
                 assert_eq!(scale, 1.0);
                 assert_eq!(offset, 0.0);
             });

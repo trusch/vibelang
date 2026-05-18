@@ -68,7 +68,8 @@ pub use diff::{
 pub use port_diff::{diff_port_set, reconcile_voice_ports, PortReconcile, PortSetDiff};
 pub use script_state::{
     reconcile_voice_input_ports, BodyContribution, EffectConfig, GroupAliasError, GroupAliasTarget,
-    GroupConfig, InputPortDropReason, InputPortReconcile, ParamRouteConflict, ScriptState,
+    GroupConfig, InputPortDropReason, InputPortReconcile, ParamRouteConflict, ParamRouteKind,
+    ScriptState,
 };
 // ChangeQuant is defined in this module and exported directly
 

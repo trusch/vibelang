@@ -146,6 +146,14 @@ pub struct EffectConfig {
     pub params: ParamMap,
 }
 
+/// Script-side param-route registry selected by the public routing verb.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParamRouteKind {
+    Set,
+    Bend,
+    Trigger,
+}
+
 /// Configuration for routing a MIDI keyboard to a voice.
 #[cfg(feature = "midi")]
 #[derive(Clone, Debug, PartialEq)]
@@ -1065,20 +1073,15 @@ impl ScriptState {
         self.input_route_order.retain(|ordered| ordered != &key);
     }
 
-    /// Install a SET-semantic CV-to-param route (`.to_param` verb) from
-    /// `(source_voice, source_port)` to `(target, target_param)`. The target
-    /// can be either a Voice or an Effect — see [`ParamRouteTarget`].
+    /// Install a param route into the registry selected by `kind`.
     ///
-    /// Returns an error if `(target, target_param)` is already routed via
-    /// the BEND map (`.modulate_by`) or the TRIGGER map (`.to_trigger`) —
-    /// the three verbs are mutually exclusive on the same target — or if a
-    /// *different* SET source already targets the same `(target,
-    /// target_param)` (multi-source SET is disallowed; use `.modulate_by`
-    /// for additive multi-source fan-in). A repeat call with the same
-    /// `(source, target)` quad is a deduplicated no-op, so re-runs of a
-    /// script don't accumulate dupes.
-    pub fn add_param_route_set(
+    /// SET (`.to_param` / `.to_param_audio`) and TRIGGER (`.to_trigger`)
+    /// reject a different source for the same `(target, param)`; BEND
+    /// (`.modulate_by`) accepts additive fan-in. All three kinds remain
+    /// mutually exclusive with each other for a given `(target, param)`.
+    pub fn add_param_route(
         &mut self,
+        kind: ParamRouteKind,
         source_voice: VoiceId,
         source_port: impl Into<String>,
         target: ParamRouteTarget,
@@ -1088,148 +1091,92 @@ impl ScriptState {
         let target_param = target_param.into();
         let target_pair = (target, target_param.clone());
 
-        if route_map_contains_target(&self.param_routes_bend, &target_pair)
-            || route_map_contains_target(&self.param_routes_trigger, &target_pair)
-        {
+        let cross_verb_conflict = match kind {
+            ParamRouteKind::Set => {
+                route_map_contains_target(&self.param_routes_bend, &target_pair)
+                    || route_map_contains_target(&self.param_routes_trigger, &target_pair)
+            }
+            ParamRouteKind::Bend => {
+                route_map_contains_target(&self.param_routes_set, &target_pair)
+                    || route_map_contains_target(&self.param_routes_trigger, &target_pair)
+            }
+            ParamRouteKind::Trigger => {
+                route_map_contains_target(&self.param_routes_set, &target_pair)
+                    || route_map_contains_target(&self.param_routes_bend, &target_pair)
+            }
+        };
+        if cross_verb_conflict {
             return Err(ParamRouteConflict::CrossVerb {
                 target,
                 target_param,
             });
         }
-        // Reject a *different* SET source pointing at the same target — only
-        // the existing identical entry is allowed (idempotent re-run).
-        for ((sv, sp), targets) in self.param_routes_set.iter() {
-            if (*sv != source_voice || *sp != source_port)
-                && targets.iter().any(|t| t == &target_pair)
-            {
-                return Err(ParamRouteConflict::MultiSourceSet {
-                    target,
-                    target_param,
-                });
+
+        match kind {
+            ParamRouteKind::Set => {
+                // Reject a *different* SET source pointing at the same
+                // target — only the existing identical entry is allowed
+                // (idempotent re-run).
+                for ((sv, sp), targets) in self.param_routes_set.iter() {
+                    if (*sv != source_voice || *sp != source_port)
+                        && targets.iter().any(|t| t == &target_pair)
+                    {
+                        return Err(ParamRouteConflict::MultiSourceSet {
+                            target,
+                            target_param,
+                        });
+                    }
+                }
+            }
+            ParamRouteKind::Bend => {}
+            ParamRouteKind::Trigger => {
+                for ((sv, sp), targets) in self.param_routes_trigger.iter() {
+                    if (*sv != source_voice || *sp != source_port)
+                        && targets.iter().any(|t| t == &target_pair)
+                    {
+                        return Err(ParamRouteConflict::MultiSourceTrigger {
+                            target,
+                            target_param,
+                        });
+                    }
+                }
             }
         }
 
         let source_key = (source_voice, source_port.clone());
-        let should_add = !self
-            .param_routes_set
-            .get(&source_key)
-            .map(|entry| entry.iter().any(|t| t == &target_pair))
-            .unwrap_or(false);
-        if should_add {
-            self.record_param_route_set_order(source_voice, &source_port);
+        let should_add = !match kind {
+            ParamRouteKind::Set => &self.param_routes_set,
+            ParamRouteKind::Bend => &self.param_routes_bend,
+            ParamRouteKind::Trigger => &self.param_routes_trigger,
         }
-        let entry = self.param_routes_set.entry(source_key).or_default();
+        .get(&source_key)
+        .map(|entry| entry.iter().any(|t| t == &target_pair))
+        .unwrap_or(false);
+        if should_add {
+            self.record_param_route_order(kind, source_voice, &source_port);
+        }
+        let entry = match kind {
+            ParamRouteKind::Set => &mut self.param_routes_set,
+            ParamRouteKind::Bend => &mut self.param_routes_bend,
+            ParamRouteKind::Trigger => &mut self.param_routes_trigger,
+        }
+        .entry(source_key)
+        .or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
-        self.param_route_set_shaping
-            .entry((source_voice, source_port, target, target_param))
-            .or_insert((1.0, 0.0));
-        Ok(())
-    }
-
-    /// Install a BEND-semantic CV-to-param route (`.modulate_by` verb) from
-    /// `(source_voice, source_port)` to `(target, target_param)`. The target
-    /// can be either a Voice or an Effect — see [`ParamRouteTarget`].
-    ///
-    /// Returns an error if `(target, target_param)` is already routed via
-    /// the SET map (`.to_param`) or the TRIGGER map (`.to_trigger`).
-    /// Additive across multiple sources on the same target — that's the
-    /// whole point of BEND. A repeat call with the same `(source, target)`
-    /// quad is deduplicated.
-    pub fn add_param_route_bend(
-        &mut self,
-        source_voice: VoiceId,
-        source_port: impl Into<String>,
-        target: ParamRouteTarget,
-        target_param: impl Into<String>,
-    ) -> Result<(), ParamRouteConflict> {
-        let source_port = source_port.into();
-        let target_param = target_param.into();
-        let target_pair = (target, target_param.clone());
-
-        if route_map_contains_target(&self.param_routes_set, &target_pair)
-            || route_map_contains_target(&self.param_routes_trigger, &target_pair)
-        {
-            return Err(ParamRouteConflict::CrossVerb {
-                target,
-                target_param,
-            });
-        }
-
-        let source_key = (source_voice, source_port.clone());
-        let should_add = !self
-            .param_routes_bend
-            .get(&source_key)
-            .map(|entry| entry.iter().any(|t| t == &target_pair))
-            .unwrap_or(false);
-        if should_add {
-            self.record_param_route_bend_order(source_voice, &source_port);
-        }
-        let entry = self.param_routes_bend.entry(source_key).or_default();
-        if !entry.iter().any(|t| t == &target_pair) {
-            entry.push(target_pair);
-        }
-        self.param_route_bend_shaping
-            .entry((source_voice, source_port, target, target_param))
-            .or_insert((1.0, 0.0));
-        Ok(())
-    }
-
-    /// Install a TRIGGER-semantic CV-to-param route (`.to_trigger` verb)
-    /// from a Tr-rate `(source_voice, source_port)` to `(target,
-    /// target_param)`. The target can be either a Voice or an Effect — see
-    /// [`ParamRouteTarget`].
-    ///
-    /// Returns an error if `(target, target_param)` is already routed via
-    /// the SET map (`.to_param`) or the BEND map (`.modulate_by`) — the
-    /// three verbs are mutually exclusive on the same target — or if a
-    /// *different* TRIGGER source already targets the same `(target,
-    /// target_param)` (multi-source TRIGGER fan-in is disallowed; trigger
-    /// routing is 1:1, not summable). A repeat call with the same
-    /// `(source, target)` quad is a deduplicated no-op.
-    pub fn add_param_route_trigger(
-        &mut self,
-        source_voice: VoiceId,
-        source_port: impl Into<String>,
-        target: ParamRouteTarget,
-        target_param: impl Into<String>,
-    ) -> Result<(), ParamRouteConflict> {
-        let source_port = source_port.into();
-        let target_param = target_param.into();
-        let target_pair = (target, target_param.clone());
-
-        if route_map_contains_target(&self.param_routes_set, &target_pair)
-            || route_map_contains_target(&self.param_routes_bend, &target_pair)
-        {
-            return Err(ParamRouteConflict::CrossVerb {
-                target,
-                target_param,
-            });
-        }
-        for ((sv, sp), targets) in self.param_routes_trigger.iter() {
-            if (*sv != source_voice || *sp != source_port)
-                && targets.iter().any(|t| t == &target_pair)
-            {
-                return Err(ParamRouteConflict::MultiSourceTrigger {
-                    target,
-                    target_param,
-                });
+        match kind {
+            ParamRouteKind::Set => {
+                self.param_route_set_shaping
+                    .entry((source_voice, source_port, target, target_param))
+                    .or_insert((1.0, 0.0));
             }
-        }
-
-        let source_key = (source_voice, source_port.clone());
-        let should_add = !self
-            .param_routes_trigger
-            .get(&source_key)
-            .map(|entry| entry.iter().any(|t| t == &target_pair))
-            .unwrap_or(false);
-        if should_add {
-            self.record_param_route_trigger_order(source_voice, &source_port);
-        }
-        let entry = self.param_routes_trigger.entry(source_key).or_default();
-        if !entry.iter().any(|t| t == &target_pair) {
-            entry.push(target_pair);
+            ParamRouteKind::Bend => {
+                self.param_route_bend_shaping
+                    .entry((source_voice, source_port, target, target_param))
+                    .or_insert((1.0, 0.0));
+            }
+            ParamRouteKind::Trigger => {}
         }
         Ok(())
     }
@@ -1258,36 +1205,20 @@ impl ScriptState {
         }
     }
 
-    fn record_param_route_set_order(&mut self, source_voice: VoiceId, source_port: &str) {
+    fn record_param_route_order(
+        &mut self,
+        kind: ParamRouteKind,
+        source_voice: VoiceId,
+        source_port: &str,
+    ) {
         let key = (source_voice, source_port.to_string());
-        if !self
-            .param_route_set_order
-            .iter()
-            .any(|ordered| ordered == &key)
-        {
-            self.param_route_set_order.push(key);
-        }
-    }
-
-    fn record_param_route_bend_order(&mut self, source_voice: VoiceId, source_port: &str) {
-        let key = (source_voice, source_port.to_string());
-        if !self
-            .param_route_bend_order
-            .iter()
-            .any(|ordered| ordered == &key)
-        {
-            self.param_route_bend_order.push(key);
-        }
-    }
-
-    fn record_param_route_trigger_order(&mut self, source_voice: VoiceId, source_port: &str) {
-        let key = (source_voice, source_port.to_string());
-        if !self
-            .param_route_trigger_order
-            .iter()
-            .any(|ordered| ordered == &key)
-        {
-            self.param_route_trigger_order.push(key);
+        let order = match kind {
+            ParamRouteKind::Set => &mut self.param_route_set_order,
+            ParamRouteKind::Bend => &mut self.param_route_bend_order,
+            ParamRouteKind::Trigger => &mut self.param_route_trigger_order,
+        };
+        if !order.iter().any(|ordered| ordered == &key) {
+            order.push(key);
         }
     }
 
@@ -1295,7 +1226,7 @@ impl ScriptState {
     ///
     /// Lazily creates the entry at the default `(1.0, 0.0)` if not already
     /// present (the route should have been installed via
-    /// [`Self::add_param_route_set`] first; bare callers still get sensible
+    /// [`Self::add_param_route`] first; bare callers still get sensible
     /// defaults). Multi-call: last `.scale()` wins — this overwrites the
     /// scale slot leaving offset untouched.
     pub fn set_param_route_set_scale(
@@ -1560,8 +1491,7 @@ pub fn reconcile_voice_input_ports(
     }
 }
 
-/// Reasons a `add_param_route_set` / `add_param_route_bend` /
-/// `add_param_route_trigger` call may fail.
+/// Reasons an [`ScriptState::add_param_route`] call may fail.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParamRouteConflict {
     /// The same `(target, target_param)` is already wired via a different
@@ -2043,7 +1973,8 @@ mod tests {
     fn test_param_route_order_is_recorded_deterministically() {
         let mut state = ScriptState::new();
         state
-            .add_param_route_bend(
+            .add_param_route(
+                ParamRouteKind::Bend,
                 VoiceId::new(2),
                 "env",
                 ParamRouteTarget::Voice(VoiceId::new(10)),
@@ -2051,7 +1982,8 @@ mod tests {
             )
             .unwrap();
         state
-            .add_param_route_bend(
+            .add_param_route(
+                ParamRouteKind::Bend,
                 VoiceId::new(1),
                 "lfo",
                 ParamRouteTarget::Voice(VoiceId::new(10)),
@@ -2059,7 +1991,8 @@ mod tests {
             )
             .unwrap();
         state
-            .add_param_route_bend(
+            .add_param_route(
+                ParamRouteKind::Bend,
                 VoiceId::new(2),
                 "env",
                 ParamRouteTarget::Voice(VoiceId::new(10)),

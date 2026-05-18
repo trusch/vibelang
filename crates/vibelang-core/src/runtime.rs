@@ -2762,6 +2762,7 @@ mod tests {
     use super::*;
     use crate::backend::{AddAction, BufferInfo};
     use crate::handlers::RouteDest;
+    use crate::reload::ParamRouteKind;
     use crate::state::GroupState;
     use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
     use std::collections::HashMap;
@@ -4280,10 +4281,22 @@ mod tests {
 
         let mut routed = base;
         routed
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target_a), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target_a),
+                "cutoff",
+            )
             .unwrap();
         routed
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target_b), "pitch")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target_b),
+                "pitch",
+            )
             .unwrap();
         routed.running_voices.insert(target_a);
         routed.running_voices.insert(target_b);
@@ -4378,10 +4391,22 @@ mod tests {
 
         let mut routed = base;
         routed
-            .add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src_a,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         routed
-            .add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src_b,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         routed.running_voices.insert(target);
 
@@ -4456,7 +4481,13 @@ mod tests {
         routed.running_voices.insert(src);
         routed.running_voices.insert(target);
         routed
-            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "freq",
+            )
             .unwrap();
         routed.set_param_route_set_scale(src, "out", ParamRouteTarget::Voice(target), "freq", 2.0);
         routed.set_param_route_set_offset(src, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
@@ -4566,7 +4597,13 @@ mod tests {
         routed.running_voices.insert(src);
         routed.running_voices.insert(target);
         routed
-            .add_param_route_bend(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "freq",
+            )
             .unwrap();
         routed.set_param_route_bend_scale(src, "out", ParamRouteTarget::Voice(target), "freq", 4.0);
         routed.set_param_route_bend_offset(
@@ -4682,7 +4719,13 @@ mod tests {
         routed.running_voices.insert(src);
         routed.running_voices.insert(target);
         routed
-            .add_param_route_trigger(src, "trig", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Trigger,
+                src,
+                "trig",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
 
         runtime.apply_reload(routed).await.unwrap();
@@ -4791,7 +4834,13 @@ mod tests {
 
         let mut routed = base.clone();
         routed
-            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "freq",
+            )
             .unwrap();
         routed.set_param_route_set_scale(
             src,
@@ -4904,12 +4953,24 @@ mod tests {
         runtime.apply_reload(base.clone()).await.unwrap();
 
         let mut two = base.clone();
-        two.add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "freq")
-            .unwrap();
+        two.add_param_route(
+            ParamRouteKind::Bend,
+            src_a,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+        )
+        .unwrap();
         two.set_param_route_bend_scale(src_a, "out", ParamRouteTarget::Voice(target), "freq", 30.0);
         two.set_param_route_bend_offset(src_a, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
-        two.add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "freq")
-            .unwrap();
+        two.add_param_route(
+            ParamRouteKind::Bend,
+            src_b,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+        )
+        .unwrap();
         two.set_param_route_bend_scale(src_b, "out", ParamRouteTarget::Voice(target), "freq", 40.0);
         two.set_param_route_bend_offset(src_b, "out", ParamRouteTarget::Voice(target), "freq", 4.0);
         runtime.apply_reload(two).await.unwrap();
@@ -4944,8 +5005,14 @@ mod tests {
         assert_eq!(fan_in_create.params.get("offset_b"), Some(&4.0));
 
         let mut one = base.clone();
-        one.add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "freq")
-            .unwrap();
+        one.add_param_route(
+            ParamRouteKind::Bend,
+            src_a,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+        )
+        .unwrap();
         one.set_param_route_bend_scale(src_a, "out", ParamRouteTarget::Voice(target), "freq", 30.0);
         one.set_param_route_bend_offset(src_a, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
         runtime.apply_reload(one).await.unwrap();
@@ -5030,7 +5097,13 @@ mod tests {
 
         let mut routed = base.clone();
         routed
-            .add_param_route_trigger(src, "trig", ParamRouteTarget::Voice(target), "trig")
+            .add_param_route(
+                ParamRouteKind::Trigger,
+                src,
+                "trig",
+                ParamRouteTarget::Voice(target),
+                "trig",
+            )
             .unwrap();
         runtime.apply_reload(routed).await.unwrap();
 
@@ -5113,7 +5186,13 @@ mod tests {
         );
         routed.running_voices.insert(target);
         routed
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(routed).await.unwrap();
 
@@ -5206,10 +5285,22 @@ mod tests {
         );
         two_sources.running_voices.insert(target);
         two_sources
-            .add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src_a,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         two_sources
-            .add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src_b,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(two_sources).await.unwrap();
 
@@ -5234,7 +5325,13 @@ mod tests {
         );
         one_source.running_voices.insert(target);
         one_source
-            .add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Bend,
+                src_b,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(one_source).await.unwrap();
 
@@ -5313,7 +5410,13 @@ mod tests {
         );
         routed.running_voices.insert(target);
         routed
-            .add_param_route_trigger(src, "trig", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Trigger,
+                src,
+                "trig",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
         runtime.apply_reload(routed).await.unwrap();
 
@@ -5394,7 +5497,13 @@ mod tests {
         );
         initial.running_voices.insert(target);
         initial
-            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(initial).await.unwrap();
 
@@ -5417,7 +5526,13 @@ mod tests {
         );
         recreated.running_voices.insert(target);
         recreated
-            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "out",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(recreated).await.unwrap();
 
@@ -5505,7 +5620,13 @@ mod tests {
         old_state.running_voices.insert(target);
         old_state.set_route(src, "env", RouteDest::Group(group));
         old_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(old_state.clone()).await.unwrap();
 
@@ -5553,7 +5674,13 @@ mod tests {
         let mut new_state = old_state;
         new_state.routes.remove(&(src, "env".to_string()));
         new_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(new_state).await.unwrap();
 
@@ -5640,7 +5767,13 @@ mod tests {
         old_state.add_voice(target, VoiceConfig::new("target", target_synth, group));
         old_state.running_voices.insert(target);
         old_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(old_state.clone()).await.unwrap();
 
@@ -5673,7 +5806,13 @@ mod tests {
         let mut new_state = old_state;
         new_state.set_route(src, "env", RouteDest::Group(group));
         new_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "cutoff")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "cutoff",
+            )
             .unwrap();
         runtime.apply_reload(new_state).await.unwrap();
 
@@ -5767,7 +5906,13 @@ mod tests {
         old_state.add_voice(target, VoiceConfig::new("target", target_synth, group));
         old_state.running_voices.insert(target);
         old_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
         runtime.apply_reload(old_state.clone()).await.unwrap();
 
@@ -5792,7 +5937,13 @@ mod tests {
         let mut new_state = old_state;
         new_state.param_routes_set.remove(&(src, "env".to_string()));
         new_state
-            .add_param_route_trigger(src, "env", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Trigger,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
         runtime.apply_reload(new_state).await.unwrap();
 
@@ -5870,7 +6021,13 @@ mod tests {
         old_state.add_voice(target, VoiceConfig::new("target", target_synth, group));
         old_state.running_voices.insert(target);
         old_state
-            .add_param_route_trigger(src, "env", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Trigger,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
         runtime.apply_reload(old_state.clone()).await.unwrap();
 
@@ -5897,7 +6054,13 @@ mod tests {
             .param_routes_trigger
             .remove(&(src, "env".to_string()));
         new_state
-            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target), "gate")
+            .add_param_route(
+                ParamRouteKind::Set,
+                src,
+                "env",
+                ParamRouteTarget::Voice(target),
+                "gate",
+            )
             .unwrap();
         runtime.apply_reload(new_state).await.unwrap();
 
