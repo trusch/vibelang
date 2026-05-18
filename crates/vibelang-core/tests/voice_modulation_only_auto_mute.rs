@@ -4,11 +4,12 @@
 //! a voice used purely as a modulation source (its outputs only feed
 //! `.to_param` / `.to_param_audio` / `.modulate_by` / `.to_trigger`)
 //! should NOT have its count-based default `Group(voice_group)` mix
-//! emitted by Phase 4.7. Without the suppression, an LFO voice's raw
-//! waveform leaks into its surrounding group's audio bus.
+//! emitted by `Runtime::phase_finalize_output_routes`. Without the
+//! suppression, an LFO voice's raw waveform leaks into its surrounding
+//! group's audio bus.
 //!
 //! Each test runs the same suppress → merge → diff → finalize sequence
-//! the runtime executes in `Runtime::apply_reload` Phase 4.7, so the
+//! the runtime executes in `Runtime::phase_finalize_output_routes`, so the
 //! assertion target is the observable backend effect: which (if any)
 //! `port_to_group_link_<n>` mixer synths get spawned, against which
 //! buses.
@@ -346,7 +347,7 @@ async fn add_group(state: &Arc<RwLock<State>>, id: u32, name: &str) -> (GroupId,
 }
 
 /// Run the same diff-time effective-route computation and finalize sequence
-/// the runtime executes in `Runtime::apply_reload` Phase 4.7.
+/// the runtime executes in `Runtime::phase_finalize_output_routes`.
 async fn diff_effective_routes_finalize(
     h: &Harness,
     user_routes: &RouteMap,

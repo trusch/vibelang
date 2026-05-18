@@ -5,7 +5,7 @@
 //! [`VoicesHandler::create`] (Story 5: installs `state.default_routes` from
 //! the synthdef's [`vibelang_dsp::OutputPort`] set, applying the
 //! count-based rules) and the route reconcile pipeline that
-//! [`crate::runtime::Runtime::apply_reload`] runs in Phase 4.7
+//! [`crate::runtime::Runtime::phase_finalize_output_routes`] runs
 //! (merge_default_routes → RoutesHandler::diff → RoutesHandler::finalize).
 //!
 //! Rather than reaching into `state.default_routes` and stopping there,
@@ -261,7 +261,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
 }
 
 /// Run the same merge → diff → finalize sequence the runtime executes in
-/// `Runtime::apply_reload` Phase 4.7. `user_routes` carries any explicit
+/// `Runtime::phase_finalize_output_routes`. `user_routes` carries any explicit
 /// `voice.output(...).to(...)` entries the script supplied; for the four
 /// pure-default scenarios this is empty.
 async fn merge_diff_finalize(h: &Harness, user_routes: &RouteMap) -> RouteMap {
