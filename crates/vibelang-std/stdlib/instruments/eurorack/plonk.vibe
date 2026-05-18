@@ -31,25 +31,25 @@
 define_synthdef("plonk", |builder| {
     builder
         .output("out")
-        .param("trig", 0.0)
-        .param("vel", 0.8)
-        .param("pitch", 60.0)
-        .param("freq", 0.0)
-        .param("x", 0.5)
-        .param("y", 0.5)
-        .param("exciter_mode", 0.0)
-        .param("exciter_decay", 0.015)
-        .param("object_mode", 3.0)
-        .param("saturation", 0.1)
-        .param("bitcrush", 0.0)
-        .param("pitch_cv", 0.0)
-        .param("x_cv", 0.0)
-        .param("y_cv", 0.0)
-        .param("mod_cv", 0.0)
-        .param("pitch_cv_amt", 0.0)
-        .param("x_cv_amt", 0.0)
-        .param("y_cv_amt", 0.0)
-        .param("mod_cv_amt", 0.0)
+        .param("trig", 0.0)                 // 0/1 trigger input for the exciter
+        .param("vel", 0.8)                  // 0..1 exciter velocity and overall hit strength
+        .param("pitch", 60.0)               // MIDI pitch before pitch CV
+        .param("freq", 0.0)                 // direct Hz override when >0
+        .param("x", 0.5)                    // 0..1 object damping/decay macro before CV
+        .param("y", 0.5)                    // 0..1 tone/inharmonicity macro before CV
+        .param("exciter_mode", 0.0)         // rounded enum: mallet, noise, or stick exciter
+        .param("exciter_decay", 0.015)      // exciter decay time in seconds
+        .param("object_mode", 3.0)          // rounded 0..5 modal object enum
+        .param("saturation", 0.1)           // 0..1 soft drive amount
+        .param("bitcrush", 0.0)             // 0 clean, 1 reduced sample-rate/bit-depth
+        .param("pitch_cv", 0.0)             // bipolar pitch CV scaled by pitch_cv_amt
+        .param("x_cv", 0.0)                 // bipolar CV summed into x through x_cv_amt
+        .param("y_cv", 0.0)                 // bipolar CV summed into y through y_cv_amt
+        .param("mod_cv", 0.0)               // bipolar macro CV added half-strength to x and y
+        .param("pitch_cv_amt", 0.0)         // 0..1 attenuator for pitch_cv depth
+        .param("x_cv_amt", 0.0)             // 0..1 attenuator for x_cv depth
+        .param("y_cv_amt", 0.0)             // 0..1 attenuator for y_cv depth
+        .param("mod_cv_amt", 0.0)           // 0..1 attenuator for shared mod_cv depth
         .body_map(|p| {
             let vel = clip(p.vel, 0.0, 1.0);
             let pitch_cv = clip(p.pitch_cv, -1.0, 1.0) * clip(p.pitch_cv_amt, 0.0, 1.0);

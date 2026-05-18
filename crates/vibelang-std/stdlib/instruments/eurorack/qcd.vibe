@@ -24,23 +24,23 @@ define_synthdef("qcd", |builder| {
         .output_kr("ch3")
         .output_kr("ch4")
         .output_kr("tap")
-        .param("bpm", 120.0)
-        .param("div_mult_1", 1.0)
-        .param("div_mult_2", 1.0)
-        .param("div_mult_3", 1.0)
-        .param("div_mult_4", 1.0)
-        .param("reset", 0.0)
-        .param("run", 1.0)
-        .param("pulse_width", 0.5)
-        .param("trigger_delay_ch_1", 0.0)
-        .param("trigger_delay_ch_2", 0.0)
-        .param("trigger_delay_ch_3", 0.0)
-        .param("trigger_delay_ch_4", 0.0)
-        .param("mute_1", 0.0)
-        .param("mute_2", 0.0)
-        .param("mute_3", 0.0)
-        .param("mute_4", 0.0)
-        .param("tap", 0.0)
+        .param("bpm", 120.0)                // master tempo in beats per minute
+        .param("div_mult_1", 1.0)           // clock divide/multiply selector for QCD channel 1
+        .param("div_mult_2", 1.0)           // clock divide/multiply selector for QCD channel 2
+        .param("div_mult_3", 1.0)           // clock divide/multiply selector for QCD channel 3
+        .param("div_mult_4", 1.0)           // clock divide/multiply selector for QCD channel 4
+        .param("reset", 0.0)                // 0/1 reset trigger for all clock phases
+        .param("run", 1.0)                  // 0 stops outputs, 1 runs
+        .param("pulse_width", 0.5)          // clock duty cycle clipped to 0.001..0.95
+        .param("trigger_delay_ch_1", 0.0)   // seconds of phase delay for QCD channel 1
+        .param("trigger_delay_ch_2", 0.0)   // seconds of phase delay for QCD channel 2
+        .param("trigger_delay_ch_3", 0.0)   // seconds of phase delay for QCD channel 3
+        .param("trigger_delay_ch_4", 0.0)   // seconds of phase delay for QCD channel 4
+        .param("mute_1", 0.0)               // 0 active, 1 mutes QCD channel 1
+        .param("mute_2", 0.0)               // 0 active, 1 mutes QCD channel 2
+        .param("mute_3", 0.0)               // 0 active, 1 mutes QCD channel 3
+        .param("mute_4", 0.0)               // 0 active, 1 mutes QCD channel 4
+        .param("tap", 0.0)                  // 0/1 tap/reset trigger into the master phase
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * run;

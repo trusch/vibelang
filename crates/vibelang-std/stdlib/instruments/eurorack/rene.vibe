@@ -35,34 +35,34 @@ define_synthdef("rene", |builder| {
         .output_kr("gate")
         .output_kr("x_gate")
         .output_kr("y_gate")
-        .param("clock_x", 0.0)
-        .param("clock_y", 0.0)
-        .param("reset", 0.0)
-        .param("x_cv", 0.0)
-        .param("y_cv", 0.0)
-        .param("cv_addr", 0.0)
-        .param("mode", 0.0)
-        .param("scale_mask", 2741.0)
-        .param("access_x", 15.0)
-        .param("access_y", 15.0)
-        .param("memory", 0.0)
-        .param("random_seed", 0.0)
-        .param("note00", 60.0)
-        .param("note01", 62.0)
-        .param("note02", 64.0)
-        .param("note03", 67.0)
-        .param("note10", 62.0)
-        .param("note11", 64.0)
-        .param("note12", 67.0)
-        .param("note13", 69.0)
-        .param("note20", 64.0)
-        .param("note21", 67.0)
-        .param("note22", 69.0)
-        .param("note23", 71.0)
-        .param("note30", 67.0)
-        .param("note31", 69.0)
-        .param("note32", 71.0)
-        .param("note33", 72.0)
+        .param("clock_x", 0.0)              // 0/1 clock input advancing the X axis/path
+        .param("clock_y", 0.0)              // 0/1 clock input advancing the Y axis/path
+        .param("reset", 0.0)                // 0/1 reset for axis and path counters
+        .param("x_cv", 0.0)                 // 0..1 direct column address when cv_addr is high
+        .param("y_cv", 0.0)                 // 0..1 direct row address when cv_addr is high
+        .param("cv_addr", 0.0)              // 0 clocked traversal, 1 direct X/Y CV addressing
+        .param("mode", 0.0)                 // rounded path enum: cartesian, snake, free, or random
+        .param("scale_mask", 2741.0)        // 12-bit pitch-class mask for cv; see scale_mask_from_notes
+        .param("access_x", 15.0)            // 4-bit active-column mask for gate generation
+        .param("access_y", 15.0)            // 4-bit active-row mask for gate generation
+        .param("memory", 0.0)               // 0 current note, 1 average short shift-register memory
+        .param("random_seed", 0.0)          // integer seed term for seeded-random traversal mode
+        .param("note00", 60.0)              // MIDI note for Rene grid cell x0 y0 feeding cv/cv_raw
+        .param("note01", 62.0)              // MIDI note for Rene grid cell x1 y0 feeding cv/cv_raw
+        .param("note02", 64.0)              // MIDI note for Rene grid cell x2 y0 feeding cv/cv_raw
+        .param("note03", 67.0)              // MIDI note for Rene grid cell x3 y0 feeding cv/cv_raw
+        .param("note10", 62.0)              // MIDI note for Rene grid cell x0 y1 feeding cv/cv_raw
+        .param("note11", 64.0)              // MIDI note for Rene grid cell x1 y1 feeding cv/cv_raw
+        .param("note12", 67.0)              // MIDI note for Rene grid cell x2 y1 feeding cv/cv_raw
+        .param("note13", 69.0)              // MIDI note for Rene grid cell x3 y1 feeding cv/cv_raw
+        .param("note20", 64.0)              // MIDI note for Rene grid cell x0 y2 feeding cv/cv_raw
+        .param("note21", 67.0)              // MIDI note for Rene grid cell x1 y2 feeding cv/cv_raw
+        .param("note22", 69.0)              // MIDI note for Rene grid cell x2 y2 feeding cv/cv_raw
+        .param("note23", 71.0)              // MIDI note for Rene grid cell x3 y2 feeding cv/cv_raw
+        .param("note30", 67.0)              // MIDI note for Rene grid cell x0 y3 feeding cv/cv_raw
+        .param("note31", 69.0)              // MIDI note for Rene grid cell x1 y3 feeding cv/cv_raw
+        .param("note32", 71.0)              // MIDI note for Rene grid cell x2 y3 feeding cv/cv_raw
+        .param("note33", 72.0)              // MIDI note for Rene grid cell x3 y3 feeding cv/cv_raw
         .body_map(|p| {
             let mode = clip_kr(round(p.mode), 0.0, 3.0);
             let clock_any = clip_kr(p.clock_x + p.clock_y, 0.0, 1.0);

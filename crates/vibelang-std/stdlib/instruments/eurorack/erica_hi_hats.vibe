@@ -21,19 +21,19 @@ define_synthdef("erica_hi_hats", |builder| {
         .output("out", 1)
         .output("ch", 1)
         .output("oh", 1)
-        .param("ch_trig", 0.0)
-        .param("oh_trig", 0.0)
-        .param("accent", 0.0)
-        .param("tone", 0.5)
-        .param("tone_cv", 0.0)
-        .param("tone_cv_amt", 0.0)
-        .param("ch_decay", 0.05)
-        .param("ch_decay_cv", 0.0)
-        .param("ch_decay_cv_amt", 0.0)
-        .param("oh_decay", 0.4)
-        .param("oh_decay_cv", 0.0)
-        .param("oh_decay_cv_amt", 0.0)
-        .param("exclusive", 1.0)
+        .param("ch_trig", 0.0)              // 0/1 trigger input for the closed hat voice
+        .param("oh_trig", 0.0)              // 0/1 trigger input for the open hat voice
+        .param("accent", 0.0)               // 0..1 shared level boost for both hats
+        .param("tone", 0.5)                 // 0..1 filter brightness before tone CV
+        .param("tone_cv", 0.0)              // bipolar tone CV summed through tone_cv_amt
+        .param("tone_cv_amt", 0.0)          // 0..1 attenuator for tone_cv depth
+        .param("ch_decay", 0.05)            // closed-hat decay control before CV
+        .param("ch_decay_cv", 0.0)          // bipolar CV for closed-hat decay
+        .param("ch_decay_cv_amt", 0.0)      // 0..1 attenuator for closed decay CV
+        .param("oh_decay", 0.4)             // open-hat decay control before CV
+        .param("oh_decay_cv", 0.0)          // bipolar CV for open-hat decay
+        .param("oh_decay_cv_amt", 0.0)      // 0..1 attenuator for open decay CV
+        .param("exclusive", 1.0)            // 0 allows overlap, 1 lets open hat choke closed hat
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let exclusive = clip(p.exclusive, 0.0, 1.0);

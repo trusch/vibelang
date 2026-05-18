@@ -31,17 +31,17 @@ define_synthdef("verbos_random_sampling", |builder| {
         .output_kr("asr2")
         .output_kr("asr3")
         .output_kr("asr4")
-        .param("rate", 4.0)
-        .param("rate_cv", 0.0)
-        .param("rate_cv_amt", 0.0)
-        .param("bits", 4.0)
-        .param("distribution", 0.0)
-        .param("clock_in", 0.0)
-        .param("clock_trig", 0.0)
-        .param("sample_in", 0.0)
-        .param("depth_v", 5.0)
-        .param("bipolar", 1.0)
-        .param("noise_level", 1.0)
+        .param("rate", 4.0)                 // internal random/sample clock rate in Hz
+        .param("rate_cv", 0.0)              // CV added to rate through rate_cv_amt
+        .param("rate_cv_amt", 0.0)          // 0..1 attenuator for rate_cv depth
+        .param("bits", 4.0)                 // rounded quantizer depth, 1..8 bits
+        .param("distribution", 0.0)         // 0 uniform, 1 more centered random voltages
+        .param("clock_in", 0.0)             // 0 internal clock, 1 use clock_trig input
+        .param("clock_trig", 0.0)           // external 0/1 sample clock when clock_in is high
+        .param("sample_in", 0.0)            // external ASR source; near zero uses internal noise
+        .param("depth_v", 5.0)              // output depth in volts, mapped to CV range by /10
+        .param("bipolar", 1.0)              // 0 unipolar, 1 bipolar random CV outputs
+        .param("noise_level", 1.0)          // 0..1 audio noise output level
         .body_map(|p| {
             let rate_cv_amt = clip(p.rate_cv_amt, 0.0, 1.0);
             let rate = (p.rate + p.rate_cv * rate_cv_amt).max(0.001);

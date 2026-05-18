@@ -26,14 +26,14 @@ define_synthdef("erica_vc_clock", |builder| {
         .output_kr("shuffle")
         .output_kr("random")
         .output_kr("reset")
-        .param("bpm", 120.0)
-        .param("run", 1.0)
-        .param("division", 1.0)
-        .param("shuffle", 0.0)
-        .param("duty", 0.5)
-        .param("random_rate", 1.0)
-        .param("reset_in", 0.0)
-        .param("reset_mode", 0.0)
+        .param("bpm", 120.0)                // master tempo in beats per minute
+        .param("run", 1.0)                  // 0 stops all clock outputs, 1 runs
+        .param("division", 1.0)             // rounded divider selector for the div output
+        .param("shuffle", 0.0)              // 0..0.5 delay for alternating master pulses
+        .param("duty", 0.5)                 // gate duty cycle clipped to 0.05..0.95
+        .param("random_rate", 1.0)          // Hz rate for the independent random gate stream
+        .param("reset_in", 0.0)             // 0/1 reset trigger with Schmitt thresholding
+        .param("reset_mode", 0.0)           // 0 hard reset now, 1 queue reset to division edge
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (clip_kr(p.bpm, 30.0, 300.0) / 60.0) * run;

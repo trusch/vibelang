@@ -42,30 +42,30 @@ define_synthdef("maths", |builder| {
         .output_kr("eoc1")
         .output_kr("eor4")
         .output_kr("eoc4")
-        .param("rise1", 0.05)
-        .param("rise1_cv", 0.0)
-        .param("rise1_cv_scale", 1.0)
-        .param("fall1", 0.5)
-        .param("fall1_cv", 0.0)
-        .param("fall1_cv_scale", 1.0)
-        .param("shape1", 0.5)
-        .param("cycle1", 0.0)
-        .param("trig1", 0.0)
-        .param("rise4", 0.05)
-        .param("rise4_cv", 0.0)
-        .param("rise4_cv_scale", 1.0)
-        .param("fall4", 0.5)
-        .param("fall4_cv", 0.0)
-        .param("fall4_cv_scale", 1.0)
-        .param("shape4", 0.5)
-        .param("cycle4", 0.0)
-        .param("trig4", 0.0)
-        .param("ch2", 0.0)
-        .param("ch2_scale", 0.5)
-        .param("ch2_offset", 0.0)
-        .param("ch3", 0.0)
-        .param("ch3_scale", 0.5)
-        .param("ch3_offset", 0.0)
+        .param("rise1", 0.05)               // base rise time in seconds for function channel 1
+        .param("rise1_cv", 0.0)             // bipolar CV bending rise time for channel 1
+        .param("rise1_cv_scale", 1.0)       // bipolar amount for channel 1 rise CV
+        .param("fall1", 0.5)                // base fall time in seconds for function channel 1
+        .param("fall1_cv", 0.0)             // bipolar CV bending fall time for channel 1
+        .param("fall1_cv_scale", 1.0)       // bipolar amount for channel 1 fall CV
+        .param("shape1", 0.5)               // curve morph for function channel 1
+        .param("cycle1", 0.0)               // 0 one-shot, >0 self-cycles function channel 1
+        .param("trig1", 0.0)                // trigger input for function channel 1
+        .param("rise4", 0.05)               // base rise time in seconds for function channel 4
+        .param("rise4_cv", 0.0)             // bipolar CV bending rise time for channel 4
+        .param("rise4_cv_scale", 1.0)       // bipolar amount for channel 4 rise CV
+        .param("fall4", 0.5)                // base fall time in seconds for function channel 4
+        .param("fall4_cv", 0.0)             // bipolar CV bending fall time for channel 4
+        .param("fall4_cv_scale", 1.0)       // bipolar amount for channel 4 fall CV
+        .param("shape4", 0.5)               // curve morph for function channel 4
+        .param("cycle4", 0.0)               // 0 one-shot, >0 self-cycles function channel 4
+        .param("trig4", 0.0)                // trigger input for function channel 4
+        .param("ch2", 0.0)                  // patchable utility CV input for channel 2
+        .param("ch2_scale", 0.5)            // attenuverter knob for utility channel 2
+        .param("ch2_offset", 0.0)           // DC offset added after channel 2 scaling
+        .param("ch3", 0.0)                  // patchable utility CV input for channel 3
+        .param("ch3_scale", 0.5)            // attenuverter knob for utility channel 3
+        .param("ch3_offset", 0.0)           // DC offset added after channel 3 scaling
         .body_map(|p| {
             let rise1_cv = clip(p.rise1_cv * p.rise1_cv_scale, -1.0, 1.0);
             let fall1_cv = clip(p.fall1_cv * p.fall1_cv_scale, -1.0, 1.0);

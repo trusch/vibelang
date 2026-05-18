@@ -31,25 +31,25 @@ define_synthdef("erica_bassline", |builder| {
         .output("tri")
         .output("square")
         .output("sub")
-        .param("gate", 0.0)
-        .param("accent", 0.0)
-        .param("voct", 36.0)
-        .param("freq", 0.0)
-        .param("wave", 1.0)
-        .param("sub_level", 0.3)
-        .param("detune", 0.1)
-        .param("cutoff", 400.0)
-        .param("cutoff_cv", 0.0)
-        .param("resonance", 0.6)
-        .param("filter_mode", 0.0)
-        .param("vcf_decay", 0.3)
-        .param("vcf_env_amt", 0.7)
-        .param("vca_decay", 0.4)
-        .param("level", 0.8)
-        .param("fm", 0.0)
-        .param("fm_cv", 0.0)
-        .param("cutoff_cv_amt", 0.0)
-        .param("beef", 0.3)
+        .param("gate", 0.0)                 // 0/1 note gate that triggers VCF and VCA envelopes
+        .param("accent", 0.0)               // 0..1 level and filter/pitch emphasis for the hit
+        .param("voct", 36.0)                // MIDI-note-style pitch source used when freq is zero
+        .param("freq", 0.0)                 // direct Hz override when >0, before FM
+        .param("wave", 1.0)                 // rounded oscillator selector: 0 triangle, 1 square
+        .param("sub_level", 0.3)            // 0..1 sub oscillator amount in the filter feed
+        .param("detune", 0.1)               // 0..1 short-delay thickening amount
+        .param("cutoff", 400.0)             // base filter cutoff in Hz before envelope and CV
+        .param("cutoff_cv", 0.0)            // bipolar cutoff CV scaled by cutoff_cv_amt
+        .param("resonance", 0.6)            // 0..0.99 filter resonance
+        .param("filter_mode", 0.0)          // rounded selector: 0 low-pass, 1 band-pass
+        .param("vcf_decay", 0.3)            // 0..1 filter envelope decay time control
+        .param("vcf_env_amt", 0.7)          // 0..1 depth of VCF envelope into cutoff
+        .param("vca_decay", 0.4)            // 0..1 amplifier envelope decay time control
+        .param("level", 0.8)                // 0..1 final output VCA level
+        .param("fm", 0.0)                   // 0..1 depth for fm_cv pitch modulation
+        .param("fm_cv", 0.0)                // bipolar FM CV, up to +/-12 semitones through fm
+        .param("cutoff_cv_amt", 0.0)        // 0..1 attenuator for cutoff_cv depth
+        .param("beef", 0.3)                 // 0..1 pre-filter drive and output weight
         .body_map(|p| {
             let gate = clip(p.gate, 0.0, 1.0);
             let accent = clip(p.accent, 0.0, 1.0);

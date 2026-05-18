@@ -114,22 +114,22 @@ define_synthdef("erica_wavetable_vco", |builder| {
         .output("main", 1)
         .output("sub1", 1)
         .output("sub2", 1)
-        .param("freq", 110.0)
-        .param("voct", 0.0)
-        .param("bank", 0.0)
-        .param("wave", 0.0)
-        .param("morph", 0.0)
-        .param("bitcrush", 0.0)
-        .param("vca", 1.0)
-        .param("sub_shape", 0.0)
-        .param("sub1_level", 0.3)
-        .param("sub2_level", 0.2)
-        .param("bank_cv_amt", 0.0)
-        .param("bank_cv", 0.0)
-        .param("wave_cv_amt", 0.0)
-        .param("wave_cv", 0.0)
-        .param("bitcrush_cv_amt", 0.0)
-        .param("bitcrush_cv", 0.0)
+        .param("freq", 110.0)               // base oscillator frequency in Hz when voct is zero
+        .param("voct", 0.0)                 // MIDI-note-style pitch source; nonzero replaces freq
+        .param("bank", 0.0)                 // 0..15 wavetable bank before bank CV
+        .param("wave", 0.0)                 // 0..15 wave index inside the selected bank
+        .param("morph", 0.0)                // 0..1 blend toward the next wave cell
+        .param("bitcrush", 0.0)             // 0 clean, 1 reduced bit depth/sample-rate color
+        .param("vca", 1.0)                  // 0..1 output level shared by main and sub oscillators
+        .param("sub_shape", 0.0)            // 0 square, 0.5 triangle, 1 sine sub shape
+        .param("sub1_level", 0.3)           // 0..1 level for octave -1 sub output
+        .param("sub2_level", 0.2)           // 0..1 level for octave -2 sub output
+        .param("bank_cv_amt", 0.0)          // 0..1 attenuator for bank_cv across the bank range
+        .param("bank_cv", 0.0)              // bipolar CV added to bank selection
+        .param("wave_cv_amt", 0.0)          // 0..1 attenuator for wave_cv across the wave range
+        .param("wave_cv", 0.0)              // bipolar CV added to wave selection
+        .param("bitcrush_cv_amt", 0.0)      // 0..1 attenuator for bitcrush_cv
+        .param("bitcrush_cv", 0.0)          // bipolar CV added to bitcrush amount
         .body_map(|p| {
             let freq_hz = clip(p.freq, 0.001, 20000.0);
             let voct_on = clip(p.voct * 1000.0, 0.0, 1.0);

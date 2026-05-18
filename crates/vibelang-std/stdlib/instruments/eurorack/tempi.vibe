@@ -28,32 +28,32 @@ define_synthdef("tempi", |builder| {
         .output_kr("ch4")
         .output_kr("ch5")
         .output_kr("ch6")
-        .param("bpm", 120.0)
-        .param("run", 1.0)
-        .param("reset", 0.0)
-        .param("reset_on_scene", 1.0)
-        .param("mod", 1.0)
-        .param("scene", 0.0)
-        .param("variation", 0.0)
-        .param("width", 0.02)
-        .param("mult1", 1.0)
-        .param("mult2", 2.0)
-        .param("mult3", 0.5)
-        .param("mult4", 4.0)
-        .param("mult5", 0.25)
-        .param("mult6", 3.0)
-        .param("shift1", 0.0)
-        .param("shift2", 0.0)
-        .param("shift3", 0.0)
-        .param("shift4", 0.0)
-        .param("shift5", 0.0)
-        .param("shift6", 0.0)
-        .param("mute1", 0.0)
-        .param("mute2", 0.0)
-        .param("mute3", 0.0)
-        .param("mute4", 0.0)
-        .param("mute5", 0.0)
-        .param("mute6", 0.0)
+        .param("bpm", 120.0)                // master tempo in beats per minute
+        .param("run", 1.0)                  // 0 stops all clock outputs, 1 runs
+        .param("reset", 0.0)                // 0/1 reset trigger for the master phase
+        .param("reset_on_scene", 1.0)       // 0 keep phase on scene changes, 1 reset
+        .param("mod", 1.0)                  // nonnegative tempo multiplier for the master clock
+        .param("scene", 0.0)                // rounded 0..3 multiplier-table selector
+        .param("variation", 0.0)            // -1..1 shared phase variation across channels
+        .param("width", 0.02)               // clock pulse width in seconds
+        .param("mult1", 1.0)                // scene-0 ratio trim for clock channel 1
+        .param("mult2", 2.0)                // scene-0 ratio trim for clock channel 2
+        .param("mult3", 0.5)                // scene-0 ratio trim for clock channel 3
+        .param("mult4", 4.0)                // scene-0 ratio trim for clock channel 4
+        .param("mult5", 0.25)               // scene-0 ratio trim for clock channel 5
+        .param("mult6", 3.0)                // scene-0 ratio trim for clock channel 6
+        .param("shift1", 0.0)               // phase offset in eighth-period steps for channel 1
+        .param("shift2", 0.0)               // phase offset in eighth-period steps for channel 2
+        .param("shift3", 0.0)               // phase offset in eighth-period steps for channel 3
+        .param("shift4", 0.0)               // phase offset in eighth-period steps for channel 4
+        .param("shift5", 0.0)               // phase offset in eighth-period steps for channel 5
+        .param("shift6", 0.0)               // phase offset in eighth-period steps for channel 6
+        .param("mute1", 0.0)                // 0 active, 1 mutes clock channel 1
+        .param("mute2", 0.0)                // 0 active, 1 mutes clock channel 2
+        .param("mute3", 0.0)                // 0 active, 1 mutes clock channel 3
+        .param("mute4", 0.0)                // 0 active, 1 mutes clock channel 4
+        .param("mute5", 0.0)                // 0 active, 1 mutes clock channel 5
+        .param("mute6", 0.0)                // 0 active, 1 mutes clock channel 6
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * p.mod.max(0.0) * run;

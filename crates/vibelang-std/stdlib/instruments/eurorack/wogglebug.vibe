@@ -36,12 +36,12 @@ define_synthdef("wogglebug", |builder| {
         .output_kr("woggle")
         .output_kr("clock")
         .output_kr("woggle_clock")
-        .param("rate", 4.0)
-        .param("depth_v", 5.0)
-        .param("bipolar", 1.0)
-        .param("chaos", 0.5)
-        .param("heart", 0.75)
-        .param("vc_rate", 0.0)
+        .param("rate", 4.0)                 // clock and sample rate in Hz
+        .param("depth_v", 5.0)              // output depth in volts, mapped to CV range by /10
+        .param("bipolar", 1.0)              // 0 unipolar, 1 bipolar random CV outputs
+        .param("chaos", 0.5)                // 0 loose/smooth, 1 tightly coupled chaotic motion
+        .param("heart", 0.75)               // 0 small excursions, 1 wide chaotic excursions
+        .param("vc_rate", 0.0)              // 0 normal kr path, 1 force audio-rate clock/sample path
         .body_map(|p| {
             let rate = p.rate.max(0.001);
             let depth = clip(p.depth_v / 10.0, 0.0, 1.0);

@@ -27,22 +27,22 @@ define_synthdef("verbos_touchplate", |builder| {
         .output_kr("tune_cv")
         .output_kr("tune_gate")
         .output_kr("tune_pressure")
-        .param("key", 0.0)
-        .param("octave", 1.0)
-        .param("pressure", 0.0)
-        .param("bend", 0.0)
-        .param("tune_key", 0.0)
-        .param("tune_pressure", 0.0)
-        .param("tune1", 0.0)
-        .param("tune2", 0.1666667)
-        .param("tune3", 0.3333333)
-        .param("tune4", 0.4166667)
-        .param("tune5", 0.5833333)
-        .param("tune6", 0.75)
-        .param("tune7", 0.9166667)
-        .param("tune8", 1.0)
-        .param("threshold", 0.05)
-        .param("slew", 0.1)
+        .param("key", 0.0)                  // rounded 0..31 keyboard key index
+        .param("octave", 1.0)               // rounded 0..3 octave offset for pitch output
+        .param("pressure", 0.0)             // 0..1 main touch pressure for gate and pressure CV
+        .param("bend", 0.0)                 // -1..1 pitch bend CV output
+        .param("tune_key", 0.0)             // rounded selector for tune row slots 1..8
+        .param("tune_pressure", 0.0)        // 0..1 pressure input for the tune row gate/CV
+        .param("tune1", 0.0)                // tune-row voltage for touchplate slot 1
+        .param("tune2", 0.1666667)          // tune-row voltage for touchplate slot 2
+        .param("tune3", 0.3333333)          // tune-row voltage for touchplate slot 3
+        .param("tune4", 0.4166667)          // tune-row voltage for touchplate slot 4
+        .param("tune5", 0.5833333)          // tune-row voltage for touchplate slot 5
+        .param("tune6", 0.75)               // tune-row voltage for touchplate slot 6
+        .param("tune7", 0.9166667)          // tune-row voltage for touchplate slot 7
+        .param("tune8", 1.0)                // tune-row voltage for touchplate slot 8
+        .param("threshold", 0.05)           // 0..1 gate threshold for both pressure lanes
+        .param("slew", 0.1)                 // 0..1 pitch and pressure lag amount
         .body_map(|p| {
             let key = clip_kr(round(p.key), 0.0, 31.0);
             let octave = clip_kr(round(p.octave), 0.0, 3.0);

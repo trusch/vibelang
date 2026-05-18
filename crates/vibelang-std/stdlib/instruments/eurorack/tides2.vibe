@@ -56,17 +56,17 @@ define_synthdef("tides2", |builder| {
         .output("slope")     // 1ch - second Tides2 output
         .output("shape")     // 1ch - third Tides2 output
         .output("high")      // 1ch - fourth Tides2 output
-        .param("freq", 1.0)
-        .param("shape", 0.5)
-        .param("slope", 0.5)
-        .param("smoothness", 0.5)
-        .param("shift", 0.5)
-        .param("ramp_mode", 2.0)
-        .param("output_mode", 1.0)
-        .param("range", 1.0)
-        .param("trigger", 0.0)
-        .param("clock", 0.0)
-        .param("ratio", 0.0)
+        .param("freq", 1.0)                 // Hz in looping mode, envelope time reference otherwise
+        .param("shape", 0.5)                // 0..1 waveform shape control passed to Tides core
+        .param("slope", 0.5)                // 0..1 rise/fall slope balance
+        .param("smoothness", 0.5)           // 0..1 low-pass/folding smoothness
+        .param("shift", 0.5)                // 0..1 spread/level/ratio control by output mode
+        .param("ramp_mode", 2.0)            // rounded public enum: AD, AR, or looping
+        .param("output_mode", 1.0)          // rounded enum: gates, amplitude, phase, or frequency
+        .param("range", 1.0)                // rounded range enum: 0 audio, 1 control
+        .param("trigger", 0.0)              // 0/1 trigger or gate input to the Tides core
+        .param("clock", 0.0)                // 0/1 external clock input to the Tides core
+        .param("ratio", 0.0)                // clock ratio table index passed to the Tides core
         .body_map(|p| {
             // Public ramp_mode is 0=AD, 1=AR, 2=looping. The UGen enum is
             // 0=AD, 1=looping, 2=AR, so swap public 1 and 2.

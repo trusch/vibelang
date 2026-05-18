@@ -47,22 +47,22 @@ define_synthdef("erica_vc_eg", |builder| {
         .output_kr("eoa")
         .output_kr("eod")
         .output_kr("eor")
-        .param("gate", 0.0)
-        .param("trigger", 0.0)
-        .param("attack", 0.05)
-        .param("decay", 0.3)
-        .param("sustain", 0.5)
-        .param("release", 0.3)
-        .param("level", 1.0)
-        .param("attack_cv_amt", 0.0)
-        .param("decay_cv_amt", 0.0)
-        .param("sustain_cv_amt", 0.0)
-        .param("release_cv_amt", 0.0)
-        .param("attack_cv", 0.0)
-        .param("decay_cv", 0.0)
-        .param("sustain_cv", 0.0)
-        .param("release_cv", 0.0)
-        .param("loop_gate", 0.0)
+        .param("gate", 0.0)                 // 0/1 held gate; falling edge starts release
+        .param("trigger", 0.0)              // 0/1 retrigger input for the ADSR cycle
+        .param("attack", 0.05)              // attack stage time in seconds before CV
+        .param("decay", 0.3)                // decay stage time in seconds before CV
+        .param("sustain", 0.5)              // 0..1 sustain level before sustain CV
+        .param("release", 0.3)              // release stage time in seconds before CV
+        .param("level", 1.0)                // 0..1 final envelope output level
+        .param("attack_cv_amt", 0.0)        // 0..1 attenuator for attack_cv
+        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv
+        .param("sustain_cv_amt", 0.0)       // 0..1 attenuator for sustain_cv
+        .param("release_cv_amt", 0.0)       // 0..1 attenuator for release_cv
+        .param("attack_cv", 0.0)            // bipolar CV for attack time
+        .param("decay_cv", 0.0)             // bipolar CV for decay time
+        .param("sustain_cv", 0.0)           // bipolar CV for sustain level
+        .param("release_cv", 0.0)           // bipolar CV for release time
+        .param("loop_gate", 0.0)            // rounded 0/1; high enables attack-decay looping
         .body_map(|p| {
             let gate = _erica_vc_eg_gate(p.gate);
             let trigger = _erica_vc_eg_gate(p.trigger);

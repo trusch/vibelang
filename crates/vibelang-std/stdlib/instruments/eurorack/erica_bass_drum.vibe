@@ -21,21 +21,21 @@ define_synthdef("erica_bass_drum", |builder| {
     builder
         .output("out")
         .output("noise")
-        .param("trig", 0.0)
-        .param("gate", 0.0)
-        .param("accent", 0.0)
-        .param("pitch", 55.0)
-        .param("pitch_cv", 0.0)
-        .param("pitch_cv_amt", 0.0)
-        .param("tune_depth", 12.0)
-        .param("tune_decay", 0.05)
-        .param("attack", 0.55)
-        .param("decay", 0.5)
-        .param("decay_cv", 0.0)
-        .param("decay_cv_amt", 0.0)
-        .param("drive", 0.25)
-        .param("drive_cv", 0.0)
-        .param("drive_cv_amt", 0.0)
+        .param("trig", 0.0)                 // 0/1 trigger input that fires the kick envelope
+        .param("gate", 0.0)                 // 0/1 gate input that fires and can hold a sustained tail
+        .param("accent", 0.0)               // 0..1 level and pitch emphasis for accented hits
+        .param("pitch", 55.0)               // base body frequency in Hz before CV and accent
+        .param("pitch_cv", 0.0)             // bipolar pitch CV scaled by pitch_cv_amt up to +/-2 octaves
+        .param("pitch_cv_amt", 0.0)         // 0..1 attenuator for pitch_cv depth
+        .param("tune_depth", 12.0)          // pitch-sweep depth in semitones
+        .param("tune_decay", 0.05)          // pitch-sweep decay time in seconds
+        .param("attack", 0.55)              // 0..1 beater click brightness and length
+        .param("decay", 0.5)                // amp decay time in seconds before decay CV
+        .param("decay_cv", 0.0)             // bipolar decay CV scaled by decay_cv_amt up to +/-2 octaves
+        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv depth
+        .param("drive", 0.25)               // 0..1 soft saturation amount before accent gain
+        .param("drive_cv", 0.0)             // bipolar CV summed into drive through drive_cv_amt
+        .param("drive_cv_amt", 0.0)         // 0..1 attenuator for drive_cv depth
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let attack = clip(p.attack, 0.0, 1.0);

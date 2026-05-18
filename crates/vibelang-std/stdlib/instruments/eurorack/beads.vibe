@@ -46,21 +46,21 @@ define_synthdef("beads", |builder| {
         .input("in", 2)
         .output("left", 1)
         .output("right", 1)
-        .param("time", 0.5)
-        .param("pitch", 0.0)
-        .param("size", 0.5)
-        .param("shape", 0.5)
-        .param("density", 0.5)
-        .param("seed_mode", 0.0)
-        .param("seed", 0.0)
-        .param("quality", 0.0)
-        .param("freeze", 0.0)
-        .param("feedback", 0.0)
-        .param("dry_wet", 0.5)
-        .param("space", 0.2)
-        .param("spread_time", 0.1)
-        .param("spread_pitch", 0.0)
-        .param("spread_size", 0.0)
+        .param("time", 0.5)                 // 0..1 grain position; spread_time adds random drift
+        .param("pitch", 0.0)                // semitone transposition clipped to +/-24 before grain playback
+        .param("size", 0.5)                 // 0..1 grain size; spread_size adds random variation
+        .param("shape", 0.5)                // 0..1 Clouds texture/shape control for grain tone
+        .param("density", 0.5)              // 0..1 grain density and randomizer rate driver
+        .param("seed_mode", 0.0)            // rounded enum: latched, clocked, or gated grain retriggering
+        .param("seed", 0.0)                 // 0/1 trigger or gate for seed modes 1 and 2
+        .param("quality", 0.0)              // rounded enum: clean, tape-like, or degraded path
+        .param("freeze", 0.0)               // 0/1 freeze latch passed into the granular core
+        .param("feedback", 0.0)             // local feedback amount clipped below runaway
+        .param("dry_wet", 0.5)              // 0..1 dry input to granular output blend
+        .param("space", 0.2)                // 0..1 post-core reverb send amount
+        .param("spread_time", 0.1)          // 0..1 random drift depth for grain position
+        .param("spread_pitch", 0.0)         // 0..1 random pitch scatter up to roughly +/-12 semitones
+        .param("spread_size", 0.0)          // 0..1 random drift depth for grain size
         .body_map(|p| {
             let dry_l = p.inputs["in"][0];
             let dry_r = p.inputs["in"][1];

@@ -19,12 +19,12 @@ define_synthdef("prss_pnt", |builder| {
         .output_kr("gate3")
         .output_kr("pressure4")
         .output_kr("gate4")
-        .param("press1", 0.0)
-        .param("press2", 0.0)
-        .param("press3", 0.0)
-        .param("press4", 0.0)
-        .param("threshold", 0.05)
-        .param("slew", 0.01)
+        .param("press1", 0.0)               // 0..1 pressure input for pad 1
+        .param("press2", 0.0)               // 0..1 pressure input for pad 2
+        .param("press3", 0.0)               // 0..1 pressure input for pad 3
+        .param("press4", 0.0)               // 0..1 pressure input for pad 4
+        .param("threshold", 0.05)           // 0..1 shared pressure threshold for gate outputs
+        .param("slew", 0.01)                // seconds of attack/release lag for pressure CVs
         .body_map(|p| {
             let slew = p.slew.max(0.0);
             let threshold = clip(p.threshold, 0.0, 1.0);

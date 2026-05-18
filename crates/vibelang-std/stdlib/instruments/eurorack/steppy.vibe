@@ -26,41 +26,41 @@ define_synthdef("steppy", |builder| {
         .output_kr("gate_c")
         .output_kr("gate_d")
         .output_kr("clock")
-        .param("bpm", 120.0)
-        .param("reset", 0.0)
-        .param("run", 1.0)
-        .param("track_a_steps", 16.0)
-        .param("track_a_pattern", 4369.0)
-        .param("track_a_clock_div", 1.0)
-        .param("track_a_gate_len", 0.5)
-        .param("track_a_swing", 0.0)
-        .param("track_a_probability", 1.0)
-        .param("track_a_mute", 0.0)
-        .param("track_a_rotate", 0.0)
-        .param("track_b_steps", 16.0)
-        .param("track_b_pattern", 0.0)
-        .param("track_b_clock_div", 1.0)
-        .param("track_b_gate_len", 0.5)
-        .param("track_b_swing", 0.0)
-        .param("track_b_probability", 1.0)
-        .param("track_b_mute", 0.0)
-        .param("track_b_rotate", 0.0)
-        .param("track_c_steps", 16.0)
-        .param("track_c_pattern", 0.0)
-        .param("track_c_clock_div", 1.0)
-        .param("track_c_gate_len", 0.5)
-        .param("track_c_swing", 0.0)
-        .param("track_c_probability", 1.0)
-        .param("track_c_mute", 0.0)
-        .param("track_c_rotate", 0.0)
-        .param("track_d_steps", 16.0)
-        .param("track_d_pattern", 0.0)
-        .param("track_d_clock_div", 1.0)
-        .param("track_d_gate_len", 0.5)
-        .param("track_d_swing", 0.0)
-        .param("track_d_probability", 1.0)
-        .param("track_d_mute", 0.0)
-        .param("track_d_rotate", 0.0)
+        .param("bpm", 120.0)                // master tempo in beats per minute
+        .param("reset", 0.0)                // 0/1 reset trigger for all tracks
+        .param("run", 1.0)                  // 0 stops the sequencer, 1 runs
+        .param("track_a_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track A
+        .param("track_a_pattern", 4369.0)   // 16-bit gate mask; bit 0 is step 0 for Steppy track A
+        .param("track_a_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track A
+        .param("track_a_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track A
+        .param("track_a_swing", 0.0)        // delay amount for alternating steps for Steppy track A
+        .param("track_a_probability", 1.0)  // deterministic per-step probability threshold for Steppy track A
+        .param("track_a_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track A
+        .param("track_a_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track A
+        .param("track_b_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track B
+        .param("track_b_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track B
+        .param("track_b_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track B
+        .param("track_b_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track B
+        .param("track_b_swing", 0.0)        // delay amount for alternating steps for Steppy track B
+        .param("track_b_probability", 1.0)  // deterministic per-step probability threshold for Steppy track B
+        .param("track_b_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track B
+        .param("track_b_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track B
+        .param("track_c_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track C
+        .param("track_c_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track C
+        .param("track_c_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track C
+        .param("track_c_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track C
+        .param("track_c_swing", 0.0)        // delay amount for alternating steps for Steppy track C
+        .param("track_c_probability", 1.0)  // deterministic per-step probability threshold for Steppy track C
+        .param("track_c_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track C
+        .param("track_c_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track C
+        .param("track_d_steps", 16.0)       // rounded active pattern length, 1..16 steps for Steppy track D
+        .param("track_d_pattern", 0.0)      // 16-bit gate mask; bit 0 is step 0 for Steppy track D
+        .param("track_d_clock_div", 1.0)    // rounded speed divisor/multiplier in step math for Steppy track D
+        .param("track_d_gate_len", 0.5)     // step duty cycle, clipped 0.05..0.95 for Steppy track D
+        .param("track_d_swing", 0.0)        // delay amount for alternating steps for Steppy track D
+        .param("track_d_probability", 1.0)  // deterministic per-step probability threshold for Steppy track D
+        .param("track_d_mute", 0.0)         // 0 active, 1 mutes this track for Steppy track D
+        .param("track_d_rotate", 0.0)       // rounded pattern rotation, -15..15 steps for Steppy track D
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * 4.0 * run;

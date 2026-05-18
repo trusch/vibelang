@@ -261,33 +261,33 @@ define_synthdef("tetrapad", |builder| {
         .output_kr("pad3_b")
         .output_kr("pad4_a")
         .output_kr("pad4_b")
-        .param("pressure_1", 0.0)
-        .param("position_1", 0.5)
-        .param("encoder_1", 0.5)
-        .param("mode_1", 0.0)
-        .param("slew_1", 0.1)
-        .param("voltage_1", 0.0)
-        .param("pressure_2", 0.0)
-        .param("position_2", 0.5)
-        .param("encoder_2", 0.5)
-        .param("mode_2", 0.0)
-        .param("slew_2", 0.1)
-        .param("voltage_2", 0.0)
-        .param("pressure_3", 0.0)
-        .param("position_3", 0.5)
-        .param("encoder_3", 0.5)
-        .param("mode_3", 0.0)
-        .param("slew_3", 0.1)
-        .param("voltage_3", 0.0)
-        .param("pressure_4", 0.0)
-        .param("position_4", 0.5)
-        .param("encoder_4", 0.5)
-        .param("mode_4", 0.0)
-        .param("slew_4", 0.1)
-        .param("voltage_4", 0.0)
-        .param("chord_mode", 0.0)
-        .param("keyboard_scale", 0.0)
-        .param("threshold", 0.05)
+        .param("pressure_1", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 1
+        .param("position_1", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 1
+        .param("encoder_1", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 1
+        .param("mode_1", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 1
+        .param("slew_1", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 1
+        .param("voltage_1", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 1
+        .param("pressure_2", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 2
+        .param("position_2", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 2
+        .param("encoder_2", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 2
+        .param("mode_2", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 2
+        .param("slew_2", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 2
+        .param("voltage_2", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 2
+        .param("pressure_3", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 3
+        .param("position_3", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 3
+        .param("encoder_3", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 3
+        .param("mode_3", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 3
+        .param("slew_3", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 3
+        .param("voltage_3", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 3
+        .param("pressure_4", 0.0)           // 0..1 touch pressure; crosses threshold for gates on Tetrapad pad 4
+        .param("position_4", 0.5)           // 0..1 strip position or mode-specific selector on Tetrapad pad 4
+        .param("encoder_4", 0.5)            // 0..1 encoder value for transpose/root/LFO rate on Tetrapad pad 4
+        .param("mode_4", 0.0)               // rounded pad enum: keyboard/chord/memory/fader/drum/switch/LFO on Tetrapad pad 4
+        .param("slew_4", 0.1)               // 0..1 smoothing time for this pad controls on Tetrapad pad 4
+        .param("voltage_4", 0.0)            // -1..1 stored CV for voltage-memory mode on Tetrapad pad 4
+        .param("chord_mode", 0.0)           // rounded chord enum: major/minor/sus4/dim/aug
+        .param("keyboard_scale", 0.0)       // rounded keyboard scale enum for pitch quantization
+        .param("threshold", 0.05)           // 0..1 shared touch threshold for gate/trigger logic
         .body_map(|p| {
             let pad1 = _tetrapad_pad(
                 p.pressure_1, p.position_1, p.encoder_1, p.mode_1, p.slew_1,

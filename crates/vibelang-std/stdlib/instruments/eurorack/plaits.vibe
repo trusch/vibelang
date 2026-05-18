@@ -44,18 +44,18 @@ define_synthdef("plaits", |builder| {
     builder
         .output("out")       // 1ch - main Plaits OUT jack
         .output("aux")       // 1ch - model-specific AUX jack
-        .param("pitch", 60.0)
-        .param("engine", 0.0)
-        .param("harmonics", 0.5)
-        .param("timbre", 0.5)
-        .param("morph", 0.5)
-        .param("trigger", 0.0)
-        .param("level", 0.7)
-        .param("fm_mod", 0.0)
-        .param("timbre_mod", 0.0)
-        .param("morph_mod", 0.0)
-        .param("decay", 0.5)
-        .param("lpg_colour", 0.5)
+        .param("pitch", 60.0)               // pitch in MIDI note units passed to the Plaits core
+        .param("engine", 0.0)               // rounded 0..23 Plaits engine enum
+        .param("harmonics", 0.5)            // 0..1 model harmonics control
+        .param("timbre", 0.5)               // 0..1 model timbre control
+        .param("morph", 0.5)                // 0..1 model morph control
+        .param("trigger", 0.0)              // positive trigger/gate for internal exciter and LPG
+        .param("level", 0.7)                // 0..1 internal LPG level
+        .param("fm_mod", 0.0)               // bipolar FM modulation input to the Plaits core
+        .param("timbre_mod", 0.0)           // bipolar timbre modulation input to the Plaits core
+        .param("morph_mod", 0.0)            // bipolar morph modulation input to the Plaits core
+        .param("decay", 0.5)                // 0..1 internal envelope decay
+        .param("lpg_colour", 0.5)           // 0..1 low-pass gate color
         .body_map(|p| {
             // mi_plaits_ar args: pitch, engine, harm, timbre, morph, trigger,
             // level, fm_mod, timb_mod, morph_mod, decay, lpg_colour, mul

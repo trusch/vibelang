@@ -40,17 +40,17 @@ define_synthdef("rings", |builder| {
         .output("odd")              // 1ch - Rings first output
         .output("even")             // 1ch - Rings second output
         .output("sum")              // 1ch - odd + even convenience mix
-        .param("pit", 60.0)
-        .param("structure", 0.5)
-        .param("brightness", 0.5)
-        .param("damping", 0.5)
-        .param("position", 0.5)
-        .param("model", 0.0)
-        .param("polyphony", 1.0)
-        .param("internal_exciter", 0.0)
-        .param("bypass", 0.0)
-        .param("gain", 1.0)
-        .param("trigger", 0.0)
+        .param("pit", 60.0)                 // pitch in MIDI note units passed to the Rings core
+        .param("structure", 0.5)            // 0..1 resonator structure control
+        .param("brightness", 0.5)           // 0..1 exciter/resonator brightness
+        .param("damping", 0.5)              // 0..1 resonator decay damping
+        .param("position", 0.5)             // 0..1 excitation position along the resonator
+        .param("model", 0.0)                // rounded Rings resonator model enum
+        .param("polyphony", 1.0)            // polyphony selector passed to the Rings core
+        .param("internal_exciter", 0.0)     // 0 external input, 1 use internal exciter
+        .param("bypass", 0.0)               // 0 resonator path, 1 bypass through the core
+        .param("gain", 1.0)                 // output gain multiplier for Rings outputs
+        .param("trigger", 0.0)              // 0/1 trigger for the internal exciter
         .body_map(|p| {
             // mi_rings_ar args: in, trig, pit, struct, bright, damp, pos,
             // model, poly, intern_exciter, easteregg, bypass, mul

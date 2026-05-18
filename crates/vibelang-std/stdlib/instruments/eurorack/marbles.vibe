@@ -70,26 +70,26 @@ define_synthdef("marbles", |builder| {
         .output("x1")
         .output("x2")
         .output("x3")
-        .param("clock", 0.25)
-        .param("bias_t", 0.5)
-        .param("spread_t", 0.3)
-        .param("bias_x", 0.5)
-        .param("spread_x", 0.5)
-        .param("length", 4.0)
-        .param("quant_steps", 12.0)
-        .param("t_model", 0.0)
-        .param("t_rate", 0.5)
-        .param("t_bias", 0.5)
-        .param("t_jitter", 0.1)
-        .param("deja_vu_t", 0.0)
-        .param("length_t", 8.0)
-        .param("x_mode", 1.0)
-        .param("x_scale", 0.0)
-        .param("x_spread", 0.5)
-        .param("x_bias", 0.5)
-        .param("x_steps", 0.0)
-        .param("deja_vu_x", 0.0)
-        .param("length_x", 8.0)
+        .param("clock", 0.25)               // master period in seconds; smaller values run faster
+        .param("bias_t", 0.5)               // legacy trigger bias center, combined with t_bias
+        .param("spread_t", 0.3)             // legacy trigger distribution spread
+        .param("bias_x", 0.5)               // legacy X voltage bias center, combined with x_bias
+        .param("spread_x", 0.5)             // legacy X voltage spread, combined with x_spread
+        .param("length", 4.0)               // legacy X memory blend length for old patches
+        .param("quant_steps", 12.0)         // chromatic quantizer divisions when x_scale is 0
+        .param("t_model", 0.0)              // rounded trigger model enum for T outputs
+        .param("t_rate", 0.5)               // master clock multiplier for T and X sampling
+        .param("t_bias", 0.5)               // additive trigger bias around 0.5
+        .param("t_jitter", 0.1)             // 0..1 timing looseness for trigger streams
+        .param("deja_vu_t", 0.0)            // 0 fresh triggers, >=0.5 loops trigger memory
+        .param("length_t", 8.0)             // rounded trigger loop length, 1..32 cells
+        .param("x_mode", 1.0)               // rounded X mode: continuous, quantized, or stepped/noisy
+        .param("x_scale", 0.0)              // rounded pitch scale enum for X quantization
+        .param("x_spread", 0.5)             // 0..1 X voltage distribution width
+        .param("x_bias", 0.5)               // 0..1 X voltage distribution center
+        .param("x_steps", 0.0)              // 0 smooth X voltages, higher values add stair-stepping
+        .param("deja_vu_x", 0.0)            // 0 fresh X values, >=0.5 loops X memory
+        .param("length_x", 8.0)             // rounded X loop length, 1..32 cells
         .body_map(|p| {
             let clock_hz = (1.0 / (p.clock + 0.001)) * clip(p.t_rate * 2.0, 0.05, 4.0);
             let master_kr = impulse_kr(clock_hz, 0.0);

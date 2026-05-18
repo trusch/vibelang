@@ -18,17 +18,17 @@
 define_synthdef("erica_snare_drum", |builder| {
     builder
         .output("out", 1)
-        .param("trig", 0.0)
-        .param("gate", 0.0)
-        .param("accent", 0.0)
-        .param("tune", 180.0)
-        .param("tune_cv", 0.0)
-        .param("noise_tone", 0.5)
-        .param("snappy", 0.6)
-        .param("decay", 0.3)
-        .param("decay_cv", 0.0)
-        .param("tune_cv_amt", 0.0)
-        .param("decay_cv_amt", 0.0)
+        .param("trig", 0.0)                 // 0/1 trigger input that fires the snare
+        .param("gate", 0.0)                 // 0/1 gate input that also fires the snare
+        .param("accent", 0.0)               // 0..1 level boost, pitch lift, and longer decay
+        .param("tune", 180.0)               // body frequency in Hz before tune CV
+        .param("tune_cv", 0.0)              // bipolar pitch CV scaled by tune_cv_amt up to +/-2 octaves
+        .param("noise_tone", 0.5)           // 0 body-heavy to 1 noise-heavy blend
+        .param("snappy", 0.6)               // 0..1 transient/noise brightness and snap length
+        .param("decay", 0.3)                // 0..1 body and noise decay range
+        .param("decay_cv", 0.0)             // bipolar decay CV scaled by decay_cv_amt
+        .param("tune_cv_amt", 0.0)          // 0..1 attenuator for tune_cv depth
+        .param("decay_cv_amt", 0.0)         // 0..1 attenuator for decay_cv depth
         .body_map(|p| {
             let accent = clip(p.accent, 0.0, 1.0);
             let noise_tone = clip(p.noise_tone, 0.0, 1.0);
