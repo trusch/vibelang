@@ -22,6 +22,7 @@ Thumbs.db
 *.flac
 *.aiff
 !samples/**/*.wav
+!**/samples/**/*.wav
 !stdlib/**/*.wav
 
 # Recording outputs

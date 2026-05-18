@@ -5,9 +5,10 @@
 // playback (mode = 2.0); its sine, sub, odd, and even outputs provide the
 // stereo source material.
 //
-// Morphagene SOS/granular leg reads Spectraphon's sine output for grain
-// content; its direct playback path is muted because the worktree's Morphagene
-// buffer reader still fails standalone.
+// Morphagene plays a real stereo sample (samples/morph_reel.wav) as the
+// Reel; its SOS path also slowly overwrites the reel with Spectraphon's
+// sine output for granular evolution. Its audio output is muted — only
+// the eosg trigger is used for downstream CV.
 //
 // CV: TEMPI clocks Rene/MATHS, Wogglebug roams, all of them shape
 // Spectraphon, Morphagene, X-PAN, QPAS, DXG and Mimeophon params via scaled
@@ -30,7 +31,9 @@ set_tempo(96);
 define_group("rack", || { });
 group("rack").gain(db(-16));
 
-let morph_reel = allocate_buffer("resynth_morph_reel", 96000, 1);
+// Real stereo sample loaded as the Morphagene Reel. SOS recording can
+// still overlay Spectraphon's sine output over time.
+let morph_reel = sample("resynth_morph_reel", "samples/morph_reel.wav").loop_mode(true);
 
 // ----- CV chain -----
 
@@ -120,7 +123,7 @@ let morph = voice("morph")
     .synth("morphagene")
     .group("rack")
     .modulator_only()
-    .set_param("bufnum", morph_reel.bufnum)
+    .set_param("bufnum", morph_reel.bufnum.to_float())
     .set_param("num_splices", 1.0)
     .set_param("organize", 0.0)
     .set_param("sos", 0.5)
