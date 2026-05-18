@@ -326,95 +326,87 @@ mod tests {
 
     /// Regression for the ReSynthesizer rack: the original dual Spectraphon
     /// body instantiated a large per-partial FFT/BinData analyzer graph, and
-    /// live scsynth stopped answering `/sync` immediately after `/s_new`.
+    /// live scsynth stopped answering `/sync` immediately after `/s_new`. The
+    /// fix landed as a script-allocated FFT chain buffer (commit 161c052);
+    /// the merged single-oscillator surface relies on that fix to ship the
+    /// full SAM+SAO bank in one synthdef without re-wedging.
     #[test]
-    fn spectraphon_dual_avoids_server_wedging_analyzer_path() {
+    fn spectraphon_split_is_two_synthdefs_analyzer_and_oscillator() {
         let files = get_stdlib_files();
-        let dual = files
-            .get("instruments/spectral/spectraphon_dual.vibe")
-            .expect("stdlib missing instruments/spectral/spectraphon_dual.vibe");
-        let side = files
-            .get("instruments/spectral/spectraphon_side.vibe")
-            .expect("stdlib missing instruments/spectral/spectraphon_side.vibe");
         let analyzer = files
             .get("instruments/spectral/spectraphon_analyzer.vibe")
             .expect("stdlib missing instruments/spectral/spectraphon_analyzer.vibe");
-        let sam_oscillator = files
-            .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
-            .expect("stdlib missing instruments/spectral/spectraphon_sam_oscillator.vibe");
-        let sao_oscillator = files
-            .get("instruments/spectral/spectraphon_sao_oscillator.vibe")
-            .expect("stdlib missing instruments/spectral/spectraphon_sao_oscillator.vibe");
+        let oscillator = files
+            .get("instruments/spectral/spectraphon_oscillator.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_oscillator.vibe");
 
         assert!(
-            !dual.contains("define_synthdef(\"spectraphon_dual\""),
-            "spectraphon_dual should be a Rhai helper, not a monolithic synthdef"
+            files
+                .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
+                .is_none()
+                && files
+                    .get("instruments/spectral/spectraphon_sao_oscillator.vibe")
+                    .is_none()
+                && files
+                    .get("instruments/spectral/spectraphon_side.vibe")
+                    .is_none()
+                && files
+                    .get("instruments/spectral/spectraphon_dual.vibe")
+                    .is_none(),
+            "split-era files (sam/sao oscillators, side/dual helpers) must be deleted",
         );
-        assert!(
-            !side.contains("define_synthdef(\"spectraphon_side\""),
-            "spectraphon_side should be a Rhai helper, not a monolithic synthdef"
-        );
+
         assert!(
             analyzer.contains("fft_kr(") && analyzer.contains("bin_data_kr("),
             "spectraphon_analyzer should own the real FFT/BinData analyzer path"
         );
         assert!(
             analyzer.contains(".param(\"fft_buf\", 0.0)")
-                && analyzer.contains("let chain = fft_kr(fft_buf")
-                && !analyzer.contains("local_buf_ir(1.0, 2048.0)"),
-            "spectraphon_analyzer should use a script-allocated FFT chain buffer"
+                && analyzer.contains("let chain = fft_kr(fft_buf"),
+            "spectraphon_analyzer should consume a script-allocated FFT chain buffer"
         );
         assert!(
-            side.contains("allocate_buffer(name + \"__fft\", 2048, 1)")
-                && side.contains(".set_param(\"fft_buf\", fft.bufnum)"),
-            "spectraphon_side should allocate and pass the analyzer FFT chain buffer"
+            oscillator.contains("define_synthdef(\"spectraphon_oscillator\""),
+            "spectraphon_oscillator should ship as a single merged synthdef"
         );
         assert!(
-            side.contains("spectraphon_sam_oscillator")
-                && side.contains("spectraphon_sao_oscillator"),
-            "spectraphon_side should pick a dedicated SAM or SAO oscillator"
+            oscillator.contains(".param(\"mode\", 0.0)"),
+            "spectraphon_oscillator should expose a `mode` param (0 sam_live / 1 sam_capture / 2 sao)"
         );
         assert!(
-            sam_oscillator.contains("buf_rd_kr(1, mag_buf")
-                && sam_oscillator.contains("buf_wr_kr(")
-                && !sam_oscillator.contains("base00"),
-            "spectraphon_sam_oscillator should consume live magnitudes without SAO interpolation"
-        );
-        assert!(
-            sao_oscillator.contains("base00")
-                && sao_oscillator.contains("buf_rd_kr(1, array_mem")
-                && !sao_oscillator.contains("buf_rd_kr(1, mag_buf")
-                && !sao_oscillator.contains("buf_wr_kr("),
-            "spectraphon_sao_oscillator should read SAO arrays without SAM read/write cost"
+            oscillator.contains("buf_rd_kr(1, mag_buf")
+                && oscillator.contains("buf_wr_kr(")
+                && oscillator.contains("base00"),
+            "spectraphon_oscillator should retain SAM live/capture mag reads + SAO bilinear array reads"
         );
     }
 
     #[test]
-    fn spectraphon_sam_normalizes_analyzer_magnitude_bank() {
+    fn spectraphon_oscillator_normalizes_analyzer_magnitude_bank() {
         let files = get_stdlib_files();
         let analyzer = files
             .get("instruments/spectral/spectraphon_analyzer.vibe")
             .expect("stdlib missing instruments/spectral/spectraphon_analyzer.vibe");
-        let sam_oscillator = files
-            .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
-            .expect("stdlib missing instruments/spectral/spectraphon_sam_oscillator.vibe");
+        let oscillator = files
+            .get("instruments/spectral/spectraphon_oscillator.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_oscillator.vibe");
 
         assert!(
             analyzer.contains("let mag_scale = 0.001953125"),
             "spectraphon_analyzer should retain FFT-size magnitude scaling before writing mag_buf"
         );
         assert!(
-            sam_oscillator.contains("fn _spectraphon_sam_mag_norm(mag_buf)")
-                && sam_oscillator.contains("return 3.5 / max(mag_sum, 1.0);"),
-            "SAM oscillator should derive a bounded unit-spectrum normalizer from mag_buf"
+            oscillator.contains("fn _spectraphon_mag_norm(mag_buf)")
+                && oscillator.contains("return 3.5 / max(mag_sum, 1.0);"),
+            "oscillator should derive a bounded unit-spectrum normalizer from mag_buf"
         );
 
-        let normalized_reads = sam_oscillator
+        let normalized_reads = oscillator
             .matches("buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm")
             .count();
         assert!(
-            normalized_reads >= 8,
-            "all SAM live/capture partial-bank reads should apply mag_norm; found {normalized_reads}"
+            normalized_reads >= 4,
+            "all SAM partial-bank reads (odd seed/loop + even seed/loop) should apply mag_norm; found {normalized_reads}"
         );
     }
 }

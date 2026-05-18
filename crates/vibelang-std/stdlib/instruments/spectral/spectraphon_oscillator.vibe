@@ -1,11 +1,33 @@
-// Spectraphon SAO oscillator - Array playback additive bank.
+// Spectraphon oscillator — merged SAM/SAO additive bank.
 //
-// Reads the SAO Array buffer with bilinear slide/focus interpolation and
-// drives a 64-partial additive oscillator split into sine/sub/odd/even ports.
-// Chaos and Noise are left for dedicated follow-up synthdefs so this SAO path
-// stays focused on the array-playback UGen budget.
+// One synthdef covers all three operating modes of the hardware oscillator
+// side, switched at instantiation time via the `mode` param:
+//
+//   mode = 0.0   SAM live      read `mag_buf` analyzer magnitudes
+//   mode = 1.0   SAM capture   read live magnitudes AND write them into
+//                              `array_buf` at the (slide, focus, array_idx)
+//                              cell, so a later SAO pass can play them back
+//   mode = 2.0   SAO playback  read `array_buf` with bilinear interpolation
+//                              across (slide, focus)
+//
+// Pair this with `spectraphon_analyzer` to drive `mag_buf` from live audio
+// input; the analyzer voice runs alongside the oscillator voice and shares
+// the mag buffer. SAO mode runs without an analyzer voice.
+//
+// Outputs: sine (clean fundamental), sub (saw at 0.5×freq, only in SAO),
+// odd / even (partial banks split as on hardware).
 
-define_synthdef("spectraphon_sao_oscillator", |builder| {
+fn _spectraphon_mag_norm(mag_buf) {
+    let k = 1.0;
+    let mag_sum = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+    for i in 2..65 {
+        let k = i.to_float();
+        mag_sum = mag_sum + buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+    }
+    return 3.5 / max(mag_sum, 1.0);
+}
+
+define_synthdef("spectraphon_oscillator", |builder| {
     builder
         .output("sine")
         .output("sub")
@@ -17,7 +39,9 @@ define_synthdef("spectraphon_sao_oscillator", |builder| {
         .param("focus", 0.5)
         .param("amp", 0.3)
         .param("gate", 1.0)
+        .param("mode", 0.0)
         .param("array_idx", 0.0)
+        .param("mag_buf", 0.0)
         .param("array_buf", 0.0)
         .body_map(|p| {
             let freq = p.freq;
@@ -26,7 +50,9 @@ define_synthdef("spectraphon_sao_oscillator", |builder| {
             let focus = p.focus;
             let amp = p.amp;
             let gate = p.gate;
+            let mode = clip(p.mode, 0.0, 2.0);
             let array_idx = p.array_idx;
+            let mag_buf = p.mag_buf;
             let array_buf = p.array_buf;
 
             let env = envelope()
@@ -35,8 +61,17 @@ define_synthdef("spectraphon_sao_oscillator", |builder| {
                 .cleanup_on_finish()
                 .build();
 
+            // Discrete mode masks. mode is expected to be set at create time,
+            // not modulated — the masks snap rather than crossfade so a SAM
+            // patch never accidentally bleeds into SAO playback.
+            let is_sao = clip((mode - 1.5) * 1000.0, 0.0, 1.0);
+            let is_sam = 1.0 - is_sao;
+            let mode_off_capture = (mode - 1.0) * (mode - 1.0);
+            let is_capture = clip(1.0 - mode_off_capture * 1000.0, 0.0, 1.0);
+
             let n = 64.0;
             let scale = partials * n;
+            let mag_norm = _spectraphon_mag_norm(mag_buf);
 
             let has_array = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
             let fallback_array_buf = local_buf_ir(1.0, 1.0);
@@ -62,47 +97,72 @@ define_synthdef("spectraphon_sao_oscillator", |builder| {
             let base10 = arr_base + slide_hi * 512.0 + focus_lo * 64.0;
             let base11 = arr_base + slide_hi * 512.0 + focus_hi * 64.0;
 
+            // SAM-capture writes magnitudes back into array_mem; suppress
+            // the write entirely with a huge offset whenever capture mask
+            // is 0 (i.e. modes other than sam_capture, or no array buffer).
+            let cap_base = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
+            let cap_offset = (1.0 - is_capture * has_array) * 1.0e9;
+
+            // Partial bank assembly. Each partial pays:
+            //   1× buf_rd_kr (live SAM mag)
+            //   4× buf_rd_kr (SAO bilinear)
+            //   1× buf_wr_kr (SAM-capture write, masked off when unused)
+            //   1× sin_osc_ar
+            // ×64 partials. With the FFT-chain-buffer pre-allocation from
+            // commit 161c052, scsynth no longer wedges on /s_new for this
+            // graph.
             let k = 1.0;
+            let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                             + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
                             + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-            let mag_k = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_k = mag_live * is_sam + mag_sao * is_sao;
+            buf_wr_kr(mag_live, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let odd_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
+                let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                                 + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                                 + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
                                 + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-                let mag_k = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_k = mag_live * is_sam + mag_sao * is_sao;
+                buf_wr_kr(mag_live, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
             let k = 2.0;
+            let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                             + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
                             + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-            let mag_k = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_k = mag_live * is_sam + mag_sao * is_sao;
+            buf_wr_kr(mag_live, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let even_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
+                let mag_live = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
                                 + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
                                 + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
                                 + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-                let mag_k = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_k = mag_live * is_sam + mag_sao * is_sao;
+                buf_wr_kr(mag_live, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
             let sine_signal = sin_osc_ar(freq);
-            let sub_sao = saw_ar(freq * 0.5) * 0.5;
-
+            let sub_sao = saw_ar(freq * 0.5) * 0.5 * is_sao;
             let odd_raw = odd_bank * partials;
             let even_raw = even_bank * partials;
 
