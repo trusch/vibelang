@@ -239,6 +239,12 @@ async fn apply_script(runtime: &mut Runtime<RecordingBackend>, script: &str) {
     runtime.tick().await;
 }
 
+fn execute_script_state(script: &str) -> vibelang_core::reload::ScriptState {
+    ScriptEngine::new()
+        .execute(script)
+        .expect("script must execute")
+}
+
 fn mono_out() -> Vec<OutputPort> {
     vec![OutputPort {
         name: "out".to_string(),
@@ -255,11 +261,38 @@ fn stereo_out() -> Vec<OutputPort> {
     }]
 }
 
+fn ar_out(name: &str, channels: u8) -> OutputPort {
+    OutputPort {
+        name: name.to_string(),
+        channels,
+        rate: PortRate::Ar,
+    }
+}
+
+fn named_ar_out(name: &str, channels: u8) -> Vec<OutputPort> {
+    vec![ar_out(name, channels)]
+}
+
+fn multi_ar_out(ports: &[(&str, u8)]) -> Vec<OutputPort> {
+    ports
+        .iter()
+        .map(|(name, channels)| ar_out(name, *channels))
+        .collect()
+}
+
 fn kr_out(name: &str) -> Vec<OutputPort> {
     vec![OutputPort {
         name: name.to_string(),
         channels: 1,
         rate: PortRate::Kr,
+    }]
+}
+
+fn tr_out(name: &str) -> Vec<OutputPort> {
+    vec![OutputPort {
+        name: name.to_string(),
+        channels: 1,
+        rate: PortRate::Tr,
     }]
 }
 
@@ -280,6 +313,201 @@ fn active_voice_node(runtime_state: &vibelang_core::State, voice_name: &str) -> 
         .get(&voice_id)
         .unwrap_or_else(|| panic!("voice {voice_name} should exist"))
         .active_nodes[0]
+}
+
+#[test]
+fn script_target_first_from_voice_port_records_named_source_port() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_tf_src".to_string(),
+        named_ar_out("left", 1),
+    );
+
+    let state = execute_script_state(
+        r#"
+        let source = voice("named_input_port_tf_source").synth("named_input_port_tf_src");
+        let target = voice("named_input_port_tf_target").synth("named_input_port_tf_target_synth");
+        target.input("ch1_a").from(source, "left");
+    "#,
+    );
+
+    let source = VoiceId::new(fnv1a_id("named_input_port_tf_source"));
+    let target = VoiceId::new(fnv1a_id("named_input_port_tf_target"));
+    assert_eq!(
+        state.input_routes.get(&(target, "ch1_a".to_string())),
+        Some(&vec![InputRouteSrc::Voice(source, "left".to_string())])
+    );
+}
+
+#[test]
+fn script_source_first_to_input_records_named_source_port() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_sf_src".to_string(),
+        named_ar_out("left", 1),
+    );
+
+    let state = execute_script_state(
+        r#"
+        let source = voice("named_input_port_sf_source").synth("named_input_port_sf_src");
+        let target = voice("named_input_port_sf_target").synth("named_input_port_sf_target_synth");
+        source.output("left").to_input(target, "ch1_a");
+    "#,
+    );
+
+    let source = VoiceId::new(fnv1a_id("named_input_port_sf_source"));
+    let target = VoiceId::new(fnv1a_id("named_input_port_sf_target"));
+    assert_eq!(
+        state.input_routes.get(&(target, "ch1_a".to_string())),
+        Some(&vec![InputRouteSrc::Voice(source, "left".to_string())])
+    );
+}
+
+#[test]
+fn script_target_first_and_source_first_named_input_routes_are_equivalent() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_equiv_src".to_string(),
+        named_ar_out("left", 1),
+    );
+
+    let target_first = execute_script_state(
+        r#"
+        let source = voice("named_input_port_equiv_source").synth("named_input_port_equiv_src");
+        let target = voice("named_input_port_equiv_target").synth("named_input_port_equiv_target_synth");
+        target.input("ch1_a").from(source, "left");
+    "#,
+    );
+    let source_first = execute_script_state(
+        r#"
+        let source = voice("named_input_port_equiv_source").synth("named_input_port_equiv_src");
+        let target = voice("named_input_port_equiv_target").synth("named_input_port_equiv_target_synth");
+        source.output("left").to_input(target, "ch1_a");
+    "#,
+    );
+
+    assert_eq!(target_first.input_routes, source_first.input_routes);
+    assert_eq!(
+        target_first.input_route_order,
+        source_first.input_route_order
+    );
+}
+
+#[test]
+fn script_target_first_from_voice_port_replaces_prior_source() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_replace_a_src".to_string(),
+        named_ar_out("left", 1),
+    );
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_replace_b_src".to_string(),
+        named_ar_out("right", 1),
+    );
+
+    let state = execute_script_state(
+        r#"
+        let a = voice("named_input_port_replace_a").synth("named_input_port_replace_a_src");
+        let b = voice("named_input_port_replace_b").synth("named_input_port_replace_b_src");
+        let target = voice("named_input_port_replace_target").synth("named_input_port_replace_target_synth");
+        target.input("ch1_a").from(a, "left");
+        target.input("ch1_a").from(b, "right");
+    "#,
+    );
+
+    let b = VoiceId::new(fnv1a_id("named_input_port_replace_b"));
+    let target = VoiceId::new(fnv1a_id("named_input_port_replace_target"));
+    assert_eq!(
+        state.input_routes.get(&(target, "ch1_a".to_string())),
+        Some(&vec![InputRouteSrc::Voice(b, "right".to_string())])
+    );
+}
+
+#[test]
+fn script_mixed_named_input_shapes_replace_last_writer_wins() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_mixed_a_src".to_string(),
+        named_ar_out("left", 1),
+    );
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_mixed_b_src".to_string(),
+        named_ar_out("right", 1),
+    );
+
+    let state = execute_script_state(
+        r#"
+        let a = voice("named_input_port_mixed_a").synth("named_input_port_mixed_a_src");
+        let b = voice("named_input_port_mixed_b").synth("named_input_port_mixed_b_src");
+        let target = voice("named_input_port_mixed_target").synth("named_input_port_mixed_target_synth");
+        target.input("ch1_a").from(a, "left");
+        b.output("right").to_input(target, "ch1_a");
+    "#,
+    );
+
+    let b = VoiceId::new(fnv1a_id("named_input_port_mixed_b"));
+    let target = VoiceId::new(fnv1a_id("named_input_port_mixed_target"));
+    assert_eq!(
+        state.input_routes.get(&(target, "ch1_a".to_string())),
+        Some(&vec![InputRouteSrc::Voice(b, "right".to_string())])
+    );
+}
+
+#[test]
+fn script_to_input_rejects_kr_and_tr_source_ports() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_reject_kr_src".to_string(),
+        kr_out("env"),
+    );
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_reject_tr_src".to_string(),
+        tr_out("gate"),
+    );
+
+    let kr_err = ScriptEngine::new()
+        .execute(
+            r#"
+        let source = voice("named_input_port_reject_kr").synth("named_input_port_reject_kr_src");
+        let target = voice("named_input_port_reject_kr_target").synth("named_input_port_reject_target_synth");
+        source.output("env").to_input(target, "ch1_a");
+    "#,
+        )
+        .expect_err("kr source ports must not feed named inputs");
+    let kr_msg = kr_err.to_string();
+    assert!(kr_msg.contains("to_input"), "msg = {kr_msg}");
+    assert!(kr_msg.contains("kr-rate"), "msg = {kr_msg}");
+    assert!(kr_msg.contains("'env'"), "msg = {kr_msg}");
+
+    let tr_err = ScriptEngine::new()
+        .execute(
+            r#"
+        let source = voice("named_input_port_reject_tr").synth("named_input_port_reject_tr_src");
+        let target = voice("named_input_port_reject_tr_target").synth("named_input_port_reject_target_synth");
+        source.output("gate").to_input(target, "ch1_a");
+    "#,
+        )
+        .expect_err("tr source ports must not feed named inputs");
+    let tr_msg = tr_err.to_string();
+    assert!(tr_msg.contains("to_input"), "msg = {tr_msg}");
+    assert!(tr_msg.contains("tr-rate"), "msg = {tr_msg}");
+    assert!(tr_msg.contains("'gate'"), "msg = {tr_msg}");
+}
+
+#[test]
+fn script_to_input_rejects_muted_source_port() {
+    vibelang_dsp::register_synthdef_outputs(
+        "named_input_port_muted_src".to_string(),
+        named_ar_out("left", 1),
+    );
+
+    let err = ScriptEngine::new()
+        .execute(
+            r#"
+        let source = voice("named_input_port_muted_source").synth("named_input_port_muted_src");
+        let target = voice("named_input_port_muted_target").synth("named_input_port_muted_target_synth");
+        source.output("left").mute().to_input(target, "ch1_a");
+    "#,
+        )
+        .expect_err("muted source ports must not feed named inputs");
+    let msg = err.to_string();
+    assert!(msg.contains("to_input"), "msg = {msg}");
+    assert!(msg.contains("muted"), "msg = {msg}");
+    assert!(msg.contains("'left'"), "msg = {msg}");
 }
 
 #[tokio::test]
@@ -1209,7 +1437,7 @@ async fn script_named_stereo_input_route_spawns_stereo_link() {
     load_registered_synthdef(
         &mut runtime,
         "named_input_src_stereo",
-        stereo_out(),
+        multi_ar_out(&[("out", 2), ("wide_src", 2)]),
         Vec::new(),
     )
     .await;
@@ -1224,13 +1452,35 @@ async fn script_named_stereo_input_route_spawns_stereo_link() {
     let script = r#"
         let src = voice("named_input_stereo_src").synth("named_input_src_stereo").group("named_input_stereo_rt");
         let target = voice("named_input_stereo_target").synth("named_input_target_stereo").group("named_input_stereo_rt");
-        target.input("wide").from(src);
+        target.input("wide").from(src, "wide_src");
     "#;
     apply_script(&mut runtime, script).await;
 
     let source = VoiceId::new(fnv1a_id("named_input_stereo_src"));
     let target = VoiceId::new(fnv1a_id("named_input_stereo_target"));
-    let route = InputRouteSrc::Voice(source, "out".to_string());
+    let route = InputRouteSrc::Voice(source, "wide_src".to_string());
+
+    let (default_source_bus, named_source_bus) = {
+        let state = runtime.state().read().await;
+        let source_voice = state.voices.get(&source).expect("source voice exists");
+        let default_source_bus = source_voice
+            .output_buses
+            .iter()
+            .find(|(name, _)| name == "out")
+            .map(|(_, bus)| *bus)
+            .expect("default source bus exists");
+        let named_source_bus = source_voice
+            .output_buses
+            .iter()
+            .find(|(name, _)| name == "wide_src")
+            .map(|(_, bus)| *bus)
+            .expect("named source bus exists");
+        assert_ne!(
+            default_source_bus, named_source_bus,
+            "fixture must prove non-default source-port selection"
+        );
+        (default_source_bus, named_source_bus)
+    };
 
     {
         let state = runtime.state().read().await;
@@ -1253,6 +1503,16 @@ async fn script_named_stereo_input_route_spawns_stereo_link() {
         stereo_links.len(),
         1,
         "stereo input port should route through input_link_2"
+    );
+    assert_eq!(
+        stereo_links[0].params.get("in_bus"),
+        Some(&(named_source_bus.raw() as f32)),
+        "named input link should read from the selected non-default source port"
+    );
+    assert_ne!(
+        stereo_links[0].params.get("in_bus"),
+        Some(&(default_source_bus.raw() as f32)),
+        "named input link must not silently fall back to the default out port"
     );
 }
 

@@ -104,6 +104,31 @@ impl RouteHandle {
         }
     }
 
+    /// Wire this audio-rate output port into `target`'s named input port.
+    ///
+    /// Source-first sugar for `target.input(input_name).from(source, port)`.
+    /// The source port must be audio-rate; kr/tr ports should use the
+    /// parameter-routing verbs instead. The committed script-state entry is
+    /// the same `InputRouteSrc::Voice(source_id, port_name)` written by the
+    /// target-first input handle.
+    pub fn to_input(
+        self,
+        mut target: Voice,
+        input_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        ensure_ar_input_source("to_input", self.voice_id, &self.port_name)?;
+        target.resolve_name();
+        let target_id = context::get_or_create_voice_id(&target.name);
+        context::with_state(|state| {
+            state.set_input_route(
+                target_id,
+                input_name,
+                InputRouteSrc::Voice(self.voice_id, self.port_name.clone()),
+            );
+        });
+        Ok(self)
+    }
+
     /// Install a CV-to-param route from this kr-rate output port to the named
     /// parameter on `target`.
     ///
@@ -490,6 +515,112 @@ fn source_synthdef_name(voice_id: VoiceId) -> String {
             .map(|v| v.synthdef.clone())
             .unwrap_or_default()
     })
+}
+
+fn source_outputs_for_input_source(synth: &str) -> Vec<OutputPort> {
+    get_synthdef_outputs(synth).unwrap_or_else(|| {
+        vec![OutputPort {
+            name: "out".to_string(),
+            channels: 2,
+            rate: PortRate::Ar,
+        }]
+    })
+}
+
+fn ensure_ar_input_source(
+    verb: &str,
+    source_id: VoiceId,
+    port: &str,
+) -> Result<(), Box<EvalAltResult>> {
+    let src_synth = source_synthdef_name(source_id);
+    let src_outputs = source_outputs_for_input_source(&src_synth);
+    match src_outputs.iter().find(|p| p.name == port) {
+        Some(p) if p.rate == PortRate::Ar => {}
+        Some(p) => return Err(non_ar_rate_to_input_error(verb, port, &src_synth, p.rate)),
+        None => {
+            return Err(input_missing_source_port_error(
+                verb,
+                port,
+                &src_synth,
+                &src_outputs,
+            ))
+        }
+    }
+
+    let muted = context::with_state(|state| {
+        state
+            .routes
+            .get(&(source_id, port.to_string()))
+            .map(|dests| dests.iter().any(|dest| matches!(dest, RouteDest::Muted)))
+            .unwrap_or(false)
+    });
+    if muted {
+        return Err(muted_input_source_error(verb, port, &src_synth));
+    }
+    Ok(())
+}
+
+fn non_ar_rate_to_input_error(
+    verb: &str,
+    port: &str,
+    synth: &str,
+    rate: PortRate,
+) -> Box<EvalAltResult> {
+    let (rate_str, hint) = match rate {
+        PortRate::Ar => (
+            "ar",
+            "(unreachable - Ar is the valid rate for input routing)",
+        ),
+        PortRate::Kr => ("kr", "use .to_param() for kr-to-param routing"),
+        PortRate::Tr => ("tr", "use .to_trigger() for trigger-to-param routing"),
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "{}() on port '{}' (synthdef '{}'): port is {}-rate, but \
+             .{}() requires an ar-rate (audio) port. {}",
+            verb, port, synth, rate_str, verb, hint
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn input_missing_source_port_error(
+    verb: &str,
+    port: &str,
+    synth: &str,
+    outputs: &[OutputPort],
+) -> Box<EvalAltResult> {
+    let available = if outputs.is_empty() {
+        "<none>".to_string()
+    } else {
+        outputs
+            .iter()
+            .map(|p| format!("'{}'", p.name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "{}(): source port '{}' not found on synthdef '{}' \
+             (available: {})",
+            verb, port, synth, available
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn muted_input_source_error(verb: &str, port: &str, synth: &str) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "{}() on port '{}' (synthdef '{}'): muted output ports cannot \
+             be used as named-input sources",
+            verb, port, synth
+        )
+        .into(),
+        Position::NONE,
+    ))
 }
 
 fn ar_rate_to_param_error(port: &str, synth: &str, rate: PortRate) -> Box<EvalAltResult> {
@@ -906,8 +1037,10 @@ impl MultiRouteHandle {
 /// (kb/named-inputs-design-notes.md decision #1).
 ///
 /// Multi-source fan-in (`.add_from`, `.from_all`) lands in P2.3 — out of scope
-/// here. Source-first sugar (`source.output(port).to_input(target, name)`)
-/// lands in P2.2.
+/// here. Source ports can be selected either target-first
+/// (`target.input(name).from(source, port)`) or source-first
+/// (`source.output(port).to_input(target, name)`); both forms commit the same
+/// single `InputRouteSrc::Voice(source_id, port)` entry.
 #[derive(Debug, Clone, CustomType)]
 pub struct InputHandle {
     /// Target voice ID — the voice receiving the input.
@@ -929,16 +1062,30 @@ impl InputHandle {
     /// Pin this input to a source voice's default output port (`"out"`).
     ///
     /// Replace semantics: any prior source on `(this_voice, port)` is
-    /// overwritten with a fresh single-element source list. Explicit port
-    /// selection on the source (e.g. `source.output("ring")`) is the P2.2
-    /// source-first sugar; this `.from(voice)` overload always pairs with
-    /// the legacy `"out"` port name on the source.
+    /// overwritten with a fresh single-element source list. This legacy
+    /// overload keeps its default `"out"` source port; use
+    /// `.from(source, "ring")` or `source.output("ring").to_input(...)` to
+    /// select a non-default source port.
     pub fn from_voice(self, source: Voice) -> Self {
         let mut source = source;
         source.resolve_name();
         let source_id = context::get_or_create_voice_id(&source.name);
         self.commit(InputRouteSrc::Voice(source_id, "out".to_string()));
         self
+    }
+
+    /// Pin this input to a selected audio-rate output port on a source voice.
+    ///
+    /// Target-first dual of [`RouteHandle::to_input`]. The source port must
+    /// exist and be audio-rate; the resulting script-state entry is identical
+    /// to the source-first form.
+    pub fn from_voice_port(self, source: Voice, port: String) -> Result<Self, Box<EvalAltResult>> {
+        let mut source = source;
+        source.resolve_name();
+        let source_id = context::get_or_create_voice_id(&source.name);
+        ensure_ar_input_source("from", source_id, &port)?;
+        self.commit(InputRouteSrc::Voice(source_id, port));
+        Ok(self)
     }
 
     /// Pin this input to a group's mix bus.
@@ -1011,6 +1158,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_main", RouteHandle::to_main);
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
+    engine.register_fn("to_input", RouteHandle::to_input);
     // Voice-target verbs (existing surface).
     engine.register_fn("to_param", RouteHandle::to_param);
     engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
@@ -1036,6 +1184,7 @@ pub fn register(engine: &mut Engine) {
     engine.build_type::<InputHandle>();
     // `.from(...)` dispatches by argument type: Voice or GroupHandle.
     engine.register_fn("from", InputHandle::from_voice);
+    engine.register_fn("from", InputHandle::from_voice_port);
     engine.register_fn("from", InputHandle::from_group);
     engine.register_fn("from_current_group", InputHandle::from_current_group);
     engine.register_fn("disconnect", InputHandle::disconnect);
