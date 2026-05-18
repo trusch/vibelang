@@ -1044,6 +1044,43 @@ impl<B: Backend> Runtime<B> {
     }
 
     async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
+        let (diff, input_routes) = self.build_reload_diff(&new_state).await;
+
+        // If no changes, return early - patterns continue playing seamlessly.
+        if !diff.has_changes() {
+            tracing::debug!("Reload: no changes detected, playback continues");
+            return Ok(());
+        }
+
+        tracing::info!("Reload: applying changes");
+
+        self.phase_apply_transport_changes(&diff).await?;
+        self.phase_stop_deleted_entities(&diff).await;
+        self.phase_delete_entities(&diff).await;
+        if !self.phase_open_midi_devices(&new_state).await? {
+            return Ok(());
+        }
+        self.phase_create_entities(&diff, &new_state).await;
+        self.phase_update_entities(&diff, &new_state).await;
+        self.phase_finalize_output_routes(&diff).await?;
+        self.phase_finalize_input_routes(&input_routes).await?;
+        self.phase_apply_effects(&diff, &new_state).await;
+        self.phase_finalize_groups(&diff).await;
+        self.phase_apply_fades(&diff, &new_state).await;
+        self.phase_start_running_patterns(&diff, &new_state).await;
+        self.phase_trigger_running_voices(&new_state).await;
+        self.phase_finalize_param_routes(&diff, &new_state).await?;
+        self.phase_apply_midi_routes(&new_state).await;
+
+        tracing::info!("Reload: complete");
+        Ok(())
+    }
+
+    /// Builds the reload diff and derived route maps used by the apply phases.
+    async fn build_reload_diff(
+        &mut self,
+        new_state: &reload::ScriptState,
+    ) -> (reload::ReloadDiff, InputRouteMap) {
         let pending_port_reconciles = self.pending_voice_port_reconciles(&new_state).await;
         // Calculate diff
         let mut diff = {
@@ -1144,16 +1181,11 @@ impl<B: Backend> Runtime<B> {
             let state = self.state.read().await;
             crate::handlers::compute_input_route_diff(&state.input_routes, &input_routes)
         };
+        (diff, input_routes)
+    }
 
-        // If no changes, return early - patterns continue playing seamlessly
-        // (Phase 6 only starts patterns that aren't already playing)
-        if !diff.has_changes() {
-            tracing::debug!("Reload: no changes detected, playback continues");
-            return Ok(());
-        }
-
-        tracing::info!("Reload: applying changes");
-
+    /// Applies tempo and time signature changes before entity reconciliation.
+    async fn phase_apply_transport_changes(&mut self, diff: &reload::ReloadDiff) -> Result<()> {
         // Apply tempo change if needed
         if let Some(bpm) = diff.tempo_changed {
             tracing::debug!("Reload: changing tempo to {}", bpm);
@@ -1169,12 +1201,13 @@ impl<B: Backend> Runtime<B> {
             );
             self.transport.set_time_signature(time_sig).await?;
         }
+        Ok(())
+    }
 
-        // =========================================================================
-        // Phase 1: Stop entities that will be deleted
-        // =========================================================================
+    /// Stops or cancels runtime activity for entities that are about to be removed or restarted.
+    async fn phase_stop_deleted_entities(&mut self, diff: &reload::ReloadDiff) {
         // NOTE: We NO LONGER stop patterns/melodies that are being updated.
-        // Instead, we queue content swaps in Phase 4 for seamless hot reload.
+        // Instead, we queue content swaps during entity updates for seamless hot reload.
 
         // Cancel fades that will be deleted
         for id in &diff.fades.deleted {
@@ -1218,11 +1251,10 @@ impl<B: Backend> Runtime<B> {
         for id in diff.sequences.updated.keys() {
             let _ = self.sequences.stop(*id).await;
         }
+    }
 
-        // =========================================================================
-        // Phase 2: Delete entities (children before parents for groups)
-        // =========================================================================
-
+    /// Removes deleted runtime entities and frees script-owned resources.
+    async fn phase_delete_entities(&mut self, diff: &reload::ReloadDiff) {
         // Delete effects (they depend on groups)
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
@@ -1280,7 +1312,7 @@ impl<B: Backend> Runtime<B> {
 
         // Free script-allocated buffers that disappeared from the script.
         // Updated buffers (frames/channels resize) are torn down here so
-        // Phase 3 below can re-alloc them at the new size.
+        // entity creation can re-alloc them at the new size.
         for id in &diff.buffers.deleted {
             tracing::debug!("Reload: freeing script buffer {:?}", id);
             if let Err(e) = self.backend.free_buffer(*id).await {
@@ -1303,17 +1335,18 @@ impl<B: Backend> Runtime<B> {
             self.state.write().await.sfz_instruments.remove(id);
         }
 
-        // Delete updated SFZ instruments (will be recreated in Phase 3)
+        // Delete updated SFZ instruments (will be recreated when entities are created)
         for (id, _) in &diff.sfz.updated {
             tracing::debug!("Reload: deleting SFZ instrument {:?} for update", id);
             let _ = self.sfz.unload(*id).await;
             self.state.write().await.sfz_instruments.remove(id);
         }
+    }
 
-        // =========================================================================
-        // Phase 2.5: Open MIDI devices (must be done before voices are created)
-        // =========================================================================
-
+    /// Opens MIDI devices and dispatches immediate MIDI output messages before voices are created.
+    async fn phase_open_midi_devices(&mut self, new_state: &reload::ScriptState) -> Result<bool> {
+        #[cfg(not(feature = "midi"))]
+        let _ = new_state;
         #[cfg(feature = "midi")]
         {
             // Story 4: open MIDI devices in `MidiDeviceId::raw()` order. The
@@ -1403,7 +1436,7 @@ impl<B: Backend> Runtime<B> {
                 let output_channels = self.midi.output_channels();
                 let Ok(channels) = output_channels.lock() else {
                     tracing::warn!("MIDI output channels mutex poisoned, skipping output");
-                    return Ok(());
+                    return Ok(false);
                 };
 
                 for msg in &new_state.midi_output_messages {
@@ -1500,11 +1533,15 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+        Ok(true)
+    }
 
-        // =========================================================================
-        // Phase 3: Create new entities (parents before children for groups)
-        // =========================================================================
-
+    /// Creates new samples, buffers, groups, voices, patterns, melodies, sequences, and SFZ instruments.
+    async fn phase_create_entities(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) {
         // Load new samples first (other entities may depend on them).
         // Parallelize: scsynth /b_allocRead + /b_query round-trips can overlap,
         // turning N×rtt sequential waits into a single batch.
@@ -1530,7 +1567,7 @@ impl<B: Backend> Runtime<B> {
         }
 
         // Allocate new script buffers (and re-allocate updated ones at new
-        // size — the prior generation was freed in Phase 2 above). Voices
+        // size — the prior generation was already freed). Voices
         // wired with `set_param("bufnum", ...)` will reference these IDs.
         let buffers_to_alloc: Vec<_> = diff
             .buffers
@@ -1699,14 +1736,17 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // NOTE: Effect creation is deferred to Phase 4.8 (after routes finalize)
+        // NOTE: Effect creation is deferred until after routes finalize
         // so that effect synths sit in SC tree order *after* the route mixers
-        // that sum voice ports onto the group's audio bus. See Phase 4.8 below.
+        // that sum voice ports onto the group's audio bus.
+    }
 
-        // =========================================================================
-        // Phase 4: Update existing entities
-        // =========================================================================
-
+    /// Applies in-place updates and structural recreations for existing groups, voices, patterns, melodies, and sequences.
+    async fn phase_update_entities(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) {
         // Update groups (params and mute/solo, parent changes not supported during reload).
         //
         // Story 4: sort by `GroupId::raw()` for deterministic apply order. The
@@ -1774,7 +1814,7 @@ impl<B: Backend> Runtime<B> {
             // mono↔stereo flip therefore can't be patched in place. To keep
             // the code path uniform across all four mono/stereo × bus-change
             // combinations, we always tear down the existing link synth and
-            // clear `link_synth_node_id` when either field changes; Phase 5's
+            // clear `link_synth_node_id` when either field changes;
             // `groups.finalize()` then spawns the right variant for the new
             // `output_channels` and routes it to the resolved out_bus, reusing
             // the dispatch already covered by `handlers::groups` unit tests.
@@ -1822,7 +1862,7 @@ impl<B: Backend> Runtime<B> {
         // is a `HashMap`, so without sorting two reloads of the same script would
         // hand out kr-bus IDs in different orders — same class of bug as the root-group
         // scramble, just on the voice level. Use the same sort key as voice creation
-        // (lines 1224–1234) so reload symmetry is preserved.
+        // so reload symmetry is preserved.
         let mut updated_voice_ids: Vec<_> = diff.voices.updated.keys().copied().collect();
         updated_voice_ids.sort_by_key(|id| {
             (
@@ -1979,13 +2019,13 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // NOTE: Effect updates are deferred to Phase 4.8 (after routes finalize),
+        // NOTE: Effect updates are deferred until after routes finalize,
         // alongside effect creation, so freshly-(re)spawned effect synths sit
-        // *after* the route mixers in SC tree order. See Phase 4.8 below.
+        // *after* the route mixers in SC tree order.
+    }
 
-        // =========================================================================
-        // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
-        // =========================================================================
+    /// Materializes output route mixers and advances the current route snapshot.
+    async fn phase_finalize_output_routes(&mut self, diff: &reload::ReloadDiff) -> Result<()> {
         // Spawned between the voice creation/update phase and the group
         // link-synth phase so the SC tree order is voices → routes → effects →
         // link synth → main bus. The diff is computed against the
@@ -2015,10 +2055,11 @@ impl<B: Backend> Runtime<B> {
             }
         }
         self.state.write().await.current_routes = merged_routes;
+        Ok(())
+    }
 
-        // =========================================================================
-        // Phase 4.7b: Finalize named-input routes (source bus → voice input bus)
-        // =========================================================================
+    /// Materializes named input routes against the last active input-route snapshot.
+    async fn phase_finalize_input_routes(&mut self, input_routes: &InputRouteMap) -> Result<()> {
         // Script-side `voice.input("name").from(...)` calls populate explicit
         // entries, and every declared linkable input port defaults to the
         // shared silent bus when left unpatched. Reconcile that effective map
@@ -2032,15 +2073,20 @@ impl<B: Backend> Runtime<B> {
                 return Err(e);
             }
         }
+        Ok(())
+    }
 
-        // =========================================================================
-        // Phase 4.8: Create / update effects (after route mixers)
-        // =========================================================================
+    /// Creates and updates effects after output route mixers have been materialized.
+    async fn phase_apply_effects(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) {
         // Effects must be inserted into the SC tree *after* the route mixers
-        // emitted by Phase 4.7 so that an effect's `In.ar(group_audio_bus)`
+        // emitted by output route finalization so that an effect's `In.ar(group_audio_bus)`
         // sees the post-sum signal that routes have just deposited there.
         // On initial load (no link synth yet) we use `AddAction::Tail`, so
-        // doing this strictly after Phase 4.7 (which also Tail-adds mixers
+        // doing this strictly after output route finalization (which also Tail-adds mixers
         // to the same group node) places effects after routes in tree order.
         // On later reloads where the link synth exists, `EffectsHandler::add`
         // already inserts `AddAction::Before` link, which is also after the
@@ -2137,11 +2183,10 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+    }
 
-        // =========================================================================
-        // Phase 5: Finalize groups (create link synths)
-        // =========================================================================
-
+    /// Finalizes changed groups so link synths exist with the current routing configuration.
+    async fn phase_finalize_groups(&mut self, diff: &reload::ReloadDiff) {
         // Finalize groups if any were created or updated — ensures link synths exist
         // and are properly configured. This handles group renames where the old group
         // is deleted and a new one is created.
@@ -2152,10 +2197,14 @@ impl<B: Backend> Runtime<B> {
             // Brief sync to let link synths be created (non-blocking, quick timeout)
             self.sync_with_retry("after finalize").await;
         }
+    }
 
-        // =========================================================================
-        // Phase 5.5: Process fades (stateful + legacy pending)
-        //
+    /// Starts created and updated stateful fades and processes legacy pending fades.
+    async fn phase_apply_fades(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) {
         // Stateful fades participate in the diff system: unchanged fades are
         // not re-fired. Only new or updated fades are started.
         // =========================================================================
@@ -2181,7 +2230,7 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Restart updated fades (already cancelled in Phase 1)
+        // Restart updated fades (already cancelled before deletion)
         for (id, config) in &diff.fades.updated {
             if new_state.playing_fades.contains(id) {
                 tracing::debug!(
@@ -2226,15 +2275,14 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+    }
 
-        // =========================================================================
-        // Phase 6: Start patterns/melodies/sequences that should be playing
-        //
-        // Important: Only start entities that aren't already playing.
-        // This ensures seamless live reload - unchanged patterns continue
-        // from their current position without glitching.
-        // =========================================================================
-
+    /// Starts or stops pattern, melody, and sequence playback requested by the script state.
+    async fn phase_start_running_patterns(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) {
         // First, stop patterns/melodies/sequences that were playing but are no longer
         // in the playing_* sets. This handles the case where user changes start() to stop().
         //
@@ -2470,11 +2518,10 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+    }
 
-        // =========================================================================
-        // Phase 6.5: Handle running voices (line-in, drones, etc.)
-        // =========================================================================
-
+    /// Stops removed running voices and triggers newly requested continuous voices.
+    async fn phase_trigger_running_voices(&mut self, new_state: &reload::ScriptState) {
         // First, stop voices that were running but are no longer in running_voices
         // This handles the case where .run() is removed from a voice
         let voices_to_stop: Vec<crate::types::VoiceId> = {
@@ -2521,10 +2568,14 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+    }
 
-        // =========================================================================
-        // Phase 6.6: Finalize param routes (kr/tr/ar source ports → target params)
-        // =========================================================================
+    /// Materializes parameter routes after their source and target nodes exist.
+    async fn phase_finalize_param_routes(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) -> Result<()> {
         // Param routes are not part of the entity diff, so they need an
         // explicit reload-time diff against State's active route registries.
         // Run this after running voices are triggered so `.run()` targets have
@@ -2560,11 +2611,13 @@ impl<B: Backend> Runtime<B> {
                 return Err(e);
             }
         }
+        Ok(())
+    }
 
-        // =========================================================================
-        // Phase 7: Apply MIDI routes from script state
-        // =========================================================================
-
+    /// Applies MIDI routing and clock-output requests from the script state.
+    async fn phase_apply_midi_routes(&mut self, new_state: &reload::ScriptState) {
+        #[cfg(not(feature = "midi"))]
+        let _ = new_state;
         #[cfg(feature = "midi")]
         {
             // Apply all MIDI route types. Each apply method clears its own
@@ -2624,9 +2677,6 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
-
-        tracing::info!("Reload: complete");
-        Ok(())
     }
 }
 
@@ -3861,10 +3911,10 @@ mod tests {
     //
     // These tests pin the SC tree spawn order during apply_reload:
     //   voices' synth nodes (Head)
-    //     → routes' mixer synths (RoutesHandler::finalize, Phase 4.7)
-    //     → group's effect chain (EffectsHandler::add, Phase 4.8)
-    //     → group bus (link synth created in Phase 5)
-    //     → main bus
+    //     -> routes' mixer synths (RoutesHandler::finalize)
+    //     -> group's effect chain (EffectsHandler::add)
+    //     -> group bus (link synth created by GroupsHandler::finalize)
+    //     -> main bus
     //
     // The runtime must invoke `effects.add` strictly *after* `routes.finalize`
     // so that an effect's `In.ar(group_audio_bus)` reads the post-sum signal
@@ -6168,7 +6218,7 @@ mod tests {
 
         // Post-mix invariant — both mixers run before the reverb, so the
         // reverb sees the post-sum signal. This is what the runtime's
-        // Phase 4.7 → Phase 4.8 ordering guarantees.
+        // output-route finalization before effect creation guarantees.
         for &mi in &mixer_indices {
             assert!(
                 mi < reverb_idx,
@@ -6214,11 +6264,11 @@ mod tests {
             "reverb's __fx_bus_out must equal group's audio bus"
         );
 
-        // The link synth runs last (Phase 5) and reads from the group bus.
+        // The link synth runs last and reads from the group bus.
         let link_idx = log
             .iter()
             .position(|r| r.def == "system_link_audio")
-            .expect("link synth was created in Phase 5");
+            .expect("link synth was created by group finalization");
         assert!(
             reverb_idx < link_idx,
             "reverb must precede link synth — got: {:?}",
@@ -7333,9 +7383,9 @@ mod tests {
     //
     // These tests pin the four mono/stereo transitions exercised when a
     // hot-reload flips a group's hardware routing. The reload reconciler
-    // (`apply_reload` Phase 4 group update) tears down the old link synth
-    // on any (output_bus, output_channels) change; Phase 5
-    // `groups.finalize` then respawns the variant matching the new
+    // (`apply_reload` group update) tears down the old link synth
+    // on any (output_bus, output_channels) change; `groups.finalize`
+    // then respawns the variant matching the new
     // channel count, routed at the new bus.
     //
     // After reload we assert: exactly one `system_link_audio*` synth is
