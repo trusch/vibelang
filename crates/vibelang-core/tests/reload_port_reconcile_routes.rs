@@ -35,12 +35,12 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use vibelang_core::handlers::{RouteDest, RouteMap, RoutesHandler};
-use vibelang_core::reload::reconcile_voice_ports;
+use vibelang_core::reload::{calculate_diff, reconcile_voice_ports, GroupConfig, ScriptState};
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, GroupId, GroupState, NodeId, ParamMap, State,
     VoiceConfig, VoiceId, VoiceRole, VoiceState,
 };
-use vibelang_dsp::OutputPort;
+use vibelang_dsp::{OutputPort, PortRate};
 
 // =========================================================================
 // Mock backend — captures create_synth / free_node so we can assert on
@@ -196,7 +196,15 @@ fn port(name: &str, channels: u8) -> OutputPort {
     OutputPort {
         name: name.to_string(),
         channels,
-        rate: vibelang_dsp::PortRate::Ar,
+        rate: PortRate::Ar,
+    }
+}
+
+fn kr_port(name: &str, channels: u8) -> OutputPort {
+    OutputPort {
+        name: name.to_string(),
+        channels,
+        rate: PortRate::Kr,
     }
 }
 
@@ -368,6 +376,97 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
     let live_nodes_after: HashMap<(VoiceId, String, RouteDest), NodeId> =
         h.state.read().await.route_synths.clone();
     assert_eq!(live_nodes_before, live_nodes_after);
+}
+
+#[test]
+fn calculate_diff_is_identical_for_authored_and_prestripped_routes_on_rate_flip() {
+    let synth = "reload_diff_prestrip_equivalence_synth";
+    let voice = VoiceId::new(91);
+    let group = GroupId::new(92);
+    let old_ports = vec![port("env", 1)];
+    let new_ports = vec![kr_port("env", 1)];
+
+    let mut current = State::default();
+    current.synthdefs.insert(synth.to_string());
+    current
+        .synthdef_outputs
+        .insert(synth.to_string(), old_ports.clone());
+    let group_node = current.alloc_node_id();
+    let group_bus = current.alloc_audio_bus(2);
+    current.groups.insert(
+        group,
+        GroupState {
+            id: group,
+            name: "g".to_string(),
+            parent: None,
+            node_id: group_node,
+            audio_bus: group_bus,
+            link_synth_node_id: None,
+            muted: false,
+            soloed: false,
+            params: ParamMap::new(),
+            output_bus: None,
+            output_channels: None,
+        },
+    );
+    let env_bus = current.alloc_audio_bus(1);
+    current.voices.insert(
+        voice,
+        VoiceState {
+            id: voice,
+            config: VoiceConfig::new("v", synth, group),
+            role: VoiceRole::Audible,
+            active_nodes: Vec::new(),
+            note_nodes: HashMap::new(),
+            round_robin_position: 0,
+            pending_params: HashMap::new(),
+            output_buses: vec![("env".to_string(), env_bus)],
+            input_buses: Vec::new(),
+        },
+    );
+
+    vibelang_dsp::register_synthdef_outputs(synth.to_string(), new_ports);
+
+    let mut current_routes = RouteMap::new();
+    current_routes.insert((voice, "env".to_string()), vec![RouteDest::Group(group)]);
+
+    let mut authored = ScriptState::new();
+    authored.groups.insert(
+        group,
+        GroupConfig {
+            name: "g".to_string(),
+            parent: None,
+            params: ParamMap::new(),
+            effects: Vec::new(),
+            muted: false,
+            soloed: false,
+            output_bus: None,
+            output_channels: None,
+        },
+    );
+    authored
+        .voices
+        .insert(voice, VoiceConfig::new("v", synth, group));
+    authored
+        .routes
+        .insert((voice, "env".to_string()), vec![RouteDest::Group(group)]);
+
+    let mut prestripped = authored.clone();
+    prestripped.routes.remove(&(voice, "env".to_string()));
+
+    let authored_diff = calculate_diff(&current, &authored, &current_routes);
+    let prestripped_diff = calculate_diff(&current, &prestripped, &current_routes);
+
+    assert_eq!(
+        authored_diff.effective_output_routes, prestripped_diff.effective_output_routes,
+        "calculate_diff must derive output routes from the as-authored ScriptState without relying on pre-diff mutation",
+    );
+    assert_eq!(authored_diff.output_routes, prestripped_diff.output_routes);
+    assert_eq!(
+        authored_diff.summary(),
+        prestripped_diff.summary(),
+        "observable ReloadDiff summary should not depend on old pre-strip side effects",
+    );
 }
 
 // =========================================================================

@@ -89,7 +89,7 @@ use crate::handlers::{
 use crate::state::VoiceRole;
 use crate::types::GroupId;
 use std::collections::{HashMap, HashSet};
-use vibelang_dsp::PortRate;
+use vibelang_dsp::{OutputPort, PortRate};
 
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
@@ -172,11 +172,27 @@ fn output_rate(
     port_name: &str,
 ) -> Option<PortRate> {
     let config = new.voices.get(&voice_id)?;
-    current
-        .synthdef_outputs(&config.synthdef)
+    output_ports_for_script_voice(current, voice_id, config)
         .into_iter()
         .find(|port| port.name == port_name)
         .map(|port| port.rate)
+}
+
+fn output_ports_for_script_voice(
+    current: &State,
+    voice_id: VoiceId,
+    config: &crate::traits::VoiceConfig,
+) -> Vec<OutputPort> {
+    let current_ports = current.synthdef_outputs(&config.synthdef);
+    if current
+        .voices
+        .get(&voice_id)
+        .is_some_and(|voice| voice.config.synthdef == config.synthdef)
+    {
+        vibelang_dsp::get_synthdef_outputs(&config.synthdef).unwrap_or(current_ports)
+    } else {
+        current_ports
+    }
 }
 
 fn has_audible_ar_route(current: &State, new: &ScriptState, voice_id: VoiceId) -> bool {
@@ -193,12 +209,15 @@ fn has_audible_ar_route(current: &State, new: &ScriptState, voice_id: VoiceId) -
 }
 
 fn has_kr_or_tr_user_route(current: &State, new: &ScriptState, voice_id: VoiceId) -> bool {
-    new.routes.iter().any(|((route_voice, port_name), _)| {
+    new.routes.iter().any(|((route_voice, port_name), dests)| {
         *route_voice == voice_id
             && matches!(
                 output_rate(current, new, voice_id, port_name),
                 Some(PortRate::Kr | PortRate::Tr)
             )
+            && dests
+                .iter()
+                .any(|dest| matches!(dest, RouteDest::Param { .. }))
     })
 }
 
@@ -235,12 +254,35 @@ fn default_output_routes_for_script_state(current: &State, new: &ScriptState) ->
         {
             continue;
         }
-        let ports = current.synthdef_outputs(&config.synthdef);
+        let ports = output_ports_for_script_voice(current, *voice_id, config);
         for (port_name, dests) in default_routes_for_voice(config.group, &ports) {
             defaults.insert((*voice_id, port_name), dests);
         }
     }
     defaults
+}
+
+fn output_routes_for_script_state(current: &State, new: &ScriptState) -> RouteMap {
+    new.routes
+        .iter()
+        .filter(|((voice_id, port_name), _)| {
+            let Some(config) = new.voices.get(voice_id) else {
+                return true;
+            };
+            if !current
+                .voices
+                .get(voice_id)
+                .is_some_and(|voice| voice.config.synthdef == config.synthdef)
+            {
+                return true;
+            }
+            matches!(
+                output_rate(current, new, *voice_id, port_name),
+                Some(PortRate::Ar)
+            )
+        })
+        .map(|(key, dests)| (key.clone(), dests.clone()))
+        .collect()
 }
 
 fn effective_output_routes(
@@ -297,7 +339,8 @@ fn effective_output_routes(
         );
     }
 
-    merge_default_routes(&new.routes, &filtered)
+    let user_routes = output_routes_for_script_state(current, new);
+    merge_default_routes(&user_routes, &filtered)
 }
 
 /// Calculate the diff between current runtime state and new script state.

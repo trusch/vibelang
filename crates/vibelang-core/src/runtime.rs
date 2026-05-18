@@ -65,7 +65,7 @@ use crate::transport_snapshot::TransportSnapshot;
 use crate::types::VoiceId;
 use crate::{Error, Result};
 use std::sync::Arc;
-use vibelang_dsp::{OutputPort, PortRate};
+use vibelang_dsp::OutputPort;
 
 #[cfg(feature = "midi")]
 use crate::handlers::MidiHandler;
@@ -822,21 +822,6 @@ impl<B: Backend> Runtime<B> {
     /// 5. Restart patterns/melodies/sequences
     ///
     /// Applies state from a newly executed script to the runtime.
-    fn remove_param_route_source(
-        routes: &mut ParamRouteMap,
-        shaping: &mut std::collections::HashMap<
-            (VoiceId, String, crate::handlers::ParamRouteTarget, String),
-            (f32, f32),
-        >,
-        voice_id: VoiceId,
-        port_name: &str,
-    ) {
-        routes.remove(&(voice_id, port_name.to_string()));
-        shaping.retain(|(src_voice, src_port, _, _), _| {
-            *src_voice != voice_id || src_port != port_name
-        });
-    }
-
     fn voice_needs_structural_recreate(
         current: &crate::traits::VoiceConfig,
         new: &crate::traits::VoiceConfig,
@@ -961,7 +946,7 @@ impl<B: Backend> Runtime<B> {
 
     async fn pending_voice_port_reconciles(
         &self,
-        new_state: &mut reload::ScriptState,
+        new_state: &reload::ScriptState,
     ) -> Vec<PendingVoicePortReconcile> {
         let state = self.state.read().await;
         let mut pending = Vec::new();
@@ -1000,28 +985,6 @@ impl<B: Backend> Runtime<B> {
                 if new_rate.is_some() {
                     refreshed_ports.push(port.name.clone());
                 }
-
-                let key = (voice_id, port.name.clone());
-                if new_rate != Some(PortRate::Ar) {
-                    new_state.routes.remove(&key);
-                }
-                if !matches!(new_rate, Some(PortRate::Ar | PortRate::Kr)) {
-                    Self::remove_param_route_source(
-                        &mut new_state.param_routes_set,
-                        &mut new_state.param_route_set_shaping,
-                        voice_id,
-                        &port.name,
-                    );
-                    Self::remove_param_route_source(
-                        &mut new_state.param_routes_bend,
-                        &mut new_state.param_route_bend_shaping,
-                        voice_id,
-                        &port.name,
-                    );
-                }
-                if new_rate != Some(PortRate::Tr) {
-                    new_state.param_routes_trigger.remove(&key);
-                }
             }
 
             pending.push(PendingVoicePortReconcile {
@@ -1034,13 +997,16 @@ impl<B: Backend> Runtime<B> {
         pending
     }
 
-    async fn apply_voice_port_reconciles(&mut self, pending: &[PendingVoicePortReconcile]) -> bool {
+    async fn apply_voice_port_reconciles(
+        &mut self,
+        pending: &[PendingVoicePortReconcile],
+        effective_routes: &mut RouteMap,
+    ) -> bool {
         if pending.is_empty() {
             return false;
         }
 
         let mut state = self.state.write().await;
-        let mut observed_routes = self.current_routes.clone();
         let mut changed = false;
 
         for reconcile in pending {
@@ -1048,7 +1014,7 @@ impl<B: Backend> Runtime<B> {
                 &mut state,
                 reconcile.voice_id,
                 &reconcile.new_ports,
-                &mut observed_routes,
+                effective_routes,
             );
             if !outcome.diff.is_unchanged() {
                 changed = true;
@@ -1086,10 +1052,8 @@ impl<B: Backend> Runtime<B> {
         }
     }
 
-    async fn apply_reload(&mut self, mut new_state: reload::ScriptState) -> Result<()> {
-        let pending_port_reconciles = self.pending_voice_port_reconciles(&mut new_state).await;
-        self.apply_voice_port_reconciles(&pending_port_reconciles)
-            .await;
+    async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
+        let pending_port_reconciles = self.pending_voice_port_reconciles(&new_state).await;
         // Calculate diff
         let mut diff = {
             let current = self.state.read().await;
@@ -1176,6 +1140,11 @@ impl<B: Backend> Runtime<B> {
         for voice_id in &structurally_recreated_voices {
             route_base.retain(|(id, _), _| id != voice_id);
         }
+        self.apply_voice_port_reconciles(
+            &pending_port_reconciles,
+            &mut diff.effective_output_routes,
+        )
+        .await;
         diff.output_routes = reload::diff_routes(&route_base, &diff.effective_output_routes);
         diff.input_routes = {
             let state = self.state.read().await;

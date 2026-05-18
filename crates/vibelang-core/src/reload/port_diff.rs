@@ -20,7 +20,7 @@
 //! [`RoutesHandler::finalize`]: crate::handlers::RoutesHandler::finalize
 //! [`BusId`]: crate::types::BusId
 
-use crate::handlers::{RouteDest, RouteMap};
+use crate::handlers::{ParamRouteMap, ParamRouteTarget, RouteDest, RouteMap};
 use crate::state::State;
 use crate::types::{BusId, ControlBusId, VoiceId};
 use std::collections::HashMap;
@@ -162,6 +162,23 @@ fn rate_label(r: PortRate) -> &'static str {
     }
 }
 
+fn remove_param_route_source(
+    routes: &mut ParamRouteMap,
+    shaping: &mut HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    voice_id: VoiceId,
+    port_name: &str,
+) -> bool {
+    let key = (voice_id, port_name.to_string());
+    let route_removed = routes.remove(&key).is_some();
+    let shaping_removed = shaping.keys().any(|(source_voice, source_port, _, _)| {
+        *source_voice == voice_id && source_port == port_name
+    });
+    shaping.retain(|(source_voice, source_port, _, _), _| {
+        *source_voice != voice_id || source_port != port_name
+    });
+    route_removed || shaping_removed
+}
+
 /// Reconcile a voice's bus allocations and route entries to match `new_ports`.
 ///
 /// Mutates:
@@ -236,6 +253,11 @@ pub fn reconcile_voice_ports(
     let mut dropped_routes = Vec::new();
     let mut dropped_param_routes = Vec::new();
     for port in &diff.removed {
+        let new_rate = diff
+            .added
+            .iter()
+            .find(|added| added.name == port.name)
+            .map(|added| added.rate);
         let bus = state.voices.get(&voice_id).and_then(|v| {
             v.output_buses
                 .iter()
@@ -254,14 +276,21 @@ pub fn reconcile_voice_ports(
             voice.output_buses.retain(|(n, _)| n != &port.name);
         }
         let key = (voice_id, port.name.clone());
-        if routes.remove(&key).is_some() {
+        if new_rate != Some(PortRate::Ar) && routes.remove(&key).is_some() {
             dropped_routes.push(key.clone());
         }
-        let mut hit = false;
-        if state.param_routes_set.remove(&key).is_some() {
-            hit = true;
-        }
-        if state.param_routes_bend.remove(&key).is_some() {
+        let mut hit = remove_param_route_source(
+            &mut state.param_routes_set,
+            &mut state.param_route_set_shaping,
+            voice_id,
+            &port.name,
+        );
+        if remove_param_route_source(
+            &mut state.param_routes_bend,
+            &mut state.param_route_bend_shaping,
+            voice_id,
+            &port.name,
+        ) {
             hit = true;
         }
         if state.param_routes_trigger.remove(&key).is_some() {
