@@ -50,6 +50,7 @@ define_synthdef("spectraphon", |builder| {
         .output("odd")
         .output("even")
         .param("freq", 220.0)
+        .param("v_oct", 0.0)
         .param("partials", 1.0)
         .param("slide", 0.5)
         .param("focus", 0.5)
@@ -64,7 +65,11 @@ define_synthdef("spectraphon", |builder| {
         .param("active", 1.0)
         .body_map(|p| {
             let analyze_in = p.inputs["analyze"];
-            let freq = p.freq;
+            // `freq` is the base/tuning frequency in Hz. `v_oct` is a
+            // 1V/oct exponential transposition input (default 0 = no shift)
+            // so any rack CV in volts-per-octave (e.g. rene's `cv`) can
+            // drive pitch directly without magic-number linear scaling.
+            let freq = p.freq * pow(2.0, p.v_oct);
             let partials = p.partials;
             let slide = p.slide;
             let focus = p.focus;

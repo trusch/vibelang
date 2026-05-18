@@ -95,7 +95,7 @@ tempi.output("ch4").to_param(maths, "trig4");
 let spec = voice("spectraphon_voice")
     .synth("spectraphon")
     .group("rack")
-    .set_param("freq", 92.5)
+    .set_param("freq", 261.63)
     .set_param("partials", 0.66)
     .set_param("slide", 0.46)
     .set_param("focus", 0.54)
@@ -103,7 +103,10 @@ let spec = voice("spectraphon_voice")
     .set_param("mode", 2.0)
     .gain(db(-24));
 
-rene.output("cv").to_param(spec, "freq").scale(105.0).offset(120.0);
+// Rene's `cv` is 1V/oct centred on MIDI 60. Routed straight into
+// Spectraphon's `v_oct` it transposes the C4 base exponentially —
+// no magic-number scaling needed.
+rene.output("cv").to_param(spec, "v_oct");
 woggle.output("stepped").to_param(spec, "partials").scale(0.34).offset(0.58);
 maths.output("ch1").to_param(spec, "slide").scale(0.44).offset(0.32);
 maths.output("ch4").to_param(spec, "focus").scale(0.48).offset(0.28);
