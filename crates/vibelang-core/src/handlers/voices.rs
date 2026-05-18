@@ -315,6 +315,48 @@ impl<B: Backend> VoicesHandler<B> {
         Ok(())
     }
 
+    fn bend_baseline_updates_for_spawn(
+        state: &State,
+        id: VoiceId,
+        params: &ParamMap,
+        bindings: &[(String, BusId)],
+    ) -> Vec<(NodeId, f32)> {
+        let target = crate::handlers::ParamRouteTarget::Voice(id);
+        let mut updates = Vec::new();
+
+        for (param, _) in bindings {
+            let Some(value) = params.get(param) else {
+                continue;
+            };
+            let key = (target, param.clone());
+            let Some(summer) = state.param_summers.get(&key) else {
+                continue;
+            };
+            let bend_routed = state
+                .param_routes_bend
+                .values()
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
+            if !bend_routed {
+                continue;
+            }
+            let set_routed = state
+                .param_routes_set
+                .values()
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
+            if !set_routed {
+                updates.push((summer.node, *value));
+            }
+        }
+
+        updates
+    }
+
+    async fn forward_bend_baselines(&self, updates: &[(NodeId, f32)]) {
+        for (summer, value) in updates {
+            let _ = self.backend.set_param(*summer, "baseline", *value).await;
+        }
+    }
+
     /// Send a note-on with per-note voice parameters (immediate).
     ///
     /// Like `note_on`, but also merges `extra_params` into the synth creation
@@ -380,7 +422,16 @@ impl<B: Backend> VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, add_target, add_action, synthdef, params, old_node, param_bindings) = {
+        let (
+            node_id,
+            add_target,
+            add_action,
+            synthdef,
+            params,
+            old_node,
+            param_bindings,
+            bend_baseline_updates,
+        ) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -460,6 +511,8 @@ impl<B: Backend> VoicesHandler<B> {
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let bend_baseline_updates =
+                Self::bend_baseline_updates_for_spawn(&state, id, &params, &param_bindings);
             let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
@@ -470,6 +523,7 @@ impl<B: Backend> VoicesHandler<B> {
                 params,
                 old_node,
                 param_bindings,
+                bend_baseline_updates,
             )
         };
 
@@ -485,6 +539,7 @@ impl<B: Backend> VoicesHandler<B> {
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
             .await?;
+        self.forward_bend_baselines(&bend_baseline_updates).await;
 
         Ok(())
     }
@@ -862,6 +917,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             old_nodes,
             choke_nodes,
             param_bindings,
+            bend_baseline_updates,
         ) = {
             let mut state = self.state.write().await;
 
@@ -986,6 +1042,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
             }
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let bend_baseline_updates =
+                Self::bend_baseline_updates_for_spawn(&state, id, &merged_params, &param_bindings);
             let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
@@ -997,6 +1055,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 old_nodes,
                 choke_nodes,
                 param_bindings,
+                bend_baseline_updates,
             )
         };
 
@@ -1012,6 +1071,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
             .await?;
+        self.forward_bend_baselines(&bend_baseline_updates).await;
 
         // Free old nodes (polyphony limit)
         for old_node in old_nodes {
@@ -1100,7 +1160,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, add_target, add_action, synthdef, params, old_node, param_bindings) = {
+        let (
+            node_id,
+            add_target,
+            add_action,
+            synthdef,
+            params,
+            old_node,
+            param_bindings,
+            bend_baseline_updates,
+        ) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -1191,6 +1260,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let bend_baseline_updates =
+                Self::bend_baseline_updates_for_spawn(&state, id, &params, &param_bindings);
             let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
@@ -1201,6 +1272,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 params,
                 old_node,
                 param_bindings,
+                bend_baseline_updates,
             )
         };
 
@@ -1216,6 +1288,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
             .await?;
+        self.forward_bend_baselines(&bend_baseline_updates).await;
 
         Ok(())
     }

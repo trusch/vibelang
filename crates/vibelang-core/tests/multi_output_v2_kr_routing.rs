@@ -1,5 +1,10 @@
 //! Multi-output v2 Story 9 — integration tests for kr routing + per-port FX.
 //!
+//! Routing test layering decision: see MindHub ticket
+//! `decision-keep-routing-test-layering-as-is`. This suite owns generic voice
+//! kr-output routing, SET fan-out, and route-reconcile preservation; sibling
+//! suites cover stdlib-style kr LFO routing and effect-target param routing.
+//!
 //! Drives the public seam between
 //! [`vibelang_core::handlers::RoutesHandler`] (`finalize` for audio routes +
 //! per-port FX chain, `finalize_params` for CV→param /n_map) and

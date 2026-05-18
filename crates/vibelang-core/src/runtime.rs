@@ -115,14 +115,6 @@ pub struct Runtime<B: Backend> {
     #[cfg(feature = "midi")]
     tick_count: u32,
 
-    /// Last applied per-voice routing map.
-    ///
-    /// Updated at the end of each [`Self::apply_reload`] so the next reload
-    /// can produce a `RouteDiff` against this baseline. Mirrors the
-    /// `ScriptState::routes` shape; populated only when the Rhai surface
-    /// (Story 8) starts emitting routes.
-    current_routes: RouteMap,
-
     /// Whether the MIDI clock thread has been started (for tick() users).
     #[cfg(feature = "midi")]
     clock_thread_started: bool,
@@ -235,7 +227,6 @@ impl<B: Backend> Runtime<B> {
             tick_count: 0,
             #[cfg(feature = "midi")]
             clock_thread_started: false,
-            current_routes: RouteMap::new(),
         }
     }
 
@@ -1057,7 +1048,7 @@ impl<B: Backend> Runtime<B> {
         // Calculate diff
         let mut diff = {
             let current = self.state.read().await;
-            reload::calculate_diff(&current, &new_state, &self.current_routes)
+            reload::calculate_diff(&current, &new_state, &current.current_routes)
         };
         let structurally_recreated_voices = self
             .structurally_recreated_voice_ids(&diff, &new_state)
@@ -1136,7 +1127,10 @@ impl<B: Backend> Runtime<B> {
         diff.param_routes_bend = param_bend_diff;
         diff.param_routes_trigger = param_trigger_diff;
         diff.voice_port_reconciles = pending_port_reconciles.len();
-        let mut route_base = self.current_routes.clone();
+        let mut route_base = {
+            let state = self.state.read().await;
+            state.current_routes.clone()
+        };
         for voice_id in &structurally_recreated_voices {
             route_base.retain(|(id, _), _| id != voice_id);
         }
@@ -1995,7 +1989,7 @@ impl<B: Backend> Runtime<B> {
         // Spawned between the voice creation/update phase and the group
         // link-synth phase so the SC tree order is voices → routes → effects →
         // link synth → main bus. The diff is computed against the
-        // last-applied [`Self::current_routes`] snapshot.
+        // last-applied [`State::current_routes`] snapshot.
         //
         // Story 5: the effective desired map is the union of count-based
         // defaults (installed in `state.default_routes` by VoicesHandler::create)
@@ -2020,7 +2014,7 @@ impl<B: Backend> Runtime<B> {
                 return Err(e);
             }
         }
-        self.current_routes = merged_routes;
+        self.state.write().await.current_routes = merged_routes;
 
         // =========================================================================
         // Phase 4.7b: Finalize named-input routes (source bus → voice input bus)
@@ -3115,7 +3109,7 @@ mod tests {
 
         assert!(err.to_string().contains("kr-rate"), "err = {err}");
         assert!(
-            runtime.current_routes.is_empty(),
+            runtime.state.read().await.current_routes.is_empty(),
             "failed route reload must not advance current_routes"
         );
         let lines = captured.lines();

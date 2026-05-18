@@ -914,6 +914,14 @@ pub struct State {
     /// group's audio bus (or bus 0 for `RouteDest::Main`).
     pub route_synths: HashMap<(VoiceId, String, crate::handlers::RouteDest), NodeId>,
 
+    /// Last applied per-voice routing map.
+    ///
+    /// Updated at the end of `Runtime::apply_reload` so the next reload can
+    /// produce a route diff against this baseline. Kept beside
+    /// [`Self::route_synths`] so the materialized route nodes and their
+    /// desired-route snapshot stay under the same state lock.
+    pub current_routes: crate::handlers::RouteMap,
+
     /// Per-voice **input** routes, keyed by `(target_voice_id, input_port_name)`.
     ///
     /// Symmetric to the output-side [`crate::handlers::RouteMap`]: the value is
@@ -1046,6 +1054,8 @@ pub struct State {
     /// runtime can update `scale_<i>` / `offset_<i>` without rebuilding the
     /// summer. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
+    /// `param_summers` and `route_synths` are always mutated together under
+    /// the state write lock; reading one without the other is a bug.
     pub param_summers: HashMap<(crate::handlers::ParamRouteTarget, String), ParamSummerState>,
 
     /// Active `a2k_adapter_1` synths spawned to coerce an audio-rate source
@@ -1179,6 +1189,7 @@ impl Default for State {
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
+            current_routes: HashMap::new(),
             input_routes: HashMap::new(),
             input_route_synths: HashMap::new(),
             silent_ar_bus: None,
