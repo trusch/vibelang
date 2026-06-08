@@ -64,11 +64,16 @@ use crate::midi::{
 use crate::transport_snapshot::TransportSnapshot;
 
 use crate::compat::SenderExt;
+use crate::handlers::ParamRouteTarget;
 use crate::message::{Message, PatternMessage, VoiceMessage};
+#[cfg(feature = "midi")]
+use crate::midi::send_cc_for_param;
 use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
 use crate::state::State;
+#[cfg(feature = "midi")]
+use crate::traits::VoiceConfig;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
@@ -77,8 +82,20 @@ use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+#[derive(Default)]
+struct VoiceCcTelemetry {
+    total: u64,
+    coalesced: u64,
+    runtime_full_avoided: u64,
+    last_info_total: u64,
+    last_warn_total: u64,
+    last_info_at: Option<Instant>,
+    last_warn_at: Option<Instant>,
+    coalesced_by_key: HashMap<(VoiceId, String), u64>,
+}
 
 /// Handler for MIDI operations.
 ///
@@ -163,6 +180,12 @@ pub struct MidiHandler<B: Backend> {
     /// through VoicesHandler for proper synth creation/destruction.
     runtime_tx: crate::compat::Sender<Message>,
 
+    /// Latest voice CC values observed during the current MIDI tick.
+    pending_voice_cc: Mutex<HashMap<(VoiceId, String), f32>>,
+
+    /// Rate-limited counters for live-rig MIDI CC pressure diagnostics.
+    voice_cc_telemetry: Mutex<VoiceCcTelemetry>,
+
     /// Looper manager — one instance per configured MIDI device.
     looper_manager: Mutex<LooperManager>,
 }
@@ -210,6 +233,9 @@ impl<B: Backend> MidiHandler<B> {
             clock_thread: Arc::new(parking_lot::RwLock::new(None)),
 
             runtime_tx,
+
+            pending_voice_cc: Mutex::new(HashMap::new()),
+            voice_cc_telemetry: Mutex::new(VoiceCcTelemetry::default()),
 
             looper_manager: Mutex::new(LooperManager::new()),
         }
@@ -621,11 +647,12 @@ impl<B: Backend> MidiHandler<B> {
 
         // Process messages without holding the lock
         for (device_id, msg) in messages {
-            self.handle_message(device_id, msg).await;
+            self.handle_message_inner(device_id, msg).await;
         }
 
         // Process timestamped MIDI events from the event queue.
         self.process_timestamped_events().await;
+        self.flush_pending_voice_cc().await;
 
         // Tick looper manager — detects silence and triggers playback conversion.
         let (current_beat, time_sig_num) = {
@@ -749,7 +776,13 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     /// Handle a single MIDI message.
+    #[cfg(test)]
     async fn handle_message(&self, device_id: MidiDeviceId, msg: MidiMessage) {
+        self.handle_message_inner(device_id, msg).await;
+        self.flush_pending_voice_cc().await;
+    }
+
+    async fn handle_message_inner(&self, device_id: MidiDeviceId, msg: MidiMessage) {
         self.handle_message_at_beat(device_id, msg, None).await;
     }
 
@@ -1217,14 +1250,13 @@ impl<B: Backend> MidiHandler<B> {
             };
 
             if voice_exists {
-                self.runtime_tx
-                    .send_async(Message::Voice(VoiceMessage::SetParam {
-                        id: *id,
-                        param: param.to_string(),
-                        value,
-                    }))
-                    .await
-                    .map_err(|_| Error::ChannelClosed)?;
+                let replaced = self
+                    .pending_voice_cc
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert((*id, param.to_string()), value)
+                    .is_some();
+                self.observe_voice_cc(*id, param, replaced);
             }
 
             return Ok(());
@@ -1266,6 +1298,218 @@ impl<B: Backend> MidiHandler<B> {
                 .set_param(node_id, param, value)
                 .await
                 .map_err(Error::backend)?;
+        }
+
+        Ok(())
+    }
+
+    fn observe_voice_cc(&self, id: VoiceId, param: &str, coalesced: bool) {
+        let channel = self.runtime_channel_stats();
+        let now = Instant::now();
+        let mut telemetry = self
+            .voice_cc_telemetry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        telemetry.total = telemetry.total.saturating_add(1);
+        if coalesced {
+            telemetry.coalesced = telemetry.coalesced.saturating_add(1);
+            *telemetry
+                .coalesced_by_key
+                .entry((id, param.to_string()))
+                .or_insert(0) += 1;
+        }
+
+        let runtime_full = channel.is_some_and(|(_, remaining, _)| remaining == 0);
+        if runtime_full {
+            telemetry.runtime_full_avoided = telemetry.runtime_full_avoided.saturating_add(1);
+        }
+
+        let should_info = telemetry
+            .last_info_at
+            .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+            || telemetry.total.saturating_sub(telemetry.last_info_total) >= 1024;
+        if should_info {
+            telemetry.last_info_at = Some(now);
+            telemetry.last_info_total = telemetry.total;
+
+            let key_coalesced = telemetry
+                .coalesced_by_key
+                .get(&(id, param.to_string()))
+                .copied()
+                .unwrap_or(0);
+            if let Some((depth, remaining, max)) = channel {
+                let near_full = max > 0 && remaining <= (max / 8).max(1);
+                tracing::info!(
+                    "MIDI voice CC coalescing: total={}, coalesced={}, current_key=({}, '{}'), current_key_coalesced={}, runtime_queue_depth={}/{}, runtime_queue_remaining={}, runtime_queue_near_full={}",
+                    telemetry.total,
+                    telemetry.coalesced,
+                    id.0,
+                    param,
+                    key_coalesced,
+                    depth,
+                    max,
+                    remaining,
+                    near_full
+                );
+            } else {
+                tracing::info!(
+                    "MIDI voice CC coalescing: total={}, coalesced={}, current_key=({}, '{}'), current_key_coalesced={}, runtime_queue_depth=unavailable",
+                    telemetry.total,
+                    telemetry.coalesced,
+                    id.0,
+                    param,
+                    key_coalesced
+                );
+            }
+        }
+
+        let should_warn = runtime_full
+            && (telemetry
+                .last_warn_at
+                .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+                || telemetry
+                    .runtime_full_avoided
+                    .saturating_sub(telemetry.last_warn_total)
+                    >= 1024);
+        if should_warn {
+            telemetry.last_warn_at = Some(now);
+            telemetry.last_warn_total = telemetry.runtime_full_avoided;
+            tracing::warn!(
+                "MIDI voice CC avoided blocking on full runtime queue: avoided_count={}, total={}, coalesced={}, current_key=({}, '{}')",
+                telemetry.runtime_full_avoided,
+                telemetry.total,
+                telemetry.coalesced,
+                id.0,
+                param
+            );
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn runtime_channel_stats(&self) -> Option<(usize, usize, usize)> {
+        let remaining = self.runtime_tx.capacity();
+        let max = self.runtime_tx.max_capacity();
+        Some((max.saturating_sub(remaining), remaining, max))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn runtime_channel_stats(&self) -> Option<(usize, usize, usize)> {
+        None
+    }
+
+    async fn flush_pending_voice_cc(&self) {
+        let updates: Vec<_> = {
+            let mut pending = self
+                .pending_voice_cc
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            pending.drain().collect()
+        };
+
+        for ((voice_id, param), value) in updates {
+            if let Err(e) = self.apply_voice_cc(voice_id, &param, value).await {
+                tracing::warn!(
+                    "Failed to apply MIDI CC to voice {} param '{}': {}",
+                    voice_id.0,
+                    param,
+                    e
+                );
+            }
+        }
+    }
+
+    async fn apply_voice_cc(&self, id: VoiceId, param: &str, value: f32) -> Result<()> {
+        #[cfg(feature = "midi")]
+        let (nodes, voice_config, summer_node, set_routed): (
+            Vec<NodeId>,
+            VoiceConfig,
+            Option<NodeId>,
+            bool,
+        ) = {
+            let mut state = self.state.write().await;
+            let Some(voice) = state.voices.get_mut(&id) else {
+                return Ok(());
+            };
+
+            voice.config.params.insert(param.to_string(), value);
+
+            let mut nodes = voice.active_nodes.clone();
+            nodes.extend(voice.note_nodes.values().copied());
+            let voice_config = voice.config.clone();
+
+            let target = ParamRouteTarget::Voice(id);
+            let key = (target.clone(), param.to_string());
+            let summer_node = state.param_summers.get(&key).map(|s| s.node);
+            let set_routed = state
+                .param_routes_set
+                .values()
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
+
+            (nodes, voice_config, summer_node, set_routed)
+        };
+
+        #[cfg(not(feature = "midi"))]
+        let (nodes, summer_node, set_routed): (Vec<NodeId>, Option<NodeId>, bool) = {
+            let mut state = self.state.write().await;
+            let Some(voice) = state.voices.get_mut(&id) else {
+                return Ok(());
+            };
+
+            voice.config.params.insert(param.to_string(), value);
+
+            let mut nodes = voice.active_nodes.clone();
+            nodes.extend(voice.note_nodes.values().copied());
+
+            let target = ParamRouteTarget::Voice(id);
+            let key = (target.clone(), param.to_string());
+            let summer_node = state.param_summers.get(&key).map(|s| s.node);
+            let set_routed = state
+                .param_routes_set
+                .values()
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
+
+            (nodes, summer_node, set_routed)
+        };
+
+        #[cfg(feature = "midi")]
+        {
+            let sent = send_cc_for_param(&voice_config, param, value, |device_id| {
+                self.get_output_channel(device_id)
+            });
+            if sent {
+                tracing::debug!(
+                    "Voice {:?}: sent MIDI CC for MIDI input param '{}' = {}",
+                    id,
+                    param,
+                    value
+                );
+            }
+        }
+
+        if set_routed {
+            tracing::debug!(
+                "MIDI CC set_param on voice {:?} param '{}': param is routed via .to_param \
+                 (SET), so the mapped source overrides this value until the route is removed",
+                id,
+                param
+            );
+        }
+
+        for node_id in nodes {
+            self.backend
+                .set_param(node_id, param, value)
+                .await
+                .map_err(Error::backend)?;
+        }
+
+        if let Some(summer) = summer_node {
+            if !set_routed {
+                self.backend
+                    .set_param(summer, "baseline", value)
+                    .await
+                    .map_err(Error::backend)?;
+            }
         }
 
         Ok(())
@@ -1758,9 +2002,9 @@ fn beat_at_event_arrival(
 mod tests {
     use super::*;
     use crate::backend::{AddAction, Backend, BufferInfo};
-    use crate::compat::{channel, RwLock};
+    use crate::compat::{channel, timeout, RwLock};
     use crate::handlers::VoicesHandler;
-    use crate::midi::{Channel, Velocity};
+    use crate::midi::{Channel, NoteRouteBuilder, Velocity};
     use crate::reload::LooperConfig;
     use crate::state::GroupState;
     use crate::traits::{VoiceConfig, Voices};
@@ -2086,16 +2330,10 @@ mod tests {
         )
         .await;
 
-        let msg = runtime_rx.try_recv().expect("CC should emit SetParam");
-        match msg {
-            Message::Voice(VoiceMessage::SetParam { id, param, value }) => {
-                assert_eq!(id, voice_id);
-                assert_eq!(param, "cutoff");
-                assert_eq!(value, 2000.0);
-                voices.set_param(id, &param, value).await.unwrap();
-            }
-            other => panic!("expected Voice::SetParam, got {other:?}"),
-        }
+        assert!(
+            runtime_rx.try_recv().is_err(),
+            "voice CC should not enqueue SetParam into the runtime channel"
+        );
 
         let calls = backend.set_param_calls();
         assert!(
@@ -2117,6 +2355,90 @@ mod tests {
             .last()
             .expect("next note should create a synth");
         assert_eq!(next_note_params.get("cutoff"), Some(&2000.0));
+    }
+
+    #[tokio::test]
+    async fn dense_voice_cc_tick_does_not_block_concurrent_note_on() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+
+        let (runtime_tx, mut runtime_rx) = channel(2);
+        let midi = MidiHandler::new(Arc::clone(&backend), Arc::clone(&state), runtime_tx);
+        midi.add_cc_route(
+            CcRouteBuilder::new(device_id, 70).to_voice(voice_id, "cutoff", 100.0, 2000.0),
+        )
+        .await;
+        midi.add_note_route(NoteRouteBuilder::new(device_id, 36).to(voice_id))
+            .await;
+
+        for sequence in 1..=64 {
+            assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+                sequence,
+                Instant::now(),
+                device_id,
+                NewMidiMessage::ControlChange {
+                    channel: Channel::new(0),
+                    controller: 70,
+                    value: 127,
+                },
+            )));
+        }
+        assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+            65,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::NoteOn {
+                channel: Channel::new(0),
+                note: 36,
+                velocity: Velocity::from_midi1(100),
+            },
+        )));
+
+        timeout(Duration::from_millis(100), midi.tick())
+            .await
+            .expect("dense voice CC input must not deadlock the MIDI tick");
+
+        let msg = runtime_rx
+            .try_recv()
+            .expect("NoteOn should still reach the runtime queue");
+        match msg {
+            Message::Voice(VoiceMessage::NoteOn {
+                voice,
+                note,
+                velocity,
+            }) => {
+                assert_eq!(voice, voice_id);
+                assert_eq!(note, 36);
+                assert!((velocity - (100.0 / 127.0)).abs() < f32::EPSILON);
+                voices.note_on(voice, note, velocity).await.unwrap();
+            }
+            other => panic!("expected Voice::NoteOn, got {other:?}"),
+        }
+
+        assert!(
+            runtime_rx.try_recv().is_err(),
+            "voice CC flood should not leave queued SetParam messages behind"
+        );
+
+        {
+            let state = state.read().await;
+            let voice = state.voices.get(&voice_id).unwrap();
+            assert_eq!(voice.config.params.get("cutoff"), Some(&2000.0));
+            assert!(
+                voice.note_nodes.contains_key(&36),
+                "queued NoteOn should be handleable after the CC flood"
+            );
+        }
+
+        let create_params = backend.synth_create_params();
+        let note_params = create_params.last().expect("NoteOn should create a synth");
+        assert_eq!(note_params.get("cutoff"), Some(&2000.0));
     }
 
     #[tokio::test]
@@ -2157,17 +2479,22 @@ mod tests {
         )
         .await;
 
-        let mut params = Vec::new();
-        while let Ok(Message::Voice(VoiceMessage::SetParam { param, .. })) = runtime_rx.try_recv() {
-            params.push(param);
-        }
+        assert!(
+            runtime_rx.try_recv().is_err(),
+            "voice CC should not enqueue SetParam into the runtime channel"
+        );
+
+        let params = {
+            let state = midi.state.read().await;
+            state.voices.get(&voice_id).unwrap().config.params.clone()
+        };
 
         assert!(
-            params.iter().any(|param| param == "no_channel"),
+            params.contains_key("no_channel"),
             "route without a channel filter should match channel 0"
         );
         assert!(
-            params.iter().any(|param| param == "channel_one"),
+            params.contains_key("channel_one"),
             ".channel(1) should match internal MIDI channel 0"
         );
     }

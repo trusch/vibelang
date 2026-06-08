@@ -94,7 +94,7 @@ where
         value: cc_value,
     };
 
-    if sender.send(event.immediate()).is_ok() {
+    if sender.try_send(event.immediate()).is_ok() {
         tracing::debug!(
             "MIDI CC: voice='{}' param='{}' cc={} value={} (raw={:.3})",
             config.name,
