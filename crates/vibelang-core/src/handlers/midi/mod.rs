@@ -1210,6 +1210,26 @@ impl<B: Backend> MidiHandler<B> {
 
     /// Apply a CC value to a target's parameter.
     async fn apply_cc_to_target(&self, target: &FadeTarget, param: &str, value: f32) -> Result<()> {
+        if let FadeTarget::Voice(id) = target {
+            let voice_exists = {
+                let state = self.state.read().await;
+                state.voices.contains_key(id)
+            };
+
+            if voice_exists {
+                self.runtime_tx
+                    .send_async(Message::Voice(VoiceMessage::SetParam {
+                        id: *id,
+                        param: param.to_string(),
+                        value,
+                    }))
+                    .await
+                    .map_err(|_| Error::ChannelClosed)?;
+            }
+
+            return Ok(());
+        }
+
         // Look up node ID(s) for the target
         let node_ids: Vec<NodeId> = {
             let state = self.state.read().await;
@@ -1226,13 +1246,7 @@ impl<B: Backend> MidiHandler<B> {
                         vec![]
                     }
                 }
-                FadeTarget::Voice(id) => {
-                    if let Some(voice) = state.voices.get(id) {
-                        voice.active_nodes.clone()
-                    } else {
-                        vec![]
-                    }
-                }
+                FadeTarget::Voice(_) => unreachable!("voice targets return before node lookup"),
                 FadeTarget::Effect(id) => {
                     if let Some(effect) = state.effects.get(id) {
                         vec![effect.node_id]
@@ -1745,11 +1759,15 @@ mod tests {
     use super::*;
     use crate::backend::{AddAction, Backend, BufferInfo};
     use crate::compat::{channel, RwLock};
+    use crate::handlers::VoicesHandler;
     use crate::midi::{Channel, Velocity};
     use crate::reload::LooperConfig;
-    use crate::types::{Beat, BufferId, NodeId, ParamMap, VoiceId};
+    use crate::state::GroupState;
+    use crate::traits::{VoiceConfig, Voices};
+    use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
     use async_trait::async_trait;
     use std::path::Path;
+    use std::sync::Mutex as StdMutex;
     use std::time::Duration;
 
     #[derive(Debug)]
@@ -1763,7 +1781,34 @@ mod tests {
 
     impl std::error::Error for MockError {}
 
-    struct MockBackend;
+    #[derive(Clone, Debug)]
+    struct SetParamCall {
+        node: NodeId,
+        param: String,
+        value: f32,
+    }
+
+    struct MockBackend {
+        set_param_calls: StdMutex<Vec<SetParamCall>>,
+        synth_create_params: StdMutex<Vec<ParamMap>>,
+    }
+
+    impl MockBackend {
+        fn new() -> Self {
+            Self {
+                set_param_calls: StdMutex::new(Vec::new()),
+                synth_create_params: StdMutex::new(Vec::new()),
+            }
+        }
+
+        fn set_param_calls(&self) -> Vec<SetParamCall> {
+            self.set_param_calls.lock().unwrap().clone()
+        }
+
+        fn synth_create_params(&self) -> Vec<ParamMap> {
+            self.synth_create_params.lock().unwrap().clone()
+        }
+    }
 
     #[async_trait]
     impl Backend for MockBackend {
@@ -1783,8 +1828,12 @@ mod tests {
             _node: NodeId,
             _target: NodeId,
             _action: AddAction,
-            _params: &ParamMap,
+            params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
+            self.synth_create_params
+                .lock()
+                .unwrap()
+                .push(params.clone());
             Ok(())
         }
 
@@ -1811,10 +1860,15 @@ mod tests {
 
         async fn set_param(
             &self,
-            _node: NodeId,
-            _param: &str,
-            _value: f32,
+            node: NodeId,
+            param: &str,
+            value: f32,
         ) -> std::result::Result<(), Self::Error> {
+            self.set_param_calls.lock().unwrap().push(SetParamCall {
+                node,
+                param: param.to_string(),
+                value,
+            });
             Ok(())
         }
 
@@ -1869,6 +1923,38 @@ mod tests {
         }
     }
 
+    async fn setup_voice_state(state: &Arc<RwLock<State>>) {
+        let mut state = state.write().await;
+        state.synthdefs.insert("test_synth".to_string());
+
+        let group_id = GroupId::new(1);
+        state.groups.insert(
+            group_id,
+            GroupState {
+                id: group_id,
+                name: "test_group".to_string(),
+                parent: None,
+                node_id: NodeId(100),
+                audio_bus: BusId(16),
+                link_synth_node_id: None,
+                muted: false,
+                soloed: false,
+                params: ParamMap::new(),
+                output_bus: None,
+                output_channels: None,
+            },
+        );
+    }
+
+    async fn create_test_voice<B: Backend>(
+        voices: &VoicesHandler<B>,
+        voice_id: VoiceId,
+    ) -> VoiceConfig {
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        voices.create(voice_id, config.clone()).await.unwrap();
+        config
+    }
+
     #[test]
     fn arrival_beat_subtracts_handler_delay_when_transport_is_playing() {
         let processing_at = Instant::now();
@@ -1885,7 +1971,8 @@ mod tests {
         let voice_id = VoiceId::new(7);
         let state = Arc::new(RwLock::new(State::default()));
         let (runtime_tx, mut runtime_rx) = channel(32);
-        let handler = MidiHandler::new(Arc::new(MockBackend), Arc::clone(&state), runtime_tx);
+        let handler =
+            MidiHandler::new(Arc::new(MockBackend::new()), Arc::clone(&state), runtime_tx);
 
         handler
             .reconcile_loopers(&[LooperConfig {
@@ -1956,6 +2043,132 @@ mod tests {
         assert!(
             gate < 0.65,
             "gate {gate} should stay near the timestamp-derived duration"
+        );
+    }
+
+    #[tokio::test]
+    async fn cc_voice_route_updates_note_node_and_future_note_defaults() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+        voices.note_on(voice_id, 60, 0.75).await.unwrap();
+
+        let note_node = {
+            let state = state.read().await;
+            *state
+                .voices
+                .get(&voice_id)
+                .unwrap()
+                .note_nodes
+                .get(&60)
+                .expect("note_on should create a note node")
+        };
+
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), Arc::clone(&state), runtime_tx);
+        midi.add_cc_route(
+            CcRouteBuilder::new(device_id, 70).to_voice(voice_id, "cutoff", 100.0, 2000.0),
+        )
+        .await;
+
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 70,
+                value: 127,
+            },
+        )
+        .await;
+
+        let msg = runtime_rx.try_recv().expect("CC should emit SetParam");
+        match msg {
+            Message::Voice(VoiceMessage::SetParam { id, param, value }) => {
+                assert_eq!(id, voice_id);
+                assert_eq!(param, "cutoff");
+                assert_eq!(value, 2000.0);
+                voices.set_param(id, &param, value).await.unwrap();
+            }
+            other => panic!("expected Voice::SetParam, got {other:?}"),
+        }
+
+        let calls = backend.set_param_calls();
+        assert!(
+            calls.iter().any(|call| {
+                call.node == note_node && call.param == "cutoff" && call.value == 2000.0
+            }),
+            "CC SetParam should update held note node {note_node:?}; calls={calls:?}"
+        );
+
+        {
+            let state = state.read().await;
+            let voice = state.voices.get(&voice_id).unwrap();
+            assert_eq!(voice.config.params.get("cutoff"), Some(&2000.0));
+        }
+
+        voices.note_on(voice_id, 61, 0.5).await.unwrap();
+        let create_params = backend.synth_create_params();
+        let next_note_params = create_params
+            .last()
+            .expect("next note should create a synth");
+        assert_eq!(next_note_params.get("cutoff"), Some(&2000.0));
+    }
+
+    #[tokio::test]
+    async fn cc_voice_route_matches_no_channel_and_channel_one() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let midi = MidiHandler::new(backend, state, runtime_tx);
+        midi.add_cc_route(CcRouteBuilder::new(device_id, 71).to_voice(
+            voice_id,
+            "no_channel",
+            0.0,
+            1.0,
+        ))
+        .await;
+        midi.add_cc_route(CcRouteBuilder::new(device_id, 71).channel(1).to_voice(
+            voice_id,
+            "channel_one",
+            0.0,
+            1.0,
+        ))
+        .await;
+
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 71,
+                value: 127,
+            },
+        )
+        .await;
+
+        let mut params = Vec::new();
+        while let Ok(Message::Voice(VoiceMessage::SetParam { param, .. })) = runtime_rx.try_recv() {
+            params.push(param);
+        }
+
+        assert!(
+            params.iter().any(|param| param == "no_channel"),
+            "route without a channel filter should match channel 0"
+        );
+        assert!(
+            params.iter().any(|param| param == "channel_one"),
+            ".channel(1) should match internal MIDI channel 0"
         );
     }
 }
