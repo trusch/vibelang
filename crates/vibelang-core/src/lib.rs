@@ -147,8 +147,8 @@ pub use message::{
 };
 pub use runtime::{Runtime, RuntimeHandle};
 pub use state::{
-    ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternState, SequenceState,
-    SfzInstrumentState, SfzRegionState, State, VoiceRole, VoiceState,
+    ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternOwner, PatternState,
+    SequenceState, SfzInstrumentState, SfzRegionState, State, VoiceRole, VoiceState,
 };
 pub use transport_snapshot::TransportSnapshot;
 

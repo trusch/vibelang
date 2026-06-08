@@ -398,6 +398,24 @@ mod tests {
             .expect("looper should create a pattern")
     }
 
+    fn record_single_note_loop(
+        manager: &mut LooperManager,
+        device_id: MidiDeviceId,
+        note: u8,
+        start_beat: f64,
+    ) -> PatternId {
+        manager.handle_note_on(device_id, 0, note, 100, start_beat, 4);
+        manager.handle_note_off(device_id, 0, note, start_beat + 1.0);
+        let actions = manager.tick(start_beat + 5.1, 4);
+        actions
+            .iter()
+            .find_map(|action| match action {
+                LooperAction::StartPattern { pattern_id, .. } => Some(*pattern_id),
+                _ => None,
+            })
+            .expect("looper should start playback")
+    }
+
     fn assert_pattern_contains_step(pattern: &PatternConfig, note: u8, beat: f64, gate: f32) {
         assert!(
             pattern.steps.iter().any(|step| {
@@ -674,6 +692,77 @@ mod tests {
             .iter()
             .any(|a| matches!(a, LooperAction::StopPattern { .. })));
         assert!(!manager.has_device(device_id));
+    }
+
+    #[test]
+    fn removing_one_looper_config_stops_only_that_loopers_pattern() {
+        let config_a = make_config(1, 1);
+        let config_b = make_config(2, 2);
+        let device_a = config_a.device_id;
+        let device_b = config_b.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config_a, config_b.clone()]);
+
+        let pattern_a = record_single_note_loop(&mut manager, device_a, 60, 0.0);
+        let pattern_b = record_single_note_loop(&mut manager, device_b, 67, 8.0);
+
+        let actions = manager.reconcile(&[config_b]);
+
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(action, LooperAction::StopPattern { .. }))
+                .count(),
+            1
+        );
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_a)
+        ));
+        assert!(!actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_b)
+        ));
+        assert!(!manager.has_device(device_a));
+        assert!(matches!(
+            phase(&manager, device_b),
+            LooperPhase::Playing { pattern_id, .. } if pattern_id == pattern_b
+        ));
+    }
+
+    #[test]
+    fn note_on_during_playback_stops_only_that_devices_pattern() {
+        let config_a = make_config(1, 1);
+        let config_b = make_config(2, 2);
+        let device_a = config_a.device_id;
+        let device_b = config_b.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config_a, config_b]);
+
+        let pattern_a = record_single_note_loop(&mut manager, device_a, 60, 0.0);
+        let pattern_b = record_single_note_loop(&mut manager, device_b, 67, 8.0);
+
+        let actions = manager.handle_note_on(device_a, 0, 62, 100, 14.0, 4);
+
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(action, LooperAction::StopPattern { .. }))
+                .count(),
+            1
+        );
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_a)
+        ));
+        assert!(!actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_b)
+        ));
+        assert!(matches!(
+            phase(&manager, device_a),
+            LooperPhase::Capturing { .. }
+        ));
+        assert!(matches!(
+            phase(&manager, device_b),
+            LooperPhase::Playing { pattern_id, .. } if pattern_id == pattern_b
+        ));
     }
 
     #[test]

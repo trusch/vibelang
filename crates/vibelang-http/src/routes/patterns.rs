@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vibelang_core::{
     traits::{PatternConfig, Step},
     types::Beat,
-    PatternId, PatternMessage, VoiceId,
+    PatternId, PatternMessage, PatternOwner, VoiceId,
 };
 
 use crate::{
@@ -371,6 +371,7 @@ pub async fn create_pattern(
             PatternMessage::Create {
                 id: pattern_id,
                 config,
+                owner: PatternOwner::Script,
             }
             .into(),
         )

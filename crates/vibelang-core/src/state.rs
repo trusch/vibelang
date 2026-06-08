@@ -136,6 +136,15 @@ pub struct VoiceState {
     pub input_buses: Vec<(String, BusId)>,
 }
 
+/// Runtime owner for a pattern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PatternOwner {
+    /// Pattern declared by the current script.
+    Script,
+    /// Pattern created by the MIDI looper at runtime.
+    Looper,
+}
+
 /// Internal state for a pattern.
 ///
 /// Separates immutable content (steps, voice, length) from mutable playback state
@@ -149,6 +158,9 @@ pub struct PatternState {
     /// The pattern content (steps, voice, length, etc.).
     /// Wrapped in Arc for cheap cloning and atomic swapping during hot reload.
     pub content: Arc<PatternContent>,
+
+    /// Which subsystem owns this pattern for reload deletion purposes.
+    pub owner: PatternOwner,
 
     /// Whether the pattern is playing.
     pub playing: bool,
@@ -174,9 +186,15 @@ pub struct PatternState {
 impl PatternState {
     /// Create a new pattern state from a config.
     pub fn new(id: PatternId, config: PatternConfig) -> Self {
+        Self::with_owner(id, config, PatternOwner::Script)
+    }
+
+    /// Create a new pattern state from a config and explicit runtime owner.
+    pub fn with_owner(id: PatternId, config: PatternConfig, owner: PatternOwner) -> Self {
         Self {
             id,
             content: PatternContent::arc_from_config(&config),
+            owner,
             playing: false,
             loop_position: Beat::ZERO,
             start_beat: Beat::ZERO,

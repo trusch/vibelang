@@ -3,7 +3,7 @@
 use crate::backend::Backend;
 use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
-use crate::state::{PatternState, State};
+use crate::state::{PatternOwner, PatternState, State};
 use crate::traits::{PatternConfig, PatternContent, Patterns, Step, Voices};
 use crate::types::{Beat, ParamMap, PatternId, VoiceId};
 use crate::validation::Validate;
@@ -52,6 +52,36 @@ impl<B: Backend> PatternsHandler<B> {
     /// Create a new patterns handler.
     pub fn new(state: Arc<RwLock<State>>, voices: Arc<VoicesHandler<B>>) -> Self {
         Self { state, voices }
+    }
+
+    /// Create a pattern with an explicit runtime owner.
+    pub async fn create_with_owner(
+        &self,
+        id: PatternId,
+        config: PatternConfig,
+        owner: PatternOwner,
+    ) -> Result<()> {
+        // Validate configuration before acquiring lock
+        config.validate()?;
+
+        let mut state = self.state.write().await;
+
+        if state.patterns.contains_key(&id) {
+            return Err(Error::PatternExists(id));
+        }
+
+        // Verify the voice exists if specified
+        if let Some(voice_id) = config.voice {
+            if !state.voices.contains_key(&voice_id) {
+                return Err(Error::VoiceNotFound(voice_id));
+            }
+        }
+
+        state
+            .patterns
+            .insert(id, PatternState::with_owner(id, config, owner));
+
+        Ok(())
     }
 
     /// Process patterns for the current beat.
@@ -331,25 +361,8 @@ impl<B: Backend> PatternsHandler<B> {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Patterns for PatternsHandler<B> {
     async fn create(&self, id: PatternId, config: PatternConfig) -> Result<()> {
-        // Validate configuration before acquiring lock
-        config.validate()?;
-
-        let mut state = self.state.write().await;
-
-        if state.patterns.contains_key(&id) {
-            return Err(Error::PatternExists(id));
-        }
-
-        // Verify the voice exists if specified
-        if let Some(voice_id) = config.voice {
-            if !state.voices.contains_key(&voice_id) {
-                return Err(Error::VoiceNotFound(voice_id));
-            }
-        }
-
-        state.patterns.insert(id, PatternState::new(id, config));
-
-        Ok(())
+        self.create_with_owner(id, config, PatternOwner::Script)
+            .await
     }
 
     async fn delete(&self, id: PatternId) -> Result<()> {

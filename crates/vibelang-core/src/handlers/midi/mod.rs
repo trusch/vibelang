@@ -71,7 +71,7 @@ use crate::midi::send_cc_for_param;
 use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
-use crate::state::State;
+use crate::state::{PatternOwner, State};
 #[cfg(feature = "midi")]
 use crate::traits::VoiceConfig;
 use crate::traits::{FadeTarget, MidiOutputCapability};
@@ -736,6 +736,7 @@ impl<B: Backend> MidiHandler<B> {
                         .send_async(Message::Pattern(PatternMessage::Create {
                             id: pattern_id,
                             config,
+                            owner: PatternOwner::Looper,
                         }))
                         .await;
                     let _ = self

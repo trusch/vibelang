@@ -379,7 +379,13 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     });
 
     // Patterns
-    let current_pattern_ids: HashSet<PatternId> = current.patterns.keys().copied().collect();
+    let current_pattern_ids: HashSet<PatternId> = current
+        .patterns
+        .iter()
+        .filter_map(|(id, pattern)| {
+            (pattern.owner == crate::state::PatternOwner::Script).then_some(*id)
+        })
+        .collect();
     diff.patterns = diff_entities(&current_pattern_ids, &new.patterns, |id| {
         current.patterns.get(id).map(|p| p.config())
     });
@@ -619,7 +625,8 @@ pub fn order_group_creations(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::state::GroupState;
+    use crate::state::{GroupState, PatternOwner, PatternState};
+    use crate::traits::PatternConfig;
     use crate::types::{BusId, NodeId, ParamMap};
 
     fn make_group_state(id: GroupId, parent: Option<GroupId>) -> GroupState {
@@ -656,6 +663,42 @@ mod tests {
         let diff = calculate_diff(&current, &new, &RouteMap::new());
 
         assert!(!diff.has_changes());
+    }
+
+    #[test]
+    fn looper_owned_patterns_survive_unrelated_reload_diff() {
+        let looper_a = PatternId::new(101);
+        let looper_b = PatternId::new(202);
+        let script_pattern = PatternId::new(303);
+        let mut current = State::default();
+
+        let mut pattern_a = PatternState::with_owner(
+            looper_a,
+            PatternConfig::with_length("__looper_1_1", VoiceId::new(1), 4.0),
+            PatternOwner::Looper,
+        );
+        pattern_a.playing = true;
+        let mut pattern_b = PatternState::with_owner(
+            looper_b,
+            PatternConfig::with_length("__looper_2_1", VoiceId::new(2), 4.0),
+            PatternOwner::Looper,
+        );
+        pattern_b.playing = true;
+        let mut script = PatternState::new(
+            script_pattern,
+            PatternConfig::with_length("script_pattern", VoiceId::new(3), 4.0),
+        );
+        script.playing = true;
+
+        current.patterns.insert(looper_a, pattern_a);
+        current.patterns.insert(looper_b, pattern_b);
+        current.patterns.insert(script_pattern, script);
+
+        let diff = calculate_diff(&current, &ScriptState::new(), &RouteMap::new());
+
+        assert_eq!(diff.patterns.deleted, vec![script_pattern]);
+        assert!(current.patterns[&looper_a].playing);
+        assert!(current.patterns[&looper_b].playing);
     }
 
     #[test]

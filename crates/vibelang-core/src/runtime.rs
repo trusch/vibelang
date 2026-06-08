@@ -450,7 +450,9 @@ impl<B: Backend> Runtime<B> {
 
             // Patterns
             Message::Pattern(pattern_msg) => match pattern_msg {
-                PatternMessage::Create { id, config } => self.patterns.create(id, config).await,
+                PatternMessage::Create { id, config, owner } => {
+                    self.patterns.create_with_owner(id, config, owner).await
+                }
                 PatternMessage::Delete { id } => self.patterns.delete(id).await,
                 PatternMessage::Start { id } => self.patterns.start(id).await,
                 PatternMessage::Stop { id } => self.patterns.stop(id).await,
@@ -3524,6 +3526,7 @@ mod tests {
                 PatternMessage::Create {
                     id: PatternId::new(1),
                     config,
+                    owner: crate::state::PatternOwner::Script,
                 }
                 .into(),
             )

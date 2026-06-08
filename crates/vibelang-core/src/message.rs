@@ -8,6 +8,7 @@
 //! - Undo/redo functionality
 //! - Deterministic behavior
 
+use crate::state::PatternOwner;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
@@ -213,6 +214,7 @@ pub enum PatternMessage {
     Create {
         id: PatternId,
         config: PatternConfig,
+        owner: PatternOwner,
     },
 
     /// Delete a pattern.
@@ -930,6 +932,7 @@ mod tests {
             PatternMessage::Create {
                 id: PatternId::new(1),
                 config: PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0)),
+                owner: PatternOwner::Script,
             },
             PatternMessage::Delete {
                 id: PatternId::new(1),
