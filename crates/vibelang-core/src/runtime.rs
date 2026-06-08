@@ -2304,6 +2304,7 @@ impl<B: Backend> Runtime<B> {
                 .filter(|(id, p)| {
                     p.playing
                         && !new_state.playing_patterns.contains(id)
+                        && p.owner != crate::state::PatternOwner::Looper
                         // Only stop if NOT unchanged (was updated, deleted, or not in new state)
                         && !diff.patterns.unchanged.contains(id)
                 })
@@ -3907,6 +3908,51 @@ mod tests {
         // Verify tempo is still 120 (default)
         let tempo = runtime.transport.tempo().await;
         assert!((tempo - 120.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn apply_reload_preserves_looper_owned_pattern_on_unrelated_script_change() {
+        use crate::reload::ScriptState;
+        use crate::state::{MelodyState, PatternOwner, PatternState};
+        use crate::traits::{MelodyConfig, NoteEvent, PatternConfig};
+        use crate::types::{MelodyId, PatternId};
+
+        let looper_pattern_id = PatternId::new(101);
+        let melody_id = MelodyId::new(202);
+        let mut runtime = Runtime::new(MockBackend);
+
+        let looper_config =
+            PatternConfig::without_voice("__looper_1_1", crate::types::Beat::from_f64(4.0));
+        let mut looper_pattern =
+            PatternState::with_owner(looper_pattern_id, looper_config, PatternOwner::Looper);
+        looper_pattern.playing = true;
+
+        let original_melody =
+            MelodyConfig::without_voice("script_melody", crate::types::Beat::from_f64(4.0))
+                .with_note(NoteEvent::quarter(0.0, 60, 0.8));
+        {
+            let mut state = runtime.state.write().await;
+            state.patterns.insert(looper_pattern_id, looper_pattern);
+            state
+                .melodies
+                .insert(melody_id, MelodyState::new(melody_id, original_melody));
+        }
+
+        let mut new_state = ScriptState::new();
+        let edited_melody =
+            MelodyConfig::without_voice("script_melody", crate::types::Beat::from_f64(4.0))
+                .with_note(NoteEvent::quarter(0.0, 64, 0.8));
+        new_state.add_melody(melody_id, edited_melody);
+
+        runtime.apply_reload(new_state).await.unwrap();
+
+        let state = runtime.state.read().await;
+        let looper_pattern = state
+            .patterns
+            .get(&looper_pattern_id)
+            .expect("looper-owned pattern should survive reload");
+        assert_eq!(looper_pattern.owner, PatternOwner::Looper);
+        assert!(looper_pattern.playing);
     }
 
     // =========================================================================
