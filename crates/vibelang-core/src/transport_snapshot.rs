@@ -10,6 +10,7 @@
 //! - `f64` values stored as `AtomicU64` bit patterns
 //! - Sequence counter for detecting torn reads
 //! - Separate flags for playing state and seek events
+//! - Generation counter for transport discontinuities and tempo changes
 //!
 //! ## Usage
 //!
@@ -44,6 +45,8 @@ pub struct TransportSnapshot {
     /// Write sequence number for consistent reads.
     /// Odd = write in progress, even = stable.
     sequence: AtomicU64,
+    /// Increments when clock output must reset phase instead of catching up.
+    generation: AtomicU64,
 }
 
 impl Default for TransportSnapshot {
@@ -62,6 +65,7 @@ impl TransportSnapshot {
             tempo_bits: AtomicU64::new(120.0_f64.to_bits()),
             flags: AtomicU32::new(0),
             sequence: AtomicU64::new(0),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -75,9 +79,14 @@ impl TransportSnapshot {
         let seq = self.sequence.fetch_add(1, Ordering::Release);
         debug_assert!(seq.is_multiple_of(2), "Concurrent writers detected");
 
+        let old_tempo_bits = self.tempo_bits.load(Ordering::Relaxed);
+        let old_playing = (self.flags.load(Ordering::Relaxed) & FLAG_PLAYING) != 0;
+        let new_tempo_bits = tempo.to_bits();
+        let generation_changed = old_tempo_bits != new_tempo_bits || old_playing != playing;
+
         // Write the values
         self.beat_bits.store(beat.to_bits(), Ordering::Relaxed);
-        self.tempo_bits.store(tempo.to_bits(), Ordering::Relaxed);
+        self.tempo_bits.store(new_tempo_bits, Ordering::Relaxed);
 
         // Update playing flag (preserve seek flag)
         let current_flags = self.flags.load(Ordering::Relaxed);
@@ -87,6 +96,10 @@ impl TransportSnapshot {
             current_flags & !FLAG_PLAYING
         };
         self.flags.store(new_flags, Ordering::Relaxed);
+
+        if generation_changed {
+            self.generation.fetch_add(1, Ordering::Release);
+        }
 
         // Increment sequence to even (write complete)
         self.sequence.fetch_add(1, Ordering::Release);
@@ -132,6 +145,18 @@ impl TransportSnapshot {
         }
     }
 
+    /// Read the current transport state with the control generation.
+    ///
+    /// The generation changes on start/stop, tempo changes, and explicit seeks.
+    /// Realtime consumers use it to reset phase without interpreting a beat
+    /// discontinuity as missed pulses.
+    #[inline]
+    pub fn read_with_generation(&self) -> (f64, f64, bool, u64) {
+        let (beat, tempo, playing) = self.read();
+        let generation = self.generation.load(Ordering::Acquire);
+        (beat, tempo, playing, generation)
+    }
+
     /// Read only the beat position (faster than full read).
     #[inline]
     pub fn read_beat(&self) -> f64 {
@@ -160,6 +185,7 @@ impl TransportSnapshot {
     /// and reset its internal state.
     pub fn signal_seek(&self) {
         self.flags.fetch_or(FLAG_SEEK_PENDING, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::Release);
     }
 
     /// Check if a seek occurred since the last check, and clear the flag.

@@ -276,7 +276,7 @@ impl<B: Backend> MidiHandler<B> {
         // Create the clock thread with output channels
         let mut clock_thread = MidiClockThread::new(
             transport_snapshot,
-            self.output_manager.output_channels.clone(),
+            self.output_manager.clock_channels.clone(),
         );
 
         // Start the thread

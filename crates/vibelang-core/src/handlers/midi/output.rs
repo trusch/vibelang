@@ -18,6 +18,9 @@ use std::thread::{self, JoinHandle};
 /// How often the output thread checks for due events (microseconds).
 /// 100μs = 10kHz check rate, ~0.1ms precision.
 const MIDI_THREAD_POLL_INTERVAL_US: u64 = 100;
+const MIDI_CLOCK_CHANNEL_CAPACITY: usize = 128;
+
+pub type ClockOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<QueuedMidiEvent>>>>;
 
 /// State for a background MIDI output thread.
 pub struct OutputThreadState {
@@ -35,6 +38,9 @@ pub struct MidiOutputManager {
     /// Output channel senders (for realtime service integration).
     /// Maps device ID to the sender channel.
     pub output_channels: Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>,
+
+    /// Isolated high-priority clock/control senders.
+    pub clock_channels: ClockOutputChannels,
 
     /// Background output threads (for realtime service integration).
     pub output_threads: Arc<Mutex<HashMap<MidiDeviceId, OutputThreadState>>>,
@@ -54,6 +60,7 @@ impl MidiOutputManager {
     pub fn new() -> Self {
         Self {
             output_channels: Arc::new(Mutex::new(HashMap::new())),
+            clock_channels: Arc::new(Mutex::new(HashMap::new())),
             output_threads: Arc::new(Mutex::new(HashMap::new())),
             device_capabilities: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -122,8 +129,10 @@ impl MidiOutputManager {
             .connect(port, "vibelang-rt-output")
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI output: {}", e)))?;
 
-        // Create the channel for scheduled events
+        // Create independent channels for scheduled notes and realtime clock/control.
         let (tx, rx) = crossbeam_channel::bounded::<ScheduledMidiEvent>(1024);
+        let (clock_tx, clock_rx) =
+            crossbeam_channel::bounded::<QueuedMidiEvent>(MIDI_CLOCK_CHANNEL_CAPACITY);
 
         // Spawn the background thread with capability awareness
         let running = Arc::new(AtomicBool::new(true));
@@ -133,7 +142,7 @@ impl MidiOutputManager {
         let handle = thread::Builder::new()
             .name(format!("midi-out-{}", device_id))
             .spawn(move || {
-                run_output_thread(conn, rx, running_clone, device_id, capability);
+                run_output_thread(conn, rx, clock_rx, running_clone, device_id, capability);
             })
             .map_err(|e| Error::MidiError(format!("Failed to spawn output thread: {}", e)))?;
 
@@ -142,6 +151,10 @@ impl MidiOutputManager {
             .lock()
             .map_err(|e| Error::MidiError(format!("Output channels lock poisoned: {e}")))?
             .insert(id, tx.clone());
+        self.clock_channels
+            .lock()
+            .map_err(|e| Error::MidiError(format!("Clock channels lock poisoned: {e}")))?
+            .insert(id, clock_tx);
         self.device_capabilities
             .lock()
             .map_err(|e| Error::MidiError(format!("Device capabilities lock poisoned: {e}")))?
@@ -178,6 +191,9 @@ impl MidiOutputManager {
     pub fn close_output_channel(&self, id: MidiDeviceId) {
         // Remove the sender
         if let Ok(mut channels) = self.output_channels.lock() {
+            channels.remove(&id);
+        }
+        if let Ok(mut channels) = self.clock_channels.lock() {
             channels.remove(&id);
         }
 
@@ -225,6 +241,7 @@ impl MidiOutputManager {
 fn run_output_thread(
     mut conn: MidiOutputConnection,
     rx: Receiver<ScheduledMidiEvent>,
+    clock_rx: Receiver<QueuedMidiEvent>,
     running: Arc<AtomicBool>,
     device_id: u32,
     capability: MidiOutputCapability,
@@ -245,7 +262,10 @@ fn run_output_thread(
     let poll_duration = std::time::Duration::from_micros(MIDI_THREAD_POLL_INTERVAL_US);
 
     while running.load(Ordering::Relaxed) {
-        // 1. Receive all pending events from the channel (non-blocking)
+        // 1. Clock/control messages have priority and independent coalescing.
+        send_clock_channel_events(&mut conn, &clock_rx, device_id, capability);
+
+        // 2. Receive all pending normal events from the channel (non-blocking)
         loop {
             match rx.try_recv() {
                 Ok(event) => {
@@ -259,57 +279,223 @@ fn run_output_thread(
             }
         }
 
-        // 2. Send all events that are due
+        // 3. Send all normal events that are due, checking clock between sends.
         let now = Instant::now();
-        while let Some(event) = scheduled.peek() {
-            if event.timestamp <= now {
-                // Safety: we just called peek() and confirmed Some, so pop() cannot be None
-                let Some(event) = scheduled.pop() else {
-                    break;
-                };
-
-                // Choose encoding based on device capability
-                let bytes = match capability {
-                    MidiOutputCapability::Midi2Native => {
-                        // For native MIDI 2.0 devices, try to send UMP packets
-                        // Note: midir currently only supports MIDI 1.0 byte streams,
-                        // so this falls back to MIDI 1.0 for now. When a MIDI 2.0
-                        // backend is available, this will send proper UMP packets.
-                        event.event.to_ump_bytes()
-                    }
-                    MidiOutputCapability::Midi2ViaTranslation => {
-                        // OS translation layer handles upscaling, send MIDI 1.0
-                        event.event.to_bytes()
-                    }
-                    MidiOutputCapability::Midi1Only => {
-                        // Legacy device, downscale to MIDI 1.0
-                        event.event.to_bytes()
-                    }
-                };
-
-                if !bytes.is_empty() {
-                    tracing::debug!(
-                        "[MIDI_OUT_{}] Sending {:?} ({} bytes: {:02x?})",
-                        device_id,
-                        event.event,
-                        bytes.len(),
-                        bytes
-                    );
-                    if let Err(e) = conn.send(&bytes) {
-                        tracing::warn!("[MIDI_OUT_{}] Failed to send MIDI: {}", device_id, e);
-                    }
-                }
-            } else {
-                // Events are sorted, so if this one isn't due, none of the rest are
-                break;
+        while let Some((event, dropped_clocks)) = pop_due_event(&mut scheduled, now) {
+            if dropped_clocks > 0 {
+                tracing::warn!(
+                    "[MIDI_OUT_{}] Dropped {} coalesced late clock event(s) from normal queue",
+                    device_id,
+                    dropped_clocks
+                );
             }
+            send_event_to_connection(&mut conn, &event.event, device_id, capability);
+            send_clock_channel_events(&mut conn, &clock_rx, device_id, capability);
         }
 
-        // 3. Sleep briefly before next poll (100μs for ~0.1ms precision)
+        // 4. Sleep briefly before next poll (100μs for ~0.1ms precision)
         std::thread::sleep(poll_duration);
     }
 
     tracing::info!("[MIDI_OUT_{}] Background thread exiting", device_id);
+}
+
+fn send_clock_channel_events(
+    conn: &mut MidiOutputConnection,
+    clock_rx: &Receiver<QueuedMidiEvent>,
+    device_id: u32,
+    capability: MidiOutputCapability,
+) {
+    let batch = drain_clock_channel(clock_rx);
+    if batch.is_empty() {
+        return;
+    }
+
+    let (events, dropped_clocks) = coalesce_clock_events(batch);
+    if dropped_clocks > 0 {
+        tracing::warn!(
+            "[MIDI_OUT_{}] Dropped {} coalesced clock event(s)",
+            device_id,
+            dropped_clocks
+        );
+    }
+
+    for event in events {
+        send_event_to_connection(conn, &event, device_id, capability);
+    }
+}
+
+fn drain_clock_channel(clock_rx: &Receiver<QueuedMidiEvent>) -> Vec<QueuedMidiEvent> {
+    let mut batch = Vec::new();
+    loop {
+        match clock_rx.try_recv() {
+            Ok(event) => batch.push(event),
+            Err(crossbeam_channel::TryRecvError::Empty)
+            | Err(crossbeam_channel::TryRecvError::Disconnected) => break,
+        }
+    }
+    batch
+}
+
+fn coalesce_clock_events(events: Vec<QueuedMidiEvent>) -> (Vec<QueuedMidiEvent>, u64) {
+    let mut coalesced = Vec::with_capacity(events.len());
+    let mut pending_clock = false;
+    let mut dropped = 0;
+
+    for event in events {
+        if matches!(event, QueuedMidiEvent::Clock) {
+            if pending_clock {
+                dropped += 1;
+            } else {
+                pending_clock = true;
+            }
+            continue;
+        }
+
+        if pending_clock {
+            coalesced.push(QueuedMidiEvent::Clock);
+            pending_clock = false;
+        }
+        coalesced.push(event);
+    }
+
+    if pending_clock {
+        coalesced.push(QueuedMidiEvent::Clock);
+    }
+
+    (coalesced, dropped)
+}
+
+fn pop_due_event(
+    scheduled: &mut BinaryHeap<ScheduledMidiEvent>,
+    now: Instant,
+) -> Option<(ScheduledMidiEvent, u64)> {
+    if scheduled.peek()?.timestamp > now {
+        return None;
+    }
+
+    let event = scheduled.pop()?;
+    if !matches!(event.event, QueuedMidiEvent::Clock) {
+        return Some((event, 0));
+    }
+
+    let mut dropped = 0;
+    while matches!(
+        scheduled.peek(),
+        Some(next)
+            if next.timestamp <= now && matches!(next.event, QueuedMidiEvent::Clock)
+    ) {
+        scheduled.pop();
+        dropped += 1;
+    }
+
+    Some((event, dropped))
+}
+
+fn send_event_to_connection(
+    conn: &mut MidiOutputConnection,
+    event: &QueuedMidiEvent,
+    device_id: u32,
+    capability: MidiOutputCapability,
+) {
+    let bytes = encode_event_for_capability(event, capability);
+
+    if !bytes.is_empty() {
+        tracing::debug!(
+            "[MIDI_OUT_{}] Sending {:?} ({} bytes: {:02x?})",
+            device_id,
+            event,
+            bytes.len(),
+            bytes
+        );
+        if let Err(e) = conn.send(&bytes) {
+            tracing::warn!("[MIDI_OUT_{}] Failed to send MIDI: {}", device_id, e);
+        }
+    }
+}
+
+fn encode_event_for_capability(
+    event: &QueuedMidiEvent,
+    capability: MidiOutputCapability,
+) -> Vec<u8> {
+    match capability {
+        MidiOutputCapability::Midi2Native => event.to_ump_bytes(),
+        MidiOutputCapability::Midi2ViaTranslation | MidiOutputCapability::Midi1Only => {
+            event.to_bytes()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clock_channel_coalesces_pending_clock_events() {
+        let (events, dropped) = coalesce_clock_events(vec![
+            QueuedMidiEvent::Clock,
+            QueuedMidiEvent::Clock,
+            QueuedMidiEvent::Start,
+            QueuedMidiEvent::Clock,
+            QueuedMidiEvent::Clock,
+        ]);
+
+        assert_eq!(dropped, 2);
+        assert!(matches!(events[0], QueuedMidiEvent::Clock));
+        assert!(matches!(events[1], QueuedMidiEvent::Start));
+        assert!(matches!(events[2], QueuedMidiEvent::Clock));
+        assert_eq!(events.len(), 3);
+    }
+
+    #[test]
+    fn output_thread_coalesces_late_clock_events_from_normal_queue() {
+        let now = Instant::now();
+        let mut scheduled = BinaryHeap::new();
+        scheduled.push(ScheduledMidiEvent::new(
+            QueuedMidiEvent::Clock,
+            now - std::time::Duration::from_millis(3),
+        ));
+        scheduled.push(ScheduledMidiEvent::new(
+            QueuedMidiEvent::Clock,
+            now - std::time::Duration::from_millis(2),
+        ));
+        scheduled.push(ScheduledMidiEvent::new(
+            QueuedMidiEvent::Clock,
+            now - std::time::Duration::from_millis(1),
+        ));
+
+        let Some((event, dropped)) = pop_due_event(&mut scheduled, now) else {
+            panic!("expected one coalesced clock event");
+        };
+
+        assert!(matches!(event.event, QueuedMidiEvent::Clock));
+        assert_eq!(dropped, 2);
+        assert!(scheduled.is_empty());
+    }
+
+    #[test]
+    fn channel_pressure_does_not_block_isolated_clock_channel() {
+        let (normal_tx, _normal_rx) = crossbeam_channel::bounded::<ScheduledMidiEvent>(1);
+        let pressure = QueuedMidiEvent::Midi2ChannelPressure {
+            group: 0,
+            channel: 0,
+            pressure: u32::MAX,
+        };
+
+        normal_tx
+            .try_send(ScheduledMidiEvent::immediate(pressure.clone()))
+            .unwrap();
+        assert!(normal_tx
+            .try_send(ScheduledMidiEvent::immediate(pressure))
+            .is_err());
+
+        let (clock_tx, clock_rx) = crossbeam_channel::bounded::<QueuedMidiEvent>(1);
+        assert!(clock_tx.try_send(QueuedMidiEvent::Clock).is_ok());
+
+        let drained = drain_clock_channel(&clock_rx);
+        assert_eq!(drained.len(), 1);
+        assert!(matches!(drained[0], QueuedMidiEvent::Clock));
+    }
 }
 
 /// Detect MIDI 2.0 output capability of a device.
