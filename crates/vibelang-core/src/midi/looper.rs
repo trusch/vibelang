@@ -303,7 +303,13 @@ impl LooperManager {
             // Quantize loop length to the nearest bar (minimum 1 bar).
             let bar_beats = time_sig_numerator as f64;
             let raw_duration = inst.recording.duration().to_f64();
-            let bars = (raw_duration / bar_beats).round().max(1.0);
+            let bars_for_duration = (raw_duration / bar_beats).round();
+            let bars_for_last_onset = inst
+                .recording
+                .last_note_on_beat()
+                .map(|beat| (beat.to_f64() / bar_beats).ceil())
+                .unwrap_or(1.0);
+            let bars = bars_for_duration.max(bars_for_last_onset).max(1.0);
             let loop_length_beats = bars * bar_beats;
 
             // Build the pattern name and a stable ID from it.
@@ -380,6 +386,28 @@ mod tests {
 
     fn phase(manager: &LooperManager, device_id: MidiDeviceId) -> LooperPhase {
         manager.instances.get(&device_id).unwrap().phase.clone()
+    }
+
+    fn generated_pattern(actions: &[LooperAction]) -> &PatternConfig {
+        actions
+            .iter()
+            .find_map(|action| match action {
+                LooperAction::StartPattern { config, .. } => Some(config),
+                _ => None,
+            })
+            .expect("looper should create a pattern")
+    }
+
+    fn assert_pattern_contains_step(pattern: &PatternConfig, note: u8, beat: f64, gate: f32) {
+        assert!(
+            pattern.steps.iter().any(|step| {
+                step.params.get("note") == Some(&(note as f32))
+                    && (step.beat.to_f64() - beat).abs() < 0.001
+                    && (step.params["gate"] - gate).abs() < 0.001
+            }),
+            "missing note {note} at beat {beat} with gate {gate}; steps: {:?}",
+            pattern.steps
+        );
     }
 
     #[test]
@@ -493,6 +521,114 @@ mod tests {
             phase(&manager, device_id),
             LooperPhase::Playing { .. }
         ));
+    }
+
+    #[test]
+    fn quantized_looper_preserves_retriggered_same_pitch_notes() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.125,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_on(device_id, 0, 60, 110, 0.125, 4);
+        manager.handle_note_off(device_id, 0, 60, 0.25);
+
+        let actions = manager.tick(1.3, 4);
+        let pattern = actions
+            .iter()
+            .find_map(|action| match action {
+                LooperAction::StartPattern { config, .. } => Some(config),
+                _ => None,
+            })
+            .expect("looper should create a pattern");
+
+        assert_eq!(pattern.steps.len(), 2);
+        assert!((pattern.steps[0].beat.to_f64() - 0.0).abs() < 0.001);
+        assert!((pattern.steps[1].beat.to_f64() - 0.125).abs() < 0.001);
+        assert!((pattern.steps[0].params["gate"] - 0.125).abs() < 0.001);
+        assert!((pattern.steps[1].params["gate"] - 0.125).abs() < 0.001);
+    }
+
+    #[test]
+    fn generated_pattern_preserves_performed_notes_under_realistic_quantized_capture() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.125,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.000, 4);
+        manager.handle_note_on(device_id, 0, 64, 90, 0.030, 4);
+        manager.handle_note_off(device_id, 0, 64, 0.055);
+        manager.handle_note_on(device_id, 0, 60, 110, 0.125, 4);
+        manager.handle_note_on(device_id, 0, 60, 120, 0.250, 4);
+        manager.handle_note_off(device_id, 0, 60, 0.375);
+        manager.handle_note_on(device_id, 0, 67, 80, 0.500, 4);
+        manager.handle_note_on(device_id, 0, 69, 85, 0.560, 4);
+        manager.handle_note_off(device_id, 0, 69, 0.600);
+        manager.handle_note_off(device_id, 0, 67, 0.625);
+
+        let actions = manager.tick(1.700, 4);
+        let pattern = generated_pattern(&actions);
+
+        assert_eq!(pattern.voice, Some(VoiceId::new(1)));
+        assert!((pattern.length.to_f64() - 4.0).abs() < 0.001);
+        assert_eq!(pattern.steps.len(), 6);
+
+        assert_pattern_contains_step(pattern, 60, 0.000, 0.125);
+        assert_pattern_contains_step(pattern, 64, 0.000, 0.100);
+        assert_pattern_contains_step(pattern, 60, 0.125, 0.125);
+        assert_pattern_contains_step(pattern, 60, 0.250, 0.125);
+        assert_pattern_contains_step(pattern, 67, 0.500, 0.125);
+        assert_pattern_contains_step(pattern, 69, 0.500, 0.125);
+    }
+
+    #[test]
+    fn loop_length_covers_tail_notes_past_rounded_down_bar() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.125,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.000, 4);
+        manager.handle_note_off(device_id, 0, 60, 0.250);
+        manager.handle_note_on(device_id, 0, 64, 100, 4.500, 4);
+        manager.handle_note_off(device_id, 0, 64, 4.750);
+        manager.handle_note_on(device_id, 0, 67, 100, 4.875, 4);
+        manager.handle_note_off(device_id, 0, 67, 5.000);
+
+        let actions = manager.tick(6.100, 4);
+        let pattern = generated_pattern(&actions);
+
+        assert!((pattern.length.to_f64() - 8.0).abs() < 0.001);
+        assert_eq!(pattern.steps.len(), 3);
+        assert_pattern_contains_step(pattern, 60, 0.000, 0.250);
+        assert_pattern_contains_step(pattern, 64, 4.500, 0.250);
+        assert_pattern_contains_step(pattern, 67, 4.875, 0.125);
+
+        if let LooperPhase::Playing {
+            loop_length_beats, ..
+        } = phase(&manager, device_id)
+        {
+            assert!(
+                (loop_length_beats - 8.0).abs() < 0.001,
+                "expected 8.0, got {loop_length_beats}"
+            );
+        } else {
+            panic!("expected Playing phase");
+        }
     }
 
     #[test]

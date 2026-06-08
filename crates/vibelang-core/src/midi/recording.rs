@@ -182,6 +182,16 @@ impl MidiRecording {
         // Calculate beat relative to recording start
         let relative_beat = Beat::from_f64(current_beat.to_f64() - self.start_beat.to_f64());
 
+        if let Some(previous_index) = self.pending_notes.remove(&(note, channel)) {
+            if let Some(previous_note) = self.notes.get_mut(previous_index) {
+                if previous_note.duration.is_none() {
+                    let duration =
+                        Beat::from_f64(relative_beat.to_f64() - previous_note.beat.to_f64());
+                    previous_note.duration = Some(duration);
+                }
+            }
+        }
+
         let recorded_note = RecordedMidiNote::new(note, velocity, channel, relative_beat);
         let index = self.notes.len();
         self.notes.push(recorded_note);
@@ -284,6 +294,15 @@ impl MidiRecording {
         self.pending_notes.len()
     }
 
+    /// Latest recorded note-on beat, relative to the recording start.
+    pub fn last_note_on_beat(&self) -> Option<Beat> {
+        self.notes
+            .iter()
+            .map(|note| note.beat.to_f64())
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(Beat::from_f64)
+    }
+
     /// Quantize a beat value to the nearest grid position.
     fn quantize_beat(beat: f64, grid: f64) -> f64 {
         if grid <= 0.0 {
@@ -298,14 +317,12 @@ impl MidiRecording {
             return beat;
         }
 
-        if grid > 0.0 {
-            let mut clamped = beat;
-            while clamped >= length_beats {
-                clamped -= grid;
-            }
-            clamped.max(0.0)
-        } else {
+        if grid <= 0.0 {
             (length_beats - f64::EPSILON).max(0.0)
+        } else if beat - length_beats <= grid + f64::EPSILON {
+            (beat - grid).max(0.0)
+        } else {
+            beat
         }
     }
 
@@ -469,6 +486,21 @@ mod tests {
         assert_eq!(recording.note_count(), 1);
         assert!(recording.notes[0].duration.is_some());
         assert!((recording.notes[0].duration.unwrap().to_f64() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn repeated_same_note_closes_previous_press_at_retrigger() {
+        let device_id = MidiDeviceId::new(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO);
+
+        recording.record_note_on(60, 100, 0, Beat::from_f64(0.0));
+        recording.record_note_on(60, 110, 0, Beat::from_f64(0.125));
+        recording.record_note_off(60, 0, Beat::from_f64(0.25));
+
+        assert_eq!(recording.note_count(), 2);
+        assert_eq!(recording.pending_count(), 0);
+        assert!((recording.notes[0].duration.unwrap().to_f64() - 0.125).abs() < 0.001);
+        assert!((recording.notes[1].duration.unwrap().to_f64() - 0.125).abs() < 0.001);
     }
 
     #[test]
