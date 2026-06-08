@@ -35,6 +35,8 @@ Rust entry point: `register()` in [`mod.rs`](./mod.rs) wires all functions and c
 
 If no port matches, `midi_device` returns a placeholder with `id == u32::MAX`, `has_input == false`, `has_output == false`, and name `Unknown: …`. A warning is logged. Most operations become no-ops or skip safely; avoid relying on silent success.
 
+PipeWire MIDI 2.0 raw UMP sources are also discovered by `list_midi_devices()` and matched by `midi_device("name")`. They are input-only handles with reserved high-bit internal IDs; existing `midir` input/output indices are unchanged.
+
 ### Device list vs `midi_device` indices
 
 `list_midi_devices` assigns sequential IDs when merging outputs that were not seen as inputs. **`midi_device(n)` always uses the raw midir input port index `n`**, not necessarily the `id` field from a prior `list_midi_devices` entry. Prefer **name-based** `midi_device("Keystep")` for stable scripts across machines.
@@ -236,6 +238,18 @@ Implemented in [`midi2.rs`](./midi2.rs). All routes insert the device into `midi
 ### `group(g)` → `GroupRoute`
 
 UMP **group 0–15** (passed as integer). Methods: `channel`, `range_midi`, `range`, `transpose`, `velocity_curve`, `route_to` / `route_to_name`.
+
+For a raw PipeWire UMP source named `MPK-FAKE`:
+
+```rhai
+let mpk = midi_device("MPK-FAKE");
+mpk.on_note(|note, velocity, is_on| {
+    print(`note ${note} velocity ${velocity} on=${is_on}`);
+});
+mpk.on_cc(|cc, value| {
+    print(`cc ${cc}=${value}`);
+});
+```
 
 ### Per-note controllers
 

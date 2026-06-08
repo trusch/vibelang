@@ -99,6 +99,7 @@ mod mpe;
 mod nrpn;
 mod parser;
 mod per_note_state;
+mod pipewire_input;
 mod queue;
 mod recording;
 mod ump;
@@ -151,6 +152,12 @@ pub use input_task::{
 
 // MIDI message parsing
 pub use parser::{parse_midi_bytes, MidiParser};
+
+pub use pipewire_input::{
+    is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
+    parse_pipewire_midi_pod, pipewire_midi_input_id, PipeWireMidiInputConnection,
+    PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
+};
 
 // MIDI message encoding
 pub use encoder::{

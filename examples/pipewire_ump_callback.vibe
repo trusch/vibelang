@@ -1,0 +1,28 @@
+// PipeWire MIDI 2.0 / UMP callback smoke test.
+//
+// Start the fake device from udp-ump-bridge:
+//   udp-midi-bridge --name MPK-FAKE --port 5005
+//
+// Then run:
+//   vibe run examples/pipewire_ump_callback.vibe
+//
+// Drive events:
+//   python3 scripts/udp_ump_send.py buddy 5005 note-on 60 100
+//   python3 scripts/udp_ump_send.py buddy 5005 cc 70 99
+//   python3 scripts/udp_ump_send.py buddy 5005 flood --count 10000
+
+set_tempo(120);
+
+let mpk = midi_device("MPK-FAKE");
+
+mpk.on_note(|note, velocity, is_on| {
+    if is_on {
+        print("note on: " + note + " vel=" + velocity);
+    } else {
+        print("note off: " + note);
+    }
+});
+
+mpk.on_cc(|cc, value| {
+    print("cc " + cc + " = " + value);
+});

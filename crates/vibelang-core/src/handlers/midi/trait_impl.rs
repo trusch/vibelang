@@ -5,6 +5,7 @@ use super::types::convert_new_to_legacy_message;
 use super::MidiHandler;
 use crate::backend::Backend;
 use crate::midi::{
+    is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
     parse_midi_bytes as new_parse_midi_bytes, MidiRecording, MidiRecordingInfo, QueuedMidiEvent,
     TimestampedMidiEvent,
 };
@@ -62,10 +63,48 @@ impl<B: Backend> Midi for MidiHandler<B> {
             }
         }
 
+        for input in list_pipewire_midi2_inputs() {
+            devices.push(MidiDeviceInfo {
+                id: input.id,
+                name: input.name,
+                has_input: true,
+                has_output: false,
+                midi2_capability: MidiOutputCapability::Midi2Native,
+            });
+        }
+
         devices
     }
 
     async fn open_input(&self, id: MidiDeviceId) -> Result<()> {
+        if is_pipewire_midi_input_id(id) {
+            {
+                let inputs = self.pipewire_inputs.lock().map_err(|e| {
+                    Error::MidiError(format!("PipeWire MIDI inputs lock poisoned: {}", e))
+                })?;
+                if inputs.contains_key(&id) {
+                    tracing::trace!("PipeWire MIDI2 input {:?} already open", id);
+                    return Ok(());
+                }
+            }
+
+            let conn = open_pipewire_midi2_input(
+                id,
+                self.event_queue.sender(),
+                Arc::clone(&self.midi_clock),
+            )
+            .map_err(Error::MidiError)?;
+
+            self.pipewire_inputs
+                .lock()
+                .map_err(|e| {
+                    Error::MidiError(format!("PipeWire MIDI inputs lock poisoned: {}", e))
+                })?
+                .insert(id, conn);
+            tracing::info!("Opened PipeWire MIDI2 input {:?}", id);
+            return Ok(());
+        }
+
         // Check if already open (idempotent operation)
         {
             let inputs = self
@@ -145,6 +184,13 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn open_output(&self, id: MidiDeviceId) -> Result<()> {
+        if is_pipewire_midi_input_id(id) {
+            return Err(Error::MidiError(format!(
+                "PipeWire MIDI2 input {:?} cannot be opened for output",
+                id
+            )));
+        }
+
         // Check if already open (idempotent operation)
         {
             let outputs = self
@@ -228,6 +274,17 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn close(&self, id: MidiDeviceId) -> Result<()> {
         let mut removed = false;
+
+        if self
+            .pipewire_inputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("PipeWire MIDI inputs lock poisoned: {}", e)))?
+            .remove(&id)
+            .is_some()
+        {
+            tracing::info!("Closed PipeWire MIDI2 input: id={}", id.0);
+            removed = true;
+        }
 
         if self
             .inputs

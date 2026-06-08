@@ -1628,6 +1628,13 @@ fn list_midi_devices() {
     }
 
     println!();
+    println!("PipeWire MIDI 2.0 / UMP Input Devices:");
+    println!("--------------------------------------");
+    for dev in vibelang_core::midi::list_pipewire_midi2_inputs() {
+        println!("  {}: {}", dev.id.raw(), dev.name);
+    }
+
+    println!();
     println!("MIDI Output Devices:");
     println!("--------------------");
     if let Ok(midi_out) = MidiOutput::new("vibelang-cli2") {

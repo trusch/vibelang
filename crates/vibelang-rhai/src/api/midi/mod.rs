@@ -55,6 +55,7 @@ pub use recording::MidiRecordingHandle;
 pub use routing::{CcRoute, KeyboardRoute, NoteRoute};
 
 use rhai::{Array, Dynamic, Engine};
+use vibelang_core::midi::list_pipewire_midi2_inputs;
 use vibelang_core::types::MidiDeviceId;
 
 /// List all available MIDI devices.
@@ -112,6 +113,18 @@ pub fn list_midi_devices() -> Array {
                 }
             }
         }
+    }
+
+    for input in list_pipewire_midi2_inputs() {
+        let device = MidiDevice {
+            id: input.id,
+            name: input.name,
+            has_input: true,
+            has_output: false,
+            channel: 0,
+            default_note: None,
+        };
+        devices.push(Dynamic::from(device));
     }
 
     devices
@@ -172,6 +185,22 @@ pub fn midi_device(name_or_idx: String) -> MidiDevice {
                     };
                 }
             }
+        }
+    }
+
+    let needle = name_or_idx.to_lowercase();
+    for input in list_pipewire_midi2_inputs() {
+        if input.name.to_lowercase().contains(&needle)
+            || input.target_object.to_lowercase().contains(&needle)
+        {
+            return MidiDevice {
+                id: input.id,
+                name: input.name,
+                has_input: true,
+                has_output: false,
+                channel: 0,
+                default_note: None,
+            };
         }
     }
 

@@ -58,7 +58,8 @@ use crate::compat::RwLock;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, JitterCompensator, KeyboardRouteBuilder, MidiClock,
     MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
-    MidiRecording, NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
+    MidiRecording, NoteRouteBuilder, PipeWireMidiInputConnection, ScheduledMidiEvent,
+    TimestampedMidiEvent,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
@@ -111,6 +112,9 @@ pub struct MidiHandler<B: Backend> {
 
     /// Open output connections (uses std::sync::Mutex because MidiOutputConnection is !Send).
     outputs: Arc<Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>>,
+
+    /// Open PipeWire raw UMP input connections.
+    pipewire_inputs: Arc<Mutex<HashMap<MidiDeviceId, PipeWireMidiInputConnection>>>,
 
     /// Incoming MIDI message channel (legacy).
     rx: Arc<Mutex<mpsc::Receiver<(MidiDeviceId, MidiMessage)>>>,
@@ -209,6 +213,7 @@ impl<B: Backend> MidiHandler<B> {
             state,
             inputs: Arc::new(Mutex::new(HashMap::new())),
             outputs: Arc::new(Mutex::new(HashMap::new())),
+            pipewire_inputs: Arc::new(Mutex::new(HashMap::new())),
             rx: Arc::new(Mutex::new(rx)),
             tx,
             routing_manager: MidiRoutingManager::new(),
@@ -755,6 +760,11 @@ impl<B: Backend> MidiHandler<B> {
 
         for event in events {
             if event.message.is_midi2() {
+                if let Some(msg) = types::convert_new_to_legacy_message(&event.message) {
+                    let event_beat = self.event_arrival_beat(&event).await;
+                    self.handle_message_at_beat(event.device_id, msg, Some(event_beat))
+                        .await;
+                }
                 self.handle_midi2_message(event.device_id, &event.message)
                     .await;
             } else if let Some(msg) = types::convert_new_to_legacy_message(&event.message) {

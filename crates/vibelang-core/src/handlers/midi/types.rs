@@ -88,6 +88,53 @@ pub fn convert_new_to_legacy_message(msg: &NewMidiMessage) -> Option<MidiMessage
         NewMidiMessage::Start => Some(MidiMessage::Start),
         NewMidiMessage::Continue => Some(MidiMessage::Continue),
         NewMidiMessage::Stop => Some(MidiMessage::Stop),
+        NewMidiMessage::Midi2NoteOn {
+            group_channel,
+            note,
+            velocity,
+            ..
+        } => {
+            let vel = velocity.to_midi1();
+            if vel > 0 {
+                Some(MidiMessage::NoteOn {
+                    channel: group_channel.channel(),
+                    note: *note,
+                    velocity: vel,
+                })
+            } else {
+                Some(MidiMessage::NoteOff {
+                    channel: group_channel.channel(),
+                    note: *note,
+                })
+            }
+        }
+        NewMidiMessage::Midi2NoteOff {
+            group_channel,
+            note,
+            ..
+        } => Some(MidiMessage::NoteOff {
+            channel: group_channel.channel(),
+            note: *note,
+        }),
+        NewMidiMessage::Midi2ControlChange {
+            group_channel,
+            controller,
+            value,
+        } => Some(MidiMessage::ControlChange {
+            channel: group_channel.channel(),
+            cc: *controller,
+            value: value.to_7bit(),
+        }),
+        NewMidiMessage::Midi2PitchBend {
+            group_channel,
+            value,
+        } => {
+            let centered = ((*value as i64) - 0x8000_0000i64) / 0x4_0000;
+            Some(MidiMessage::PitchBend {
+                channel: group_channel.channel(),
+                value: centered.clamp(i16::MIN as i64, i16::MAX as i64) as i16,
+            })
+        }
         // New message types not supported by legacy system
         NewMidiMessage::PolyAftertouch { .. }
         | NewMidiMessage::ProgramChange { .. }
@@ -100,8 +147,7 @@ pub fn convert_new_to_legacy_message(msg: &NewMidiMessage) -> Option<MidiMessage
         | NewMidiMessage::ActiveSensing
         | NewMidiMessage::Reset => None,
 
-        // MIDI 2.0 messages are handled separately via the MIDI 2.0 processing path.
-        // They don't convert to legacy MIDI 1.0 messages.
+        // Advanced MIDI 2.0 messages are handled separately via MIDI 2.0 routes.
         _ => None,
     }
 }
@@ -256,4 +302,45 @@ pub fn map_to_range(
 
     // Map to output range
     out_min + curved.clamp(0.0, 1.0) * (out_max - out_min)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::midi::{ControlValue, GroupChannel, Velocity};
+
+    #[test]
+    fn converts_midi2_note_and_cc_to_legacy_callback_shape() {
+        let note = NewMidiMessage::Midi2NoteOn {
+            group_channel: GroupChannel::new(3, 4),
+            note: 60,
+            velocity: Velocity::from_midi2(0xFFFF),
+            attribute_type: 0,
+            attribute_value: 0,
+        };
+
+        assert!(matches!(
+            convert_new_to_legacy_message(&note),
+            Some(MidiMessage::NoteOn {
+                channel: 4,
+                note: 60,
+                velocity: 127
+            })
+        ));
+
+        let cc = NewMidiMessage::Midi2ControlChange {
+            group_channel: GroupChannel::new(3, 4),
+            controller: 70,
+            value: ControlValue::MAX,
+        };
+
+        assert!(matches!(
+            convert_new_to_legacy_message(&cc),
+            Some(MidiMessage::ControlChange {
+                channel: 4,
+                cc: 70,
+                value: 127
+            })
+        ));
+    }
 }
