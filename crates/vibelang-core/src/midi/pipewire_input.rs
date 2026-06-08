@@ -50,13 +50,32 @@ fn cached_target(id: MidiDeviceId) -> Option<String> {
         .and_then(|cache| cache.get(&id).cloned())
 }
 
+/// Decide whether a PipeWire node — described by its **registry-global**
+/// props — is a UMP MIDI 2.0 source vibelang can open.
+///
+/// PipeWire only promotes a small key set to the registry global dict, so
+/// `format.dsp` is usually *absent* here even for genuine UMP sources: it
+/// lives in the node's info props, which would require a per-node bind to
+/// read. We therefore key on `media.class`. Hardware, ALSA-seq and Bluetooth
+/// MIDI all surface as `Midi/Bridge`; application-created MIDI streams — UMP
+/// in modern PipeWire, e.g. the udp-midi-bridge fake devices — surface as
+/// `Midi/Source`. Accept a `Midi/Source` unless it *explicitly* advertises a
+/// legacy non-UMP raw-midi format (which, when present, we honour).
+#[cfg(all(feature = "pipewire-midi2", unix, not(target_arch = "wasm32")))]
+fn is_ump_midi_source(media_type: &str, media_class: &str, format_dsp: &str) -> bool {
+    if media_type != "Midi" || media_class != "Midi/Source" {
+        return false;
+    }
+    !format_dsp.eq_ignore_ascii_case("8 bit raw midi")
+}
+
 #[cfg(all(feature = "pipewire-midi2", unix, not(target_arch = "wasm32")))]
 fn info_from_props(id: u32, props: &libspa::utils::dict::DictRef) -> Option<PipeWireMidiInputInfo> {
     let media_type = props.get("media.type")?;
     let media_class = props.get("media.class")?;
     let format_dsp = props.get("format.dsp").unwrap_or_default();
 
-    if media_type != "Midi" || media_class != "Midi/Source" {
+    if !is_ump_midi_source(media_type, media_class, format_dsp) {
         return None;
     }
 
@@ -65,13 +84,6 @@ fn info_from_props(id: u32, props: &libspa::utils::dict::DictRef) -> Option<Pipe
         .get("node.description")
         .unwrap_or(&node_name)
         .to_string();
-    let looks_like_ump = format_dsp.eq_ignore_ascii_case("32 bit raw UMP")
-        || node_name.to_lowercase().contains("ump")
-        || description.to_lowercase().contains("ump");
-
-    if !looks_like_ump {
-        return None;
-    }
 
     let target_object = if node_name.is_empty() {
         id.to_string()
@@ -501,6 +513,35 @@ mod tests {
         data.extend_from_slice(value);
         data.resize(8 + pod_size, 0);
         data
+    }
+
+    #[test]
+    fn ump_source_detected_without_format_dsp_in_global_props() {
+        // The udp-midi-bridge fake device: registry-global props carry no
+        // format.dsp and the name has no "ump" substring — must still match.
+        assert!(is_ump_midi_source("Midi", "Midi/Source", ""));
+    }
+
+    #[test]
+    fn ump_source_detected_with_explicit_ump_format() {
+        assert!(is_ump_midi_source("Midi", "Midi/Source", "32 bit raw UMP"));
+    }
+
+    #[test]
+    fn midi_bridge_is_not_a_ump_source() {
+        // Hardware / ALSA-seq / Bluetooth MIDI surfaces as Midi/Bridge.
+        assert!(!is_ump_midi_source("Midi", "Midi/Bridge", ""));
+    }
+
+    #[test]
+    fn non_midi_node_is_not_a_ump_source() {
+        assert!(!is_ump_midi_source("Audio", "Audio/Source", ""));
+    }
+
+    #[test]
+    fn legacy_raw_midi_source_is_rejected() {
+        // A node that explicitly declares the legacy MIDI 1.0 raw format.
+        assert!(!is_ump_midi_source("Midi", "Midi/Source", "8 bit raw midi"));
     }
 
     #[test]
