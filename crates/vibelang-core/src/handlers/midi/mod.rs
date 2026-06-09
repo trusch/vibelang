@@ -105,6 +105,7 @@ pub(crate) struct MidiRouteSnapshot {
     advanced_keyboard_routes: Vec<crate::reload::AdvancedMidiKeyboardRoute>,
     advanced_note_routes: Vec<crate::reload::AdvancedMidiNoteRoute>,
     advanced_cc_routes: Vec<crate::reload::AdvancedMidiCcRoute>,
+    advanced_bend_routes: Vec<crate::reload::AdvancedMidiBendRoute>,
     midi2_keyboard_routes: Vec<crate::reload::Midi2KeyboardRoute>,
     midi2_per_note_routes: Vec<crate::reload::Midi2PerNoteRoute>,
     midi2_cc_routes: Vec<crate::reload::Midi2CcRoute>,
@@ -120,6 +121,7 @@ impl MidiRouteSnapshot {
             advanced_keyboard_routes: state.advanced_keyboard_routes.clone(),
             advanced_note_routes: state.advanced_note_routes.clone(),
             advanced_cc_routes: state.advanced_cc_routes.clone(),
+            advanced_bend_routes: state.advanced_bend_routes.clone(),
             midi2_keyboard_routes: state.midi2_keyboard_routes.clone(),
             midi2_per_note_routes: state.midi2_per_note_routes.clone(),
             midi2_cc_routes: state.midi2_cc_routes.clone(),
@@ -604,6 +606,16 @@ impl<B: Backend> MidiHandler<B> {
         self.routing_manager.apply_advanced_cc_routes(routes).await
     }
 
+    /// Apply advanced pitch-bend routes from script state.
+    pub async fn apply_advanced_bend_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiBendRoute],
+    ) {
+        self.routing_manager
+            .apply_advanced_bend_routes(routes)
+            .await
+    }
+
     // ========================================================================
     // MIDI 2.0 Routing (delegated)
     // ========================================================================
@@ -934,9 +946,19 @@ impl<B: Backend> MidiHandler<B> {
                     .cloned()
                     .collect();
 
+                let advanced_bend_routes: Vec<_> = routing
+                    .advanced_bend_routes
+                    .iter()
+                    .filter(|r| {
+                        r.device_id == device_id
+                            && (r.channel.is_none() || r.channel == Some(*channel))
+                    })
+                    .cloned()
+                    .collect();
+
                 drop(routing);
 
-                self.handle_pitch_bend(basic_routes, advanced_routes, *value)
+                self.handle_pitch_bend(basic_routes, advanced_routes, advanced_bend_routes, *value)
                     .await;
             }
             MidiMessage::Clock => {
@@ -1281,6 +1303,7 @@ impl<B: Backend> MidiHandler<B> {
         &self,
         basic_routes: Vec<KeyboardRoute>,
         advanced_routes: Vec<KeyboardRouteBuilder>,
+        advanced_bend_routes: Vec<CcRouteBuilder>,
         value: i16,
     ) {
         let bend_semitones = (value as f32 / 8192.0) * 2.0;
@@ -1299,6 +1322,27 @@ impl<B: Backend> MidiHandler<B> {
             if let Some(voice_id) = route.target_voice {
                 if let Err(e) = self.apply_pitch_bend(voice_id, bend_semitones).await {
                     tracing::warn!("Failed to apply pitch bend to voice {}: {}", voice_id.0, e);
+                }
+            }
+        }
+
+        // Pitch bend remains additive: keyboard routes keep detuning held
+        // notes, while map_bend routes can also drive arbitrary live params.
+        // Avoid routing the same device's keyboard bend and joystick-param
+        // bend to the same voice unless that double effect is intentional.
+        for route in advanced_bend_routes {
+            let param_value = route.bend_to_param(value);
+
+            if let (Some(target), Some(param)) = (route.target.as_ref(), &route.target_param) {
+                tracing::debug!(
+                    "MIDI advanced pitch bend: target={:?}, param={}, value={}",
+                    target,
+                    param,
+                    param_value
+                );
+
+                if let Err(e) = self.apply_cc_to_target(target, param, param_value).await {
+                    tracing::warn!("Failed to apply advanced pitch bend to {:?}: {}", target, e);
                 }
             }
         }
@@ -2068,7 +2112,7 @@ mod tests {
     use crate::compat::{channel, timeout, RwLock};
     use crate::handlers::VoicesHandler;
     use crate::midi::{Channel, NoteRouteBuilder, Velocity};
-    use crate::reload::LooperConfig;
+    use crate::reload::{AdvancedMidiBendRoute, LooperConfig};
     use crate::state::GroupState;
     use crate::traits::{VoiceConfig, Voices};
     use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
@@ -2559,6 +2603,64 @@ mod tests {
         assert!(
             params.contains_key("channel_one"),
             ".channel(1) should match internal MIDI channel 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn pitch_bend_voice_route_maps_signed_range_to_param_range() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let midi = MidiHandler::new(backend, state, runtime_tx);
+        midi.apply_advanced_bend_routes(&[AdvancedMidiBendRoute {
+            device_id,
+            channel: Some(0),
+            curve: "linear".to_string(),
+            target: FadeTarget::Voice(voice_id),
+            param: "morph".to_string(),
+            min: 0.0,
+            max: 1.0,
+        }])
+        .await;
+
+        for (raw, expected) in [(-8192, 0.0), (0, 8192.0 / 16383.0), (8191, 1.0)] {
+            midi.handle_message(
+                device_id,
+                MidiMessage::PitchBend {
+                    channel: 0,
+                    value: raw,
+                },
+            )
+            .await;
+
+            let value = {
+                let state = midi.state.read().await;
+                *state
+                    .voices
+                    .get(&voice_id)
+                    .unwrap()
+                    .config
+                    .params
+                    .get("morph")
+                    .expect("pitch bend should update morph")
+            };
+
+            assert!(
+                (value - expected).abs() < 0.0001,
+                "raw bend {raw} should map to {expected}, got {value}"
+            );
+        }
+
+        assert!(
+            runtime_rx.try_recv().is_err(),
+            "voice bend mapping should not enqueue SetParam into the runtime channel"
         );
     }
 }

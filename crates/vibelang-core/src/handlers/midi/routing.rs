@@ -340,6 +340,42 @@ impl MidiRoutingManager {
         }
     }
 
+    /// Apply advanced pitch-bend routes from script state.
+    ///
+    /// Clears existing advanced pitch-bend routes and rebuilds as CcRouteBuilders.
+    pub async fn apply_advanced_bend_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiBendRoute],
+    ) {
+        let mut routing = self.routing.write().await;
+        routing.advanced_bend_routes.clear();
+
+        for route in routes {
+            let mut builder = CcRouteBuilder::new(route.device_id, 0);
+            builder.channel = route.channel;
+            builder.curve = parse_parameter_curve(&route.curve);
+            builder.target = Some(route.target.clone());
+            builder.target_param = Some(route.param.clone());
+            builder.range = (route.min, route.max);
+
+            tracing::debug!(
+                "Applied advanced bend route: device={}, channel={:?}, target={:?}, param={}",
+                route.device_id.0,
+                route.channel,
+                route.target,
+                route.param
+            );
+            routing.advanced_bend_routes.push(builder);
+        }
+
+        if !routes.is_empty() {
+            tracing::info!(
+                "Applied {} advanced MIDI pitch-bend routes from script",
+                routes.len()
+            );
+        }
+    }
+
     // ========================================================================
     // MIDI 2.0 Routing
     // ========================================================================

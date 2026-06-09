@@ -75,10 +75,10 @@ pub use script_state::{
 
 #[cfg(feature = "midi")]
 pub use script_state::{
-    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, LooperConfig, LooperKey,
-    Midi2CcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute,
-    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
-    MidiRecordingRequest,
+    AdvancedMidiBendRoute, AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute,
+    LooperConfig, LooperKey, Midi2CcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType,
+    Midi2PerNoteRoute, MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute,
+    MidiOutputMessage, MidiRecordingRequest,
 };
 
 // Types available on all platforms (for order_group_creations)

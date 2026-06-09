@@ -14,6 +14,7 @@ use vibelang_core::types::MidiDeviceId;
 use crate::api::voice::Voice;
 use crate::context;
 
+use super::bend_mapping::BendMapping;
 use super::cc_mapping::CcMapping;
 use super::looper_builder::LooperBuilder;
 use super::routing::{CcRoute, KeyboardRoute, NoteRoute};
@@ -543,6 +544,11 @@ impl MidiDevice {
     /// Start building an advanced CC mapping with polymorphic target.
     pub fn map_cc(self, cc: i64) -> CcMapping {
         CcMapping::new(self.id, cc.clamp(0, 127) as u8)
+    }
+
+    /// Start building an advanced pitch-bend mapping with polymorphic target.
+    pub fn map_bend(self) -> BendMapping {
+        BendMapping::new(self.id)
     }
 
     /// Start building an advanced CC route with curves.

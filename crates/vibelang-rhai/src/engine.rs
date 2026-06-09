@@ -3461,6 +3461,48 @@ mod tests {
 
     #[cfg(feature = "midi")]
     #[test]
+    fn test_map_bend_to_voice_registers_advanced_bend_route() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("mpk_keys");
+                let dev = midi_device("MPK mini 3");
+                dev.map_bend().channel(1).curve("exp").to(synth, "morph", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.advanced_bend_routes.len(),
+            1,
+            "Should have 1 bend route"
+        );
+        let route = &state.advanced_bend_routes[0];
+        assert_eq!(
+            route.channel,
+            Some(0),
+            "Channel 1 (user-facing) stored as 0 (internal)"
+        );
+        assert_eq!(
+            route.curve, "exponential",
+            "\"exp\" maps to \"exponential\""
+        );
+        assert_eq!(route.param, "morph", "Param should be morph");
+        assert!((route.min - 0.0f32).abs() < 0.001, "Min should be 0.0");
+        assert!((route.max - 1.0f32).abs() < 0.001, "Max should be 1.0");
+        assert!(
+            matches!(route.target, vibelang_core::traits::FadeTarget::Voice(_)),
+            "Target should be a Voice"
+        );
+        assert!(
+            state.midi_inputs.contains(&route.device_id),
+            "Bend mapping should open the device for MIDI input"
+        );
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
     fn test_keys_builder() {
         let mut engine = ScriptEngine::new();
         let state = engine

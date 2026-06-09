@@ -2644,6 +2644,9 @@ impl<B: Backend> Runtime<B> {
                 .apply_advanced_cc_routes(&new_state.advanced_cc_routes)
                 .await;
             self.midi
+                .apply_advanced_bend_routes(&new_state.advanced_bend_routes)
+                .await;
+            self.midi
                 .apply_midi2_keyboard_routes(&new_state.midi2_keyboard_routes)
                 .await;
             self.midi

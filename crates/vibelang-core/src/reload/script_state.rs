@@ -397,6 +397,32 @@ pub struct AdvancedMidiCcRoute {
     pub max: f32,
 }
 
+/// Advanced MIDI pitch-bend route with curves.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdvancedMidiBendRoute {
+    /// MIDI device ID.
+    pub device_id: MidiDeviceId,
+
+    /// Optional channel filter (None = all channels).
+    pub channel: Option<u8>,
+
+    /// Curve type name.
+    pub curve: String,
+
+    /// Target to control.
+    pub target: FadeTarget,
+
+    /// Parameter name.
+    pub param: String,
+
+    /// Min value at full negative bend.
+    pub min: f32,
+
+    /// Max value at full positive bend.
+    pub max: f32,
+}
+
 // ============================================================================
 // MIDI 2.0 Route Types
 // ============================================================================
@@ -748,6 +774,10 @@ pub struct ScriptState {
     /// Advanced MIDI CC routes with curves.
     #[cfg(feature = "midi")]
     pub advanced_cc_routes: Vec<AdvancedMidiCcRoute>,
+
+    /// Advanced MIDI pitch-bend routes with curves.
+    #[cfg(feature = "midi")]
+    pub advanced_bend_routes: Vec<AdvancedMidiBendRoute>,
 
     /// MIDI devices to open for input.
     #[cfg(feature = "midi")]

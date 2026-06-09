@@ -562,6 +562,12 @@ impl CcRouteBuilder {
         let normalized = value as f32 / 127.0;
         self.curve.apply(normalized, self.range.0, self.range.1)
     }
+
+    /// Calculate parameter value from pitch-bend value.
+    pub fn bend_to_param(&self, value: i16) -> f32 {
+        let normalized = (value as f32 + 8192.0) / 16383.0;
+        self.curve.apply(normalized, self.range.0, self.range.1)
+    }
 }
 
 // ============================================================================

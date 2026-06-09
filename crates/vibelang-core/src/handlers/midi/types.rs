@@ -240,6 +240,8 @@ pub struct MidiRouting {
     pub note_routes: Vec<NoteRouteBuilder>,
     /// Advanced CC routes with curves.
     pub advanced_cc_routes: Vec<CcRouteBuilder>,
+    /// Advanced pitch-bend routes with curves.
+    pub advanced_bend_routes: Vec<CcRouteBuilder>,
     /// Choke group tracking: group name -> active node IDs.
     pub choke_groups: HashMap<String, Vec<crate::types::NodeId>>,
 

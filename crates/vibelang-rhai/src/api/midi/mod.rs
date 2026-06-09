@@ -36,6 +36,7 @@
 //!     .to_param(lead, "cutoff", 100.0, 10000.0);
 //! ```
 
+mod bend_mapping;
 mod cc_mapping;
 mod device;
 mod looper_builder;
@@ -43,6 +44,7 @@ mod midi2;
 mod recording;
 mod routing;
 
+pub use bend_mapping::BendMapping;
 pub use cc_mapping::CcMapping;
 pub use device::MidiDevice;
 pub use looper_builder::LooperBuilder;
@@ -325,6 +327,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("keys", MidiDevice::keys);
     engine.register_fn("pad", MidiDevice::pad);
     engine.register_fn("map_cc", MidiDevice::map_cc);
+    engine.register_fn("map_bend", MidiDevice::map_bend);
     engine.register_fn("looper", MidiDevice::looper);
 
     // Register LooperBuilder type
@@ -346,6 +349,12 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("channel", CcMapping::channel);
     engine.register_fn("curve", CcMapping::curve);
     engine.register_fn("to", CcMapping::to);
+
+    // Register BendMapping type
+    engine.build_type::<BendMapping>();
+    engine.register_fn("channel", BendMapping::channel);
+    engine.register_fn("curve", BendMapping::curve);
+    engine.register_fn("to", BendMapping::to);
 
     // Callback methods
     engine.register_fn("on_note", MidiDevice::on_note);
