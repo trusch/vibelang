@@ -558,7 +558,7 @@ pub fn array_zip(arr1: Array, arr2: Array) -> Array {
 #[derive(Clone, Debug)]
 pub struct Env {
     pub levels: Vec<f32>,
-    pub times: Vec<f32>,
+    pub times: Vec<EnvGenParam>,
     pub curves: Vec<f32>,
     pub release_node: i32,
 }
@@ -570,10 +570,22 @@ impl Env {
             .iter()
             .map(|v| v.clone().try_cast::<f64>().unwrap_or(0.0) as f32)
             .collect();
-        let times_vec: Vec<f32> = times
+        let times_vec: Vec<EnvGenParam> = times
             .iter()
-            .map(|v| v.clone().try_cast::<f64>().unwrap_or(0.0) as f32)
-            .collect();
+            .map(|v| {
+                if let Some(node) = v.clone().try_cast::<NodeRef>() {
+                    Ok(EnvGenParam::Node(node))
+                } else if let Some(f) = v.clone().try_cast::<f64>() {
+                    Ok(EnvGenParam::Constant(f))
+                } else if let Some(i) = v.clone().try_cast::<i64>() {
+                    Ok(EnvGenParam::Constant(i as f64))
+                } else {
+                    Err(SynthDefError::ValidationError(
+                        "Env time must be a number or control source".to_string(),
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         let curve_val = curve as f32;
         let curves_vec = vec![curve_val; times_vec.len()];
@@ -588,9 +600,16 @@ impl Env {
 
     /// Create a percussive envelope (attack, release).
     pub fn perc(attack: f64, release: f64) -> Self {
+        Self::perc_p(
+            EnvGenParam::Constant(attack),
+            EnvGenParam::Constant(release),
+        )
+    }
+
+    pub fn perc_p(attack: EnvGenParam, release: EnvGenParam) -> Self {
         Env {
             levels: vec![0.0, 1.0, 0.0],
-            times: vec![attack as f32, release as f32],
+            times: vec![attack, release],
             curves: vec![1.0, 1.0],
             release_node: -1,
         }
@@ -598,9 +617,23 @@ impl Env {
 
     /// Create an ADSR envelope.
     pub fn adsr(attack: f64, decay: f64, sustain: f64, release: f64) -> Self {
+        Self::adsr_p(
+            EnvGenParam::Constant(attack),
+            EnvGenParam::Constant(decay),
+            sustain,
+            EnvGenParam::Constant(release),
+        )
+    }
+
+    pub fn adsr_p(
+        attack: EnvGenParam,
+        decay: EnvGenParam,
+        sustain: f64,
+        release: EnvGenParam,
+    ) -> Self {
         Env {
             levels: vec![0.0, 1.0, sustain as f32, sustain as f32, 0.0],
-            times: vec![attack as f32, decay as f32, 0.0, release as f32],
+            times: vec![attack, decay, EnvGenParam::Constant(0.0), release],
             curves: vec![1.0, 1.0, 1.0, 1.0],
             release_node: 3,
         }
@@ -608,9 +641,17 @@ impl Env {
 
     /// Create an ASR envelope.
     pub fn asr(attack: f64, sustain: f64, release: f64) -> Self {
+        Self::asr_p(
+            EnvGenParam::Constant(attack),
+            sustain,
+            EnvGenParam::Constant(release),
+        )
+    }
+
+    pub fn asr_p(attack: EnvGenParam, sustain: f64, release: EnvGenParam) -> Self {
         Env {
             levels: vec![0.0, sustain as f32, 0.0],
-            times: vec![attack as f32, release as f32],
+            times: vec![attack, release],
             curves: vec![1.0, 1.0],
             release_node: 1,
         }
@@ -620,7 +661,10 @@ impl Env {
     pub fn triangle(duration: f64) -> Self {
         Env {
             levels: vec![0.0, 1.0, 0.0],
-            times: vec![(duration / 2.0) as f32, (duration / 2.0) as f32],
+            times: vec![
+                EnvGenParam::Constant(duration / 2.0),
+                EnvGenParam::Constant(duration / 2.0),
+            ],
             curves: vec![1.0, 1.0],
             release_node: -1,
         }
@@ -694,7 +738,9 @@ fn env_gen_with_env_impl(
 
         for i in 0..(num_levels - 1) {
             builder.add_constant(env.levels[i + 1]);
-            builder.add_constant(env.times[i]);
+            if let EnvGenParam::Constant(t) = &env.times[i] {
+                builder.add_constant(*t as f32);
+            }
             let curve_val = env.curves[i];
             let shape = if curve_val == 1.0 {
                 1.0
@@ -722,7 +768,7 @@ fn env_gen_with_env_impl(
 
         for i in 0..(num_levels - 1) {
             inputs.push(Input::Constant(env.levels[i + 1]));
-            inputs.push(Input::Constant(env.times[i]));
+            inputs.push(env.times[i].to_input());
             let curve_val = env.curves[i];
             let shape = if curve_val == 1.0 {
                 1.0
@@ -853,6 +899,37 @@ fn parse_duration(value: rhai::Dynamic) -> Result<f64> {
     }
 }
 
+fn synthdef_error_to_eval(err: SynthDefError) -> Box<rhai::EvalAltResult> {
+    Box::new(rhai::EvalAltResult::ErrorRuntime(
+        err.to_string().into(),
+        rhai::Position::NONE,
+    ))
+}
+
+fn set_time_error(error: &mut Option<String>, field: &str, message: String) {
+    let message = format!("envelope {}: {}", field, message);
+    log::warn!("{}", message);
+    *error = Some(message);
+}
+
+fn parse_time_param(
+    error: &mut Option<String>,
+    value: rhai::Dynamic,
+    field: &str,
+) -> Option<EnvGenParam> {
+    if let Some(node) = value.clone().try_cast::<NodeRef>() {
+        Some(EnvGenParam::Node(node))
+    } else {
+        match parse_duration(value) {
+            Ok(t) => Some(EnvGenParam::Constant(t)),
+            Err(e) => {
+                set_time_error(error, field, e.to_string());
+                None
+            }
+        }
+    }
+}
+
 /// Fluent builder for envelope generators.
 ///
 /// This builder provides a convenient API for creating envelope generators
@@ -877,10 +954,11 @@ fn parse_duration(value: rhai::Dynamic) -> Result<f64> {
 #[derive(Clone, Debug)]
 pub struct EnvelopeBuilder {
     // Envelope parameters
-    attack: Option<f64>,
-    decay: Option<f64>,
+    attack: Option<EnvGenParam>,
+    decay: Option<EnvGenParam>,
     sustain: Option<f64>,
-    release: Option<f64>,
+    release: Option<EnvGenParam>,
+    error: Option<String>,
 
     // Gate and done action
     gate: Option<NodeRef>,
@@ -900,6 +978,7 @@ impl EnvelopeBuilder {
             decay: None,
             sustain: None,
             release: None,
+            error: None,
             gate: None,
             done_action: None,
             level_scale: None,
@@ -911,7 +990,7 @@ impl EnvelopeBuilder {
     /// Set the attack time.
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
     pub fn attack(mut self, value: rhai::Dynamic) -> Self {
-        if let Ok(t) = parse_duration(value) {
+        if let Some(t) = parse_time_param(&mut self.error, value, "attack") {
             self.attack = Some(t);
         }
         self
@@ -919,14 +998,14 @@ impl EnvelopeBuilder {
 
     /// Set the attack time from f64 (seconds).
     pub fn attack_f(mut self, seconds: f64) -> Self {
-        self.attack = Some(seconds);
+        self.attack = Some(EnvGenParam::Constant(seconds));
         self
     }
 
     /// Set the decay time.
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
     pub fn decay(mut self, value: rhai::Dynamic) -> Self {
-        if let Ok(t) = parse_duration(value) {
+        if let Some(t) = parse_time_param(&mut self.error, value, "decay") {
             self.decay = Some(t);
         }
         self
@@ -934,7 +1013,7 @@ impl EnvelopeBuilder {
 
     /// Set the decay time from f64 (seconds).
     pub fn decay_f(mut self, seconds: f64) -> Self {
-        self.decay = Some(seconds);
+        self.decay = Some(EnvGenParam::Constant(seconds));
         self
     }
 
@@ -947,7 +1026,7 @@ impl EnvelopeBuilder {
     /// Set the release time.
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
     pub fn release(mut self, value: rhai::Dynamic) -> Self {
-        if let Ok(t) = parse_duration(value) {
+        if let Some(t) = parse_time_param(&mut self.error, value, "release") {
             self.release = Some(t);
         }
         self
@@ -955,7 +1034,7 @@ impl EnvelopeBuilder {
 
     /// Set the release time from f64 (seconds).
     pub fn release_f(mut self, seconds: f64) -> Self {
-        self.release = Some(seconds);
+        self.release = Some(EnvGenParam::Constant(seconds));
         self
     }
 
@@ -1022,10 +1101,10 @@ impl EnvelopeBuilder {
     /// Configure a percussive envelope (attack → release, no sustain).
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings.
     pub fn perc(mut self, attack: rhai::Dynamic, release: rhai::Dynamic) -> Self {
-        if let Ok(a) = parse_duration(attack) {
+        if let Some(a) = parse_time_param(&mut self.error, attack, "attack") {
             self.attack = Some(a);
         }
-        if let Ok(r) = parse_duration(release) {
+        if let Some(r) = parse_time_param(&mut self.error, release, "release") {
             self.release = Some(r);
         }
         // Clear decay and sustain to ensure perc envelope
@@ -1036,8 +1115,8 @@ impl EnvelopeBuilder {
 
     /// Configure a percussive envelope with f64 values.
     pub fn perc_f(mut self, attack: f64, release: f64) -> Self {
-        self.attack = Some(attack);
-        self.release = Some(release);
+        self.attack = Some(EnvGenParam::Constant(attack));
+        self.release = Some(EnvGenParam::Constant(release));
         self.decay = None;
         self.sustain = None;
         self
@@ -1046,11 +1125,11 @@ impl EnvelopeBuilder {
     /// Configure an ASR envelope (attack → sustain → release).
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
     pub fn asr(mut self, attack: rhai::Dynamic, sustain: f64, release: rhai::Dynamic) -> Self {
-        if let Ok(a) = parse_duration(attack) {
+        if let Some(a) = parse_time_param(&mut self.error, attack, "attack") {
             self.attack = Some(a);
         }
         self.sustain = Some(sustain.clamp(0.0, 1.0));
-        if let Ok(r) = parse_duration(release) {
+        if let Some(r) = parse_time_param(&mut self.error, release, "release") {
             self.release = Some(r);
         }
         self.decay = None;
@@ -1059,9 +1138,9 @@ impl EnvelopeBuilder {
 
     /// Configure an ASR envelope with f64 values.
     pub fn asr_f(mut self, attack: f64, sustain: f64, release: f64) -> Self {
-        self.attack = Some(attack);
+        self.attack = Some(EnvGenParam::Constant(attack));
         self.sustain = Some(sustain.clamp(0.0, 1.0));
-        self.release = Some(release);
+        self.release = Some(EnvGenParam::Constant(release));
         self.decay = None;
         self
     }
@@ -1075,14 +1154,14 @@ impl EnvelopeBuilder {
         sustain: f64,
         release: rhai::Dynamic,
     ) -> Self {
-        if let Ok(a) = parse_duration(attack) {
+        if let Some(a) = parse_time_param(&mut self.error, attack, "attack") {
             self.attack = Some(a);
         }
-        if let Ok(d) = parse_duration(decay) {
+        if let Some(d) = parse_time_param(&mut self.error, decay, "decay") {
             self.decay = Some(d);
         }
         self.sustain = Some(sustain.clamp(0.0, 1.0));
-        if let Ok(r) = parse_duration(release) {
+        if let Some(r) = parse_time_param(&mut self.error, release, "release") {
             self.release = Some(r);
         }
         self
@@ -1090,19 +1169,30 @@ impl EnvelopeBuilder {
 
     /// Configure an ADSR envelope with f64 values.
     pub fn adsr_f(mut self, attack: f64, decay: f64, sustain: f64, release: f64) -> Self {
-        self.attack = Some(attack);
-        self.decay = Some(decay);
+        self.attack = Some(EnvGenParam::Constant(attack));
+        self.decay = Some(EnvGenParam::Constant(decay));
         self.sustain = Some(sustain.clamp(0.0, 1.0));
-        self.release = Some(release);
+        self.release = Some(EnvGenParam::Constant(release));
         self
     }
 
     /// Configure a triangle envelope (attack to peak, then release).
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings.
     pub fn triangle(mut self, duration: rhai::Dynamic) -> Self {
-        if let Ok(d) = parse_duration(duration) {
-            self.attack = Some(d / 2.0);
-            self.release = Some(d / 2.0);
+        if duration.clone().try_cast::<NodeRef>().is_some() {
+            set_time_error(
+                &mut self.error,
+                "triangle",
+                "control-rate duration not supported in v1".to_string(),
+            );
+        } else {
+            match parse_duration(duration) {
+                Ok(d) => {
+                    self.attack = Some(EnvGenParam::Constant(d / 2.0));
+                    self.release = Some(EnvGenParam::Constant(d / 2.0));
+                }
+                Err(e) => set_time_error(&mut self.error, "triangle", e.to_string()),
+            }
         }
         self.decay = None;
         self.sustain = None;
@@ -1111,8 +1201,8 @@ impl EnvelopeBuilder {
 
     /// Configure a triangle envelope with f64 duration.
     pub fn triangle_f(mut self, duration: f64) -> Self {
-        self.attack = Some(duration / 2.0);
-        self.release = Some(duration / 2.0);
+        self.attack = Some(EnvGenParam::Constant(duration / 2.0));
+        self.release = Some(EnvGenParam::Constant(duration / 2.0));
         self.decay = None;
         self.sustain = None;
         self
@@ -1127,6 +1217,10 @@ impl EnvelopeBuilder {
     ///
     /// If no gate is specified, defaults to dc_ar(1.0) (always on).
     pub fn build(self) -> Result<NodeRef> {
+        if let Some(e) = &self.error {
+            return Err(SynthDefError::ValidationError(e.clone()));
+        }
+
         // Default gate to dc_ar(1.0) if not provided
         let gate = match self.gate {
             Some(g) => g,
@@ -1176,17 +1270,17 @@ impl EnvelopeBuilder {
     }
 
     /// Determine the envelope type based on set parameters.
-    fn determine_envelope(&self) -> Env {
-        let attack = self.attack.unwrap_or(0.01);
-        let release = self.release.unwrap_or(0.1);
+    pub fn determine_envelope(&self) -> Env {
+        let attack = self.attack.clone().unwrap_or(EnvGenParam::Constant(0.01));
+        let release = self.release.clone().unwrap_or(EnvGenParam::Constant(0.1));
 
-        match (self.decay, self.sustain) {
+        match (self.decay.clone(), self.sustain) {
             // Full ADSR
-            (Some(decay), Some(sustain)) => Env::adsr(attack, decay, sustain, release),
+            (Some(decay), Some(sustain)) => Env::adsr_p(attack, decay, sustain, release),
             // ASR (no decay, has sustain)
-            (None, Some(sustain)) => Env::asr(attack, sustain, release),
+            (None, Some(sustain)) => Env::asr_p(attack, sustain, release),
             // Perc (no sustain, no decay)
-            _ => Env::perc(attack, release),
+            _ => Env::perc_p(attack, release),
         }
     }
 }
@@ -1347,11 +1441,15 @@ pub fn replace_out_ar_n(bus: NodeRef, channels: Array) -> Result<NodeRef> {
 /// Register all helper functions with the Rhai engine.
 pub fn register_helpers(engine: &mut rhai::Engine) {
     // Register Env type
-    engine
-        .register_type::<Env>()
-        .register_fn("Env", |levels: Array, times: Array, curve: f64| {
-            Env::new(levels, times, curve).unwrap()
-        });
+    engine.register_type::<Env>().register_fn(
+        "Env",
+        |levels: Array,
+         times: Array,
+         curve: f64|
+         -> std::result::Result<Env, Box<rhai::EvalAltResult>> {
+            Env::new(levels, times, curve).map_err(synthdef_error_to_eval)
+        },
+    );
 
     // Register Env static methods
     engine.register_fn("env_perc", || Env::perc(0.01, 1.0));
@@ -1463,9 +1561,12 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_fn("with_time_scale", EnvGenBuilder::with_time_scale_n)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action_n)
-        .register_fn("build", |builder: EnvGenBuilder| {
-            EnvGenBuilder::build(builder).unwrap()
-        });
+        .register_fn(
+            "build",
+            |builder: EnvGenBuilder| -> std::result::Result<NodeRef, Box<rhai::EvalAltResult>> {
+                EnvGenBuilder::build(builder).map_err(synthdef_error_to_eval)
+            },
+        );
 
     // New fluent EnvelopeBuilder API
     engine
@@ -1505,9 +1606,12 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_fn("triangle", EnvelopeBuilder::triangle)
         .register_fn("triangle", EnvelopeBuilder::triangle_f)
         // Build method
-        .register_fn("build", |builder: EnvelopeBuilder| {
-            EnvelopeBuilder::build(builder).unwrap()
-        });
+        .register_fn(
+            "build",
+            |builder: EnvelopeBuilder| -> std::result::Result<NodeRef, Box<rhai::EvalAltResult>> {
+                EnvelopeBuilder::build(builder).map_err(synthdef_error_to_eval)
+            },
+        );
 
     // EnvGen with Env
     engine.register_fn(
