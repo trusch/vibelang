@@ -98,6 +98,37 @@ struct VoiceCcTelemetry {
     coalesced_by_key: HashMap<(VoiceId, String), u64>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct MidiRouteSnapshot {
+    keyboard_routes: Vec<crate::reload::MidiKeyboardRoute>,
+    cc_routes: Vec<crate::reload::MidiCcRoute>,
+    advanced_keyboard_routes: Vec<crate::reload::AdvancedMidiKeyboardRoute>,
+    advanced_note_routes: Vec<crate::reload::AdvancedMidiNoteRoute>,
+    advanced_cc_routes: Vec<crate::reload::AdvancedMidiCcRoute>,
+    midi2_keyboard_routes: Vec<crate::reload::Midi2KeyboardRoute>,
+    midi2_per_note_routes: Vec<crate::reload::Midi2PerNoteRoute>,
+    midi2_cc_routes: Vec<crate::reload::Midi2CcRoute>,
+    loopers: Vec<LooperConfig>,
+    midi_clock_outputs: Vec<crate::reload::MidiClockOutputRequest>,
+}
+
+impl MidiRouteSnapshot {
+    pub(crate) fn from_script_state(state: &crate::reload::ScriptState) -> Self {
+        Self {
+            keyboard_routes: state.midi_keyboard_routes.clone(),
+            cc_routes: state.midi_cc_routes.clone(),
+            advanced_keyboard_routes: state.advanced_keyboard_routes.clone(),
+            advanced_note_routes: state.advanced_note_routes.clone(),
+            advanced_cc_routes: state.advanced_cc_routes.clone(),
+            midi2_keyboard_routes: state.midi2_keyboard_routes.clone(),
+            midi2_per_note_routes: state.midi2_per_note_routes.clone(),
+            midi2_cc_routes: state.midi2_cc_routes.clone(),
+            loopers: state.loopers.clone(),
+            midi_clock_outputs: state.midi_clock_outputs.clone(),
+        }
+    }
+}
+
 /// Handler for MIDI operations.
 ///
 /// Note: `inputs` and `outputs` use `std::sync::Mutex` instead of `tokio::sync::RwLock`
@@ -190,8 +221,11 @@ pub struct MidiHandler<B: Backend> {
     /// Rate-limited counters for live-rig MIDI CC pressure diagnostics.
     voice_cc_telemetry: Mutex<VoiceCcTelemetry>,
 
-    /// Looper manager — one instance per configured MIDI device.
+    /// Looper manager.
     looper_manager: Mutex<LooperManager>,
+
+    /// Last script MIDI route snapshot that was applied through reload.
+    last_script_routes: Mutex<MidiRouteSnapshot>,
 }
 
 impl<B: Backend> MidiHandler<B> {
@@ -243,6 +277,7 @@ impl<B: Backend> MidiHandler<B> {
             voice_cc_telemetry: Mutex::new(VoiceCcTelemetry::default()),
 
             looper_manager: Mutex::new(LooperManager::new()),
+            last_script_routes: Mutex::new(MidiRouteSnapshot::default()),
         }
     }
 
@@ -513,6 +548,23 @@ impl<B: Backend> MidiHandler<B> {
     /// Clear all MIDI routes.
     pub async fn clear_routes(&self) {
         self.routing_manager.clear_routes().await
+    }
+
+    pub(crate) fn script_routes_changed(&self, state: &crate::reload::ScriptState) -> bool {
+        let desired = MidiRouteSnapshot::from_script_state(state);
+        let current = self
+            .last_script_routes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *current != desired
+    }
+
+    pub(crate) fn mark_script_routes_applied(&self, state: &crate::reload::ScriptState) {
+        let mut current = self
+            .last_script_routes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *current = MidiRouteSnapshot::from_script_state(state);
     }
 
     /// Apply CC routes from script state.
@@ -929,12 +981,12 @@ impl<B: Backend> MidiHandler<B> {
             return;
         }
 
-        // If a looper is configured for this device, route exclusively through it.
+        // If a looper is configured for this device/channel, route exclusively through it.
         if self
             .looper_manager
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .has_device(device_id)
+            .has_route_for_event(device_id, channel)
         {
             let (current_beat, time_sig_num) = {
                 let state = self.state.read().await;
@@ -1083,12 +1135,12 @@ impl<B: Backend> MidiHandler<B> {
         note: u8,
         event_beat: Option<f64>,
     ) {
-        // If a looper is configured for this device, route exclusively through it.
+        // If a looper is configured for this device/channel, route exclusively through it.
         if self
             .looper_manager
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .has_device(device_id)
+            .has_route_for_event(device_id, channel)
         {
             let current_beat = {
                 let state = self.state.read().await;

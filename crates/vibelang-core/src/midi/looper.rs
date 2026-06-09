@@ -3,7 +3,7 @@
 //! Defines the state machine and runtime state for a single looper instance.
 
 use crate::midi::recording::MidiRecording;
-use crate::reload::LooperConfig;
+use crate::reload::{LooperConfig, LooperKey};
 use crate::traits::PatternConfig;
 use crate::types::ids::{MidiDeviceId, PatternId, VoiceId};
 use crate::types::time::Beat;
@@ -27,7 +27,7 @@ pub enum LooperPhase {
     },
 }
 
-/// Runtime state for a single looper instance (one per configured device).
+/// Runtime state for a single looper instance.
 #[derive(Debug)]
 pub struct LooperInstance {
     pub config: LooperConfig,
@@ -76,9 +76,9 @@ pub enum LooperAction {
 // LooperManager
 // =============================================================================
 
-/// Manages all active looper instances (one per configured device).
+/// Manages all active looper instances.
 pub struct LooperManager {
-    instances: HashMap<MidiDeviceId, LooperInstance>,
+    instances: HashMap<LooperKey, LooperInstance>,
 }
 
 impl Default for LooperManager {
@@ -94,26 +94,32 @@ impl LooperManager {
         }
     }
 
-    /// Returns true if a looper instance exists for this device.
+    /// Returns true if any looper instance exists for this device.
     pub fn has_device(&self, device_id: MidiDeviceId) -> bool {
-        self.instances.contains_key(&device_id)
+        self.instances.keys().any(|key| key.device_id == device_id)
+    }
+
+    /// Returns true if a MIDI event would be consumed by a looper.
+    pub fn has_route_for_event(&self, device_id: MidiDeviceId, channel: u8) -> bool {
+        self.key_for_event(device_id, channel).is_some()
     }
 
     /// Reconcile instances against the new set of configs.
     ///
-    /// - New device_ids → insert a fresh LooperInstance.
-    /// - Removed device_ids → remove (returning StopPattern if Playing).
-    /// - Changed configs → update config in-place (phase/recording preserved).
+    /// - New `(device_id, channel)` keys → insert a fresh LooperInstance.
+    /// - Removed keys → remove (returning StopPattern if Playing).
+    /// - Changed configs for an existing key → stop any active pattern and reset.
+    /// - Unchanged configs → preserve phase/recording/pattern ownership.
     pub fn reconcile(&mut self, configs: &[LooperConfig]) -> Vec<LooperAction> {
         let mut actions = Vec::new();
 
-        // Build set of incoming device IDs for fast lookup.
-        let incoming: HashMap<MidiDeviceId, &LooperConfig> =
-            configs.iter().map(|c| (c.device_id, c)).collect();
+        // Build set of incoming looper keys for fast lookup.
+        let incoming: HashMap<LooperKey, &LooperConfig> =
+            configs.iter().map(|c| (c.key(), c)).collect();
 
         // Remove instances no longer in configs.
-        self.instances.retain(|device_id, instance| {
-            if incoming.contains_key(device_id) {
+        self.instances.retain(|key, instance| {
+            if incoming.contains_key(key) {
                 true
             } else {
                 // If it was playing, stop the pattern.
@@ -127,12 +133,31 @@ impl LooperManager {
         // Add new instances or update configs for existing ones.
         for config in configs {
             self.instances
-                .entry(config.device_id)
-                .and_modify(|inst| inst.config = config.clone())
+                .entry(config.key())
+                .and_modify(|inst| {
+                    if inst.config != *config {
+                        if let LooperPhase::Playing { pattern_id, .. } = inst.phase {
+                            actions.push(LooperAction::StopPattern { pattern_id });
+                        }
+                        *inst = LooperInstance::new(config.clone());
+                    }
+                })
                 .or_insert_with(|| LooperInstance::new(config.clone()));
         }
 
         actions
+    }
+
+    fn key_for_event(&self, device_id: MidiDeviceId, channel: u8) -> Option<LooperKey> {
+        let channel_key = LooperKey::new(device_id, Some(channel));
+        if self.instances.contains_key(&channel_key) {
+            return Some(channel_key);
+        }
+
+        let all_channels_key = LooperKey::new(device_id, None);
+        self.instances
+            .contains_key(&all_channels_key)
+            .then_some(all_channels_key)
     }
 
     /// Handle a note-on event for a device.
@@ -145,16 +170,12 @@ impl LooperManager {
         current_beat: f64,
         _time_sig_numerator: u8,
     ) -> Vec<LooperAction> {
-        let Some(inst) = self.instances.get_mut(&device_id) else {
+        let Some(key) = self.key_for_event(device_id, channel) else {
             return Vec::new();
         };
-
-        // Apply channel filter.
-        if let Some(filter) = inst.config.channel {
-            if channel != filter {
-                return Vec::new();
-            }
-        }
+        let Some(inst) = self.instances.get_mut(&key) else {
+            return Vec::new();
+        };
 
         let beat = Beat::from_f64(current_beat);
         let voice_id = inst.config.voice_id;
@@ -219,16 +240,12 @@ impl LooperManager {
         note: u8,
         current_beat: f64,
     ) -> Vec<LooperAction> {
-        let Some(inst) = self.instances.get_mut(&device_id) else {
+        let Some(key) = self.key_for_event(device_id, channel) else {
             return Vec::new();
         };
-
-        // Apply channel filter.
-        if let Some(filter) = inst.config.channel {
-            if channel != filter {
-                return Vec::new();
-            }
-        }
+        let Some(inst) = self.instances.get_mut(&key) else {
+            return Vec::new();
+        };
 
         let beat = Beat::from_f64(current_beat);
         let voice_id = inst.config.voice_id;
@@ -315,8 +332,12 @@ impl LooperManager {
             // Build the pattern name and a stable ID from it.
             inst.loop_count += 1;
             let pattern_name = format!(
-                "__looper_{}_{}",
+                "__looper_{}_{}_{}",
                 inst.config.device_id.raw(),
+                inst.config
+                    .channel
+                    .map(|ch| (ch as u16 + 1).to_string())
+                    .unwrap_or_else(|| "all".to_string()),
                 inst.loop_count
             );
             let pattern_id = name_to_pattern_id(&pattern_name);
@@ -364,7 +385,7 @@ fn name_to_pattern_id(name: &str) -> PatternId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reload::LooperConfig;
+    use crate::reload::{LooperConfig, LooperKey};
     use crate::types::ids::{MidiDeviceId, VoiceId};
 
     fn make_config(device_id: u32, voice_id: u32) -> LooperConfig {
@@ -385,7 +406,30 @@ mod tests {
     }
 
     fn phase(manager: &LooperManager, device_id: MidiDeviceId) -> LooperPhase {
-        manager.instances.get(&device_id).unwrap().phase.clone()
+        let mut matching = manager
+            .instances
+            .iter()
+            .filter(|(key, _)| key.device_id == device_id)
+            .map(|(_, instance)| instance.phase.clone());
+        let phase = matching.next().unwrap();
+        assert!(
+            matching.next().is_none(),
+            "phase(device_id) is ambiguous for multi-channel looper tests"
+        );
+        phase
+    }
+
+    fn phase_for(
+        manager: &LooperManager,
+        device_id: MidiDeviceId,
+        channel: Option<u8>,
+    ) -> LooperPhase {
+        manager
+            .instances
+            .get(&LooperKey::new(device_id, channel))
+            .unwrap()
+            .phase
+            .clone()
     }
 
     fn generated_pattern(actions: &[LooperAction]) -> &PatternConfig {
@@ -762,6 +806,134 @@ mod tests {
         assert!(matches!(
             phase(&manager, device_b),
             LooperPhase::Playing { pattern_id, .. } if pattern_id == pattern_b
+        ));
+    }
+
+    #[test]
+    fn same_device_distinct_channel_loopers_keep_independent_patterns_across_reconcile() {
+        let mut config_a = make_config(1, 1);
+        config_a.channel = Some(0);
+        let mut config_b = make_config(1, 2);
+        config_b.channel = Some(1);
+        let device_id = config_a.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config_a.clone(), config_b.clone()]);
+
+        let pattern_a = record_single_note_loop(&mut manager, device_id, 60, 0.0);
+        let pattern_b = {
+            manager.handle_note_on(device_id, 1, 67, 100, 8.0, 4);
+            manager.handle_note_off(device_id, 1, 67, 9.0);
+            manager
+                .tick(13.1, 4)
+                .iter()
+                .find_map(|action| match action {
+                    LooperAction::StartPattern { pattern_id, .. } => Some(*pattern_id),
+                    _ => None,
+                })
+                .expect("second channel looper should start playback")
+        };
+
+        assert_ne!(pattern_a, pattern_b);
+
+        for _ in 0..3 {
+            let actions = manager.reconcile(&[config_a.clone(), config_b.clone()]);
+            assert!(
+                actions.is_empty(),
+                "unchanged multi-channel loopers should reconcile without actions: {actions:?}"
+            );
+        }
+
+        let restart_a = manager.handle_note_on(device_id, 0, 62, 100, 16.0, 4);
+        assert_eq!(
+            restart_a
+                .iter()
+                .filter(|action| matches!(action, LooperAction::StopPattern { .. }))
+                .count(),
+            1
+        );
+        assert!(restart_a.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_a)
+        ));
+        assert!(!restart_a.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_b)
+        ));
+
+        let remove_b = manager.reconcile(&[config_a]);
+        assert_eq!(
+            remove_b
+                .iter()
+                .filter(|action| matches!(action, LooperAction::StopPattern { .. }))
+                .count(),
+            1
+        );
+        assert!(remove_b.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id } if *pattern_id == pattern_b)
+        ));
+        assert!(matches!(
+            phase_for(&manager, device_id, Some(0)),
+            LooperPhase::Capturing { .. }
+        ));
+        assert!(!manager
+            .instances
+            .contains_key(&LooperKey::new(device_id, Some(1))));
+    }
+
+    #[test]
+    fn channel_specific_looper_takes_precedence_over_same_device_all_channel_looper() {
+        let mut all_channels = make_config(1, 1);
+        all_channels.channel = None;
+        let mut channel_one = make_config(1, 2);
+        channel_one.channel = Some(0);
+        let device_id = all_channels.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[all_channels, channel_one]);
+
+        let actions = manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::NoteOn { voice_id, .. } if *voice_id == VoiceId::new(2))
+        ));
+        assert!(matches!(
+            phase_for(&manager, device_id, Some(0)),
+            LooperPhase::Capturing { .. }
+        ));
+        assert!(matches!(
+            phase_for(&manager, device_id, None),
+            LooperPhase::Idle
+        ));
+    }
+
+    #[test]
+    fn changed_looper_config_stops_active_pattern_and_resets_instance() {
+        let mut config = make_config(1, 1);
+        config.channel = Some(0);
+        let device_id = config.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config.clone()]);
+        let pattern_id = record_single_note_loop(&mut manager, device_id, 60, 0.0);
+
+        let mut changed = config;
+        changed.quantize_beats = 0.5;
+        let actions = manager.reconcile(&[changed.clone()]);
+
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(action, LooperAction::StopPattern { .. }))
+                .count(),
+            1
+        );
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id: stopped } if *stopped == pattern_id)
+        ));
+        assert!(matches!(
+            phase_for(&manager, device_id, Some(0)),
+            LooperPhase::Idle
+        ));
+
+        let actions = manager.handle_note_on(device_id, 0, 62, 100, 9.0, 4);
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::NoteOn { voice_id, .. } if *voice_id == changed.voice_id)
         ));
     }
 

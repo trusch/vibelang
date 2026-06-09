@@ -803,6 +803,27 @@ pub struct LooperConfig {
 }
 
 #[cfg(feature = "midi")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LooperKey {
+    pub device_id: MidiDeviceId,
+    pub channel: Option<u8>,
+}
+
+#[cfg(feature = "midi")]
+impl LooperKey {
+    pub const fn new(device_id: MidiDeviceId, channel: Option<u8>) -> Self {
+        Self { device_id, channel }
+    }
+}
+
+#[cfg(feature = "midi")]
+impl LooperConfig {
+    pub const fn key(&self) -> LooperKey {
+        LooperKey::new(self.device_id, self.channel)
+    }
+}
+
+#[cfg(feature = "midi")]
 impl Default for LooperConfig {
     fn default() -> Self {
         Self {

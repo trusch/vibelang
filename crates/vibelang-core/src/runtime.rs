@@ -1183,6 +1183,10 @@ impl<B: Backend> Runtime<B> {
             let state = self.state.read().await;
             crate::handlers::compute_input_route_diff(&state.input_routes, &input_routes)
         };
+        #[cfg(feature = "midi")]
+        {
+            diff.midi_routes_changed = self.midi.script_routes_changed(new_state);
+        }
         (diff, input_routes)
     }
 
@@ -2679,6 +2683,8 @@ impl<B: Backend> Runtime<B> {
                     );
                 }
             }
+
+            self.midi.mark_script_routes_applied(new_state);
         }
     }
 }
@@ -3953,6 +3959,42 @@ mod tests {
             .expect("looper-owned pattern should survive reload");
         assert_eq!(looper_pattern.owner, PatternOwner::Looper);
         assert!(looper_pattern.playing);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "midi")]
+    async fn looper_only_reload_reaches_midi_route_reconciliation_phase() {
+        use crate::reload::{LooperConfig, ScriptState};
+        use crate::types::{MidiDeviceId, VoiceId};
+
+        let mut runtime = Runtime::new(MockBackend);
+        let mut old_state = ScriptState::new();
+        old_state.loopers.push(LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: Some(0),
+            silence_bars: 1.0,
+            quantize_beats: 0.0,
+        });
+        runtime.midi.mark_script_routes_applied(&old_state);
+
+        let mut new_state = ScriptState::new();
+        new_state.loopers.push(LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: Some(1),
+            silence_bars: 1.0,
+            quantize_beats: 0.0,
+        });
+
+        assert!(runtime.midi.script_routes_changed(&new_state));
+
+        runtime.apply_reload(new_state.clone()).await.unwrap();
+
+        assert!(
+            !runtime.midi.script_routes_changed(&new_state),
+            "looper-only reload must not early-return before MIDI route reconciliation"
+        );
     }
 
     // =========================================================================

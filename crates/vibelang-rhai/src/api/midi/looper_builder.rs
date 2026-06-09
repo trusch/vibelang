@@ -67,7 +67,7 @@ impl LooperBuilder {
             quantize_beats: self.quantize_beats,
         };
         context::with_state(|state| {
-            state.loopers.retain(|l| l.device_id != self.device_id);
+            state.loopers.retain(|l| l.key() != config.key());
             state.loopers.push(config);
             state.midi_inputs.insert(self.device_id);
         });

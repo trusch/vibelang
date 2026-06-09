@@ -331,6 +331,10 @@ pub struct ReloadDiff {
 
     /// Pending voice output-port reconciles.
     pub voice_port_reconciles: usize,
+
+    /// MIDI route, clock-output, or looper config changes.
+    #[cfg(feature = "midi")]
+    pub midi_routes_changed: bool,
 }
 
 impl Default for ReloadDiff {
@@ -407,6 +411,8 @@ impl Default for ReloadDiff {
             param_routes_trigger: ParamRouteDiff::default(),
             input_routes: InputRouteDiff::default(),
             voice_port_reconciles: 0,
+            #[cfg(feature = "midi")]
+            midi_routes_changed: false,
         }
     }
 }
@@ -438,6 +444,16 @@ impl ReloadDiff {
             || self.param_routes_have_changes()
             || !self.input_routes.is_empty()
             || self.voice_port_reconciles > 0
+            || {
+                #[cfg(feature = "midi")]
+                {
+                    self.midi_routes_changed
+                }
+                #[cfg(not(feature = "midi"))]
+                {
+                    false
+                }
+            }
     }
 
     /// Get a summary of changes for logging.
@@ -576,6 +592,10 @@ impl ReloadDiff {
                 "voice_port_reconciles({})",
                 self.voice_port_reconciles
             ));
+        }
+        #[cfg(feature = "midi")]
+        if self.midi_routes_changed {
+            parts.push("midi_routes".to_string());
         }
 
         if parts.is_empty() {
@@ -768,6 +788,16 @@ mod tests {
         diff.voice_port_reconciles = 1;
 
         assert!(diff.has_changes());
+    }
+
+    #[test]
+    #[cfg(feature = "midi")]
+    fn reload_diff_has_changes_for_midi_route_only_change() {
+        let mut diff = ReloadDiff::default();
+        diff.midi_routes_changed = true;
+
+        assert!(diff.has_changes());
+        assert_eq!(diff.summary(), "midi_routes");
     }
 
     #[test]
