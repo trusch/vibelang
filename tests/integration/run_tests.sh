@@ -8,8 +8,8 @@
 # 3. HTTP API state verification (optional, with --api flag)
 #
 # Requirements:
-# - vibe2 binary built (cargo build --release -p vibelang-cli2)
-# - SuperCollider installed (scsynth is started automatically by vibe2)
+# - vibe binary built (cargo build --release -p vibelang-cli)
+# - SuperCollider installed (scsynth is started automatically by vibe)
 #
 # Usage:
 #   ./run_tests.sh              # Run all tests (5 seconds each)
@@ -23,7 +23,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-VIBE_BIN="$PROJECT_ROOT/target/release/vibe2"
+VIBE_BIN="$PROJECT_ROOT/target/release/vibe"
 
 # Default settings
 TIMEOUT=5
@@ -92,10 +92,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check for vibe2 binary
+# Check for vibe binary
 if [[ ! -f "$VIBE_BIN" ]]; then
-    echo -e "${YELLOW}Building vibe2...${NC}"
-    (cd "$PROJECT_ROOT" && cargo build --release -p vibelang-cli2)
+    echo -e "${YELLOW}Building vibe...${NC}"
+    (cd "$PROJECT_ROOT" && cargo build --release -p vibelang-cli)
 fi
 
 # Collect test files
@@ -240,14 +240,14 @@ for test_file in "${TEST_FILES[@]}"; do
     output_file=$(mktemp)
     start_time=$(date +%s.%N)
 
-    # Build vibe2 command
+    # Build vibe command
     vibe_args=("run" "-I" "$PROJECT_ROOT")
     if [[ "$USE_API" == "true" ]]; then
         vibe_args+=("--api" "--api-port" "$API_PORT")
     fi
     vibe_args+=("$test_file")
 
-    # Run vibe2 with the test file
+    # Run vibe with the test file
     if timeout "${TIMEOUT}s" "$VIBE_BIN" "${vibe_args[@]}" > "$output_file" 2>&1; then
         exit_code=0
     else

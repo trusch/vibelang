@@ -1,4 +1,4 @@
-//! MIDI infrastructure for vibelang-core2.
+//! MIDI infrastructure for vibelang-core.
 //!
 //! This module provides a professional-grade MIDI implementation with:
 //!

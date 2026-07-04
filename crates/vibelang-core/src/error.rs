@@ -1,4 +1,4 @@
-//! Error types for vibelang-core2.
+//! Error types for vibelang-core.
 //!
 //! This module defines the unified error type used throughout the crate.
 
@@ -17,7 +17,7 @@ pub struct SynthDefRejection {
     pub missing_ugen: Option<String>,
 }
 
-/// Unified error type for vibelang-core2 operations.
+/// Unified error type for vibelang-core operations.
 #[derive(Error, Debug)]
 pub enum Error {
     // =========================================================================

@@ -1,4 +1,4 @@
-//! Feature handlers for vibelang-core2.
+//! Feature handlers for vibelang-core.
 //!
 //! Handlers implement the feature traits and manage specific areas of functionality.
 //! Each handler holds references to the shared backend and state, delegating

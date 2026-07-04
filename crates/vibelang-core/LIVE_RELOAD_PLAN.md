@@ -1,4 +1,4 @@
-# Live Reloading Plan for vibelang-core2
+# Live Reloading Plan for vibelang-core
 
 ## Overview
 

@@ -1,5 +1,5 @@
 #![warn(clippy::unwrap_used)]
-//! # vibelang-core2
+//! # vibelang-core
 //!
 //! A clean, trait-based runtime for VibeLang that is generic over synthesis backends.
 //!

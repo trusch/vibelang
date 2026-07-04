@@ -1,7 +1,7 @@
-//! Language Server Protocol implementation for VibeLang (core2-based).
+//! Language Server Protocol implementation for VibeLang (vibelang-core based).
 //!
 //! This crate provides a full-featured LSP server for VibeLang, built on top of
-//! vibelang-core2 for modern, async validation.
+//! vibelang-core for modern, async validation.
 //!
 //! # Features
 //!

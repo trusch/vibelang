@@ -1,4 +1,4 @@
-//! Live reloading support for vibelang-core2.
+//! Live reloading support for vibelang-core.
 //!
 //! This module provides infrastructure for hot-reloading VibeLang scripts
 //! without stopping playback. It calculates the minimal set of changes needed

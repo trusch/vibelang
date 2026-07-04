@@ -1,4 +1,4 @@
-//! Feature traits for vibelang-core2.
+//! Feature traits for vibelang-core.
 //!
 //! This module defines the public interface for each feature area. Traits are
 //! implemented by handlers in the [`handlers`](crate::handlers) module.

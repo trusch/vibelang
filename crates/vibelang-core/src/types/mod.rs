@@ -1,4 +1,4 @@
-//! Core types for vibelang-core2.
+//! Core types for vibelang-core.
 //!
 //! This module contains type-safe wrappers and fundamental types:
 //!

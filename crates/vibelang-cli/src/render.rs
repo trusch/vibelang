@@ -78,7 +78,7 @@ pub fn render_score(args: RenderArgs) -> Result<()> {
     if !is_vibescore {
         anyhow::bail!(
             "Invalid input file: expected .vibescore format\n\
-            Record a .vibescore file using: vibe2 run <file.vibe> --record output.vibescore"
+            Record a .vibescore file using: vibe run <file.vibe> --record output.vibescore"
         );
     }
 

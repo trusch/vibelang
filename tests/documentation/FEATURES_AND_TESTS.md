@@ -1,6 +1,6 @@
 # VibeLang Features and Test Coverage
 
-This document catalogs all features in VibeLang (vibelang-core2) and tracks test coverage for each feature.
+This document catalogs all features in VibeLang (vibelang-core) and tracks test coverage for each feature.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `start()` - Start transport
 - `stop()` - Stop transport
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/transport.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/transport.rs`
 - Tempo validation (min/max limits)
 - Time signature changes
 - Bar calculation
@@ -54,7 +54,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `group.gain(value)` - Set group gain
 - `group.set_param(name, value)` - Set custom parameter
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/groups.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/groups.rs`
 - Group creation
 - Group hierarchy
 - Audio bus allocation
@@ -84,7 +84,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.input(name).from_current_group()` / `.disconnect()` - Patch from the voice group or silence
 - `.apply()` - Apply configuration (required)
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/voices.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/voices.rs`
 - Voice creation
 - Polyphony limits
 - Choke group behavior
@@ -196,7 +196,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.start()` / `.stop()` / `.pause()` / `.resume()` - Transport control
 - `.launch()` - Quantized start
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/sequences.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/sequences.rs`
 - Clip scheduling
 - Loop wrapping
 - Fade triggering
@@ -218,7 +218,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.param(name, value)` - Set parameter
 - `.apply()` - Apply effect to current group
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/effects.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/effects.rs`
 - Effect creation
 - Parameter routing
 
@@ -242,7 +242,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.curve(type)` - Set curve type (linear, exponential, sine)
 - `.start()` - Start fade
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/fades.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/fades.rs`
 - Fade calculation
 - Curve interpolation
 
@@ -293,7 +293,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `pitch_keycenter` must be specified in SFZ file for correct pitch
 - NOTE_OFF timing issue with melodies (gate never releases)
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/sfz.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/sfz.rs`
 - SFZ parsing
 - Region matching
 
@@ -342,7 +342,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `midi_keyboard(device, voice)` - Shortcut for keyboard routing
 - `midi_learn_cc(device, voice, param)` - Auto-map CC
 
-**Unit Tests**: `crates/vibelang-core2/src/midi/` (various modules)
+**Unit Tests**: `crates/vibelang-core/src/midi/` (various modules)
 - MIDI message parsing
 - CC routing
 - MPE support
@@ -366,7 +366,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.duration(seconds)` - Set max duration
 - `.start()` / `.stop()` - Control recording
 
-**Unit Tests**: `crates/vibelang-core2/src/handlers/recordings.rs`
+**Unit Tests**: `crates/vibelang-core/src/handlers/recordings.rs`
 - Recording lifecycle
 - Buffer management
 
@@ -404,7 +404,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 
 ## Unit Test Coverage
 
-### vibelang-core2/src/
+### vibelang-core/src/
 
 | Module | File | Tests | Coverage |
 |--------|------|-------|----------|

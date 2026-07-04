@@ -1,4 +1,4 @@
-//! Terminal UI for vibelang (using core2 runtime)
+//! Terminal UI for vibelang (using the vibelang-core runtime)
 //!
 //! Provides a real-time display of system state using ratatui
 

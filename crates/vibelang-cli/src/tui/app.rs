@@ -1,4 +1,4 @@
-//! TUI application state and logic adapted for vibelang-core2
+//! TUI application state and logic adapted for vibelang-core
 
 use crate::tui::keyboard::VirtualKeyboard;
 use crate::tui::TuiEvent;
@@ -507,7 +507,7 @@ impl TuiApp {
         self.timeline_offset_beats = 0.0;
     }
 
-    /// Build hierarchy entries from core2 state
+    /// Build hierarchy entries from vibelang-core state
     pub fn hierarchy_entries(&self) -> Vec<HierarchyEntry> {
         if let Some(state) = &self.runtime_state {
             build_hierarchy_entries(state, &self.collapsed_items)
@@ -691,7 +691,7 @@ pub enum HierarchyKind {
     Section,
 }
 
-/// Build hierarchy entries from core2 State
+/// Build hierarchy entries from vibelang-core State
 fn build_hierarchy_entries(state: &State, collapsed: &HashSet<String>) -> Vec<HierarchyEntry> {
     let mut entries = Vec::new();
 

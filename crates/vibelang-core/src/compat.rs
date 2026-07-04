@@ -1,7 +1,7 @@
 //! Platform compatibility layer for WASM and native targets.
 //!
 //! This module provides abstractions over platform-specific async primitives,
-//! allowing vibelang-core2 to compile for both native and WASM targets.
+//! allowing vibelang-core to compile for both native and WASM targets.
 
 // ============================================================================
 // Re-exports for sync primitives

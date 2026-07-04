@@ -1,4 +1,4 @@
-//! Validation utilities for vibelang-core2.
+//! Validation utilities for vibelang-core.
 //!
 //! This module provides validation functions for configuration types,
 //! ensuring values are within valid ranges before they're used in the runtime.

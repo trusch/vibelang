@@ -755,6 +755,7 @@ mod tests {
             voice_id,
             VoiceState {
                 id: voice_id,
+                role: vibelang_core::VoiceRole::Audible,
                 config: VoiceConfig {
                     name: "kick_voice".to_string(),
                     synthdef: "bd".to_string(),

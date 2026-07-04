@@ -1,4 +1,4 @@
-//! Runtime - the main entry point for vibelang-core2.
+//! Runtime - the main entry point for vibelang-core.
 //!
 //! The [`Runtime`] struct is generic over a [`Backend`] and manages all
 //! audio state and message processing.

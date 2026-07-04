@@ -39,7 +39,7 @@ pub struct VibeLangServer {
     synthdef_info: RwLock<HashMap<String, SynthdefInfo>>,
     /// Effect info for hover.
     effect_info: RwLock<HashMap<String, SynthdefInfo>>,
-    /// Validation engine for core2-based validation.
+    /// Validation engine for vibelang-core based validation.
     validation_engine: RwLock<Option<ValidationEngine>>,
 }
 

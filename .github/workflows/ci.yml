@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    # Informational only: the workspace currently has pre-existing clippy
+    # findings, including deny-by-default `clippy::approx_constant` errors in
+    # vibelang-dsp's build-script-generated code (generated.rs embeds literal
+    # ~PI/2 constants from stdlib synthdef metadata), so a strict clippy run
+    # cannot pass today. This step reports but does not fail the build.
+    # Tighten to `-D warnings` once the generated-code lints are allowed at
+    # the source and existing warnings are cleaned up.
+    name: clippy (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        # - libasound2-dev: ALSA headers for midir (alsa-sys)
+        # - libpipewire-0.3-dev + clang: pipewire-sys/libspa-sys bindgen;
+        #   the pipewire-midi2 feature is part of vibelang-core's default
+        #   "midi" feature, so it is built by default
+        # - libjack-jackd2-dev: jack crate used by vibelang-keys
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        # Same rationale as the clippy job: ALSA for midir, PipeWire headers
+        # for the default pipewire-midi2 feature, JACK for vibelang-keys.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Run unit tests
+        # Unit tests only. The workspace test suites use mock backends and do
+        # not require a running scsynth or JACK/PipeWire server, so nothing
+        # is excluded here. Audio-dependent end-to-end tests live in
+        # tests/integration/run_tests.sh (needs scsynth + a sound server) and
+        # are intentionally NOT run in CI.
+        run: cargo test --workspace
