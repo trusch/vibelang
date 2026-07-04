@@ -176,10 +176,18 @@ impl Voice {
     // === Builder methods ===
 
     /// Set the group for this voice.
-    pub fn group(mut self, group: String) -> Self {
-        self.group_path = context::resolve_group_reference(&group).unwrap_or(group);
+    ///
+    /// The reference is resolved through the group alias registry:
+    /// unregistered literal paths (absolute `"a/b"` or contextual single
+    /// segments) always resolve successfully — the group is created on
+    /// demand. Resolution only fails on a genuine alias conflict (the name
+    /// is already claimed to point at a different group), which is now
+    /// propagated as an error instead of silently using the raw name.
+    pub fn group(mut self, group: String) -> Result<Self, Box<EvalAltResult>> {
+        self.group_path = context::resolve_group_reference(&group)
+            .map_err(|err| super::group::alias_error(err, Position::NONE))?;
         self.sync_to_state();
-        self
+        Ok(self)
     }
 
     /// Set the synth for this voice.
@@ -677,7 +685,77 @@ impl Voice {
         self.resolve_name();
         self.sync_to_state();
         self.warn_if_no_sound_source();
+        self.warn_unknown_params();
         self
+    }
+
+    /// Warn (never error) about `.set_param()` names the voice's synthdef
+    /// does not declare.
+    ///
+    /// Conservative by design — zero false positives is the requirement, so
+    /// validation is skipped entirely whenever the param set can't be
+    /// determined:
+    /// - no synthdef name (sample/SFZ/MIDI voices, bare builders) → skip
+    /// - synthdef not in the registry (external/defined later) → skip
+    /// - registry reports no scalar params for the synthdef → skip
+    ///   (`get_synthdef_param_defaults` omits array-default params, so an
+    ///   empty set is indistinguishable from "unknown")
+    /// - runtime-level params (`amp`, `gate`, ...) are always accepted; the
+    ///   runtime consumes them regardless of the synthdef's param list
+    ///
+    /// Both script-defined and stdlib synthdefs land in the same process-wide
+    /// registry (`vibelang_dsp::register_synthdef_ir` via the
+    /// `define_synth(...).body(...)` builder), so both are covered.
+    fn warn_unknown_params(&self) {
+        for msg in self.unknown_param_warnings() {
+            tracing::warn!("{}", msg);
+        }
+    }
+
+    /// Compute the unknown-param warning messages for this voice (see
+    /// [`Self::warn_unknown_params`] for the skip rules). Pure so tests can
+    /// assert on the exact messages without capturing log output.
+    fn unknown_param_warnings(&self) -> Vec<String> {
+        /// Params handled by the runtime itself (velocity scaling, gate
+        /// length, trigger pitch, round-robin, ...) rather than required to
+        /// appear in the synthdef's param list.
+        const RUNTIME_PARAMS: &[&str] = &[
+            "amp", "gate", "freq", "note", "vel", "velocity", "out", "rr",
+        ];
+
+        let Some(synth) = self.synth_name.as_deref() else {
+            return Vec::new();
+        };
+        if synth.is_empty() || !vibelang_dsp::synthdef_exists(synth) {
+            return Vec::new();
+        }
+        let declared = vibelang_dsp::get_synthdef_param_defaults(synth);
+        if declared.is_empty() {
+            return Vec::new();
+        }
+
+        let mut names: Vec<&String> = self.params.keys().collect();
+        names.sort_unstable();
+
+        let mut warnings = Vec::new();
+        for name in names {
+            if RUNTIME_PARAMS.contains(&name.as_str()) || declared.contains_key(name) {
+                continue;
+            }
+            let mut available: Vec<&str> = declared.keys().map(String::as_str).collect();
+            available.sort_unstable();
+            let available = available
+                .iter()
+                .map(|n| format!("'{}'", n))
+                .collect::<Vec<_>>()
+                .join(", ");
+            warnings.push(format!(
+                "Voice '{}': param '{}' is not defined by synthdef '{}' and will have no effect \
+                 (available: {})",
+                self.name, name, synth, available
+            ));
+        }
+        warnings
     }
 
     /// Warn at terminal-verb time if neither this builder nor any existing
@@ -1076,6 +1154,110 @@ mod tests {
         });
     }
 
+    // ==================== Group Resolution Tests ====================
+
+    #[test]
+    fn test_voice_group_literal_paths_resolve_ok() {
+        with_test_context(|| {
+            // Unregistered literal paths must keep working: single-segment
+            // contextual names and absolute paths both resolve (creating the
+            // group on demand) — errors are reserved for genuine alias
+            // conflicts in the registry.
+            let v = test_voice("t1").group("drums".to_string()).unwrap();
+            assert_eq!(v.group_path, "drums");
+
+            let v = test_voice("t2").group("main/drums".to_string()).unwrap();
+            assert_eq!(v.group_path, "main/drums");
+        });
+    }
+
+    #[test]
+    fn test_voice_group_alias_resolves_to_canonical_path() {
+        with_test_context(|| {
+            context::add_group_alias("kit".to_string(), "main/drums".to_string())
+                .expect("alias registers");
+            let v = test_voice("t").group("kit".to_string()).unwrap();
+            assert_eq!(v.group_path, "main/drums");
+        });
+    }
+
+    // ==================== Unknown Param Warning Tests ====================
+
+    fn declare_synthdef_with_params(synth: &str, params: &[&str]) {
+        use vibelang_dsp::{register_synthdef_ir, GraphIR, ParamSpec};
+        let param_specs: Vec<ParamSpec> = params
+            .iter()
+            .enumerate()
+            .map(|(i, n)| ParamSpec {
+                name: (*n).to_string(),
+                default: vec![0.0],
+                index: i,
+                lag_ms: None,
+            })
+            .collect();
+        register_synthdef_ir(
+            synth.to_string(),
+            GraphIR {
+                name: synth.to_string(),
+                constants: vec![],
+                params: param_specs,
+                nodes: vec![],
+                out_bus: 0,
+            },
+        );
+    }
+
+    #[test]
+    fn test_unknown_param_warns_with_available_list() {
+        with_test_context(|| {
+            let synth = "warn_params_known_synth";
+            declare_synthdef_with_params(synth, &["cutoff", "res"]);
+            let v = test_voice("acid")
+                .synth(synth.to_string())
+                .set_param("cutof".to_string(), 800.0);
+
+            let warnings = v.unknown_param_warnings();
+            assert_eq!(warnings.len(), 1, "warnings = {:?}", warnings);
+            assert!(warnings[0].contains("Voice 'acid'"), "{}", warnings[0]);
+            assert!(warnings[0].contains("param 'cutof'"), "{}", warnings[0]);
+            assert!(warnings[0].contains(synth), "{}", warnings[0]);
+            assert!(
+                warnings[0].contains("'cutoff', 'res'"),
+                "{}",
+                warnings[0]
+            );
+        });
+    }
+
+    #[test]
+    fn test_known_and_runtime_params_do_not_warn() {
+        with_test_context(|| {
+            let synth = "warn_params_clean_synth";
+            declare_synthdef_with_params(synth, &["cutoff"]);
+            let v = test_voice("clean")
+                .synth(synth.to_string())
+                .set_param("cutoff".to_string(), 800.0)
+                // Runtime-level params are always accepted even though the
+                // synthdef does not declare them.
+                .set_param("amp".to_string(), 0.5)
+                .set_param("gate".to_string(), 1.0);
+
+            assert!(v.unknown_param_warnings().is_empty());
+        });
+    }
+
+    #[test]
+    fn test_unknown_synthdef_skips_param_validation() {
+        with_test_context(|| {
+            // Synthdef not in the registry (external / defined later): the
+            // param set can't be determined, so no warnings may fire.
+            let v = test_voice("ext")
+                .synth("warn_params_never_registered".to_string())
+                .set_param("whatever".to_string(), 1.0);
+            assert!(v.unknown_param_warnings().is_empty());
+        });
+    }
+
     // ==================== Getter Tests ====================
 
     #[test]
@@ -1394,7 +1576,8 @@ mod tests {
 
             let mut v = test_voice("vox_tcg_resolves")
                 .synth(synth.to_string())
-                .group("leads".to_string());
+                .group("leads".to_string())
+                .unwrap();
             v.output_by_name("even")
                 .expect("port resolves")
                 .to_current_group()
@@ -1453,7 +1636,8 @@ mod tests {
 
             let mut v = test_voice("vox_v3_b3_tcg")
                 .synth(synth.to_string())
-                .group("v3_b3_leads".to_string());
+                .group("v3_b3_leads".to_string())
+                .unwrap();
 
             v.output_by_name("even")
                 .expect("port resolves")
@@ -1588,7 +1772,8 @@ mod tests {
 
             let mut v = test_voice("vox_outs_tcg")
                 .synth(synth.to_string())
-                .group("leads_outs_tcg".to_string());
+                .group("leads_outs_tcg".to_string())
+                .unwrap();
 
             let arr: rhai::Array = vec![dyn_str("a"), dyn_str("c")];
             v.outputs(arr)

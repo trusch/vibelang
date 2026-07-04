@@ -277,7 +277,7 @@ fn format_alias_target(target: &GroupAliasTarget) -> String {
     format!("'{}' ({:?})", target.path, target.group_id)
 }
 
-fn format_group_alias_error(err: GroupAliasError) -> String {
+pub(crate) fn format_group_alias_error(err: GroupAliasError) -> String {
     match err {
         GroupAliasError::InvalidAliasName { alias, reason } => {
             format!("group alias '{}' is invalid: {}", alias, reason)
@@ -322,7 +322,7 @@ fn format_group_alias_error(err: GroupAliasError) -> String {
     }
 }
 
-fn alias_error(err: GroupAliasError, pos: Position) -> Box<EvalAltResult> {
+pub(crate) fn alias_error(err: GroupAliasError, pos: Position) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         format_group_alias_error(err).into(),
         pos,

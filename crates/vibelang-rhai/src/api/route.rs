@@ -2657,7 +2657,8 @@ mod tests {
             // state.voices[voc].group resolves to the kit GroupId.
             let mut voc = make_voice("vox_voc_fcg")
                 .synth(tgt_synth.to_string())
-                .group("kit".to_string());
+                .group("kit".to_string())
+                .unwrap();
 
             let expected_gid = context::get_or_create_group_id("kit");
 

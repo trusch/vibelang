@@ -176,10 +176,15 @@ impl Melody {
     ///
     /// Scale types: "major", "minor", "dorian", "phrygian", "lydian",
     /// "mixolydian", "locrian", "harmonic_minor", "melodic_minor",
-    /// "pentatonic", "minor_pentatonic", "blues"
-    pub fn scale(mut self, scale: String) -> Self {
+    /// "pentatonic", "minor_pentatonic", "blues", "chromatic", "whole_tone"
+    ///
+    /// Unknown scale names are an error (no silent fallback to major).
+    pub fn scale(mut self, scale: String) -> Result<Self, Box<EvalAltResult>> {
+        if super::helpers::get_scale_intervals(&scale).is_none() {
+            return Err(super::helpers::unknown_scale_error("melody.scale()", &scale));
+        }
         self.scale = Some(scale);
-        self
+        Ok(self)
     }
 
     /// Set notes from a string pattern.
@@ -557,13 +562,12 @@ impl Melody {
         self
     }
 
-    /// Launch the melody with quantization (chainable).
+    /// Launch the melody (chainable).
     ///
-    /// This schedules the melody to start at the next quantization boundary.
-    /// Uses the global quantization setting.
+    /// **Currently an alias of [`Self::start`]** — quantized launch (starting
+    /// at the next quantization boundary) is not yet implemented. The melody
+    /// starts exactly as if `.start()` had been called.
     pub fn launch(self) -> Self {
-        // For now, launch behaves the same as start.
-        // The runtime will use the quantization setting to determine when to actually start.
         self.start()
     }
 
@@ -960,22 +964,13 @@ fn expand_chord(root: u8, suffix: &str) -> Vec<u8> {
 
 /// Get scale intervals for a given scale type.
 /// Returns semitone offsets from root for each scale degree (1-7).
+///
+/// Delegates to the shared table in [`super::helpers`]; unknown names fall
+/// back to major here only because [`Melody::scale`] already rejects them
+/// with an error before they can reach this point.
 fn get_scale_intervals(scale_name: &str) -> Vec<u8> {
-    match scale_name.to_lowercase().as_str() {
-        "major" | "ionian" => vec![0, 2, 4, 5, 7, 9, 11],
-        "minor" | "natural_minor" | "aeolian" => vec![0, 2, 3, 5, 7, 8, 10],
-        "harmonic_minor" => vec![0, 2, 3, 5, 7, 8, 11],
-        "melodic_minor" => vec![0, 2, 3, 5, 7, 9, 11],
-        "dorian" => vec![0, 2, 3, 5, 7, 9, 10],
-        "phrygian" => vec![0, 1, 3, 5, 7, 8, 10],
-        "lydian" => vec![0, 2, 4, 6, 7, 9, 11],
-        "mixolydian" => vec![0, 2, 4, 5, 7, 9, 10],
-        "locrian" => vec![0, 1, 3, 5, 6, 8, 10],
-        "pentatonic" | "major_pentatonic" => vec![0, 2, 4, 7, 9],
-        "minor_pentatonic" => vec![0, 3, 5, 7, 10],
-        "blues" => vec![0, 3, 5, 6, 7, 10],
-        _ => vec![0, 2, 4, 5, 7, 9, 11], // Default to major
-    }
+    super::helpers::get_scale_intervals(scale_name)
+        .unwrap_or_else(|| vec![0, 2, 4, 5, 7, 9, 11])
 }
 
 /// Resolve a scale degree to a MIDI note number.
@@ -1402,8 +1397,16 @@ mod tests {
     }
 
     #[test]
-    fn test_scale_intervals_unknown_defaults_to_major() {
-        assert_eq!(get_scale_intervals("unknown"), vec![0, 2, 4, 5, 7, 9, 11]);
+    fn test_melody_scale_unknown_name_errors() {
+        // Builder-level validation: unknown scale names are rejected with an
+        // error listing the valid names (no silent fallback to major).
+        let err = Melody::new_for_test("test")
+            .scale("unknown".to_string())
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown scale 'unknown'"), "msg = {}", msg);
+        assert!(msg.contains("'major'"), "msg = {}", msg);
+        assert!(msg.contains("'minor_pentatonic'"), "msg = {}", msg);
     }
 
     // ==================== Per-Note Parameter Tests ====================
@@ -1901,6 +1904,7 @@ mod tests {
         let melody = Melody::new_for_test("test")
             .root("C4".to_string())
             .scale("major".to_string())
+            .unwrap()
             .notes("1[cutoff=2000] 3[pan=-0.5] 5".to_string());
 
         assert_eq!(melody.notes.len(), 3);

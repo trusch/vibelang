@@ -231,13 +231,12 @@ impl Pattern {
         Ok(self)
     }
 
-    /// Launch the pattern with quantization (chainable).
+    /// Launch the pattern (chainable).
     ///
-    /// This schedules the pattern to start at the next quantization boundary.
-    /// Uses the global quantization setting.
+    /// **Currently an alias of [`Self::start`]** — quantized launch (starting
+    /// at the next quantization boundary) is not yet implemented. The pattern
+    /// starts exactly as if `.start()` had been called.
     pub fn launch(self) -> Result<Self, Box<EvalAltResult>> {
-        // For now, launch behaves the same as start.
-        // The runtime will use the quantization setting to determine when to actually start.
         self.start()
     }
 
