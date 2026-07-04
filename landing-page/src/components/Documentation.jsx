@@ -635,14 +635,20 @@ define_synthdef("my_lfo")
     {
       name: 'named inputs',
       signature: 'SynthDef::input(name, channels)',
-      description: 'Declared named inputs expose patchable audio/control jacks that scripts route with voice.input(name). The stable declaration surface is currently Rust-side; Rhai define_synthdef(...).input(...) declarations are not part of the public authoring surface yet.',
+      description: 'Declared named inputs expose patchable audio/control jacks that scripts route with voice.input(name). Declare them directly in Rhai with define_synthdef(...).input(name) for mono or .input(name, channels) for wider ports, then patch them from scripts with target.input(name).from(source).',
       params: [
         { name: 'name', type: 'String', description: 'Input port name' },
         { name: 'channels', type: 'u8', description: 'Declared width, typically 1 for mono or 2 for stereo' }
       ],
-      example: `// Script-side routing into a synthdef that already declares "audio".
-filter.input("audio").from(osc);
-filter.input("audio").disconnect();`
+      example: `// Declare a patchable stereo input on a custom processor.
+define_synthdef("lowpass_box")
+    .input("in", 2)
+    .param("cutoff", 1200.0)
+    .body_map(|p| rlpf_ar(p.inputs.in, p.cutoff, 0.4));
+
+// Script-side routing into the declared port.
+filter.input("in").from(osc);
+filter.input("in").disconnect();`
     },
     {
       name: 'envelope',

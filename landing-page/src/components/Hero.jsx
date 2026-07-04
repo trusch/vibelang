@@ -71,8 +71,8 @@ pattern("beat")
 
           <div className="hero__stats fade-in stagger-4">
             <div className="hero__stat">
-              <span className="hero__stat-number">580+</span>
-              <span className="hero__stat-label">Sounds</span>
+              <span className="hero__stat-number">880+</span>
+              <span className="hero__stat-label">Instruments & FX</span>
             </div>
             <div className="hero__stat">
               <span className="hero__stat-number">~1ms</span>
@@ -80,7 +80,7 @@ pattern("beat")
             </div>
             <div className="hero__stat">
               <span className="hero__stat-number">MIDI</span>
-              <span className="hero__stat-label">In & Out</span>
+              <span className="hero__stat-label">In (beta)</span>
             </div>
             <div className="hero__stat">
               <span className="hero__stat-number">REST</span>

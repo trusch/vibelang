@@ -47,10 +47,11 @@ That's a whole beat. Just run it and edit while it plays.
 
 | | |
 |---|---|
-| **580+ Built-in Sounds** | Drums, bass, leads, pads, keys, world instruments, effects — all as editable `.vibe` files |
+| **880+ Built-in Sounds** | Drums, bass, leads, pads, keys, world instruments, effects — all as editable `.vibe` files |
 | **~1ms Hot Reload** | Edit your code, save, hear it change. No restart needed. Errors don't kill the audio. |
 | **Git-Friendly** | Your music is plain text. Diff it, branch it, collaborate on it. |
 | **SuperCollider Powered** | Professional-grade audio engine under the hood |
+| **HTTP API** | REST + WebSocket control on port 1606 — drive playback and parameters from external tools |
 | **Zero Config** | `cargo install vibelang-cli` and you're ready to make music |
 
 <br>
@@ -155,8 +156,11 @@ define_synthdef("my_bass")
     .body(|freq, amp, gate| {
         let osc = saw_ar(freq) + saw_ar(freq * 1.01);
         let filt = rlpf_ar(osc, 800.0, 0.3);
-        let env = env_adsr(0.01, 0.1, 0.5, 0.2);
-        let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+        let env = envelope()
+            .adsr(0.01, 0.1, 0.5, 0.2)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
         filt * env * amp
     });
 ```
@@ -190,7 +194,7 @@ authoring and routing contract.
 
 ## 🎹 Standard Library
 
-VibeLang comes with **580+ ready-to-use sounds**:
+VibeLang comes with **880+ ready-to-use instruments and effects**:
 
 | Category | Examples |
 |----------|----------|
@@ -208,6 +212,7 @@ All sounds are plain `.vibe` files — read them, tweak them, learn from them.
 
 ## 📚 Learn More
 
+- **[Tutorial Course](examples/tutorials/README.md)** — 20 hands-on lessons included in this repo
 - **[vibelang.org](https://vibelang.org)** — Full documentation, tutorials, and examples
 - **[API Reference](https://docs.rs/vibelang-core)** — Rust API documentation
 - **[Examples](https://github.com/trusch/vibelang/tree/main/examples)** — Sample projects and tracks
@@ -218,9 +223,9 @@ All sounds are plain `.vibe` files — read them, tweak them, learn from them.
 
 VibeLang is in **alpha**. Core features work well, but expect changes.
 
-**Working great:** Patterns, melodies, sequences, hot reload, synthdefs, groups, effects, SFZ instruments
+**Working great:** Patterns, melodies, sequences, hot reload, synthdefs, groups, effects
 
-**Experimental:** VST plugins, MIDI input, complex automation
+**Experimental:** SFZ instruments (melodies don't auto-send NOTE_OFF yet, so sustained regions can hang — use `.note_off(note)` as a workaround), VST plugins, MIDI input, complex automation
 
 Found a bug? Have an idea? [Open an issue](https://github.com/trusch/vibelang/issues).
 

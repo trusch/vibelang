@@ -81,7 +81,7 @@ function SoundLibrary() {
       <div className="container">
         <div className="sound-library__header">
           <span className="sound-library__label">// sound palette</span>
-          <h2>580+ production-ready sounds</h2>
+          <h2>880+ production-ready instruments & effects</h2>
           <p className="sound-library__subtitle">
             Every sound is a readable .vibe file. Peek under the hood to learn synthesis,
             or just use them and start making music.

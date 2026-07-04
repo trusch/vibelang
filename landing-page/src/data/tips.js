@@ -72,7 +72,7 @@ export const tips = [
   },
   {
     type: 'tip',
-    text: 'The stdlib has 600+ synths. Use the explorer to audition sounds before coding.',
+    text: 'The stdlib has 880+ instruments and effects. Use the explorer to audition sounds before coding.',
     icon: 'bulb'
   },
   {

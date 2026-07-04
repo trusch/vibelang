@@ -41,9 +41,15 @@ const features = [
   },
   {
     icon: '<>',
-    title: 'MIDI Output',
-    description: 'Control external hardware synths, drum machines, and DAWs. Send notes, CCs, and clock sync to any MIDI device.',
+    title: 'MIDI (Experimental)',
+    description: 'Play voices live from MIDI keyboards and controllers — input is experimental but works today. MIDI output (notes, CCs, clock to external hardware) is in active development.',
     tag: 'Hardware'
+  },
+  {
+    icon: '=|',
+    title: 'Eurorack Recreations',
+    description: 'Full modular systems rebuilt in code, shipped as example projects: Mutable Instruments, Verbos, 4ms, Erica Synths, Intellijel, and a Make Noise resynthesizer.',
+    tag: 'Modular'
   },
   {
     icon: '||',
@@ -104,17 +110,17 @@ define_synthdef("my_bass")
         <div className="features__highlight features__highlight--reverse">
           <div className="features__highlight-code">
             <pre><code>{highlightCode(`# REST API for external control
-curl -X POST localhost:3000/transport/play
+curl -X POST localhost:1606/transport/play
 
 # Get all voices
-curl localhost:3000/voices
+curl localhost:1606/voices
 
 # Update a parameter in real-time
-curl -X PUT localhost:3000/voices/bass/params/cutoff \\
+curl -X PUT localhost:1606/voices/bass/params/cutoff \\
   -d '{"value": 800}'
 
 # WebSocket for live updates
-wscat -c ws://localhost:3000/ws`)}</code></pre>
+wscat -c ws://localhost:1606/ws`)}</code></pre>
           </div>
           <div className="features__highlight-content">
             <span className="features__highlight-label">REST API & WebSocket</span>
