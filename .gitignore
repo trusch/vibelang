@@ -47,6 +47,9 @@ tmp-*.txt
 # Audio capture session directories under examples/
 examples/**/captures/
 
+# Resynthesizer scratch/probe scripts
+examples/resynthesizer/probes/
+
 # VS Code extension build artifacts
 vscode-extension/*.vsix
 

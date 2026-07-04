@@ -1,3 +1,6 @@
+// WIP: Known issue (see REVIEW_TODO.md) — gain-staging bug under
+// investigation; the output runs hot despite per-voice trims.
+//
 // Erica Synths Techno System rack performance patch.
 //
 // Signal chain:
