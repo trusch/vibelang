@@ -1,4 +1,4 @@
-//! VibeLang CLI v2 - using the new core2 async runtime
+//! VibeLang CLI - using the vibelang-core async runtime
 //!
 //! This is the main entry point for the vibelang command-line tool with full TUI support.
 
@@ -30,14 +30,14 @@ use vibelang_core::{
 };
 use vibelang_rhai::ScriptEngine;
 
-/// VibeLang CLI - A music livecoding language (core2 runtime)
+/// VibeLang CLI - A music livecoding language
 #[derive(Parser)]
-#[command(name = "vibe2", version, about)]
+#[command(name = "vibe", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Script file to run (shorthand for `vibe2 run <file>`)
+    /// Script file to run (shorthand for `vibe run <file>`)
     file: Option<PathBuf>,
 }
 
@@ -65,6 +65,17 @@ enum Commands {
         #[arg(long, default_value = "1606")]
         #[cfg_attr(not(feature = "api"), arg(hide = true))]
         api_port: u16,
+
+        /// HTTP API bind address (default: 127.0.0.1; use 0.0.0.0 to expose on all interfaces)
+        #[arg(long, default_value = "127.0.0.1", value_name = "ADDR")]
+        #[cfg_attr(not(feature = "api"), arg(hide = true))]
+        api_bind: std::net::IpAddr,
+
+        /// Allow code sent to the HTTP /eval endpoint to use fs/exec/net extensions
+        /// (by default /eval runs sandboxed even when the local script has them)
+        #[arg(long)]
+        #[cfg_attr(not(feature = "api"), arg(hide = true))]
+        api_allow_extensions: bool,
 
         /// Include paths for imports
         #[arg(short = 'I', long = "include")]
@@ -172,7 +183,7 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Handle shorthand: `vibe2 file.vibe` -> `vibe2 run file.vibe`
+    // Handle shorthand: `vibe file.vibe` -> `vibe run file.vibe`
     let command = if let Some(file) = cli.file {
         Commands::Run {
             file,
@@ -183,6 +194,8 @@ async fn main() -> Result<()> {
             jack_connect_to: None,
             jack_connect_from: None,
             api_port: 1606,
+            api_bind: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            api_allow_extensions: false,
             include_paths: Vec::new(),
             scsynth_addr: "127.0.0.1:57110".to_string(),
             no_boot: false,
@@ -198,8 +211,8 @@ async fn main() -> Result<()> {
         }
     } else {
         cli.command.unwrap_or_else(|| {
-            eprintln!("Usage: vibe2 <file.vibe> or vibe2 <command>");
-            eprintln!("Try 'vibe2 --help' for more information.");
+            eprintln!("Usage: vibe <file.vibe> or vibe <command>");
+            eprintln!("Try 'vibe --help' for more information.");
             std::process::exit(1);
         })
     };
@@ -211,6 +224,8 @@ async fn main() -> Result<()> {
             tui,
             no_api,
             api_port,
+            api_bind,
+            api_allow_extensions,
             include_paths,
             scsynth_addr,
             no_boot,
@@ -239,6 +254,7 @@ async fn main() -> Result<()> {
                     watch,
                     api,
                     api_port,
+                    api_bind,
                     include_paths,
                     scsynth_addr,
                     no_boot,
@@ -258,6 +274,8 @@ async fn main() -> Result<()> {
                     watch,
                     api,
                     api_port,
+                    api_bind,
+                    api_allow_extensions,
                     include_paths,
                     scsynth_addr,
                     no_boot,
@@ -303,6 +321,8 @@ async fn run_simple_mode(
     watch: bool,
     #[allow(unused_variables)] api: bool,
     #[allow(unused_variables)] api_port: u16,
+    #[allow(unused_variables)] api_bind: std::net::IpAddr,
+    #[allow(unused_variables)] api_allow_extensions: bool,
     include_paths: Vec<PathBuf>,
     scsynth_addr: String,
     no_boot: bool,
@@ -450,13 +470,26 @@ async fn run_simple_mode(
         let api_handle = handle.clone();
         let api_state = state_handle.clone();
         tokio::spawn(async move {
-            vibelang_http::start_server(api_handle, api_state, api_port, Some(eval_tx)).await;
+            vibelang_http::start_server(api_handle, api_state, api_bind, api_port, Some(eval_tx))
+                .await;
         });
-        info!("HTTP API server started on port {}", api_port);
+        info!("HTTP API server started on {}:{}", api_bind, api_port);
 
-        // Spawn eval handler task
+        // Spawn eval handler task. Code from the /eval endpoint runs without
+        // fs/exec/net extensions unless --api-allow-extensions is set, even
+        // when the local script has them enabled.
         let eval_include_paths = include_paths.clone();
-        let eval_ext_config = ext_config.clone();
+        let eval_ext_config = if api_allow_extensions {
+            ext_config.clone()
+        } else {
+            if ext_config.filesystem || ext_config.exec || ext_config.networking {
+                info!(
+                    "HTTP /eval runs sandboxed (no fs/exec/net extensions); \
+                     pass --api-allow-extensions to enable them"
+                );
+            }
+            ExtensionSettings::default()
+        };
         let eval_handle = handle.clone();
         tokio::spawn(async move {
             while let Ok(job) = eval_rx.recv() {
@@ -663,6 +696,7 @@ async fn run_tui_mode(
     watch: bool,
     #[allow(unused_variables)] api: bool,
     #[allow(unused_variables)] api_port: u16,
+    #[allow(unused_variables)] api_bind: std::net::IpAddr,
     include_paths: Vec<PathBuf>,
     scsynth_addr: String,
     no_boot: bool,
@@ -845,9 +879,9 @@ async fn run_tui_mode(
         let api_handle = handle.clone();
         let api_state = state_handle.clone();
         tokio::spawn(async move {
-            vibelang_http::start_server(api_handle, api_state, api_port, None).await;
+            vibelang_http::start_server(api_handle, api_state, api_bind, api_port, None).await;
         });
-        log::info!("HTTP API server started on port {}", api_port);
+        log::info!("HTTP API server started on {}:{}", api_bind, api_port);
     }
 
     // Create shutdown flag

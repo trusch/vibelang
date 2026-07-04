@@ -1,7 +1,7 @@
-//! HTTP REST API server for VibeLang (core2 backend).
+//! HTTP REST API server for VibeLang (vibelang-core backend).
 //!
 //! Provides a REST API and WebSocket endpoint for querying and controlling
-//! a running VibeLang session using the vibelang-core2 runtime.
+//! a running VibeLang session using the vibelang-core runtime.
 //!
 //! # Features
 //!
@@ -21,7 +21,7 @@
 //! let handle = runtime.handle();
 //! let state = runtime.state();
 //! tokio::spawn(async move {
-//!     start_server(handle, state, 1606, None).await;
+//!     start_server(handle, state, [127, 0, 0, 1].into(), 1606, None).await;
 //! });
 //! ```
 
@@ -33,7 +33,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::{Any, CorsLayer};
@@ -74,12 +74,13 @@ impl AppState {
     }
 }
 
-/// Start the HTTP server on the specified port.
+/// Start the HTTP server on the specified address and port.
 ///
 /// # Arguments
 ///
 /// * `handle` - The VibeLang runtime handle for sending messages
 /// * `state` - The shared runtime state for reading
+/// * `bind_addr` - The address to bind (use `127.0.0.1` unless remote access is intended)
 /// * `port` - The port to listen on
 /// * `eval_tx` - Optional channel to send code evaluation requests to the main thread
 ///
@@ -90,12 +91,13 @@ impl AppState {
 /// let state = runtime.state();
 /// let (eval_tx, eval_rx) = std::sync::mpsc::channel();
 /// tokio::spawn(async move {
-///     start_server(handle, state, 1606, Some(eval_tx)).await;
+///     start_server(handle, state, [127, 0, 0, 1].into(), 1606, Some(eval_tx)).await;
 /// });
 /// ```
 pub async fn start_server(
     handle: RuntimeHandle,
     state: Arc<RwLock<State>>,
+    bind_addr: IpAddr,
     port: u16,
     eval_tx: Option<EvalSender>,
 ) {
@@ -297,7 +299,7 @@ pub async fn start_server(
             .allow_headers(Any),
     );
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::new(bind_addr, port);
     tracing::info!(
         "HTTP API server starting on http://{}:{}",
         addr.ip(),
