@@ -865,6 +865,36 @@ pub struct State {
     pub effects: HashMap<EffectId, EffectState>,
 
     // =========================================================================
+    // Script-Config Snapshots (reload diffing)
+    // =========================================================================
+    //
+    // The live `params` maps on GroupState / VoiceState / EffectState absorb
+    // HTTP/MIDI `set_param` tweaks and (for voices) runtime-set values, so
+    // they are the wrong baseline for reload diffing: comparing them against
+    // the incoming ScriptState keeps entities perpetually "updated" once any
+    // live tweak lands, and makes it impossible to tell a script-declared
+    // param apart from a runtime-only one (`gate`, trigger-time `freq`, ...).
+    //
+    // These snapshots record the *script-declared* config as of the last
+    // successfully applied reload. They are written only by the reload apply
+    // path in `runtime.rs` (in one place, after all phases succeed) and read
+    // by `reload::calculate_diff`, which compares script-vs-script. Entities
+    // absent from these maps (e.g. state assembled directly by tests) fall
+    // back to the live maps, i.e. the pre-snapshot behaviour.
+    /// Script-declared group params as of the last applied reload.
+    pub script_group_params: HashMap<GroupId, ParamMap>,
+
+    /// Script-declared effect chain (ordered) per group as of the last
+    /// applied reload. Mirrors `reload::GroupConfig::effects`.
+    pub script_group_effects: HashMap<GroupId, Vec<EffectId>>,
+
+    /// Script-declared voice params as of the last applied reload.
+    pub script_voice_params: HashMap<VoiceId, ParamMap>,
+
+    /// Script-declared effect params as of the last applied reload.
+    pub script_effect_params: HashMap<EffectId, ParamMap>,
+
+    // =========================================================================
     // Control Buses
     // =========================================================================
     /// Control bus allocator for modulation signals.
@@ -1196,6 +1226,10 @@ impl Default for State {
             melodies: HashMap::new(),
             sequences: HashMap::new(),
             effects: HashMap::new(),
+            script_group_params: HashMap::new(),
+            script_group_effects: HashMap::new(),
+            script_voice_params: HashMap::new(),
+            script_effect_params: HashMap::new(),
             control_buses: ControlBusAllocator::default(),
             param_summer_group: None,
             active_fades: Vec::new(),
@@ -1530,6 +1564,25 @@ impl State {
             .filter(|e| e.group == group)
             .min_by_key(|e| e.id.raw())
             .map(|e| e.node_id)
+    }
+
+    /// Effect ids attached to a group, in chain (creation) order.
+    ///
+    /// Same ordering argument as [`Self::first_effect_node_in_group`]: effect
+    /// ids come from a monotonic per-session counter that is name-stable
+    /// across reloads and effects are only ever appended, so sorting by
+    /// `EffectId::raw()` reproduces SC tree order. Used as the fallback
+    /// runtime-side view of `reload::GroupConfig::effects` when no
+    /// [`Self::script_group_effects`] snapshot exists for the group.
+    pub fn effect_ids_in_group(&self, group: GroupId) -> Vec<EffectId> {
+        let mut ids: Vec<EffectId> = self
+            .effects
+            .values()
+            .filter(|e| e.group == group)
+            .map(|e| e.id)
+            .collect();
+        ids.sort_by_key(|id| id.raw());
+        ids
     }
 
     /// Resolve the output-port set for a synthdef name.

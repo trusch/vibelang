@@ -155,6 +155,31 @@ struct PendingVoicePortReconcile {
     refreshed_ports: Vec<String>,
 }
 
+/// Default value a group param falls back to when removed from the script.
+///
+/// Group params only have a well-defined synthdef default for `amp`/`pan` —
+/// the two params `GroupsHandler::set_param` routes to the group's link synth
+/// (`system_link_audio` / `system_link_audio_mono`). The defaults are looked
+/// up in the process-global synthdef registry when the system synthdefs are
+/// registered there, otherwise the declared IR defaults are hardcoded
+/// (`amp = 1.0` mirrors the `unwrap_or(1.0)` in `GroupsHandler::finalize`,
+/// `pan = 0.0` mirrors `system_synthdefs::routing`). Every other group param
+/// returns `None`: it is broadcast to the group node's children and has no
+/// single default.
+fn group_link_param_default(param: &str) -> Option<f32> {
+    let fallback = match param {
+        "amp" => 1.0,
+        "pan" => 0.0,
+        _ => return None,
+    };
+    Some(
+        vibelang_dsp::get_synthdef_param_defaults("system_link_audio")
+            .get(param)
+            .copied()
+            .unwrap_or(fallback),
+    )
+}
+
 impl<B: Backend> Runtime<B> {
     /// Create a new runtime with the given backend.
     ///
@@ -1062,6 +1087,12 @@ impl<B: Backend> Runtime<B> {
 
         // If no changes, return early - patterns continue playing seamlessly.
         if !diff.has_changes() {
+            // Still refresh the script-config snapshots: a clean diff means
+            // the live state already matches the script (possibly via the
+            // live-map fallback for entities that predate snapshot tracking),
+            // so recording the script maps here is a semantic no-op that
+            // seeds removal tracking for subsequent reloads.
+            self.snapshot_script_config(&new_state).await;
             tracing::debug!("Reload: no changes detected, playback continues");
             return Ok(());
         }
@@ -1086,8 +1117,46 @@ impl<B: Backend> Runtime<B> {
         self.phase_finalize_param_routes(&diff, &new_state).await?;
         self.phase_apply_midi_routes(&new_state).await;
 
+        // Snapshot the script-declared config for the next reload's diff.
+        // Written only after every phase succeeded: an aborted reload (route
+        // finalize error, MIDI open failure) keeps the previous snapshot,
+        // matching how `current_routes` is only advanced on success.
+        self.snapshot_script_config(&new_state).await;
+
         tracing::info!("Reload: complete");
         Ok(())
+    }
+
+    /// Records the script-declared config maps for the next reload's diff.
+    ///
+    /// `reload::calculate_diff` compares these snapshots — not the live
+    /// `params` maps, which absorb HTTP/MIDI `set_param` tweaks and
+    /// runtime-set values — against the incoming ScriptState, so the diff is
+    /// script-vs-script: live tweaks never dirty the diff and removed script
+    /// params are detectable. Rebuilding wholesale from `new_state` also
+    /// drops entries for deleted entities.
+    async fn snapshot_script_config(&mut self, new_state: &reload::ScriptState) {
+        let mut state = self.state.write().await;
+        state.script_group_params = new_state
+            .groups
+            .iter()
+            .map(|(id, config)| (*id, config.params.clone()))
+            .collect();
+        state.script_group_effects = new_state
+            .groups
+            .iter()
+            .map(|(id, config)| (*id, config.effects.clone()))
+            .collect();
+        state.script_voice_params = new_state
+            .voices
+            .iter()
+            .map(|(id, config)| (*id, config.params.clone()))
+            .collect();
+        state.script_effect_params = new_state
+            .effects
+            .iter()
+            .map(|(id, config)| (*id, config.params.clone()))
+            .collect();
     }
 
     /// Builds the reload diff and derived route maps used by the apply phases.
@@ -1780,8 +1849,40 @@ impl<B: Backend> Runtime<B> {
                 continue;
             };
             let id = &id;
-            // Apply all params from the new config
-            for (param, value) in &new_config.params {
+            // Apply only the params that actually changed relative to the
+            // script's previous declaration (the snapshot in
+            // `state.script_group_params`). Re-applying the full map on every
+            // reload would snap live-tweaked values back on unrelated saves;
+            // ignoring removals would keep a deleted script param at its last
+            // value forever, diverging from a cold boot.
+            let (old_script_params, cur_muted, cur_soloed) = {
+                let state = self.state.read().await;
+                let tracked = state.script_group_params.get(id).cloned();
+                let group = state.groups.get(id);
+                (
+                    // Fall back to the live params map (pre-snapshot
+                    // behaviour) for groups created outside the reload path.
+                    // Removals are only honoured for tracked groups: the live
+                    // map may contain non-script keys we must not reset.
+                    tracked,
+                    group.map(|g| g.muted).unwrap_or(new_config.muted),
+                    group.map(|g| g.soloed).unwrap_or(new_config.soloed),
+                )
+            };
+            let track_removals = old_script_params.is_some();
+            let old_params = match old_script_params {
+                Some(params) => params,
+                None => {
+                    let state = self.state.read().await;
+                    state
+                        .groups
+                        .get(id)
+                        .map(|g| g.params.clone())
+                        .unwrap_or_default()
+                }
+            };
+            let param_diff = reload::ParamDiff::diff(&old_params, &new_config.params);
+            for (param, value) in param_diff.added.iter().chain(param_diff.changed.iter()) {
                 tracing::debug!(
                     "Reload: updating group {:?} param {} to {}",
                     id,
@@ -1799,30 +1900,85 @@ impl<B: Backend> Runtime<B> {
                     );
                 }
             }
-            // Apply mute/solo state
-            tracing::debug!(
-                "Reload: updating group {:?} muted={} soloed={}",
-                id,
-                new_config.muted,
-                new_config.soloed
-            );
-            if let Err(e) = self.groups.mute(*id, new_config.muted).await {
-                tracing::warn!(
-                    "Reload: failed to set mute={} on group {:?} '{}': {}",
-                    new_config.muted,
-                    id,
-                    new_config.name,
-                    e
-                );
+            if track_removals {
+                for param in &param_diff.removed {
+                    // A removed script param must land at the value a cold
+                    // boot would produce. Only `amp`/`pan` have a well-defined
+                    // default — they actuate the group's link synth
+                    // (`system_link_audio*`). Any other group param is
+                    // broadcast to the group node's children, which are
+                    // heterogeneous synths with per-synthdef defaults, so no
+                    // single reset value exists; warn loudly and skip.
+                    match group_link_param_default(param) {
+                        Some(default) => {
+                            tracing::debug!(
+                                "Reload: group {:?} param '{}' removed from script; resetting to default {}",
+                                id,
+                                param,
+                                default
+                            );
+                            if let Err(e) = self.groups.set_param(*id, param, default).await {
+                                tracing::warn!(
+                                    "Reload: failed to reset removed param '{}' on group {:?} '{}': {}",
+                                    param,
+                                    id,
+                                    new_config.name,
+                                    e
+                                );
+                            }
+                        }
+                        None => {
+                            tracing::warn!(
+                                "Reload: param '{}' removed from group '{}' but group params broadcast to child synths with no single default; running nodes keep the last value {:?} until recreated",
+                                param,
+                                new_config.name,
+                                old_params.get(param)
+                            );
+                        }
+                    }
+                    // Drop the key from the live map either way so the stored
+                    // state matches a cold boot (finalize's `amp` lookup falls
+                    // back to 1.0) and the diff converges next reload.
+                    let mut state = self.state.write().await;
+                    if let Some(group) = state.groups.get_mut(id) {
+                        group.params.remove(param);
+                    }
+                }
             }
-            if let Err(e) = self.groups.solo(*id, new_config.soloed).await {
-                tracing::warn!(
-                    "Reload: failed to set solo={} on group {:?} '{}': {}",
-                    new_config.soloed,
+            // Apply mute/solo only on actual change — re-asserting them on
+            // every reload is redundant backend traffic and would fight solo
+            // recomputation across unrelated groups.
+            if cur_muted != new_config.muted {
+                tracing::debug!(
+                    "Reload: updating group {:?} muted={}",
                     id,
-                    new_config.name,
-                    e
+                    new_config.muted
                 );
+                if let Err(e) = self.groups.mute(*id, new_config.muted).await {
+                    tracing::warn!(
+                        "Reload: failed to set mute={} on group {:?} '{}': {}",
+                        new_config.muted,
+                        id,
+                        new_config.name,
+                        e
+                    );
+                }
+            }
+            if cur_soloed != new_config.soloed {
+                tracing::debug!(
+                    "Reload: updating group {:?} soloed={}",
+                    id,
+                    new_config.soloed
+                );
+                if let Err(e) = self.groups.solo(*id, new_config.soloed).await {
+                    tracing::warn!(
+                        "Reload: failed to set solo={} on group {:?} '{}': {}",
+                        new_config.soloed,
+                        id,
+                        new_config.name,
+                        e
+                    );
+                }
             }
 
             // Update output_bus / output_channels routing if either changed.
@@ -1898,14 +2054,24 @@ impl<B: Backend> Runtime<B> {
             };
             let id = &id;
             // Get current voice state to compare
-            let needs_recreate = {
+            let (needs_recreate, old_script_params) = {
                 let state = self.state.read().await;
                 if let Some(current_voice) = state.voices.get(id) {
-                    // Recreate if synthdef, group, or sfz_instrument changed
-                    Self::voice_needs_structural_recreate(&current_voice.config, new_config)
+                    // Recreate if synthdef, group, or sfz_instrument changed.
+                    //
+                    // The old-param baseline for the in-place update is the
+                    // script-config snapshot; the live `config.params` map is
+                    // only a fallback for voices created outside the reload
+                    // path (removals are skipped for those — the live map may
+                    // hold runtime-only keys like `gate` that must never be
+                    // "reset").
+                    (
+                        Self::voice_needs_structural_recreate(&current_voice.config, new_config),
+                        state.script_voice_params.get(id).cloned(),
+                    )
                 } else {
                     // Voice not found - shouldn't happen, but recreate to be safe
-                    true
+                    (true, None)
                 }
             };
 
@@ -1923,8 +2089,62 @@ impl<B: Backend> Runtime<B> {
                     id,
                     new_config.params.len()
                 );
-                for (param, value) in &new_config.params {
+                let track_removals = old_script_params.is_some();
+                let old_params = match old_script_params {
+                    Some(params) => params,
+                    None => {
+                        let state = self.state.read().await;
+                        state
+                            .voices
+                            .get(id)
+                            .map(|v| v.config.params.clone())
+                            .unwrap_or_default()
+                    }
+                };
+                let param_diff = reload::ParamDiff::diff(&old_params, &new_config.params);
+                for (param, value) in param_diff.added.iter().chain(param_diff.changed.iter()) {
                     let _ = self.voices.set_param(*id, param, *value).await;
+                }
+                if track_removals && !param_diff.removed.is_empty() {
+                    // Reset removed script params to the synthdef's declared
+                    // default so a hot reload matches a cold boot. Going
+                    // through `voices.set_param` keeps the BEND-summer
+                    // baseline forwarding intact for routed params; the key
+                    // is then dropped from the stored config so future
+                    // triggers use the synthdef default implicitly (exactly
+                    // the cold-boot config). Recreating the voice instead
+                    // would kill sounding notes, which is worse than a
+                    // warn-and-skip when no default is known.
+                    let defaults =
+                        vibelang_dsp::get_synthdef_param_defaults(&new_config.synthdef);
+                    for param in &param_diff.removed {
+                        match defaults.get(param) {
+                            Some(default) => {
+                                tracing::debug!(
+                                    "Reload: voice {:?} param '{}' removed from script; resetting to synthdef default {}",
+                                    id,
+                                    param,
+                                    default
+                                );
+                                let _ = self.voices.set_param(*id, param, *default).await;
+                            }
+                            None => {
+                                tracing::warn!(
+                                    "Reload: param '{}' removed from voice '{}' but synthdef '{}' declares no default; running nodes keep the last value {:?}",
+                                    param,
+                                    new_config.name,
+                                    new_config.synthdef,
+                                    old_params.get(param)
+                                );
+                            }
+                        }
+                        // Converge the stored config with the script either
+                        // way (cold boot would not have the key at all).
+                        let mut state = self.state.write().await;
+                        if let Some(voice) = state.voices.get_mut(id) {
+                            voice.config.params.remove(param);
+                        }
+                    }
                 }
                 // Update the stored config for non-param fields (name, polyphony, etc.)
                 #[cfg_attr(not(feature = "midi"), allow(unused_variables))]
@@ -2156,15 +2376,18 @@ impl<B: Backend> Runtime<B> {
                 continue;
             };
             // Get current effect state to compare
-            let needs_recreate = {
+            let (needs_recreate, old_script_params) = {
                 let state = self.state.read().await;
                 if let Some(current_effect) = state.effects.get(&id) {
                     // Recreate if synthdef or group changed
-                    current_effect.synthdef != new_config.synthdef
-                        || current_effect.group != new_config.group
+                    (
+                        current_effect.synthdef != new_config.synthdef
+                            || current_effect.group != new_config.group,
+                        state.script_effect_params.get(&id).cloned(),
+                    )
                 } else {
                     // Effect not found - shouldn't happen, but recreate to be safe
-                    true
+                    (true, None)
                 }
             };
 
@@ -2196,8 +2419,62 @@ impl<B: Backend> Runtime<B> {
                     new_config.synthdef,
                     new_config.params.len()
                 );
-                for (param, value) in &new_config.params {
+                let track_removals = old_script_params.is_some();
+                let old_params = match old_script_params {
+                    Some(params) => params,
+                    None => {
+                        let state = self.state.read().await;
+                        state
+                            .effects
+                            .get(&id)
+                            .map(|e| e.params.clone())
+                            .unwrap_or_default()
+                    }
+                };
+                let param_diff = reload::ParamDiff::diff(&old_params, &new_config.params);
+                for (param, value) in param_diff.added.iter().chain(param_diff.changed.iter()) {
                     let _ = self.effects.set_param(id, param, *value).await;
+                }
+                if track_removals && !param_diff.removed.is_empty() {
+                    // Reset removed script params to the effect's declared
+                    // default (cold-boot value). Effects always come from
+                    // `define_fx`, which registers the IR in the effect
+                    // registry — a missing default means the param never
+                    // existed on the synthdef, so a warn-and-skip beats a
+                    // remove+re-add (which would move the effect to the tail
+                    // of the chain and cut its tail through the grace-period
+                    // fade).
+                    let fx_defaults =
+                        vibelang_dsp::get_effect_param_defaults(&new_config.synthdef);
+                    let synth_defaults =
+                        vibelang_dsp::get_synthdef_param_defaults(&new_config.synthdef);
+                    for param in &param_diff.removed {
+                        match fx_defaults.get(param).or_else(|| synth_defaults.get(param)) {
+                            Some(default) => {
+                                tracing::debug!(
+                                    "Reload: effect {:?} param '{}' removed from script; resetting to default {}",
+                                    id,
+                                    param,
+                                    default
+                                );
+                                let _ = self.effects.set_param(id, param, *default).await;
+                            }
+                            None => {
+                                tracing::warn!(
+                                    "Reload: param '{}' removed from effect {:?} (synthdef '{}') but no default is registered; running node keeps the last value {:?}",
+                                    param,
+                                    id,
+                                    new_config.synthdef,
+                                    old_params.get(param)
+                                );
+                            }
+                        }
+                        // Converge stored state with the script either way.
+                        let mut state = self.state.write().await;
+                        if let Some(effect) = state.effects.get_mut(&id) {
+                            effect.params.remove(param);
+                        }
+                    }
                 }
             }
         }

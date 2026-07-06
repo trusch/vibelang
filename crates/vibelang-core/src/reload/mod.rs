@@ -358,13 +358,29 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     }
 
     // Groups
+    //
+    // Params come from the script-config snapshot (falling back to the live
+    // params map for state assembled outside the reload path) so live
+    // `set_param` tweaks neither dirty the diff nor mask script edits, and
+    // the effect chain is reconstructed from runtime state so equality with
+    // the script-side `GroupConfig::effects` is meaningful — with the old
+    // `Vec::new()` placeholder every effect-bearing group diffed as
+    // "updated" on every reload.
     let current_group_ids: HashSet<GroupId> = current.groups.keys().copied().collect();
     diff.groups = diff_entities(&current_group_ids, &new.groups, |id| {
         current.groups.get(id).map(|g| GroupConfig {
             name: g.name.clone(),
             parent: g.parent,
-            params: g.params.clone(),
-            effects: Vec::new(), // TODO: Track effects per group in runtime state
+            params: current
+                .script_group_params
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| g.params.clone()),
+            effects: current
+                .script_group_effects
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| current.effect_ids_in_group(*id)),
             muted: g.muted,
             soloed: g.soloed,
             output_bus: g.output_bus,
@@ -373,9 +389,19 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     });
 
     // Voices
+    //
+    // Same script-snapshot substitution for params: `VoiceConfig::params` on
+    // the live state absorbs HTTP/MIDI `set_param` writes and runtime-set
+    // values, which must not count as config drift.
     let current_voice_ids: HashSet<VoiceId> = current.voices.keys().copied().collect();
     diff.voices = diff_entities(&current_voice_ids, &new.voices, |id| {
-        current.voices.get(id).map(|v| v.config.clone())
+        current.voices.get(id).map(|v| {
+            let mut config = v.config.clone();
+            if let Some(script_params) = current.script_voice_params.get(id) {
+                config.params = script_params.clone();
+            }
+            config
+        })
     });
 
     // Patterns
@@ -423,13 +449,17 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
         current.sequences.get(id).map(|s| s.config.clone())
     });
 
-    // Effects
+    // Effects — script-snapshot params, same reasoning as groups/voices.
     let current_effect_ids: HashSet<EffectId> = current.effects.keys().copied().collect();
     diff.effects = diff_entities(&current_effect_ids, &new.effects, |id| {
         current.effects.get(id).map(|e| EffectConfig {
             group: e.group,
             synthdef: e.synthdef.clone(),
-            params: e.params.clone(),
+            params: current
+                .script_effect_params
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| e.params.clone()),
         })
     });
 
