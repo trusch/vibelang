@@ -1,7 +1,8 @@
 //! Groups handler implementation.
 
 use crate::backend::{AddAction, Backend};
-use crate::compat::RwLock;
+use crate::compat::{Duration, Instant, RwLock};
+use crate::handlers::voices::{voice_is_gated, voice_release_grace};
 use crate::state::{GroupState, State};
 use crate::traits::Groups;
 use crate::types::{BusId, GroupId, NodeId, ParamMap};
@@ -9,10 +10,29 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
 
+/// Deferred teardown for a deleted group.
+///
+/// Freeing a group node kills every child node with it — including voice
+/// synths that were just gate-released and are still tailing out. Group
+/// deletion therefore removes the group from the state immediately but
+/// defers the backend frees (and the node-ID/bus reclaim, so the group's
+/// audio bus can't be reallocated while released children still write into
+/// it) until the caller-provided grace period has elapsed.
+struct PendingGroupFree {
+    requested_at: Instant,
+    grace: Duration,
+    /// Link synth node (freed first) and group node, in free order.
+    nodes: Vec<NodeId>,
+    /// The group's stereo audio bus, returned to the pool at the deadline.
+    audio_bus: BusId,
+}
+
 /// Handler for group operations.
 pub struct GroupsHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+    /// Deferred group frees, drained by [`Self::tick`].
+    pending_frees: Arc<RwLock<Vec<PendingGroupFree>>>,
 }
 
 /// Compute whether a group should be audibly muted, given the global solo
@@ -29,7 +49,121 @@ fn effective_mute(muted: bool, soloed: bool, any_soloed: bool) -> bool {
 impl<B: Backend> GroupsHandler<B> {
     /// Create a new groups handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
-        Self { backend, state }
+        Self {
+            backend,
+            state,
+            pending_frees: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Process deferred group frees whose grace period has elapsed.
+    ///
+    /// Called by the runtime's tick loop (same idiom as
+    /// `EffectsHandler::tick`). Frees the stashed nodes on the backend
+    /// first, then recycles the node IDs and returns the group's audio bus
+    /// to the allocator — never before, so a released child's audio can't
+    /// bleed into a reallocated bus.
+    pub async fn tick(&self) {
+        let now = Instant::now();
+        let due: Vec<PendingGroupFree> = {
+            let mut pending = self.pending_frees.write().await;
+            if pending.is_empty() {
+                return;
+            }
+            let mut due = Vec::new();
+            let mut remaining = Vec::new();
+            for entry in pending.drain(..) {
+                // On WASM there is no runtime-driven timing guarantee; free
+                // immediately like EffectsHandler does.
+                let elapsed = cfg!(target_arch = "wasm32")
+                    || now.duration_since(entry.requested_at) >= entry.grace;
+                if elapsed {
+                    due.push(entry);
+                } else {
+                    remaining.push(entry);
+                }
+            }
+            *pending = remaining;
+            due
+        };
+
+        for entry in due {
+            for node in &entry.nodes {
+                tracing::debug!("Group reclaim: grace elapsed, freeing node {:?}", node);
+                let _ = self.backend.free_node(*node).await;
+            }
+            let mut state = self.state.write().await;
+            for node in &entry.nodes {
+                state.free_node_id(*node);
+            }
+            state.free_audio_bus(entry.audio_bus, 2);
+        }
+    }
+
+    /// Delete a group, deferring the backend frees and resource reclaim by
+    /// `grace`.
+    ///
+    /// With `grace == 0` this is the legacy immediate teardown. Reload
+    /// passes the maximum release grace of the voices it gate-released in
+    /// the same pass, so the group node (and every released child inside
+    /// it) survives until the tails have finished — freeing a silent
+    /// subtree never clicks.
+    pub async fn delete_with_grace(&self, id: GroupId, grace: Duration) -> Result<()> {
+        let immediate = grace.is_zero();
+        let group = {
+            let mut state = self.state.write().await;
+            let group = state.groups.remove(&id).ok_or(Error::GroupNotFound(id))?;
+            if immediate {
+                // Immediate path: nodes are /n_free'd below in this same
+                // call, so IDs and the bus are definitively done.
+                state.free_node_id(group.node_id);
+                if let Some(link_id) = group.link_synth_node_id {
+                    state.free_node_id(link_id);
+                }
+                // Return the group's stereo audio bus to the free pool so
+                // long-running sessions don't burn through bus IDs.
+                state.free_audio_bus(group.audio_bus, 2);
+            }
+            // Drop the live chain-order tracking; a recreated group with the
+            // same id starts a fresh chain.
+            state.group_effect_chain.remove(&id);
+            group
+        };
+
+        if immediate {
+            // Free the link synth first if it exists
+            if let Some(link_node_id) = group.link_synth_node_id {
+                let _ = self.backend.free_node(link_node_id).await;
+            }
+
+            // Free the group node (this also frees all child nodes)
+            self.backend
+                .free_node(group.node_id)
+                .await
+                .map_err(Error::backend)?;
+
+            tracing::debug!("Deleted group {} (node_id={})", id.0, group.node_id.0);
+            return Ok(());
+        }
+
+        let mut nodes = Vec::with_capacity(2);
+        if let Some(link_node_id) = group.link_synth_node_id {
+            nodes.push(link_node_id);
+        }
+        nodes.push(group.node_id);
+        tracing::debug!(
+            "Deleted group {} (node_id={}); backend free deferred by {:?}",
+            id.0,
+            group.node_id.0,
+            grace
+        );
+        self.pending_frees.write().await.push(PendingGroupFree {
+            requested_at: Instant::now(),
+            grace,
+            nodes,
+            audio_bus: group.audio_bus,
+        });
+        Ok(())
     }
 
     /// Finalize all groups by creating link synths for audio routing.
@@ -212,36 +346,35 @@ impl<B: Backend> Groups for GroupsHandler<B> {
     }
 
     async fn delete(&self, id: GroupId) -> Result<()> {
-        let group = {
-            let mut state = self.state.write().await;
-            let group = state.groups.remove(&id).ok_or(Error::GroupNotFound(id))?;
-            state.free_node_id(group.node_id);
-            if let Some(link_id) = group.link_synth_node_id {
-                state.free_node_id(link_id);
+        // Direct deletion (GroupMessage::Delete) may hit a group that still
+        // contains sounding voice nodes — freeing the group node would
+        // truncate them with a click. Gate-release the gated children first
+        // and defer the group free past their longest release. Reload never
+        // takes this branch (it gracefully deletes the voices beforehand and
+        // passes the grace to `delete_with_grace` explicitly); with no
+        // sounding gated children this is the legacy immediate teardown.
+        let (grace, child_nodes) = {
+            let state = self.state.read().await;
+            if !state.groups.contains_key(&id) {
+                return Err(Error::GroupNotFound(id));
             }
-            // Return the group's stereo audio bus to the free pool so
-            // long-running sessions don't burn through bus IDs.
-            state.free_audio_bus(group.audio_bus, 2);
-            // Drop the live chain-order tracking; a recreated group with the
-            // same id starts a fresh chain.
-            state.group_effect_chain.remove(&id);
-            group
+            let mut grace = Duration::ZERO;
+            let mut nodes = Vec::new();
+            for voice in state.voices.values().filter(|v| v.config.group == id) {
+                let sounding =
+                    !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
+                if sounding && voice_is_gated(&voice.config) {
+                    grace = grace.max(voice_release_grace(&voice.config));
+                    nodes.extend(voice.active_nodes.iter().copied());
+                    nodes.extend(voice.note_nodes.values().copied());
+                }
+            }
+            (grace, nodes)
         };
-
-        // Free the link synth first if it exists
-        if let Some(link_node_id) = group.link_synth_node_id {
-            let _ = self.backend.free_node(link_node_id).await;
+        for node in child_nodes {
+            let _ = self.backend.set_param(node, "gate", 0.0).await;
         }
-
-        // Free the group node (this also frees all child nodes)
-        self.backend
-            .free_node(group.node_id)
-            .await
-            .map_err(Error::backend)?;
-
-        tracing::debug!("Deleted group {} (node_id={})", id.0, group.node_id.0);
-
-        Ok(())
+        self.delete_with_grace(id, grace).await
     }
 
     async fn set_param(&self, id: GroupId, param: &str, value: f32) -> Result<()> {

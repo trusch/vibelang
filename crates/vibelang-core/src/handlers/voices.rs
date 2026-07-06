@@ -1,7 +1,7 @@
 //! Voices handler implementation.
 
 use crate::backend::{AddAction, Backend};
-use crate::compat::{Instant, RwLock};
+use crate::compat::{Duration, Instant, RwLock};
 use crate::handlers::default_routes_for_voice;
 #[cfg(feature = "midi")]
 use crate::state::MidiVoicePool;
@@ -35,10 +35,98 @@ use std::sync::Mutex;
 #[cfg(feature = "midi")]
 pub type MidiOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>;
 
+/// Extra margin added on top of a voice's release time before its deferred
+/// resources are reclaimed (fallback `/n_free`, route mixers, buses, node
+/// IDs). Covers OSC latency plus the envelope's asymptotic tail.
+const VOICE_RECLAIM_MARGIN_MS: u64 = 100;
+
+/// Upper bound on the release-derived grace period so a pathological
+/// `release` value can't pin buses and node IDs for minutes.
+const VOICE_RECLAIM_MAX_RELEASE_S: f32 = 30.0;
+
+/// SFZ voices resolve their release envelope per region at note-on, so the
+/// voice-level config can't see it; use a conservative floor so typical
+/// `ampeg_release` tails aren't truncated by the fallback free.
+const SFZ_RELEASE_GRACE_FLOOR_S: f32 = 1.0;
+
+/// Whether teardown of this voice's nodes can go through the gate-release
+/// path (`/n_set gate 0` → release envelope → doneAction=2 self-free).
+///
+/// SFZ voices spawn `sfz_voice_{mono,stereo}` synths which always carry a
+/// gated envelope; everything else is decided by the synthdef's declared
+/// params. A synthdef without a `gate` param has no release envelope to
+/// trigger, so callers fall back to an immediate `/n_free`.
+pub(crate) fn voice_is_gated(config: &VoiceConfig) -> bool {
+    if config.sfz_instrument.is_some() {
+        return true;
+    }
+    if config.synthdef.is_empty() {
+        return false;
+    }
+    vibelang_dsp::get_synthdef_param_defaults(&config.synthdef).contains_key("gate")
+}
+
+/// Grace period to wait after `gate=0` before reclaiming a voice's deferred
+/// resources: the voice's effective release time (script param override, else
+/// the synthdef's declared default) plus [`VOICE_RECLAIM_MARGIN_MS`].
+pub(crate) fn voice_release_grace(config: &VoiceConfig) -> Duration {
+    let release = config
+        .params
+        .get("release")
+        .copied()
+        .or_else(|| {
+            if config.synthdef.is_empty() {
+                None
+            } else {
+                vibelang_dsp::get_synthdef_param_defaults(&config.synthdef)
+                    .get("release")
+                    .copied()
+            }
+        })
+        .unwrap_or(0.0);
+    let floor = if config.sfz_instrument.is_some() {
+        SFZ_RELEASE_GRACE_FLOOR_S
+    } else {
+        0.0
+    };
+    let release = release.max(floor).clamp(0.0, VOICE_RECLAIM_MAX_RELEASE_S);
+    Duration::from_secs_f32(release) + Duration::from_millis(VOICE_RECLAIM_MARGIN_MS)
+}
+
+/// Deferred teardown unit for gate-released voice nodes.
+///
+/// Gate-released nodes free themselves via doneAction=2 when their release
+/// envelope completes, at a time the runtime can't observe. Their node IDs
+/// are therefore NOT recycled at release time (a recycled ID could be handed
+/// to a new synth while the old node still exists — commit 8ca4fed's
+/// discipline). Instead each release stashes one of these entries; after
+/// `grace` the tick loop sends a fallback `/n_free` (a no-op "Node not
+/// found" if the node already self-freed, which the backend tolerates) and
+/// only then recycles IDs and returns buses to their allocators, so a bus
+/// can never be reallocated while a released node is still sounding into it.
+struct PendingVoiceReclaim {
+    /// When the release was requested (or, for scheduled note steals, the
+    /// scheduled sounding time).
+    requested_at: Instant,
+    /// Per-entry grace derived from the owning voice's release time.
+    grace: Duration,
+    /// Gate-released synth nodes: fallback-freed and ID-recycled at deadline.
+    released_nodes: Vec<NodeId>,
+    /// Route mixer / input router nodes kept alive through the release so
+    /// the tail keeps flowing to its destination; freed at deadline.
+    route_nodes: Vec<NodeId>,
+    /// Audio buses (with allocation width) returned to the pool at deadline.
+    audio_buses: Vec<(BusId, u8)>,
+    /// Control buses returned to the pool at deadline.
+    control_buses: Vec<ControlBusId>,
+}
+
 /// Handler for voice operations.
 pub struct VoicesHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+    /// Deferred reclaims for gate-released nodes, drained by [`Self::tick`].
+    pending_reclaims: Arc<RwLock<Vec<PendingVoiceReclaim>>>,
     /// Optional MIDI output channels for sending CC on MIDI voices.
     #[cfg(feature = "midi")]
     midi_outputs: Option<MidiOutputChannels>,
@@ -50,9 +138,146 @@ impl<B: Backend> VoicesHandler<B> {
         Self {
             backend,
             state,
+            pending_reclaims: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "midi")]
             midi_outputs: None,
         }
+    }
+
+    /// Process pending voice reclaims whose grace period has elapsed.
+    ///
+    /// Called by the runtime's tick loop (same idiom as
+    /// [`crate::handlers::EffectsHandler::tick`]). Sequence per entry:
+    /// fallback `/n_free` for released and route nodes, then recycle the
+    /// node IDs, then return buses to the allocators — see
+    /// [`PendingVoiceReclaim`] for why this order matters.
+    pub async fn tick(&self) {
+        let now = Instant::now();
+        let due: Vec<PendingVoiceReclaim> = {
+            let mut pending = self.pending_reclaims.write().await;
+            if pending.is_empty() {
+                return;
+            }
+            let mut due = Vec::new();
+            let mut remaining = Vec::new();
+            for entry in pending.drain(..) {
+                // On WASM there is no runtime-driven timing guarantee; free
+                // immediately like EffectsHandler does.
+                let elapsed = cfg!(target_arch = "wasm32")
+                    || now.duration_since(entry.requested_at) >= entry.grace;
+                if elapsed {
+                    due.push(entry);
+                } else {
+                    remaining.push(entry);
+                }
+            }
+            *pending = remaining;
+            due
+        };
+
+        for entry in due {
+            for node in entry.released_nodes.iter().chain(entry.route_nodes.iter()) {
+                tracing::debug!(
+                    "Voice reclaim: grace elapsed, fallback-freeing node {:?}",
+                    node
+                );
+                let _ = self.backend.free_node(*node).await;
+            }
+            let mut state = self.state.write().await;
+            // The /n_free above has been sent, so the IDs are definitively
+            // dead and safe to recycle now.
+            for node in entry.released_nodes.iter().chain(entry.route_nodes.iter()) {
+                state.free_node_id(*node);
+            }
+            for (bus, channels) in &entry.audio_buses {
+                state.free_audio_bus(*bus, *channels);
+            }
+            for bus in &entry.control_buses {
+                state.free_control_bus(*bus);
+            }
+        }
+    }
+
+    /// Queue a deferred reclaim entry.
+    async fn push_reclaim(&self, entry: PendingVoiceReclaim) {
+        self.pending_reclaims.write().await.push(entry);
+    }
+
+    /// Flush still-sounding MIDI pool notes for a detached voice as
+    /// NoteOffs to the external device.
+    #[cfg(feature = "midi")]
+    async fn flush_pool_cleanup(&self, cleanup: Option<(MidiDeviceId, Vec<QueuedMidiEvent>)>) {
+        if let Some((device_id, events)) = cleanup {
+            for event in events {
+                let _ = self.send_midi_event_now(device_id, event).await;
+            }
+        }
+    }
+
+    /// Replace a voice's config with spawn-before-release ordering.
+    ///
+    /// Reload uses this when a structural change (synthdef, group, or SFZ
+    /// instrument) forces a recreate. For gated voices with sounding nodes
+    /// the sequence is deterministic:
+    ///
+    /// 1. detach the old voice's bookkeeping (its nodes keep sounding),
+    /// 2. create the new voice — it allocates fresh buses because the old
+    ///    ones are still held back for the release tail, so old and new
+    ///    can overlap without bleeding into each other,
+    /// 3. gate-release the old nodes and queue the deferred reclaim.
+    ///
+    /// The old tail rings out under the new voice's first trigger instead
+    /// of leaving a gap. Gateless voices (and voices with nothing sounding)
+    /// keep the legacy delete-then-create sequence, which also preserves
+    /// their bus-reuse behaviour across reloads.
+    pub async fn recreate(&self, id: VoiceId, config: VoiceConfig) -> Result<()> {
+        let old_gated_sounding = {
+            let state = self.state.read().await;
+            state.voices.get(&id).map(|v| {
+                voice_is_gated(&v.config)
+                    && !(v.active_nodes.is_empty() && v.note_nodes.is_empty())
+            })
+        };
+        match old_gated_sounding {
+            None => return self.create(id, config).await,
+            Some(false) => {
+                let _ = self.delete(id).await;
+                return self.create(id, config).await;
+            }
+            Some(true) => {}
+        }
+
+        let detached = {
+            let mut state = self.state.write().await;
+            detach_voice(&mut state, id)?
+        };
+
+        #[cfg(feature = "midi")]
+        self.flush_pool_cleanup(detached.pool_cleanup).await;
+
+        // Spawn-before-release: materialize the new voice first so the old
+        // release tail overlaps the new sound instead of leaving a gap.
+        let create_result = self.create(id, config).await;
+
+        for node_id in &detached.nodes {
+            tracing::debug!(
+                "Voice {:?}: recreate - gate-releasing old node {:?}",
+                id,
+                node_id
+            );
+            let _ = self.backend.set_param(*node_id, "gate", 0.0).await;
+        }
+        self.push_reclaim(PendingVoiceReclaim {
+            requested_at: Instant::now(),
+            grace: detached.grace,
+            released_nodes: detached.nodes,
+            route_nodes: detached.route_nodes,
+            audio_buses: detached.audio_buses,
+            control_buses: detached.control_buses,
+        })
+        .await;
+
+        create_result
     }
 
     /// Set the MIDI output channels for sending CC on MIDI voices.
@@ -517,6 +742,8 @@ impl<B: Backend> VoicesHandler<B> {
             synthdef,
             params,
             old_node,
+            steal_gated,
+            steal_grace,
             param_bindings,
             bend_baseline_updates,
         ) = {
@@ -620,9 +847,15 @@ impl<B: Backend> VoicesHandler<B> {
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
-            // The replaced same-pitch node is /n_free'd below — recycle its ID.
+            let steal_gated = voice_is_gated(&voice.config);
+            let steal_grace = voice_release_grace(&voice.config);
+            // Gateless synths: the replaced same-pitch node is /n_free'd
+            // below — recycle its ID. Gate-released nodes keep their ID
+            // until the deferred reclaim (doneAction=2 discipline).
             if let Some(old) = old_node {
-                state.free_node_id(old);
+                if !steal_gated {
+                    state.free_node_id(old);
+                }
             }
             let param_bindings = state.active_param_bindings_for_voice(id);
             let bend_baseline_updates =
@@ -636,16 +869,35 @@ impl<B: Backend> VoicesHandler<B> {
                 synthdef,
                 params,
                 old_node,
+                steal_gated,
+                steal_grace,
                 param_bindings,
                 bend_baseline_updates,
             )
         };
 
-        // Free old node if any (lock released). This stays immediate even
-        // for scheduled note-ons: the recycled node ID may be reallocated
-        // before `at`, so its /n_free must have executed by then.
+        // Retire the replaced same-pitch node (lock released). Gated synths
+        // get gate=0 scheduled at the retrigger time so the old envelope
+        // releases exactly when the new note sounds — no click; the node's
+        // ID and fallback /n_free are deferred past the release tail (see
+        // [`PendingVoiceReclaim`]). Gateless synths keep the immediate
+        // /n_free: their recycled node ID may be reallocated before `at`,
+        // so the /n_free must have executed by then.
         if let Some(old) = old_node {
-            let _ = self.backend.free_node(old).await;
+            if steal_gated {
+                let _ = self.backend.set_param_at(old, "gate", 0.0, at).await;
+                self.push_reclaim(PendingVoiceReclaim {
+                    requested_at: at.unwrap_or_else(Instant::now),
+                    grace: steal_grace,
+                    released_nodes: vec![old],
+                    route_nodes: Vec::new(),
+                    audio_buses: Vec::new(),
+                    control_buses: Vec::new(),
+                })
+                .await;
+            } else {
+                let _ = self.backend.free_node(old).await;
+            }
         }
 
         // Create synth — scheduled sample-accurately when `at` is set. The
@@ -851,7 +1103,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Allocate a bus per declared output port. Ar ports take an audio-bus
         // chunk of `port.channels` consecutive IDs; Kr ports take one control
         // bus from the segregated free list. The rate is implicit in the
-        // stored `BusId` — `free_voice_output_buses` re-resolves it from the
+        // stored `BusId` — `voice_bus_reclaims` re-resolves it from the
         // synthdef descriptor when releasing.
         let ports = state.synthdef_outputs(&config.synthdef);
         let mut output_buses = Vec::with_capacity(ports.len());
@@ -948,65 +1200,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn delete(&self, id: VoiceId) -> Result<()> {
-        #[cfg(feature = "midi")]
-        let (nodes_to_free, route_nodes_to_free, pool_cleanup) = {
+        let detached = {
             let mut state = self.state.write().await;
-            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
-            free_voice_output_buses(&mut state, &voice);
-            free_voice_input_buses(&mut state, &voice);
-            let mut route_nodes = state.take_voice_route_nodes(id);
-            route_nodes.extend(state.take_voice_input_route_nodes(id));
-            state.take_voice_param_routes(id);
-            // Story 5: drop the voice's default routes so the next reload's
-            // merge step doesn't carry them forward against a deleted voice.
-            state.take_voice_default_routes(id);
-            clear_voice_note_generations(&mut state, id);
-            let midi_channel = voice.config.midi_channel;
-            let pool_events = midi_pool_clear(&mut state, id, midi_channel);
-            let pool_cleanup = voice.config.midi_output.map(|dev| (dev, pool_events));
-            let mut voice_nodes = voice.active_nodes;
-            voice_nodes.extend(voice.note_nodes.into_values());
-            // Recycle the node IDs: every node is explicitly /n_free'd below,
-            // so after this call the IDs cannot reach the backend again.
-            for node in &voice_nodes {
-                state.free_node_id(*node);
-            }
-            (voice_nodes, route_nodes, pool_cleanup)
-        };
-        #[cfg(not(feature = "midi"))]
-        let (nodes_to_free, route_nodes_to_free) = {
-            let mut state = self.state.write().await;
-            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
-            free_voice_output_buses(&mut state, &voice);
-            free_voice_input_buses(&mut state, &voice);
-            let mut route_nodes = state.take_voice_route_nodes(id);
-            route_nodes.extend(state.take_voice_input_route_nodes(id));
-            state.take_voice_param_routes(id);
-            state.take_voice_default_routes(id);
-            let mut voice_nodes = voice.active_nodes;
-            voice_nodes.extend(voice.note_nodes.into_values());
-            for node in &voice_nodes {
-                state.free_node_id(*node);
-            }
-            (voice_nodes, route_nodes)
+            let detached = detach_voice(&mut state, id)?;
+            // Hard delete: every node is explicitly /n_free'd below, so the
+            // IDs are definitively done and safe to recycle right away; the
+            // buses go back to the allocators in the same breath.
+            reclaim_detached_now(&mut state, &detached);
+            detached
         };
 
         // Release any still-sounding pool notes on the external device.
         #[cfg(feature = "midi")]
-        if let Some((device_id, events)) = pool_cleanup {
-            for event in events {
-                let _ = self.send_midi_event_now(device_id, event).await;
-            }
-        }
+        self.flush_pool_cleanup(detached.pool_cleanup).await;
 
         // Free all active synth nodes (lock released)
-        for node_id in nodes_to_free {
+        for node_id in detached.nodes {
             let _ = self.backend.free_node(node_id).await;
         }
         // Free per-port route mixer synths so they no longer read from the
         // voice's freed audio bus (avoids stale `In.ar` reads when the bus
         // is recycled to a later voice).
-        for node_id in route_nodes_to_free {
+        for node_id in detached.route_nodes {
             let _ = self.backend.free_node(node_id).await;
         }
 
@@ -1014,65 +1229,54 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn graceful_delete(&self, id: VoiceId) -> Result<()> {
-        #[cfg(feature = "midi")]
-        let (nodes_to_release, route_nodes_to_free, pool_cleanup) = {
+        let (detached, defer) = {
             let mut state = self.state.write().await;
-            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
-            free_voice_output_buses(&mut state, &voice);
-            free_voice_input_buses(&mut state, &voice);
-            let mut route_nodes = state.take_voice_route_nodes(id);
-            route_nodes.extend(state.take_voice_input_route_nodes(id));
-            state.take_voice_param_routes(id);
-            state.take_voice_default_routes(id);
-            clear_voice_note_generations(&mut state, id);
-            let midi_channel = voice.config.midi_channel;
-            let pool_events = midi_pool_clear(&mut state, id, midi_channel);
-            let pool_cleanup = voice.config.midi_output.map(|dev| (dev, pool_events));
-            let mut voice_nodes = voice.active_nodes;
-            voice_nodes.extend(voice.note_nodes.into_values());
-            (voice_nodes, route_nodes, pool_cleanup)
-        };
-        #[cfg(not(feature = "midi"))]
-        let (nodes_to_release, route_nodes_to_free) = {
-            let mut state = self.state.write().await;
-            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
-            free_voice_output_buses(&mut state, &voice);
-            free_voice_input_buses(&mut state, &voice);
-            let mut route_nodes = state.take_voice_route_nodes(id);
-            route_nodes.extend(state.take_voice_input_route_nodes(id));
-            state.take_voice_param_routes(id);
-            state.take_voice_default_routes(id);
-            let mut voice_nodes = voice.active_nodes;
-            voice_nodes.extend(voice.note_nodes.into_values());
-            (voice_nodes, route_nodes)
+            let detached = detach_voice(&mut state, id)?;
+            // Only gated voices with sounding nodes need the deferred path;
+            // everything else reclaims immediately, exactly like `delete`.
+            let defer = detached.gated && !detached.nodes.is_empty();
+            if !defer {
+                reclaim_detached_now(&mut state, &detached);
+            }
+            (detached, defer)
         };
 
         // Release any still-sounding pool notes on the external device.
         #[cfg(feature = "midi")]
-        if let Some((device_id, events)) = pool_cleanup {
-            for event in events {
-                let _ = self.send_midi_event_now(device_id, event).await;
+        self.flush_pool_cleanup(detached.pool_cleanup).await;
+
+        if !defer {
+            for node_id in detached.nodes {
+                let _ = self.backend.free_node(node_id).await;
             }
+            for node_id in detached.route_nodes {
+                let _ = self.backend.free_node(node_id).await;
+            }
+            return Ok(());
         }
 
-        // Free route mixers immediately — graceful delete does not extend to
-        // the routing layer (the mixer is fed by the voice synth, which is
-        // about to fade silent anyway).
-        for node_id in route_nodes_to_free {
-            let _ = self.backend.free_node(node_id).await;
-        }
-
-        // Set gate=0 on all active synth nodes to trigger release envelope.
-        // The synths will free themselves via doneAction=2 when the envelope completes.
-        // This avoids abrupt audio cuts during voice config updates.
-        for node_id in nodes_to_release {
+        // Set gate=0 on all active synth nodes to trigger release envelopes.
+        // The synths free themselves via doneAction=2 when the envelope
+        // completes — no immediate /n_free, no click. Route mixers and buses
+        // stay alive through the release so the tail keeps flowing to its
+        // destination; `tick` reclaims them after the grace period.
+        for node_id in &detached.nodes {
             tracing::debug!(
                 "Voice {:?}: graceful release - setting gate=0 on node {:?}",
                 id,
                 node_id
             );
-            let _ = self.backend.set_param(node_id, "gate", 0.0).await;
+            let _ = self.backend.set_param(*node_id, "gate", 0.0).await;
         }
+        self.push_reclaim(PendingVoiceReclaim {
+            requested_at: Instant::now(),
+            grace: detached.grace,
+            released_nodes: detached.nodes,
+            route_nodes: detached.route_nodes,
+            audio_buses: detached.audio_buses,
+            control_buses: detached.control_buses,
+        })
+        .await;
 
         Ok(())
     }
@@ -1095,7 +1299,10 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             synthdef,
             merged_params,
             old_nodes,
-            choke_nodes,
+            trig_gated,
+            trig_grace,
+            choke_free,
+            choke_release,
             param_bindings,
             bend_baseline_updates,
         ) = {
@@ -1186,8 +1393,12 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             let node_id = state.alloc_node_id()?;
 
-            // Handle choke groups: collect nodes to choke from other voices in same group
-            let mut choke_nodes = Vec::new();
+            // Handle choke groups: collect nodes to choke from other voices
+            // in the same choke group. Gated voices are choked via gate=0 so
+            // their release envelope does the fade (e.g. closed hat choking
+            // an open hat); gateless ones fall back to an immediate free.
+            let mut choke_free: Vec<NodeId> = Vec::new();
+            let mut choke_release: Vec<(Duration, Vec<NodeId>)> = Vec::new();
             if let Some(ref choke) = choke_group {
                 for (voice_id, other_voice) in state.voices.iter_mut() {
                     // Skip the voice being triggered
@@ -1197,8 +1408,17 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                     // Check if in same choke group
                     if other_voice.config.choke_group.as_ref() == Some(choke) {
                         // Collect all active nodes to choke
-                        choke_nodes.append(&mut other_voice.active_nodes);
-                        choke_nodes.extend(other_voice.note_nodes.drain().map(|(_, n)| n));
+                        let mut nodes = std::mem::take(&mut other_voice.active_nodes);
+                        nodes.extend(other_voice.note_nodes.drain().map(|(_, n)| n));
+                        if nodes.is_empty() {
+                            continue;
+                        }
+                        if voice_is_gated(&other_voice.config) {
+                            choke_release
+                                .push((voice_release_grace(&other_voice.config), nodes));
+                        } else {
+                            choke_free.extend(nodes);
+                        }
                     }
                 }
             }
@@ -1206,6 +1426,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Update voice state
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             voice.active_nodes.push(node_id);
+            let trig_gated = voice_is_gated(&voice.config);
+            let trig_grace = voice_release_grace(&voice.config);
 
             // Handle round-robin: add `rr` parameter and increment position
             if round_robin_count > 0 {
@@ -1213,7 +1435,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 voice.round_robin_position = (voice.round_robin_position + 1) % round_robin_count;
             }
 
-            // Collect nodes to free (polyphony management)
+            // Collect nodes displaced by the polyphony limit
             let mut old_nodes = Vec::new();
             while voice.active_nodes.len() > polyphony {
                 if let Some(old_node) = voice.active_nodes.first().copied() {
@@ -1221,9 +1443,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                     old_nodes.push(old_node);
                 }
             }
-            // Recycle evicted/choked node IDs — every one of them is
-            // explicitly /n_free'd below, so the IDs are definitively done.
-            for node in old_nodes.iter().chain(choke_nodes.iter()) {
+            // Recycle node IDs only for nodes taking the immediate-free
+            // path — those are explicitly /n_free'd below, so the IDs are
+            // definitively done. Gate-released nodes keep their IDs until
+            // the deferred reclaim (doneAction=2 discipline).
+            if !trig_gated {
+                for node in old_nodes.iter() {
+                    state.free_node_id(*node);
+                }
+            }
+            for node in choke_free.iter() {
                 state.free_node_id(*node);
             }
             let param_bindings = state.active_param_bindings_for_voice(id);
@@ -1238,18 +1467,37 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 synthdef,
                 merged_params,
                 old_nodes,
-                choke_nodes,
+                trig_gated,
+                trig_grace,
+                choke_free,
+                choke_release,
                 param_bindings,
                 bend_baseline_updates,
             )
         };
 
         // Choke nodes from other voices in the same choke group (lock
-        // released). These frees stay immediate even for scheduled triggers:
-        // their node IDs were recycled above and may be reallocated before
-        // `at`, so the /n_free must have executed by then.
-        for choke_node in choke_nodes {
+        // released). Gateless frees stay immediate even for scheduled
+        // triggers: their node IDs were recycled above and may be
+        // reallocated before `at`, so the /n_free must have executed by
+        // then. Gated chokes are scheduled at the trigger time so the choke
+        // lands exactly when the new note sounds.
+        for choke_node in choke_free {
             let _ = self.backend.free_node(choke_node).await;
+        }
+        for (grace, nodes) in choke_release {
+            for node in &nodes {
+                let _ = self.backend.set_param_at(*node, "gate", 0.0, at).await;
+            }
+            self.push_reclaim(PendingVoiceReclaim {
+                requested_at: at.unwrap_or_else(Instant::now),
+                grace,
+                released_nodes: nodes,
+                route_nodes: Vec::new(),
+                audio_buses: Vec::new(),
+                control_buses: Vec::new(),
+            })
+            .await;
         }
 
         // Create synth in backend — scheduled sample-accurately when `at`
@@ -1273,9 +1521,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .map_err(Error::backend)?;
         self.forward_bend_baselines(&bend_baseline_updates).await;
 
-        // Free old nodes (polyphony limit) — immediate, see choke note above.
-        for old_node in old_nodes {
-            let _ = self.backend.free_node(old_node).await;
+        // Retire nodes displaced by the polyphony limit — gate-released for
+        // gated synths (the stolen note tails out under the new one),
+        // immediate /n_free otherwise (see choke note above).
+        if trig_gated {
+            if !old_nodes.is_empty() {
+                for node in &old_nodes {
+                    let _ = self.backend.set_param_at(*node, "gate", 0.0, at).await;
+                }
+                self.push_reclaim(PendingVoiceReclaim {
+                    requested_at: at.unwrap_or_else(Instant::now),
+                    grace: trig_grace,
+                    released_nodes: old_nodes,
+                    route_nodes: Vec::new(),
+                    audio_buses: Vec::new(),
+                    control_buses: Vec::new(),
+                })
+                .await;
+            }
+        } else {
+            for old_node in old_nodes {
+                let _ = self.backend.free_node(old_node).await;
+            }
         }
 
         Ok(())
@@ -1283,7 +1550,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
     async fn stop(&self, id: VoiceId) -> Result<()> {
         #[cfg(feature = "midi")]
-        let (nodes_to_free, pool_cleanup) = {
+        let (nodes, gated, grace, pool_cleanup) = {
             let mut state = self.state.write().await;
 
             let (midi_output, midi_channel) = {
@@ -1295,40 +1562,65 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let pool_cleanup = midi_output.map(|dev| (dev, pool_events));
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
+            let gated = voice_is_gated(&voice.config);
+            let grace = voice_release_grace(&voice.config);
             let mut nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
             nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
-            // Recycle the node IDs: every node is explicitly /n_free'd below.
-            for node in &nodes {
-                state.free_node_id(*node);
+            // Gateless path: every node is explicitly /n_free'd below, so
+            // recycle the IDs now. Gate-released nodes keep theirs until
+            // the deferred reclaim.
+            if !gated {
+                for node in &nodes {
+                    state.free_node_id(*node);
+                }
             }
-            (nodes, pool_cleanup)
+            (nodes, gated, grace, pool_cleanup)
         };
         #[cfg(not(feature = "midi"))]
-        let nodes_to_free = {
+        let (nodes, gated, grace) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
-
-            let nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
-            let mut nodes = nodes;
+            let gated = voice_is_gated(&voice.config);
+            let grace = voice_release_grace(&voice.config);
+            let mut nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
             nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
-            for node in &nodes {
-                state.free_node_id(*node);
+            if !gated {
+                for node in &nodes {
+                    state.free_node_id(*node);
+                }
             }
-            nodes
+            (nodes, gated, grace)
         };
 
         // Release any still-sounding pool notes on the external device.
         #[cfg(feature = "midi")]
-        if let Some((device_id, events)) = pool_cleanup {
-            for event in events {
-                let _ = self.send_midi_event_now(device_id, event).await;
-            }
+        self.flush_pool_cleanup(pool_cleanup).await;
+
+        if nodes.is_empty() {
+            return Ok(());
         }
 
-        // Free all active synth nodes (lock released)
-        for node_id in nodes_to_free {
-            let _ = self.backend.free_node(node_id).await;
+        // Stop via gate-release where the synthdef supports it: the release
+        // envelope tails out and the node frees itself (doneAction=2); the
+        // fallback /n_free and ID recycle happen after the grace period.
+        if gated {
+            for node_id in &nodes {
+                let _ = self.backend.set_param(*node_id, "gate", 0.0).await;
+            }
+            self.push_reclaim(PendingVoiceReclaim {
+                requested_at: Instant::now(),
+                grace,
+                released_nodes: nodes,
+                route_nodes: Vec::new(),
+                audio_buses: Vec::new(),
+                control_buses: Vec::new(),
+            })
+            .await;
+        } else {
+            for node_id in nodes {
+                let _ = self.backend.free_node(node_id).await;
+            }
         }
 
         Ok(())
@@ -1779,48 +2071,121 @@ fn midi_pool_resize(state: &mut State, id: VoiceId, channel: u8, n: usize) -> Ve
     events
 }
 
-/// Return every bus owned by `voice` to its respective allocator.
+/// Resolve every bus owned by `voice` into reclaim lists, without freeing
+/// anything yet.
 ///
-/// Ar ports go back to the audio-bus free list with the same chunk width
-/// they were allocated with; Kr ports go back to the control-bus free list.
-/// We re-resolve the synthdef descriptor rather than tracking rate/width on
-/// the voice — reload tears voices down before changing synthdef metadata,
-/// so the descriptor is stable for the lifetime of any individual voice.
-/// Unknown ports (synthdef redeclared mid-flight) fall back to the legacy
-/// stereo Ar shape, matching the prior behaviour.
-fn free_voice_output_buses(state: &mut State, voice: &VoiceState) {
-    if voice.output_buses.is_empty() {
-        return;
-    }
-    let ports = state.synthdef_outputs(&voice.config.synthdef);
-    for (port_name, bus_id) in &voice.output_buses {
-        let port = ports.iter().find(|p| p.name == *port_name);
-        match port.map(|p| p.rate).unwrap_or(vibelang_dsp::PortRate::Ar) {
-            vibelang_dsp::PortRate::Ar => {
-                let channels = port.map(|p| p.channels).unwrap_or(2);
-                state.free_audio_bus(*bus_id, channels);
-            }
-            // Tr ports return their bus to the control-bus free list, same
-            // as Kr — both were allocated from there at create time.
-            vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
-                state.free_control_bus(ControlBusId::new(bus_id.raw()));
+/// The synthdef descriptor is resolved HERE, at detach time, not at the
+/// deferred reclaim deadline — reload tears voices down before changing
+/// synthdef metadata, so the descriptor is stable now but may have been
+/// redeclared by the time the grace period elapses.
+fn voice_bus_reclaims(
+    state: &State,
+    voice: &VoiceState,
+) -> (Vec<(BusId, u8)>, Vec<ControlBusId>) {
+    let mut audio = Vec::new();
+    let mut control = Vec::new();
+    if !voice.output_buses.is_empty() {
+        let ports = state.synthdef_outputs(&voice.config.synthdef);
+        for (port_name, bus_id) in &voice.output_buses {
+            let port = ports.iter().find(|p| p.name == *port_name);
+            match port.map(|p| p.rate).unwrap_or(vibelang_dsp::PortRate::Ar) {
+                vibelang_dsp::PortRate::Ar => {
+                    // Unknown ports (synthdef redeclared mid-flight) fall
+                    // back to the legacy stereo Ar shape.
+                    audio.push((*bus_id, port.map(|p| p.channels).unwrap_or(2)));
+                }
+                // Tr ports return their bus to the control-bus free list,
+                // same as Kr — both were allocated from there at create time.
+                vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
+                    control.push(ControlBusId::new(bus_id.raw()));
+                }
             }
         }
     }
+    if !voice.input_buses.is_empty() {
+        let ports = state.synthdef_inputs(&voice.config.synthdef);
+        for (port_name, bus_id) in &voice.input_buses {
+            let channels = ports
+                .iter()
+                .find(|p| p.name == *port_name)
+                .map(|p| p.channels)
+                .unwrap_or(2);
+            audio.push((*bus_id, channels));
+        }
+    }
+    (audio, control)
 }
 
-fn free_voice_input_buses(state: &mut State, voice: &VoiceState) {
-    if voice.input_buses.is_empty() {
-        return;
+/// Everything a removed voice owned, captured under the state lock with no
+/// backend traffic yet. Produced by [`detach_voice`]; the caller decides
+/// whether teardown is immediate (gateless) or gate-released + deferred.
+struct DetachedVoice {
+    /// Sounding synth nodes (`active_nodes` + `note_nodes`).
+    nodes: Vec<NodeId>,
+    /// Route mixer and input router nodes owned by the voice.
+    route_nodes: Vec<NodeId>,
+    audio_buses: Vec<(BusId, u8)>,
+    control_buses: Vec<ControlBusId>,
+    /// Whether the voice's synths honour `gate=0` release.
+    gated: bool,
+    /// Release-derived grace for deferred reclaim.
+    grace: Duration,
+    /// Still-sounding MIDI pool notes to flush as NoteOffs.
+    #[cfg(feature = "midi")]
+    pool_cleanup: Option<(MidiDeviceId, Vec<QueuedMidiEvent>)>,
+}
+
+/// Remove `id` from the state and capture everything it owned.
+///
+/// Pure bookkeeping: no backend traffic, no node-ID recycling, no bus frees —
+/// the caller sequences those, either immediately (hard delete, gateless
+/// voices) or after the release grace (gate-released voices).
+fn detach_voice(state: &mut State, id: VoiceId) -> Result<DetachedVoice> {
+    let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+    let (audio_buses, control_buses) = voice_bus_reclaims(state, &voice);
+    let mut route_nodes = state.take_voice_route_nodes(id);
+    route_nodes.extend(state.take_voice_input_route_nodes(id));
+    state.take_voice_param_routes(id);
+    // Story 5: drop the voice's default routes so the next reload's merge
+    // step doesn't carry them forward against a deleted voice.
+    state.take_voice_default_routes(id);
+    clear_voice_note_generations(state, id);
+    #[cfg(feature = "midi")]
+    let pool_cleanup = {
+        let midi_channel = voice.config.midi_channel;
+        let pool_events = midi_pool_clear(state, id, midi_channel);
+        voice.config.midi_output.map(|dev| (dev, pool_events))
+    };
+    let gated = voice_is_gated(&voice.config);
+    let grace = voice_release_grace(&voice.config);
+    let mut nodes = voice.active_nodes;
+    nodes.extend(voice.note_nodes.into_values());
+    Ok(DetachedVoice {
+        nodes,
+        route_nodes,
+        audio_buses,
+        control_buses,
+        gated,
+        grace,
+        #[cfg(feature = "midi")]
+        pool_cleanup,
+    })
+}
+
+/// Immediately recycle a detached voice's node IDs and buses.
+///
+/// Only valid when the caller is about to `/n_free` every node in the same
+/// operation (hard delete / gateless teardown) — gate-released voices must
+/// go through the deferred [`PendingVoiceReclaim`] path instead.
+fn reclaim_detached_now(state: &mut State, detached: &DetachedVoice) {
+    for node in detached.nodes.iter().chain(detached.route_nodes.iter()) {
+        state.free_node_id(*node);
     }
-    let ports = state.synthdef_inputs(&voice.config.synthdef);
-    for (port_name, bus_id) in &voice.input_buses {
-        let channels = ports
-            .iter()
-            .find(|p| p.name == *port_name)
-            .map(|p| p.channels)
-            .unwrap_or(2);
-        state.free_audio_bus(*bus_id, channels);
+    for (bus, channels) in &detached.audio_buses {
+        state.free_audio_bus(*bus, *channels);
+    }
+    for bus in &detached.control_buses {
+        state.free_control_bus(*bus);
     }
 }
 

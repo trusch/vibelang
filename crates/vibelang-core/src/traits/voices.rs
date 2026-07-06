@@ -281,10 +281,15 @@ pub trait Voices: Send + Sync {
     ///
     /// Instead of immediately freeing synth nodes, this sets gate=0 on all
     /// active nodes to trigger their release envelopes. The synths will free
-    /// themselves via doneAction=2 when the envelope completes.
+    /// themselves via doneAction=2 when the envelope completes; the voice's
+    /// route mixers, buses, and node IDs are reclaimed only after a grace
+    /// period derived from the release time, so the tail keeps flowing and
+    /// nothing is reallocated mid-release. Voices whose synthdef has no
+    /// `gate` param (and voices with nothing sounding) fall back to the
+    /// immediate teardown of [`Voices::delete`].
     ///
-    /// This is used during hot-reload to avoid abrupt audio cuts when
-    /// voice configurations change.
+    /// This is used by hot-reload and script-level voice deletion to avoid
+    /// abrupt audio cuts.
     async fn graceful_delete(&self, id: VoiceId) -> Result<()>;
 
     /// Trigger a voice with parameters.

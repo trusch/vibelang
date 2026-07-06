@@ -428,6 +428,11 @@ impl<B: Backend> Runtime<B> {
         // Tick effects to process pending frees (after grace period)
         self.effects.tick().await;
 
+        // Tick voices/groups to process deferred teardown: fallback frees,
+        // node-ID recycling, and bus reclaim for gate-released nodes.
+        self.voices.tick().await;
+        self.groups.tick().await;
+
         // Tick schedulers (patterns and melodies now use updated fade values)
         self.patterns.tick(current_beat).await;
         self.melodies.tick(current_beat).await;
@@ -502,7 +507,9 @@ impl<B: Backend> Runtime<B> {
             // Voices
             Message::Voice(voice_msg) => match voice_msg {
                 VoiceMessage::Create { id, config } => self.voices.create(id, *config).await,
-                VoiceMessage::Delete { id } => self.voices.delete(id).await,
+                // Gate-release teardown: sounding nodes tail out via their
+                // release envelope instead of clicking off.
+                VoiceMessage::Delete { id } => self.voices.graceful_delete(id).await,
                 VoiceMessage::Trigger { id, params } => self.voices.trigger(id, &params).await,
                 VoiceMessage::Stop { id } => self.voices.stop(id).await,
                 VoiceMessage::NoteOn {
@@ -1674,20 +1681,50 @@ impl<B: Backend> Runtime<B> {
             let _ = self.sequences.delete(*id).await;
         }
 
-        // Delete voices (before groups they belong to)
+        // Compute the group-teardown grace BEFORE deleting the voices:
+        // group nodes must outlive the release tails of every voice node
+        // that is gate-released in this reload pass (deleted voices below,
+        // plus structurally-recreated voices in phase_update_entities whose
+        // old nodes sit inside a group deleted here).
+        let group_teardown_grace = {
+            let state = self.state.read().await;
+            let mut grace = crate::compat::Duration::ZERO;
+            let deleted = diff.voices.deleted.iter();
+            let recreated = diff.voices.updated.iter().filter_map(|(id, new_config)| {
+                let current = state.voices.get(id)?;
+                Self::voice_needs_structural_recreate(&current.config, new_config)
+                    .then_some(id)
+            });
+            for id in deleted.chain(recreated) {
+                if let Some(voice) = state.voices.get(id) {
+                    let sounding =
+                        !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
+                    if sounding && crate::handlers::voice_is_gated(&voice.config) {
+                        grace = grace.max(crate::handlers::voice_release_grace(&voice.config));
+                    }
+                }
+            }
+            grace
+        };
+
+        // Delete voices (before groups they belong to). Graceful: sounding
+        // gated nodes get gate=0 and tail out via their release envelope;
+        // node IDs, route mixers, and buses are reclaimed after the grace.
         for id in &diff.voices.deleted {
             tracing::debug!("Reload: deleting voice {:?}", id);
-            let _ = self.voices.delete(*id).await;
+            let _ = self.voices.graceful_delete(*id).await;
         }
 
-        // Delete groups in correct order (children first)
+        // Delete groups in correct order (children first). The backend free
+        // is deferred by the release grace computed above so gate-released
+        // child nodes are not truncated by the recursive group free.
         let ordered_group_deletions = {
             let state = self.state.read().await;
             reload::order_group_deletions(&state.groups, &diff.groups.deleted)
         };
         for id in ordered_group_deletions {
             tracing::debug!("Reload: deleting group {:?}", id);
-            let _ = self.groups.delete(id).await;
+            let _ = self.groups.delete_with_grace(id, group_teardown_grace).await;
         }
 
         // Delete samples
@@ -2364,7 +2401,8 @@ impl<B: Backend> Runtime<B> {
         // For param-only changes, use set_param to avoid audio gaps.
         //
         // Story 4: iterate in script-order then `id.raw()` tiebreak. The recreate
-        // branch below calls `voices.delete` + `voices.create`, and `voices.create`
+        // branch below calls `voices.recreate` (detach/delete + create), and
+        // `voices.create`
         // can `state.alloc_audio_bus(...)` for kr/ar output ports. `diff.voices.updated`
         // is a `HashMap`, so without sorting two reloads of the same script would
         // hand out kr-bus IDs in different orders — same class of bug as the root-group
@@ -2410,11 +2448,13 @@ impl<B: Backend> Runtime<B> {
 
             if needs_recreate {
                 tracing::debug!(
-                    "Reload: hard-recreating voice {:?} (synthdef, group, or sfz changed)",
+                    "Reload: recreating voice {:?} (synthdef, group, or sfz changed)",
                     id
                 );
-                let _ = self.voices.delete(*id).await;
-                let _ = self.voices.create(*id, new_config.clone()).await;
+                // Spawn-before-release: the new voice is materialized first,
+                // then the old sounding nodes are gate-released so their
+                // tail overlaps the new sound instead of leaving a gap.
+                let _ = self.voices.recreate(*id, new_config.clone()).await;
             } else {
                 // Only params/config changed - update them without recreating the synth
                 tracing::debug!(

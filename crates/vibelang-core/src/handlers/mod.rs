@@ -99,6 +99,7 @@ pub use sequences::SequencesHandler;
 pub use sfz::{sfz_note_spawn_params, SfzHandler, SfzNoteSpawn};
 pub use synthdefs::SynthDefsHandler;
 pub use transport::TransportHandler;
+pub(crate) use voices::{voice_is_gated, voice_release_grace};
 pub use voices::VoicesHandler;
 
 #[cfg(not(target_arch = "wasm32"))]

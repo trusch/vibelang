@@ -1401,12 +1401,15 @@ impl State {
     }
 
     /// Drain every route mixer synth owned by `voice_id`, returning the node
-    /// IDs to free on the backend and recycling the IDs back into the node-id
-    /// pool.
+    /// IDs to free on the backend.
     ///
     /// Used by voice deletion to tear down everything a voice's routes own in
     /// one pass without needing a route diff. The caller is responsible for
-    /// freeing the returned nodes on the backend.
+    /// freeing the returned nodes on the backend AND for recycling the IDs
+    /// via [`Self::free_node_id`] once the `/n_free` has actually been sent —
+    /// the graceful-delete path keeps these mixers alive through the voice's
+    /// release tail, so recycling here would let a reused ID collide with a
+    /// still-live node.
     pub fn take_voice_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
         let keys: Vec<(VoiceId, String, crate::handlers::RouteDest)> = self
             .route_synths
@@ -1417,7 +1420,6 @@ impl State {
         let mut nodes = Vec::with_capacity(keys.len());
         for key in keys {
             if let Some(node_id) = self.route_synths.remove(&key) {
-                self.node_ids.free(node_id.raw());
                 nodes.push(node_id);
             }
         }
@@ -1428,7 +1430,9 @@ impl State {
     /// as the target voice or as a `Voice(...)` source.
     ///
     /// Used by voice deletion/recreation so no `input_link_*` synth keeps
-    /// reading from or writing to buses owned by a removed voice.
+    /// reading from or writing to buses owned by a removed voice. As with
+    /// [`Self::take_voice_route_nodes`], the caller frees the returned nodes
+    /// on the backend and recycles the IDs only after the `/n_free` is sent.
     pub fn take_voice_input_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
         use crate::handlers::InputRouteSrc;
 
@@ -1444,7 +1448,6 @@ impl State {
         let mut nodes = Vec::with_capacity(keys.len());
         for key in keys {
             if let Some(node_id) = self.input_route_synths.remove(&key) {
-                self.node_ids.free(node_id.raw());
                 nodes.push(node_id);
             }
         }
