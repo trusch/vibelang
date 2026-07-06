@@ -2181,38 +2181,63 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
+        // Content swaps honour the script's `set_quantization(beats)` grid,
+        // snapped to the discrete ChangeQuant boundaries (NextBar when the
+        // script never sets one — see ChangeQuant::from_grid for the mapping
+        // and the TODO about explicit `set_quantization(0)`).
+        let swap_quant = reload::ChangeQuant::from_grid(new_state.quantization, new_state.time_sig);
+
         // Update patterns - queue content swap for seamless hot reload
-        // Instead of delete/create cycle, queue new content to be applied at next bar boundary
-        // This ensures no audio disruption during live reload
+        // Instead of delete/create cycle, queue new content to be applied at
+        // the quantization boundary. The pattern tick applies it when the
+        // lookahead window reaches the boundary, so the new bar's downbeat is
+        // always scheduled from the new content.
         for (id, config) in &diff.patterns.updated {
-            tracing::debug!("Reload: queuing pattern {:?} content swap for next bar", id);
+            tracing::debug!("Reload: queuing pattern {:?} content swap", id);
             let new_content = crate::traits::PatternContent::arc_from_config(config);
             let mut state = self.state.write().await;
+            let current_beat = state.current_beat;
             if let Some(pattern) = state.patterns.get_mut(id) {
-                // Queue content swap with NextBar quantization (default)
-                pattern.queue_content_swap(new_content, reload::ChangeQuant::default());
+                pattern.queue_content_swap(new_content, swap_quant);
+                if !pattern.playing {
+                    // Nothing is scheduled from a stopped pattern, so there is
+                    // no boundary to wait for — swap now so a later start()
+                    // (or a start in this very reload) plays the new content
+                    // immediately, exactly like a cold boot would.
+                    pattern.apply_pending_swap(current_beat);
+                }
                 tracing::debug!(
-                    "Pattern {:?}: content swap queued (playing={})",
+                    "Pattern {:?}: content swap {} (quant={:?})",
                     id,
-                    pattern.playing
+                    if pattern.playing {
+                        "queued"
+                    } else {
+                        "applied immediately (not playing)"
+                    },
+                    swap_quant
                 );
             }
         }
 
-        // Update melodies - queue content swap for seamless hot reload
-        // Instead of delete/create cycle, queue new content to be applied at next bar boundary
-        // This ensures no audio disruption during live reload
+        // Update melodies - same seamless content-swap path as patterns.
         for (id, config) in &diff.melodies.updated {
-            tracing::debug!("Reload: queuing melody {:?} content swap for next bar", id);
+            tracing::debug!("Reload: queuing melody {:?} content swap", id);
             let new_content = crate::traits::MelodyContent::arc_from_config(config);
             let mut state = self.state.write().await;
             if let Some(melody) = state.melodies.get_mut(id) {
-                // Queue content swap with NextBar quantization (default)
-                melody.queue_content_swap(new_content, reload::ChangeQuant::default());
+                melody.queue_content_swap(new_content, swap_quant);
+                if !melody.playing {
+                    melody.apply_pending_swap();
+                }
                 tracing::debug!(
-                    "Melody {:?}: content swap queued (playing={})",
+                    "Melody {:?}: content swap {} (quant={:?})",
                     id,
-                    melody.playing
+                    if melody.playing {
+                        "queued"
+                    } else {
+                        "applied immediately (not playing)"
+                    },
+                    swap_quant
                 );
             }
         }
@@ -2672,41 +2697,21 @@ impl<B: Backend> Runtime<B> {
             let _ = self.sequences.stop(id).await;
         }
 
-        // Start patterns that should be playing (only if not already playing)
-        // Also sync their position to current_beat to avoid triggering past steps
+        // Start patterns that should be playing (only if not already playing).
+        // `start_on_grid` anchors the pattern to the song grid
+        // (`start_beat = current_beat - current_beat % length`) and starts
+        // the scheduling watermark at `current_beat`, so a reload-started
+        // pattern plays exactly the phase a cold boot of the same script
+        // would be playing at this beat: no first-tick burst of the loop's
+        // tail, no phase-lock to the reload instant.
         for id in &new_state.playing_patterns {
-            let (should_start, pattern_length) = {
+            let should_start = {
                 let state = self.state.read().await;
-                let should_start = state.patterns.get(id).is_some_and(|p| !p.playing);
-                let length = state
-                    .patterns
-                    .get(id)
-                    .map(|p| p.content.length)
-                    .unwrap_or(crate::types::Beat::from_f64(4.0));
-                (should_start, length)
+                state.patterns.get(id).is_some_and(|p| !p.playing)
             };
             if should_start {
-                tracing::debug!("Reload: starting pattern {:?}", id);
-                let _ = self.patterns.start(*id).await;
-                // Sync position to current beat + epsilon to avoid re-triggering past steps
-                // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
-                let mut state = self.state.write().await;
-                let base_position = state.current_beat % pattern_length;
-                let synced_position = if base_position == crate::types::Beat::ZERO {
-                    base_position
-                } else {
-                    // Use adaptive epsilon based on tempo
-                    let epsilon = self.calculate_position_epsilon(state.tempo, pattern_length);
-                    let pos = base_position + epsilon;
-                    if pos >= pattern_length {
-                        pos - pattern_length
-                    } else {
-                        pos
-                    }
-                };
-                if let Some(pattern) = state.patterns.get_mut(id) {
-                    pattern.loop_position = synced_position;
-                }
+                tracing::debug!("Reload: starting pattern {:?} on the song grid", id);
+                let _ = self.patterns.start_on_grid(*id).await;
             }
         }
 
@@ -2717,21 +2722,16 @@ impl<B: Backend> Runtime<B> {
             new_state.playing_melodies.len()
         );
         for id in &new_state.playing_melodies {
-            let (should_start, melody_length, melody_exists, notes_count) = {
+            let (should_start, melody_exists, notes_count) = {
                 let state = self.state.read().await;
                 let melody_exists = state.melodies.contains_key(id);
                 let should_start = state.melodies.get(id).is_some_and(|m| !m.playing);
-                let length = state
-                    .melodies
-                    .get(id)
-                    .map(|m| m.content.length)
-                    .unwrap_or(crate::types::Beat::from_f64(4.0));
                 let notes_count = state
                     .melodies
                     .get(id)
                     .map(|m| m.content.notes.len())
                     .unwrap_or(0);
-                (should_start, length, melody_exists, notes_count)
+                (should_start, melody_exists, notes_count)
             };
 
             if !melody_exists {
@@ -2752,27 +2752,11 @@ impl<B: Backend> Runtime<B> {
 
             if should_start {
                 tracing::debug!("Reload: starting melody {:?}", id);
+                // Melodies run on absolute song time: `start` resumes at
+                // `current_beat % length` with the scheduling watermark at
+                // `current_beat` — identical phase to a cold boot, no burst,
+                // no epsilon hacks.
                 let _ = self.melodies.start(*id).await;
-                // Sync position to current beat + epsilon to avoid re-triggering past notes
-                // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
-                let mut state = self.state.write().await;
-                let base_position = state.current_beat % melody_length;
-                let synced_position = if base_position == crate::types::Beat::ZERO {
-                    // Starting fresh at beat 0 - don't add epsilon
-                    base_position
-                } else {
-                    // Mid-song reload - use adaptive epsilon to avoid re-triggering
-                    let epsilon = self.calculate_position_epsilon(state.tempo, melody_length);
-                    let pos = base_position + epsilon;
-                    if pos >= melody_length {
-                        pos - melody_length
-                    } else {
-                        pos
-                    }
-                };
-                if let Some(melody) = state.melodies.get_mut(id) {
-                    melody.loop_position = synced_position;
-                }
             }
         }
 

@@ -118,41 +118,87 @@ pub enum ChangeQuant {
 }
 
 impl ChangeQuant {
-    /// Check if a change should be applied at the current beat position.
+    /// The first quantization boundary at or after `after` (exact fixed-point).
+    ///
+    /// `after` is the scheduler's watermark in **global** beats — the position
+    /// up to which (exclusive) steps have already been dispatched to the
+    /// backend. Content swaps must be applied when the *lookahead* window is
+    /// about to cross the boundary, not when the transport's `current_beat`
+    /// does: by the time `current_beat` reaches a bar line, the lookahead has
+    /// already scheduled ~50ms past it with the old content, so the swap
+    /// would either replay or skip the new bar's downbeat. Evaluating against
+    /// the watermark guarantees the boundary itself (and everything after it)
+    /// is scheduled from the new content.
+    ///
+    /// The boundary is *inclusive* of `after`: with half-open scheduling
+    /// windows `[watermark, lookahead)`, a watermark sitting exactly on a bar
+    /// line means the bar's downbeat has not been scheduled yet, so the swap
+    /// may still apply there.
     ///
     /// # Arguments
-    /// * `current_beat` - The global transport beat position
-    /// * `loop_position` - The current position within the pattern/melody loop
+    /// * `after` - Global-beat watermark; the returned boundary is `>= after`
+    /// * `anchor` - The pattern's grid anchor (`start_beat`; `0` for melodies),
+    ///   used by [`ChangeQuant::NextCycle`]
     /// * `loop_length` - The length of the pattern/melody in beats
-    /// * `time_sig` - The current time signature
-    /// * `tolerance` - Beat tolerance for boundary detection (typically ~0.02 beats at 100Hz tick)
-    pub fn should_apply(
+    /// * `time_sig` - The current time signature (for [`ChangeQuant::NextBar`])
+    pub fn next_boundary(
         &self,
-        current_beat: Beat,
-        loop_position: Beat,
+        after: Beat,
+        anchor: Beat,
         loop_length: Beat,
         time_sig: TimeSignature,
-        tolerance: f64,
-    ) -> bool {
-        match self {
-            ChangeQuant::Immediate => true,
-            ChangeQuant::NextBeat => {
-                // Near integer beat boundary
-                let beat_frac = current_beat.to_f64().fract();
-                beat_frac < tolerance || beat_frac > (1.0 - tolerance)
+    ) -> Beat {
+        /// Smallest multiple of `grid` that is `>= value` (raw fixed-point).
+        fn ceil_to_multiple(value: i64, grid: i64) -> i64 {
+            if grid <= 0 {
+                return value;
             }
+            let floored = value.div_euclid(grid) * grid;
+            if floored == value {
+                value
+            } else {
+                floored + grid
+            }
+        }
+
+        match self {
+            ChangeQuant::Immediate => after,
+            ChangeQuant::NextBeat => Beat::from_raw(ceil_to_multiple(after.raw(), Beat::ONE.raw())),
             ChangeQuant::NextBar => {
-                // Near bar boundary (beat 0 of any bar)
-                let bar_length = time_sig.numerator as f64;
-                let position_in_bar = current_beat.to_f64() % bar_length;
-                position_in_bar < tolerance || position_in_bar > (bar_length - tolerance)
+                let bar = Beat::ONE.raw() * time_sig.numerator.max(1) as i64;
+                Beat::from_raw(ceil_to_multiple(after.raw(), bar))
             }
             ChangeQuant::NextCycle => {
-                // Near the start of the pattern/melody loop
-                let pos = loop_position.to_f64();
-                let len = loop_length.to_f64();
-                pos < tolerance || pos > (len - tolerance)
+                let rel = after.raw() - anchor.raw();
+                Beat::from_raw(anchor.raw() + ceil_to_multiple(rel, loop_length.raw()))
             }
+        }
+    }
+
+    /// Map the script-level quantization grid (`set_quantization(beats)`) to a
+    /// [`ChangeQuant`] for content swaps.
+    ///
+    /// `ScriptState::quantization` is a beat grid, but content swaps only
+    /// support the discrete boundaries of this enum, so the grid is snapped:
+    /// up to one beat → [`ChangeQuant::NextBeat`], up to one bar →
+    /// [`ChangeQuant::NextBar`], anything longer → [`ChangeQuant::NextCycle`].
+    ///
+    /// TODO: `quantization == 0.0` cannot be distinguished from "script never
+    /// called `set_quantization`" because `ScriptState::quantization` is a
+    /// plain `f64` defaulting to `0.0`. An explicit `set_quantization(0)`
+    /// therefore maps to the [`ChangeQuant::NextBar`] default instead of
+    /// [`ChangeQuant::Immediate`]. Honouring it requires
+    /// `ScriptState::quantization: Option<f64>` (reload/script_state.rs plus
+    /// the vibelang-rhai getters/setters).
+    pub fn from_grid(quantization: f64, time_sig: TimeSignature) -> Self {
+        if quantization <= 0.0 {
+            ChangeQuant::default()
+        } else if quantization <= 1.0 {
+            ChangeQuant::NextBeat
+        } else if quantization <= time_sig.numerator.max(1) as f64 {
+            ChangeQuant::NextBar
+        } else {
+            ChangeQuant::NextCycle
         }
     }
 }
@@ -673,6 +719,98 @@ mod tests {
             output_bus: None,
             output_channels: None,
         }
+    }
+
+    #[test]
+    fn next_boundary_next_beat_is_inclusive_ceiling() {
+        let ts = TimeSignature::new(4, 4);
+        let q = ChangeQuant::NextBeat;
+        // Strictly between beats: round up.
+        assert_eq!(
+            q.next_boundary(Beat::from_f64(7.25), Beat::ZERO, Beat::from_f64(4.0), ts),
+            Beat::from_f64(8.0)
+        );
+        // Exactly on a beat: the boundary itself (half-open windows mean the
+        // beat has not been scheduled yet).
+        assert_eq!(
+            q.next_boundary(Beat::from_f64(7.0), Beat::ZERO, Beat::from_f64(4.0), ts),
+            Beat::from_f64(7.0)
+        );
+    }
+
+    #[test]
+    fn next_boundary_next_bar_uses_time_signature() {
+        let q = ChangeQuant::NextBar;
+        let len = Beat::from_f64(4.0);
+        assert_eq!(
+            q.next_boundary(Beat::from_f64(7.99), Beat::ZERO, len, TimeSignature::new(4, 4)),
+            Beat::from_f64(8.0)
+        );
+        assert_eq!(
+            q.next_boundary(Beat::from_f64(8.0), Beat::ZERO, len, TimeSignature::new(4, 4)),
+            Beat::from_f64(8.0)
+        );
+        // Watermark just past the bar: defer to the NEXT bar — the current
+        // downbeat is already committed to the backend.
+        assert_eq!(
+            q.next_boundary(
+                Beat::from_raw(Beat::from_f64(8.0).raw() + 1),
+                Beat::ZERO,
+                len,
+                TimeSignature::new(4, 4)
+            ),
+            Beat::from_f64(12.0)
+        );
+        // 3/4 bars.
+        assert_eq!(
+            q.next_boundary(Beat::from_f64(7.0), Beat::ZERO, len, TimeSignature::new(3, 4)),
+            Beat::from_f64(9.0)
+        );
+    }
+
+    #[test]
+    fn next_boundary_next_cycle_respects_anchor() {
+        let q = ChangeQuant::NextCycle;
+        let ts = TimeSignature::new(4, 4);
+        // Loop of 3 beats anchored at beat 2: cycle boundaries at 2, 5, 8...
+        assert_eq!(
+            q.next_boundary(
+                Beat::from_f64(6.0),
+                Beat::from_f64(2.0),
+                Beat::from_f64(3.0),
+                ts
+            ),
+            Beat::from_f64(8.0)
+        );
+    }
+
+    #[test]
+    fn next_boundary_immediate_is_the_watermark() {
+        let ts = TimeSignature::new(4, 4);
+        assert_eq!(
+            ChangeQuant::Immediate.next_boundary(
+                Beat::from_f64(7.3),
+                Beat::ZERO,
+                Beat::from_f64(4.0),
+                ts
+            ),
+            Beat::from_f64(7.3)
+        );
+    }
+
+    #[test]
+    fn from_grid_maps_script_quantization() {
+        let ts = TimeSignature::new(4, 4);
+        assert_eq!(ChangeQuant::from_grid(0.0, ts), ChangeQuant::NextBar); // unset -> default
+        assert_eq!(ChangeQuant::from_grid(0.5, ts), ChangeQuant::NextBeat);
+        assert_eq!(ChangeQuant::from_grid(1.0, ts), ChangeQuant::NextBeat);
+        assert_eq!(ChangeQuant::from_grid(4.0, ts), ChangeQuant::NextBar);
+        assert_eq!(ChangeQuant::from_grid(8.0, ts), ChangeQuant::NextCycle);
+        // 3/4: anything above 3 beats is beyond a bar.
+        assert_eq!(
+            ChangeQuant::from_grid(4.0, TimeSignature::new(3, 4)),
+            ChangeQuant::NextCycle
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Melodies handler implementation.
 
+use super::patterns::{occurrences_in_window, resolve_window};
 use crate::backend::Backend;
 use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
@@ -116,74 +117,89 @@ impl<B: Backend> MelodiesHandler<B> {
                 );
             }
 
-            // Calculate tolerance for quantization boundary detection
-            // At 100Hz tick rate, ~10ms between ticks = ~0.02 beats at 120 BPM
-            let tolerance = 0.02 * tempo / 120.0;
             let time_sig = state.time_sig;
 
             for melody_id in melody_ids {
                 if let Some(melody) = state.melodies.get_mut(&melody_id) {
-                    // Check for pending content swap at musical boundary
-                    if melody.try_apply_pending(current_beat, time_sig, tolerance) {
-                        tracing::debug!(
-                            "Melody {:?}: applied pending content swap at beat {:.2}",
-                            melody_id,
-                            current_beat.to_f64()
-                        );
-                    }
-
-                    // Skip melodies with zero or near-zero length to prevent runaway triggering
-                    let min_length = Beat::from_f64(0.0625); // 1/64th note
-                    if !melody.playing || melody.content.length < min_length {
-                        tracing::trace!(
-                            "MelodiesHandler: melody {:?} skipped (playing={}, length={})",
-                            melody_id,
-                            melody.playing,
-                            melody.content.length.to_f64()
-                        );
+                    if !melody.playing {
                         continue;
                     }
 
-                    let length = melody.content.length;
-                    let last_pos = melody.loop_position;
+                    // Skip melodies with zero or near-zero length to prevent
+                    // runaway triggering. If a pending swap would give the
+                    // melody a usable length again, apply it immediately so
+                    // it can recover.
+                    let min_length = Beat::from_f64(0.0625); // 1/64th note
+                    if melody.content.length < min_length {
+                        melody.apply_pending_swap();
+                        if melody.content.length < min_length {
+                            tracing::trace!(
+                                "MelodiesHandler: melody {:?} skipped (length={})",
+                                melody_id,
+                                melody.content.length.to_f64()
+                            );
+                            continue;
+                        }
+                    }
 
-                    // Calculate lookahead position (where we're scheduling up to)
-                    // This is ahead of current_beat by the lookahead window
-                    let lookahead_pos = (current_beat + lookahead_beats) % length;
+                    // Scheduling runs on an absolute global-beat window
+                    // [w_from, w_to) — see PatternsHandler::tick. Melodies
+                    // are anchored at global beat 0 (absolute time).
+                    let (w_from, w_to) =
+                        resolve_window(melody.scheduled_until, current_beat, lookahead_beats);
+                    if w_to <= w_from {
+                        // Transport paused: the window is already covered.
+                        continue;
+                    }
 
-                    // Find notes that should be scheduled
-                    // Notes between last_pos (exclusive) and lookahead_pos (inclusive)
-                    let notes_to_trigger: Vec<NoteEvent> = if lookahead_pos < last_pos {
-                        // Wrapped around - schedule notes from last_pos to end and 0 to lookahead_pos
-                        melody
-                            .content
-                            .notes
-                            .iter()
-                            .filter(|n| n.beat > last_pos || n.beat <= lookahead_pos)
-                            .cloned()
-                            .collect()
-                    } else if last_pos == lookahead_pos {
-                        // First tick case: schedule notes exactly at this position
-                        melody
-                            .content
-                            .notes
-                            .iter()
-                            .filter(|n| n.beat == lookahead_pos)
-                            .cloned()
-                            .collect()
-                    } else {
-                        // Normal case - schedule notes between last_pos (exclusive) and lookahead_pos (inclusive)
-                        melody
-                            .content
-                            .notes
-                            .iter()
-                            .filter(|n| n.beat > last_pos && n.beat <= lookahead_pos)
-                            .cloned()
-                            .collect()
-                    };
+                    // Content swaps apply when the *lookahead* crosses the
+                    // quantization boundary: old content is scheduled strictly
+                    // before the boundary, new content from the boundary on,
+                    // so the new bar's downbeat always comes from the new
+                    // content.
+                    let boundary = melody
+                        .pending_swap_boundary(w_from, time_sig)
+                        .filter(|b| *b < w_to);
+                    let mut scheduled: Vec<(NoteEvent, Beat)> = Vec::new();
+                    match boundary {
+                        Some(b) => {
+                            scheduled.extend(occurrences_in_window(
+                                &melody.content.notes,
+                                |n| n.beat,
+                                melody.content.length,
+                                Beat::ZERO,
+                                w_from,
+                                b,
+                            ));
+                            melody.apply_pending_swap();
+                            tracing::debug!(
+                                "Melody {:?}: applied pending content swap at beat {:.2}",
+                                melody_id,
+                                b.to_f64()
+                            );
+                            scheduled.extend(occurrences_in_window(
+                                &melody.content.notes,
+                                |n| n.beat,
+                                melody.content.length,
+                                Beat::ZERO,
+                                b,
+                                w_to,
+                            ));
+                        }
+                        None => scheduled.extend(occurrences_in_window(
+                            &melody.content.notes,
+                            |n| n.beat,
+                            melody.content.length,
+                            Beat::ZERO,
+                            w_from,
+                            w_to,
+                        )),
+                    }
 
-                    // Update loop position to what we've scheduled up to
-                    melody.loop_position = lookahead_pos;
+                    // Advance the watermark and keep the loop-local mirror in
+                    // sync for observability (websocket status et al.).
+                    melody.scheduled_until = Some(w_to);
+                    melody.loop_position = w_to % melody.content.length;
 
                     // Get voice info for triggering
                     let melody_name = melody.content.name.clone();
@@ -220,27 +236,13 @@ impl<B: Backend> MelodiesHandler<B> {
                         .map(|v| v.config.params.get("amp").copied().unwrap_or(1.0))
                         .unwrap_or(1.0);
 
-                    for note_event in notes_to_trigger {
+                    for (note_event, abs_beat) in scheduled {
                         // Multiply voice amp by note velocity
                         let final_velocity = base_amp * note_event.velocity;
 
-                        // Calculate beat offset from current position to the note
-                        // We need to figure out how far ahead (in beats) the note is from current_beat
-                        let current_pos_in_loop = current_beat % length;
-                        let note_beat_in_loop = note_event.beat;
-
-                        // Calculate beat offset, handling wrap-around
-                        let beat_offset = if note_beat_in_loop >= current_pos_in_loop {
-                            // Note is ahead of current position in the loop
-                            note_beat_in_loop - current_pos_in_loop
-                        } else {
-                            // Note wrapped around (it's at the start of the next loop iteration)
-                            (length - current_pos_in_loop) + note_beat_in_loop
-                        };
-
-                        // Calculate wall-clock timestamp for note-on
-                        // offset_secs = beat_offset * 60.0 / tempo
-                        let offset_secs = beat_offset.to_f64() * 60.0 / tempo;
+                        // Wall-clock timestamp straight from the absolute
+                        // beat position of this occurrence.
+                        let offset_secs = (abs_beat - current_beat).to_f64() * 60.0 / tempo;
                         // Clamp to non-negative (schedule immediately if somehow in the past)
                         let on_timestamp = now + Duration::from_secs_f64(offset_secs.max(0.0));
 
@@ -523,13 +525,23 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
     async fn start(&self, id: MelodyId) -> Result<()> {
         let mut state = self.state.write().await;
 
+        let current_beat = state.current_beat;
         let melody = state
             .melodies
             .get_mut(&id)
             .ok_or(Error::MelodyNotFound(id))?;
 
         melody.playing = true;
-        melody.loop_position = Beat::ZERO;
+        // Melodies run on absolute song time (anchor 0), so starting one —
+        // cold boot, live `.start()`, or hot reload alike — means resuming
+        // the phase `current_beat % length`. The watermark starts at "now":
+        // nothing already passed fires (no burst), nothing ahead is skipped.
+        melody.scheduled_until = Some(current_beat);
+        melody.loop_position = if melody.content.length > Beat::ZERO {
+            current_beat % melody.content.length
+        } else {
+            Beat::ZERO
+        };
 
         Ok(())
     }
@@ -622,389 +634,74 @@ mod tests {
         }
     }
 
-    /// Filter notes that should trigger between last_pos and new_pos.
-    /// This mirrors the logic in MelodiesHandler::tick.
-    fn filter_notes(
-        notes: &[NoteEvent],
-        last_pos: Beat,
-        new_pos: Beat,
-        _length: Beat,
-    ) -> Vec<Beat> {
-        if new_pos < last_pos {
-            // Wrapped around - trigger notes from last_pos to end and 0 to new_pos
-            notes
-                .iter()
-                .filter(|n| n.beat >= last_pos || n.beat <= new_pos)
-                .map(|n| n.beat)
-                .collect()
-        } else if last_pos == new_pos {
-            // First tick case: trigger notes exactly at this position
-            notes
-                .iter()
-                .filter(|n| n.beat == new_pos)
-                .map(|n| n.beat)
-                .collect()
-        } else {
-            // Normal case - trigger notes between last_pos (exclusive) and new_pos (inclusive)
-            // Note: This is DIFFERENT from patterns! (exclusive start, inclusive end)
-            notes
-                .iter()
-                .filter(|n| n.beat > last_pos && n.beat <= new_pos)
-                .map(|n| n.beat)
-                .collect()
-        }
+    /// Absolute-beat occurrences of the given notes inside `[from, to)`,
+    /// looped at `length` and anchored at global beat 0 — thin wrapper over
+    /// the production helper used by `tick` (shared with patterns).
+    fn window(notes: &[NoteEvent], length: f64, from: f64, to: f64) -> Vec<f64> {
+        occurrences_in_window(
+            notes,
+            |n| n.beat,
+            Beat::from_f64(length),
+            Beat::ZERO,
+            Beat::from_f64(from),
+            Beat::from_f64(to),
+        )
+        .into_iter()
+        .map(|(_, abs)| abs.to_f64())
+        .collect()
     }
 
     // =========================================================================
-    // Basic Note Triggering Tests
+    // Scheduling-window tests (half-open [from, to), absolute beats)
     // =========================================================================
 
     #[test]
-    fn test_normal_tick_does_not_trigger_note_at_last_pos() {
-        // Note at 0.0, tick from 0.0 to 0.25
-        // Melody uses EXCLUSIVE start, so note at last_pos should NOT trigger
-        let notes = vec![note_at(0.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        // Note: This is the opposite of pattern behavior!
-        assert_eq!(
-            triggered.len(),
-            0,
-            "Note at last_pos should NOT trigger (exclusive)"
-        );
-    }
-
-    #[test]
-    fn test_normal_tick_triggers_note_at_new_pos() {
-        // Note at 0.25, tick from 0.0 to 0.25
-        // Melody uses INCLUSIVE end, so note at new_pos should trigger
+    fn window_start_inclusive_end_exclusive() {
         let notes = vec![note_at(0.25, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        // Note: This is the opposite of pattern behavior!
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Note at new_pos should trigger (inclusive)"
-        );
+        // Note exactly at the window start fires; exactly at the end it
+        // belongs to the next window — no double-fire across ticks.
+        assert_eq!(window(&notes, 4.0, 0.25, 0.5), vec![0.25]);
+        assert_eq!(window(&notes, 4.0, 0.0, 0.25), Vec::<f64>::new());
     }
 
     #[test]
-    fn test_normal_tick_triggers_note_between_positions() {
-        // Note at 0.125, tick from 0.0 to 0.25
-        let notes = vec![note_at(0.125, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 1, "Note between positions should trigger");
-    }
-
-    // =========================================================================
-    // First Tick Tests (last_pos == new_pos)
-    // =========================================================================
-
-    #[test]
-    fn test_first_tick_triggers_note_at_zero() {
-        // First tick: last_pos == new_pos == 0
-        let notes = vec![note_at(0.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.0),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 1, "Note at 0 should trigger on first tick");
+    fn window_wraps_across_loop_boundary() {
+        // Window straddling abs beat 4.0 of a 4-beat loop: catches the tail
+        // of iteration 0 and the head of iteration 1.
+        let notes = vec![note_at(0.0, 60), note_at(3.875, 62)];
+        assert_eq!(window(&notes, 4.0, 3.85, 4.05), vec![3.875, 4.0]);
     }
 
     #[test]
-    fn test_first_tick_only_triggers_exact_match() {
-        // First tick at 0.5, notes at 0.0, 0.5, 1.0
+    fn consecutive_windows_never_double_fire() {
         let notes = vec![note_at(0.0, 60), note_at(0.5, 62), note_at(1.0, 64)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.5),
-            Beat::from_f64(0.5),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Only exact match should trigger on first tick"
-        );
-        assert_eq!(triggered[0].to_f64(), 0.5);
-    }
-
-    // =========================================================================
-    // Loop Wrap-Around Tests (Critical Edge Cases)
-    // =========================================================================
-
-    #[test]
-    fn test_wrap_triggers_note_at_zero() {
-        // Melody loops: last_pos = 3.75, new_pos = 0.25
-        // Note at 0.0 should trigger
-        let notes = vec![note_at(0.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 1, "Note at 0 should trigger after wrap");
+        let mut all = Vec::new();
+        let mut from = 0.0;
+        while from < 4.0 {
+            all.extend(window(&notes, 4.0, from, from + 0.1));
+            from += 0.1;
+        }
+        assert_eq!(all, vec![0.0, 0.5, 1.0]);
     }
 
     #[test]
-    fn test_wrap_triggers_note_near_end() {
-        // Melody loops: last_pos = 3.75, new_pos = 0.25
-        // Note at 3.875 should trigger (between 3.75 and end)
-        let notes = vec![note_at(3.875, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Note near end should trigger during wrap"
-        );
+    fn very_short_melody_yields_every_iteration() {
+        // 0.5-beat loop with notes at 0.0 and 0.125: a window across the wrap
+        // catches both the tail and the next head — and nothing twice.
+        let notes = vec![note_at(0.0, 60), note_at(0.125, 62)];
+        assert_eq!(window(&notes, 0.5, 0.25, 0.6), vec![0.5]);
+        assert_eq!(window(&notes, 0.5, 0.0625, 0.25), vec![0.125]);
     }
 
     #[test]
-    fn test_wrap_triggers_note_at_new_pos() {
-        // Melody loops: last_pos = 3.75, new_pos = 0.25
-        // Note at 0.25 should trigger (inclusive during wrap)
-        let notes = vec![note_at(0.25, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Note at new_pos should trigger during wrap"
-        );
-    }
-
-    #[test]
-    fn test_wrap_does_not_double_trigger() {
-        // Melody loops: last_pos = 3.75, new_pos = 0.25
-        // Note at 0.5 should NOT trigger (it's past new_pos)
-        let notes = vec![note_at(0.5, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(
-            triggered.len(),
-            0,
-            "Note past new_pos should NOT trigger during wrap"
-        );
-    }
-
-    #[test]
-    fn test_wrap_multiple_notes() {
-        // Melody loops: last_pos = 3.5, new_pos = 0.5
-        // Notes at 3.75, 0.0, 0.25, 0.5 should all trigger
-        // Note at 1.0 should NOT trigger
-        let notes = vec![
-            note_at(3.75, 60),
-            note_at(0.0, 62),
-            note_at(0.25, 64),
-            note_at(0.5, 65),
-            note_at(1.0, 67),
-        ];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(3.5),
-            Beat::from_f64(0.5),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 4, "4 notes should trigger during wrap");
-    }
-
-    // =========================================================================
-    // CRITICAL: Pattern vs Melody Boundary Difference
-    // =========================================================================
-
-    /// This test documents the DIFFERENCE between pattern and melody triggering.
-    /// - Patterns: last_pos INCLUSIVE, new_pos EXCLUSIVE
-    /// - Melodies: last_pos EXCLUSIVE, new_pos INCLUSIVE
-    ///
-    /// This means a note at beat 1.0 with tick from 0.75 to 1.0:
-    /// - Pattern: Would NOT trigger (1.0 < new_pos is false)
-    /// - Melody: WOULD trigger (1.0 <= new_pos is true)
-    #[test]
-    fn test_melody_boundary_is_inclusive() {
-        let notes = vec![note_at(1.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.75),
-            Beat::from_f64(1.0),
-            Beat::from_f64(4.0),
-        );
-        // In melody, new_pos is INCLUSIVE
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Melody should trigger at new_pos (inclusive)"
-        );
-    }
-
-    /// And the note at last_pos should NOT trigger in melody (but WOULD in pattern).
-    #[test]
-    fn test_melody_last_pos_is_exclusive() {
-        let notes = vec![note_at(0.75, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.75),
-            Beat::from_f64(1.0),
-            Beat::from_f64(4.0),
-        );
-        // In melody, last_pos is EXCLUSIVE
-        assert_eq!(
-            triggered.len(),
-            0,
-            "Melody should NOT trigger at last_pos (exclusive)"
-        );
-    }
-
-    // =========================================================================
-    // Note at Beat 0 After Start
-    // =========================================================================
-
-    #[test]
-    fn test_note_at_zero_triggers_on_first_tick_only() {
-        // First tick (last_pos == new_pos == 0): should trigger
-        let notes = vec![note_at(0.0, 60)];
-        let first_tick = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.0),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(first_tick.len(), 1, "Should trigger on first tick");
-
-        // Second tick (last_pos = 0, new_pos = 0.25): should NOT trigger again
-        let second_tick = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(
-            second_tick.len(),
-            0,
-            "Should NOT re-trigger on second tick (exclusive start)"
-        );
-    }
-
-    // =========================================================================
-    // Short Melody Tests
-    // =========================================================================
-
-    #[test]
-    fn test_very_short_melody_half_beat() {
-        // 0.5 beat melody with note at 0.25
-        let notes = vec![note_at(0.25, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(0.5),
-        );
-        assert_eq!(triggered.len(), 1);
-    }
-
-    #[test]
-    fn test_very_short_melody_wrap() {
-        // 0.5 beat melody, tick from 0.4 to 0.1 (wraps)
-        let notes = vec![note_at(0.0, 60), note_at(0.1, 62)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.4),
-            Beat::from_f64(0.1),
-            Beat::from_f64(0.5),
-        );
-        // Should trigger 0.0 and 0.1 (both after wrap, 0.0 >= 0.4 is false, 0.0 <= 0.1 is true)
-        assert_eq!(triggered.len(), 2);
-    }
-
-    // =========================================================================
-    // Multiple Notes at Same Beat
-    // =========================================================================
-
-    #[test]
-    fn test_multiple_notes_at_same_beat() {
+    fn multiple_notes_at_same_beat_all_fire() {
         // Chord: multiple notes at beat 0.5
         let notes = vec![
             note_at(0.5, 60), // C
             note_at(0.5, 64), // E
             note_at(0.5, 67), // G
         ];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.25),
-            Beat::from_f64(0.5),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 3, "All chord notes should trigger");
-    }
-
-    // =========================================================================
-    // Boundary Precision Tests
-    // =========================================================================
-
-    #[test]
-    fn test_note_exactly_at_boundary_normal() {
-        // Test the exact boundary behavior
-        // Note at 1.0, tick from 0.5 to 1.0
-        let notes = vec![note_at(1.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.5),
-            Beat::from_f64(1.0),
-            Beat::from_f64(4.0),
-        );
-        // new_pos is INCLUSIVE in melody (unlike pattern)
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Boundary should be INCLUSIVE in normal tick"
-        );
-    }
-
-    #[test]
-    fn test_note_not_retriggered_next_tick() {
-        // The note at 1.0 should NOT trigger again on the next tick
-        let notes = vec![note_at(1.0, 60)];
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(1.0),
-            Beat::from_f64(1.25),
-            Beat::from_f64(4.0),
-        );
-        // last_pos is EXCLUSIVE in melody, so note at 1.0 won't trigger again
-        assert_eq!(
-            triggered.len(),
-            0,
-            "Note should NOT re-trigger when it becomes last_pos"
-        );
+        assert_eq!(window(&notes, 4.0, 0.25, 0.75).len(), 3);
     }
 
     // =========================================================================
@@ -1028,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_note_with_params_triggers_correctly() {
-        // Ensure notes with params are still found by filter_notes
+        // Ensure notes with params are still found by the scheduling window
         let mut params = std::collections::HashMap::new();
         params.insert("cutoff".to_string(), 2000.0_f32);
 
@@ -1037,12 +734,7 @@ mod tests {
             note_at(1.0, 62), // no params
         ];
 
-        let triggered = filter_notes(
-            &notes,
-            Beat::from_f64(0.0),
-            Beat::from_f64(1.0),
-            Beat::from_f64(4.0),
-        );
+        let triggered = window(&notes, 4.0, 0.0, 1.25);
         assert_eq!(
             triggered.len(),
             2,

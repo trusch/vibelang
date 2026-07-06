@@ -19,6 +19,63 @@ use std::time::Duration;
 /// precise wall-clock timestamps.
 const LOOKAHEAD_MS: u64 = 50;
 
+/// Resolve the absolute scheduling window `[w_from, w_to)` for this tick.
+///
+/// `w_from` continues seamlessly from the stored watermark when it is sane
+/// (between `current_beat` and the lookahead horizon — the steady state).
+/// A missing watermark (fresh start), a stale one (transport was paused or
+/// the entity was stopped for a while), or one beyond the horizon (transport
+/// jumped backwards) all self-heal to `current_beat`: scheduling resumes from
+/// "now" and never retro-fires a backlog as a burst.
+pub(crate) fn resolve_window(
+    scheduled_until: Option<Beat>,
+    current_beat: Beat,
+    lookahead_beats: Beat,
+) -> (Beat, Beat) {
+    let w_to = current_beat + lookahead_beats;
+    let w_from = match scheduled_until {
+        Some(su) if su >= current_beat && su <= w_to => su,
+        _ => current_beat,
+    };
+    (w_from, w_to)
+}
+
+/// All occurrences of looped items inside the half-open global-beat window
+/// `[from, to)`, with their absolute beat positions.
+///
+/// An item at loop-local beat `b` occurs at `anchor + k * length + b` for
+/// every integer `k >= 0`. Because the watermark is absolute, loops shorter
+/// than the lookahead window simply yield several occurrences per item —
+/// no aliasing, no double-fires, no skipped iterations. Results are sorted
+/// by absolute beat so dispatch order matches musical order.
+pub(crate) fn occurrences_in_window<T: Clone>(
+    items: &[T],
+    beat_of: impl Fn(&T) -> Beat,
+    length: Beat,
+    anchor: Beat,
+    from: Beat,
+    to: Beat,
+) -> Vec<(T, Beat)> {
+    let mut out = Vec::new();
+    let len = length.raw();
+    if len <= 0 || to <= from {
+        return out;
+    }
+    for item in items {
+        // First iteration k >= 0 with anchor + k*len + beat >= from.
+        let base = anchor.raw() + beat_of(item).raw();
+        let diff = from.raw() - base;
+        let k = if diff <= 0 { 0 } else { diff.div_euclid(len) + i64::from(diff.rem_euclid(len) != 0) };
+        let mut abs = base + k * len;
+        while abs < to.raw() {
+            out.push((item.clone(), Beat::from_raw(abs)));
+            abs += len;
+        }
+    }
+    out.sort_by_key(|(_, abs)| abs.raw());
+    out
+}
+
 /// Handler for pattern operations.
 pub struct PatternsHandler<B: Backend> {
     state: Arc<RwLock<State>>,
@@ -84,6 +141,40 @@ impl<B: Backend> PatternsHandler<B> {
         Ok(())
     }
 
+    /// Start a pattern phase-locked to the song grid (hot-reload semantics).
+    ///
+    /// Unlike [`Patterns::start`], which anchors the pattern's beat 0 to
+    /// "now" (what a live `.start()` or a looper wants), this anchors it to
+    /// the most recent grid multiple of its own length:
+    /// `start_beat = current_beat - current_beat % length`. A pattern started
+    /// by a reload mid-song therefore plays exactly the phase a cold boot of
+    /// the same script would be playing at this beat — reload == cold boot.
+    /// The watermark starts at `current_beat`, so nothing already passed
+    /// fires (no burst) and nothing still ahead in the bar is skipped.
+    pub async fn start_on_grid(&self, id: PatternId) -> Result<()> {
+        let mut state = self.state.write().await;
+
+        let current_beat = state.current_beat;
+        let pattern = state
+            .patterns
+            .get_mut(&id)
+            .ok_or(Error::PatternNotFound(id))?;
+
+        let length = pattern.content.length;
+        pattern.playing = true;
+        if length > Beat::ZERO {
+            let phase = current_beat % length;
+            pattern.start_beat = current_beat - phase;
+            pattern.loop_position = phase;
+        } else {
+            pattern.start_beat = current_beat;
+            pattern.loop_position = Beat::ZERO;
+        }
+        pattern.scheduled_until = Some(current_beat);
+
+        Ok(())
+    }
+
     /// Process patterns for the current beat.
     ///
     /// Called by the runtime's tick loop to trigger pattern events.
@@ -120,74 +211,95 @@ impl<B: Backend> PatternsHandler<B> {
                 );
             }
 
-            // Calculate tolerance for quantization boundary detection
-            // At 100Hz tick rate, ~10ms between ticks = ~0.02 beats at 120 BPM
-            let tolerance = 0.02 * tempo / 120.0;
             let time_sig = state.time_sig;
 
             for pattern_id in pattern_ids {
                 if let Some(pattern) = state.patterns.get_mut(&pattern_id) {
-                    // Check for pending content swap at musical boundary
-                    if pattern.try_apply_pending(current_beat, time_sig, tolerance) {
-                        tracing::debug!(
-                            "Pattern {:?}: applied pending content swap at beat {:.2}",
-                            pattern_id,
-                            current_beat.to_f64()
-                        );
-                    }
-
-                    // Skip patterns with zero or near-zero length to prevent runaway triggering
-                    let min_length = Beat::from_f64(0.0625); // 1/64th note
-                    if !pattern.playing || pattern.content.length < min_length {
+                    if !pattern.playing {
                         continue;
                     }
 
-                    let length = pattern.content.length;
-                    let last_pos = pattern.loop_position;
+                    // Skip patterns with zero or near-zero length to prevent
+                    // runaway triggering. If a pending swap would give the
+                    // pattern a usable length again, apply it immediately so
+                    // it can recover.
+                    let min_length = Beat::from_f64(0.0625); // 1/64th note
+                    if pattern.content.length < min_length {
+                        pattern.apply_pending_swap(current_beat);
+                        if pattern.content.length < min_length {
+                            continue;
+                        }
+                    }
 
-                    // Position math runs in pattern-local time so playback
-                    // always starts at the pattern's beat 0, not at
-                    // `current_beat % length`. Clamp to zero in case a clock
-                    // jump moved `current_beat` backwards past `start_beat`.
-                    let elapsed_beats =
-                        Beat::from_f64((current_beat - pattern.start_beat).to_f64().max(0.0));
+                    // Scheduling runs on an absolute global-beat window
+                    // [w_from, w_to): everything before w_from was dispatched
+                    // by earlier ticks, everything in the window is dispatched
+                    // now with precise timestamps. The half-open convention
+                    // means a step exactly at w_from was already scheduled and
+                    // a step exactly at w_to belongs to the next tick.
+                    let (w_from, w_to) =
+                        resolve_window(pattern.scheduled_until, current_beat, lookahead_beats);
+                    if w_to <= w_from {
+                        // Transport paused: the window is already covered.
+                        continue;
+                    }
 
-                    // Calculate lookahead position (where we're scheduling up to)
-                    let lookahead_pos = (elapsed_beats + lookahead_beats) % length;
+                    // Content swaps are decided against the *watermark*, not
+                    // current_beat: if the quantization boundary falls inside
+                    // this window, schedule the old content strictly before
+                    // the boundary, swap, then schedule the new content from
+                    // the boundary on. This is what makes a NextBar swap play
+                    // the NEW content's downbeat — with the old current_beat
+                    // check the lookahead had already scheduled ~50ms past
+                    // the bar line with old content.
+                    let boundary = pattern
+                        .pending_swap_boundary(w_from, time_sig)
+                        .filter(|b| *b < w_to);
+                    let mut scheduled: Vec<(Step, Beat)> = Vec::new();
+                    match boundary {
+                        Some(b) => {
+                            scheduled.extend(occurrences_in_window(
+                                &pattern.content.steps,
+                                |s| s.beat,
+                                pattern.content.length,
+                                pattern.start_beat,
+                                w_from,
+                                b,
+                            ));
+                            pattern.apply_pending_swap(b);
+                            tracing::debug!(
+                                "Pattern {:?}: applied pending content swap at beat {:.2}",
+                                pattern_id,
+                                b.to_f64()
+                            );
+                            scheduled.extend(occurrences_in_window(
+                                &pattern.content.steps,
+                                |s| s.beat,
+                                pattern.content.length,
+                                pattern.start_beat,
+                                b,
+                                w_to,
+                            ));
+                        }
+                        None => scheduled.extend(occurrences_in_window(
+                            &pattern.content.steps,
+                            |s| s.beat,
+                            pattern.content.length,
+                            pattern.start_beat,
+                            w_from,
+                            w_to,
+                        )),
+                    }
 
-                    // Find steps that should be scheduled
-                    // Steps between last_pos (exclusive) and lookahead_pos (inclusive)
-                    let steps_to_trigger: Vec<Step> = if lookahead_pos < last_pos {
-                        // Wrapped around - schedule steps AFTER last_pos to end, and 0 to lookahead_pos
-                        pattern
-                            .content
-                            .steps
-                            .iter()
-                            .filter(|s| s.beat > last_pos || s.beat <= lookahead_pos)
-                            .cloned()
-                            .collect()
-                    } else if last_pos == lookahead_pos {
-                        // First tick case: schedule steps exactly at this position
-                        pattern
-                            .content
-                            .steps
-                            .iter()
-                            .filter(|s| s.beat == lookahead_pos)
-                            .cloned()
-                            .collect()
+                    // Advance the watermark to what we've scheduled up to and
+                    // keep the loop-local mirror in sync for observability
+                    // (websocket status et al.).
+                    pattern.scheduled_until = Some(w_to);
+                    pattern.loop_position = if w_to > pattern.start_beat {
+                        (w_to - pattern.start_beat) % pattern.content.length
                     } else {
-                        // Normal case - schedule steps between last_pos (exclusive) and lookahead_pos (inclusive)
-                        pattern
-                            .content
-                            .steps
-                            .iter()
-                            .filter(|s| s.beat > last_pos && s.beat <= lookahead_pos)
-                            .cloned()
-                            .collect()
+                        Beat::ZERO
                     };
-
-                    // Update loop position to what we've scheduled up to
-                    pattern.loop_position = lookahead_pos;
 
                     // Get voice info for triggering
                     let voice_id = match pattern.content.voice {
@@ -202,7 +314,7 @@ impl<B: Backend> PatternsHandler<B> {
                         .map(|v| v.config.params.clone())
                         .unwrap_or_default();
 
-                    for step in steps_to_trigger {
+                    for (step, abs_beat) in scheduled {
                         // Merge voice params with step params
                         let mut params = base_params.clone();
 
@@ -215,24 +327,9 @@ impl<B: Backend> PatternsHandler<B> {
                         params.extend(step.params.clone());
                         params.insert("amp".to_string(), final_amp);
 
-                        // Calculate beat offset and wall-clock timestamp
-                        // We need to figure out how far ahead (in beats) the
-                        // step is from `current_beat`. Use pattern-local time
-                        // so the offset is measured against the pattern's own
-                        // beat 0, matching the `lookahead_pos` math above.
-                        let current_pos_in_loop = elapsed_beats % length;
-                        let step_beat = step.beat;
-
-                        // Calculate beat offset, handling wrap-around
-                        let beat_offset = if step_beat >= current_pos_in_loop {
-                            // Step is ahead of current position in the loop
-                            step_beat - current_pos_in_loop
-                        } else {
-                            // Step wrapped around (it's at the start of the next loop iteration)
-                            (length - current_pos_in_loop) + step_beat
-                        };
-
-                        let offset_secs = beat_offset.to_f64() * 60.0 / tempo;
+                        // Wall-clock timestamp straight from the absolute beat
+                        // position of this occurrence.
+                        let offset_secs = (abs_beat - current_beat).to_f64() * 60.0 / tempo;
                         // Clamp to non-negative (schedule immediately if somehow in the past)
                         let timestamp = now + Duration::from_secs_f64(offset_secs.max(0.0));
 
@@ -409,6 +506,10 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
         // between "playback starts at the beginning of what you played" and
         // "playback starts at a random offset into the recording".
         pattern.start_beat = current_beat;
+        // Reset the watermark so the first tick's window starts at "now" —
+        // a step at the pattern's beat 0 fires immediately (half-open window
+        // is inclusive at the start).
+        pattern.scheduled_until = Some(current_beat);
 
         Ok(())
     }
@@ -510,116 +611,144 @@ mod tests {
         }
     }
 
-    /// Filter steps that should trigger between last_pos and new_pos.
-    /// This mirrors the logic in PatternsHandler::tick.
-    ///
-    /// Boundary convention (same as melodies):
-    /// - last_pos: EXCLUSIVE (already triggered on previous tick)
-    /// - new_pos: INCLUSIVE (current position)
-    fn filter_steps(steps: &[Step], last_pos: Beat, new_pos: Beat, length: Beat) -> Vec<Beat> {
-        if new_pos < last_pos {
-            // Wrapped around - trigger steps AFTER last_pos to end, and 0 to new_pos (inclusive)
-            // Note: steps must be < length (enforced by validation)
-            steps
-                .iter()
-                .filter(|s| s.beat < length && (s.beat > last_pos || s.beat <= new_pos))
-                .map(|s| s.beat)
-                .collect()
-        } else if last_pos == new_pos {
-            // First tick case: trigger steps exactly at this position
-            steps
-                .iter()
-                .filter(|s| s.beat == new_pos)
-                .map(|s| s.beat)
-                .collect()
-        } else {
-            // Normal case - trigger steps between last_pos (exclusive) and new_pos (inclusive)
-            steps
-                .iter()
-                .filter(|s| s.beat > last_pos && s.beat <= new_pos)
-                .map(|s| s.beat)
-                .collect()
-        }
+    /// Absolute-beat occurrences of the given steps inside `[from, to)`,
+    /// looped at `length` with grid anchor `anchor` — thin wrapper over the
+    /// production helper used by `tick`.
+    fn window(steps: &[Step], anchor: f64, length: f64, from: f64, to: f64) -> Vec<f64> {
+        occurrences_in_window(
+            steps,
+            |s| s.beat,
+            Beat::from_f64(length),
+            Beat::from_f64(anchor),
+            Beat::from_f64(from),
+            Beat::from_f64(to),
+        )
+        .into_iter()
+        .map(|(_, abs)| abs.to_f64())
+        .collect()
     }
 
     // =========================================================================
-    // Basic Step Triggering Tests
+    // Scheduling-window tests (half-open [from, to), absolute beats)
     // =========================================================================
-    //
-    // Boundary convention: (last_pos, new_pos]
-    // - last_pos: EXCLUSIVE (was already triggered on previous tick)
-    // - new_pos: INCLUSIVE (current position)
 
     #[test]
-    fn test_normal_tick_does_not_trigger_step_at_last_pos() {
+    fn window_start_is_inclusive() {
+        // Step exactly at the window start fires: this is what makes a fresh
+        // start() play the pattern's downbeat immediately.
         let steps = vec![step_at(0.0)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 0);
+        assert_eq!(window(&steps, 0.0, 4.0, 0.0, 0.1), vec![0.0]);
     }
 
     #[test]
-    fn test_normal_tick_triggers_step_at_new_pos() {
+    fn window_end_is_exclusive_and_next_window_picks_it_up() {
         let steps = vec![step_at(0.25)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 1);
+        assert_eq!(window(&steps, 0.0, 4.0, 0.0, 0.25), Vec::<f64>::new());
+        assert_eq!(window(&steps, 0.0, 4.0, 0.25, 0.5), vec![0.25]);
     }
 
     #[test]
-    fn test_normal_tick_triggers_step_between_positions() {
-        let steps = vec![step_at(0.125)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
-        );
-        assert_eq!(triggered.len(), 1);
+    fn consecutive_windows_never_double_fire() {
+        let steps = vec![step_at(0.0), step_at(0.5), step_at(1.0)];
+        let mut all = Vec::new();
+        let mut from = 0.0;
+        while from < 4.0 {
+            all.extend(window(&steps, 0.0, 4.0, from, from + 0.1));
+            from += 0.1;
+        }
+        assert_eq!(all, vec![0.0, 0.5, 1.0]);
     }
 
     #[test]
-    fn test_first_tick_triggers_step_at_zero() {
+    fn window_wraps_across_loop_boundary() {
+        // Window [3.95, 4.05) over a 4-beat loop: catches the second
+        // iteration's step at abs 4.0 (loop-local 0.0).
+        let steps = vec![step_at(0.0), step_at(3.875)];
+        assert_eq!(window(&steps, 0.0, 4.0, 3.95, 4.05), vec![4.0]);
+        assert_eq!(window(&steps, 0.0, 4.0, 3.85, 4.05), vec![3.875, 4.0]);
+    }
+
+    #[test]
+    fn window_respects_anchor() {
+        // Pattern anchored at beat 8 (grid multiple): loop-local 0.5 occurs
+        // at abs 8.5, 12.5, ...
+        let steps = vec![step_at(0.5)];
+        assert_eq!(window(&steps, 8.0, 4.0, 12.4, 12.6), vec![12.5]);
+        // Before the anchor nothing fires (k >= 0).
+        assert_eq!(window(&steps, 8.0, 4.0, 4.0, 8.0), Vec::<f64>::new());
+    }
+
+    #[test]
+    fn short_loop_yields_multiple_occurrences_in_one_window() {
+        // Loop shorter than the window: every iteration is distinct — no
+        // aliasing, no skipped iteration.
         let steps = vec![step_at(0.0)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(0.0),
-            Beat::from_f64(0.0),
-            Beat::from_f64(4.0),
+        assert_eq!(
+            window(&steps, 0.0, 0.0625, 0.0, 0.2),
+            vec![0.0, 0.0625, 0.125, 0.1875]
         );
-        assert_eq!(triggered.len(), 1);
     }
 
     #[test]
-    fn test_wrap_triggers_step_at_zero() {
-        let steps = vec![step_at(0.0)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
+    fn window_results_sorted_by_absolute_beat() {
+        let steps = vec![step_at(3.5), step_at(0.5)];
+        assert_eq!(window(&steps, 0.0, 4.0, 3.0, 5.0), vec![3.5, 4.5]);
+    }
+
+    // =========================================================================
+    // resolve_window: watermark continuation and self-healing
+    // =========================================================================
+
+    #[test]
+    fn resolve_window_continues_from_watermark() {
+        let (from, to) = resolve_window(
+            Some(Beat::from_f64(9.05)),
+            Beat::from_f64(9.0),
+            Beat::from_f64(0.1),
         );
-        assert_eq!(triggered.len(), 1);
+        assert_eq!(from, Beat::from_f64(9.05));
+        assert_eq!(to, Beat::from_f64(9.1));
     }
 
     #[test]
-    fn test_wrap_triggers_step_near_end() {
-        let steps = vec![step_at(3.875)];
-        let triggered = filter_steps(
-            &steps,
-            Beat::from_f64(3.75),
-            Beat::from_f64(0.25),
-            Beat::from_f64(4.0),
+    fn resolve_window_fresh_start_begins_now() {
+        let (from, to) = resolve_window(None, Beat::from_f64(9.3), Beat::from_f64(0.1));
+        assert_eq!(from, Beat::from_f64(9.3));
+        assert_eq!(to, Beat::from_f64(9.3) + Beat::from_f64(0.1));
+    }
+
+    #[test]
+    fn resolve_window_stale_watermark_heals_without_retro_burst() {
+        // Entity was stopped/paused for a while: watermark far behind.
+        let (from, _) = resolve_window(
+            Some(Beat::from_f64(2.0)),
+            Beat::from_f64(9.3),
+            Beat::from_f64(0.1),
         );
-        assert_eq!(triggered.len(), 1);
+        assert_eq!(from, Beat::from_f64(9.3));
+    }
+
+    #[test]
+    fn resolve_window_future_watermark_heals_after_backwards_jump() {
+        // Transport jumped backwards: watermark beyond the horizon.
+        let (from, to) = resolve_window(
+            Some(Beat::from_f64(20.0)),
+            Beat::from_f64(1.0),
+            Beat::from_f64(0.1),
+        );
+        assert_eq!(from, Beat::from_f64(1.0));
+        assert_eq!(to, Beat::from_f64(1.1));
+    }
+
+    #[test]
+    fn resolve_window_paused_transport_is_a_noop() {
+        // Steady state right after a pause: watermark == horizon.
+        let (from, to) = resolve_window(
+            Some(Beat::from_f64(9.1)),
+            Beat::from_f64(9.0),
+            Beat::from_f64(0.1),
+        );
+        assert_eq!(from, to);
     }
 
     // =========================================================================

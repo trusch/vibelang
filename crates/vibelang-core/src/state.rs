@@ -178,6 +178,20 @@ pub struct PatternState {
     /// `17 % 4 = 1.0` — the middle of the recording.
     pub start_beat: Beat,
 
+    /// Absolute global beat up to which (exclusive) the tick loop has already
+    /// scheduled steps.
+    ///
+    /// This is the authoritative scheduling watermark: each tick schedules the
+    /// half-open window `[scheduled_until, current_beat + lookahead)` and then
+    /// advances it. Unlike `loop_position` it is not modulo the loop length,
+    /// so loops shorter than the lookahead window and content-length changes
+    /// cannot alias it into re-scheduling (burst) or skipping steps.
+    /// `None` means "not scheduled yet" — the next tick starts the window at
+    /// `current_beat`. The tick loop also self-heals to `current_beat` if the
+    /// value is stale (transport pause) or in the future beyond the lookahead
+    /// (transport jumped backwards); no retro-scheduling ever happens.
+    pub scheduled_until: Option<Beat>,
+
     /// Pending content swap for hot reload.
     /// When set, the new content will be applied at the specified quantization boundary.
     pub pending_content: Option<(Arc<PatternContent>, ChangeQuant)>,
@@ -198,6 +212,7 @@ impl PatternState {
             playing: false,
             loop_position: Beat::ZERO,
             start_beat: Beat::ZERO,
+            scheduled_until: None,
             pending_content: None,
         }
     }
@@ -219,35 +234,42 @@ impl PatternState {
         self.pending_content = Some((new_content, quant));
     }
 
-    /// Apply pending content swap if conditions are met.
-    /// Returns true if content was swapped.
-    pub fn try_apply_pending(
-        &mut self,
-        current_beat: Beat,
+    /// The global beat at which the queued content swap should apply, given
+    /// the scheduler's watermark (see [`ChangeQuant::next_boundary`]).
+    ///
+    /// Returns `None` when no swap is pending. The tick loop applies the swap
+    /// via [`Self::apply_pending_swap`] once the boundary falls inside the
+    /// lookahead window — i.e. *before* any step past the boundary is
+    /// scheduled with the old content.
+    pub fn pending_swap_boundary(
+        &self,
+        watermark: Beat,
         time_sig: crate::types::TimeSignature,
-        tolerance: f64,
-    ) -> bool {
-        if let Some((new_content, quant)) = &self.pending_content {
-            if quant.should_apply(
-                current_beat,
-                self.loop_position,
-                self.content.length,
-                time_sig,
-                tolerance,
-            ) {
-                let new_content = new_content.clone();
-                self.pending_content = None;
+    ) -> Option<Beat> {
+        self.pending_content.as_ref().map(|(_, quant)| {
+            quant.next_boundary(watermark, self.start_beat, self.content.length, time_sig)
+        })
+    }
 
-                // If length changed and we're past the new length, reset to start
-                if self.loop_position >= new_content.length {
-                    self.loop_position = Beat::ZERO;
-                }
-
-                self.content = new_content;
-                return true;
-            }
+    /// Apply the queued content swap as of the given global-beat boundary.
+    /// Returns true if content was swapped.
+    ///
+    /// When the loop length changes, the pattern is re-anchored to the song
+    /// grid of the *new* length (`start_beat = boundary - boundary % new_len`)
+    /// so post-swap phase matches what a cold boot of the new script would
+    /// play at the same beat. The watermark (`scheduled_until`) is left
+    /// untouched — it is absolute, so a shrunk loop cannot alias it into
+    /// scheduling a whole loop at once (no burst) and a grown loop cannot
+    /// skip pending steps. `loop_position` is re-derived by the next tick.
+    pub fn apply_pending_swap(&mut self, boundary: Beat) -> bool {
+        let Some((new_content, _)) = self.pending_content.take() else {
+            return false;
+        };
+        if new_content.length != self.content.length && new_content.length > Beat::ZERO {
+            self.start_beat = boundary - (boundary % new_content.length);
         }
-        false
+        self.content = new_content;
+        true
     }
 }
 
@@ -271,6 +293,11 @@ pub struct MelodyState {
     /// Current loop position.
     pub loop_position: Beat,
 
+    /// Absolute global beat up to which (exclusive) the tick loop has already
+    /// scheduled notes. See [`PatternState::scheduled_until`] — same watermark
+    /// semantics; melodies are anchored at global beat 0 (absolute time).
+    pub scheduled_until: Option<Beat>,
+
     /// Pending content swap for hot reload.
     /// When set, the new content will be applied at the specified quantization boundary.
     pub pending_content: Option<(Arc<MelodyContent>, ChangeQuant)>,
@@ -284,6 +311,7 @@ impl MelodyState {
             content: MelodyContent::arc_from_config(&config),
             playing: false,
             loop_position: Beat::ZERO,
+            scheduled_until: None,
             pending_content: None,
         }
     }
@@ -305,35 +333,32 @@ impl MelodyState {
         self.pending_content = Some((new_content, quant));
     }
 
-    /// Apply pending content swap if conditions are met.
-    /// Returns true if content was swapped.
-    pub fn try_apply_pending(
-        &mut self,
-        current_beat: Beat,
+    /// The global beat at which the queued content swap should apply, given
+    /// the scheduler's watermark. See [`PatternState::pending_swap_boundary`];
+    /// melodies are anchored at global beat 0.
+    pub fn pending_swap_boundary(
+        &self,
+        watermark: Beat,
         time_sig: crate::types::TimeSignature,
-        tolerance: f64,
-    ) -> bool {
-        if let Some((new_content, quant)) = &self.pending_content {
-            if quant.should_apply(
-                current_beat,
-                self.loop_position,
-                self.content.length,
-                time_sig,
-                tolerance,
-            ) {
-                let new_content = new_content.clone();
-                self.pending_content = None;
+    ) -> Option<Beat> {
+        self.pending_content.as_ref().map(|(_, quant)| {
+            quant.next_boundary(watermark, Beat::ZERO, self.content.length, time_sig)
+        })
+    }
 
-                // If length changed and we're past the new length, reset to start
-                if self.loop_position >= new_content.length {
-                    self.loop_position = Beat::ZERO;
-                }
-
-                self.content = new_content;
-                return true;
-            }
-        }
-        false
+    /// Apply the queued content swap. Returns true if content was swapped.
+    ///
+    /// Melodies run on absolute time (anchor 0), so a length change needs no
+    /// re-anchoring: the playback phase is `current_beat % new_length` by
+    /// construction — "position modulo new length", exactly what a cold boot
+    /// of the new script would play. The absolute watermark is untouched, so
+    /// shrinking the loop cannot burst-schedule and growing it cannot skip.
+    pub fn apply_pending_swap(&mut self) -> bool {
+        let Some((new_content, _)) = self.pending_content.take() else {
+            return false;
+        };
+        self.content = new_content;
+        true
     }
 }
 
@@ -1631,6 +1656,95 @@ pub fn legacy_output_ports() -> Vec<OutputPort> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // =========================================================================
+    // Content-swap watermark semantics
+    // =========================================================================
+
+    fn pattern_with_length(length: f64) -> PatternState {
+        PatternState::new(
+            PatternId::new(1),
+            crate::traits::PatternConfig::with_length("p", crate::types::VoiceId::new(1), length),
+        )
+    }
+
+    #[test]
+    fn pattern_swap_same_length_keeps_anchor() {
+        let mut p = pattern_with_length(4.0);
+        p.start_beat = Beat::from_f64(8.0);
+        let new = crate::traits::PatternContent::arc_from_config(
+            &crate::traits::PatternConfig::with_length("p", crate::types::VoiceId::new(1), 4.0),
+        );
+        p.queue_content_swap(new, ChangeQuant::NextBar);
+        assert!(p.apply_pending_swap(Beat::from_f64(12.0)));
+        assert_eq!(
+            p.start_beat,
+            Beat::from_f64(8.0),
+            "same-length swap must not disturb the anchor (phase continuity)"
+        );
+    }
+
+    #[test]
+    fn pattern_swap_length_change_reanchors_to_grid() {
+        let mut p = pattern_with_length(4.0);
+        p.start_beat = Beat::from_f64(8.0);
+        let new = crate::traits::PatternContent::arc_from_config(
+            &crate::traits::PatternConfig::with_length("p", crate::types::VoiceId::new(1), 3.0),
+        );
+        p.queue_content_swap(new, ChangeQuant::NextBar);
+        // Swap at beat 8: the 3-beat loop's grid anchor is 8 - 8 % 3 = 6,
+        // exactly the phase a cold boot of the new script would play.
+        assert!(p.apply_pending_swap(Beat::from_f64(8.0)));
+        assert_eq!(p.start_beat, Beat::from_f64(6.0));
+        assert!(p.pending_content.is_none());
+    }
+
+    #[test]
+    fn pattern_swap_boundary_comes_from_quant() {
+        let mut p = pattern_with_length(4.0);
+        let new = crate::traits::PatternContent::arc_from_config(
+            &crate::traits::PatternConfig::with_length("p", crate::types::VoiceId::new(1), 4.0),
+        );
+        p.queue_content_swap(new, ChangeQuant::NextBar);
+        let ts = crate::types::TimeSignature::new(4, 4);
+        assert_eq!(
+            p.pending_swap_boundary(Beat::from_f64(6.5), ts),
+            Some(Beat::from_f64(8.0))
+        );
+        // No pending swap -> no boundary.
+        p.pending_content = None;
+        assert_eq!(p.pending_swap_boundary(Beat::from_f64(6.5), ts), None);
+    }
+
+    #[test]
+    fn melody_swap_keeps_absolute_watermark() {
+        let mut m = MelodyState::new(
+            crate::types::MelodyId::new(1),
+            crate::traits::MelodyConfig {
+                name: "m".to_string(),
+                voice: None,
+                notes: Vec::new(),
+                length: Beat::from_f64(4.0),
+                swing: 0.0,
+            },
+        );
+        m.scheduled_until = Some(Beat::from_f64(8.05));
+        m.queue_content_swap(
+            crate::traits::MelodyContent::arc_from_config(&crate::traits::MelodyConfig {
+                name: "m".to_string(),
+                voice: None,
+                notes: Vec::new(),
+                length: Beat::from_f64(2.0),
+                swing: 0.0,
+            }),
+            ChangeQuant::NextBar,
+        );
+        assert!(m.apply_pending_swap());
+        // The absolute watermark survives a shrink: no loop_position=0 reset,
+        // so the next tick cannot see a "whole loop ahead" and burst.
+        assert_eq!(m.scheduled_until, Some(Beat::from_f64(8.05)));
+        assert_eq!(m.content.length, Beat::from_f64(2.0));
+    }
 
     #[test]
     fn test_state_default() {
