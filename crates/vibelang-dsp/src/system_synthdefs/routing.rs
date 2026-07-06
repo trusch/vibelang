@@ -1,9 +1,17 @@
-//! System SynthDef for audio bus routing.
+//! System SynthDefs for audio bus routing.
 //!
-//! This module builds the `system_link_audio` synthdef used for group bus routing.
-//! The synthdef is built using direct binary encoding for efficiency.
+//! This module builds the routing synthdefs (`system_link_audio`,
+//! `system_link_audio_mono`, the `*_link_*` bus routers, the `a2k_adapter_1`
+//! rate coercer and the `param_kr_modulate_<n>` summers) used for group bus
+//! routing, metering and CV/param modulation.
 //!
-//! ## Signal Flow
+//! All synthdefs are built on the crate's [`GraphBuilderInner`] → [`GraphIR`]
+//! → [`encode_synthdef`] pipeline — the same path user synthdefs and the
+//! sample/SFZ system synthdefs take. The original hand-written SCgf v2 byte
+//! encoders live in the test module as reference implementations; structural
+//! equivalence between the two is asserted by the `equiv_*` tests.
+//!
+//! ## Signal Flow (system_link_audio)
 //!
 //! ```text
 //! In.ar(inbus) → × amp → balance(pan) → Out.ar(outbus)
@@ -18,7 +26,208 @@
 //! - 2: rms_left
 //! - 3: rms_right
 
-use std::io::Write;
+use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, NodeRef, Rate};
+
+// BinaryOpUGen special indices used by the routing graphs.
+const OP_ADD: i16 = 0;
+const OP_SUB: i16 = 1;
+const OP_MUL: i16 = 2;
+const OP_MIN: i16 = 12;
+const OP_MAX: i16 = 13;
+
+/// Reference the Control UGen output for the parameter at `slot`.
+///
+/// Valid only after [`GraphBuilderInner::create_control_ugen`] has run, which
+/// places the Control UGen at node index 0.
+fn param(slot: u32) -> Input {
+    Input::Node {
+        node_id: 0,
+        output_index: slot,
+    }
+}
+
+/// Reference output `output_index` of a previously added node.
+fn out_of(node: NodeRef, output_index: u32) -> Input {
+    Input::Node {
+        node_id: node.0,
+        output_index,
+    }
+}
+
+/// Reference the first (or only) output of a previously added node.
+fn first(node: NodeRef) -> Input {
+    out_of(node, 0)
+}
+
+/// Encode a finished builder as a single-synthdef SCgf v2 blob.
+fn encode(name: &str, builder: GraphBuilderInner) -> Result<Vec<u8>, std::io::Error> {
+    encode_synthdef(&GraphIR::from_builder(name.to_string(), builder))
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+}
+
+/// Build the shared `system_link_audio[_mono]` graph.
+///
+/// Both variants share the identical gain/pan/metering topology; the mono
+/// variant inserts a `panned_left + panned_right` sum (no halving) and writes
+/// a single channel to `outbus` instead of the stereo pair.
+fn build_system_link_audio(name: &str, mono: bool) -> Result<Vec<u8>, std::io::Error> {
+    let mut b = GraphBuilderInner::new();
+
+    // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0 (slots 0..=3).
+    b.add_param("inbus".to_string(), vec![0.0], None);
+    b.add_param("outbus".to_string(), vec![0.0], None);
+    b.add_param("amp".to_string(), vec![1.0], None);
+    b.add_param("pan".to_string(), vec![0.0], None);
+    b.create_control_ugen();
+
+    // Constants, in the same order as the legacy encoder:
+    // 0.0 (SendTrig ID 0 / zero), 1.0 (ID 1 / unity), 2.0 (ID 2), 3.0 (ID 3),
+    // 20.0 (meter Impulse rate), 0.01 (Amplitude attack), 0.1 (release).
+    for c in [0.0, 1.0, 2.0, 3.0, 20.0, 0.01, 0.1] {
+        b.add_constant(c);
+    }
+
+    // In.ar(inbus, 2)
+    let input = b.add_node("In".to_string(), Rate::Audio, vec![param(0)], 2, 0);
+
+    // scaled = In * amp
+    let scaled_l = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![out_of(input, 0), param(2)],
+        1,
+        OP_MUL,
+    );
+    let scaled_r = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![out_of(input, 1), param(2)],
+        1,
+        OP_MUL,
+    );
+
+    // Linear balance law: left_gain = 1 - max(0, pan), right_gain = 1 + min(0, pan).
+    let max_pan = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(0.0), param(3)],
+        1,
+        OP_MAX,
+    );
+    let left_gain = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(1.0), first(max_pan)],
+        1,
+        OP_SUB,
+    );
+    let min_pan = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(0.0), param(3)],
+        1,
+        OP_MIN,
+    );
+    let right_gain = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(1.0), first(min_pan)],
+        1,
+        OP_ADD,
+    );
+
+    let panned_l = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![first(scaled_l), first(left_gain)],
+        1,
+        OP_MUL,
+    );
+    let panned_r = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![first(scaled_r), first(right_gain)],
+        1,
+        OP_MUL,
+    );
+
+    if mono {
+        // mono_sum = panned_left + panned_right.
+        // No halving: unity-gain mono mixdown. True-stereo content runs ~6 dB hot.
+        let mono_sum = b.add_node(
+            "BinaryOpUGen".to_string(),
+            Rate::Audio,
+            vec![first(panned_l), first(panned_r)],
+            1,
+            OP_ADD,
+        );
+        b.add_node(
+            "Out".to_string(),
+            Rate::Audio,
+            vec![param(1), first(mono_sum)],
+            0,
+            0,
+        );
+    } else {
+        b.add_node(
+            "Out".to_string(),
+            Rate::Audio,
+            vec![param(1), first(panned_l), first(panned_r)],
+            0,
+            0,
+        );
+    }
+
+    // Metering taps the internal (pre-mixdown) stereo signal in both variants.
+    let impulse = b.add_node(
+        "Impulse".to_string(),
+        Rate::Control,
+        vec![Input::Constant(20.0), Input::Constant(0.0)],
+        1,
+        0,
+    );
+    let peak_l = b.add_node(
+        "Peak".to_string(),
+        Rate::Control,
+        vec![first(panned_l), first(impulse)],
+        1,
+        0,
+    );
+    let peak_r = b.add_node(
+        "Peak".to_string(),
+        Rate::Control,
+        vec![first(panned_r), first(impulse)],
+        1,
+        0,
+    );
+    let amp_l = b.add_node(
+        "Amplitude".to_string(),
+        Rate::Control,
+        vec![first(panned_l), Input::Constant(0.01), Input::Constant(0.1)],
+        1,
+        0,
+    );
+    let amp_r = b.add_node(
+        "Amplitude".to_string(),
+        Rate::Control,
+        vec![first(panned_r), Input::Constant(0.01), Input::Constant(0.1)],
+        1,
+        0,
+    );
+
+    // SendTrig IDs 0..3: peak_l, peak_r, rms_l, rms_r.
+    for (id, meter) in [(0.0, peak_l), (1.0, peak_r), (2.0, amp_l), (3.0, amp_r)] {
+        b.add_node(
+            "SendTrig".to_string(),
+            Rate::Control,
+            vec![first(impulse), Input::Constant(id), first(meter)],
+            0,
+            0,
+        );
+    }
+
+    encode(name, b)
+}
 
 /// Create the system_link_audio synthdef bytes.
 ///
@@ -40,316 +249,7 @@ use std::io::Write;
 /// - Trigger ID 2: Left channel RMS (via Amplitude UGen)
 /// - Trigger ID 3: Right channel RMS (via Amplitude UGen)
 pub fn create_system_link_audio_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?; // Magic
-    buf.write_all(&2i32.to_be_bytes())?; // Version 2
-    buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
-
-    // SynthDef name
-    let name = b"system_link_audio";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // Constants (7 total)
-    // 0: 0.0 (SendTrig ID 0 for peak_left, also zero for max/min)
-    // 1: 1.0 (SendTrig ID 1 for peak_right, also 1.0 for gain calc)
-    // 2: 2.0 (SendTrig ID 2 for rms_left)
-    // 3: 3.0 (SendTrig ID 3 for rms_right)
-    // 4: 20.0 (Impulse frequency - 20Hz for meter updates)
-    // 5: 0.01 (Amplitude attack time)
-    // 6: 0.1 (Amplitude release time)
-    buf.write_all(&7i32.to_be_bytes())?; // num constants
-    buf.write_all(&0.0f32.to_be_bytes())?; // constant 0
-    buf.write_all(&1.0f32.to_be_bytes())?; // constant 1
-    buf.write_all(&2.0f32.to_be_bytes())?; // constant 2
-    buf.write_all(&3.0f32.to_be_bytes())?; // constant 3
-    buf.write_all(&20.0f32.to_be_bytes())?; // constant 4
-    buf.write_all(&0.01f32.to_be_bytes())?; // constant 5
-    buf.write_all(&0.1f32.to_be_bytes())?; // constant 6
-
-    // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0
-    buf.write_all(&4i32.to_be_bytes())?; // num params
-    buf.write_all(&0.0f32.to_be_bytes())?; // inbus default = 0
-    buf.write_all(&0.0f32.to_be_bytes())?; // outbus default = 0
-    buf.write_all(&1.0f32.to_be_bytes())?; // amp default = 1.0
-    buf.write_all(&0.0f32.to_be_bytes())?; // pan default = 0.0
-
-    // Param names
-    buf.write_all(&4i32.to_be_bytes())?; // num param names
-    let inbus_name = b"inbus";
-    buf.push(inbus_name.len() as u8);
-    buf.write_all(inbus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?; // index 0
-    let outbus_name = b"outbus";
-    buf.push(outbus_name.len() as u8);
-    buf.write_all(outbus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?; // index 1
-    let amp_name = b"amp";
-    buf.push(amp_name.len() as u8);
-    buf.write_all(amp_name)?;
-    buf.write_all(&2i32.to_be_bytes())?; // index 2
-    let pan_name = b"pan";
-    buf.push(pan_name.len() as u8);
-    buf.write_all(pan_name)?;
-    buf.write_all(&3i32.to_be_bytes())?; // index 3
-
-    // UGens (20 total)
-    //
-    // 0:  Control (4 outputs: inbus, outbus, amp, pan)
-    // 1:  In.ar (2 outputs: left, right)
-    // 2:  BinaryOp * (left * amp)          = scaled_left
-    // 3:  BinaryOp * (right * amp)         = scaled_right
-    // 4:  BinaryOp max(0, pan)             = max_pan       [kr]
-    // 5:  BinaryOp 1 - max_pan             = left_gain     [kr]
-    // 6:  BinaryOp min(0, pan)             = min_pan       [kr]
-    // 7:  BinaryOp 1 + min_pan             = right_gain    [kr]
-    // 8:  BinaryOp scaled_left * left_gain = panned_left   [ar]
-    // 9:  BinaryOp scaled_right * right_gain = panned_right [ar]
-    // 10: Out.ar (outbus, panned_left, panned_right)
-    // 11: Impulse.kr (20Hz)
-    // 12-13: Peak.kr (panned_left, panned_right)
-    // 14-15: Amplitude.kr (panned_left, panned_right)
-    // 16-19: SendTrig.kr (peak_l, peak_r, rms_l, rms_r)
-    buf.write_all(&20i32.to_be_bytes())?; // num ugens
-
-    let binop_name = b"BinaryOpUGen";
-
-    // UGen 0: Control (control rate, 4 outputs: inbus, outbus, amp, pan)
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&0i32.to_be_bytes())?; // num inputs
-    buf.write_all(&4i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    buf.push(1); // output 0 rate: control (inbus)
-    buf.push(1); // output 1 rate: control (outbus)
-    buf.push(1); // output 2 rate: control (amp)
-    buf.push(1); // output 3 rate: control (pan)
-
-    // UGen 1: In.ar (audio rate, 2 outputs: left, right)
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&1i32.to_be_bytes())?; // num inputs
-    buf.write_all(&2i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 0, 0)?; // input: Control[0] (inbus)
-    buf.push(2); // output 0 rate: audio (left)
-    buf.push(2); // output 1 rate: audio (right)
-
-    // UGen 2: left * amp - audio rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special: multiply
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] (left)
-    write_ugen_input(&mut buf, 0, 2)?; // Control[2] (amp)
-    buf.push(2); // output rate: audio
-
-    // UGen 3: right * amp - audio rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special: multiply
-    write_ugen_input(&mut buf, 1, 1)?; // In[1] (right)
-    write_ugen_input(&mut buf, 0, 2)?; // Control[2] (amp)
-    buf.push(2); // output rate: audio
-
-    // UGen 4: max(0, pan) - control rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&13i16.to_be_bytes())?; // special: max
-    write_const_input(&mut buf, 0)?; // constant 0 (0.0)
-    write_ugen_input(&mut buf, 0, 3)?; // Control[3] (pan)
-    buf.push(1); // output rate: control
-
-    // UGen 5: 1 - max(0, pan) = left_gain - control rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&1i16.to_be_bytes())?; // special: subtract
-    write_const_input(&mut buf, 1)?; // constant 1 (1.0)
-    write_ugen_input(&mut buf, 4, 0)?; // UGen4[0] (max_pan)
-    buf.push(1); // output rate: control
-
-    // UGen 6: min(0, pan) - control rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&12i16.to_be_bytes())?; // special: min
-    write_const_input(&mut buf, 0)?; // constant 0 (0.0)
-    write_ugen_input(&mut buf, 0, 3)?; // Control[3] (pan)
-    buf.push(1); // output rate: control
-
-    // UGen 7: 1 + min(0, pan) = right_gain - control rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special: add
-    write_const_input(&mut buf, 1)?; // constant 1 (1.0)
-    write_ugen_input(&mut buf, 6, 0)?; // UGen6[0] (min_pan)
-    buf.push(1); // output rate: control
-
-    // UGen 8: scaled_left * left_gain = panned_left - audio rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special: multiply
-    write_ugen_input(&mut buf, 2, 0)?; // UGen2[0] (scaled_left)
-    write_ugen_input(&mut buf, 5, 0)?; // UGen5[0] (left_gain)
-    buf.push(2); // output rate: audio
-
-    // UGen 9: scaled_right * right_gain = panned_right - audio rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special: multiply
-    write_ugen_input(&mut buf, 3, 0)?; // UGen3[0] (scaled_right)
-    write_ugen_input(&mut buf, 7, 0)?; // UGen7[0] (right_gain)
-    buf.push(2); // output rate: audio
-
-    // UGen 10: Out.ar (outputs panned audio to outbus)
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] (outbus)
-    write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
-    write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
-
-    // UGen 11: Impulse.kr (20Hz trigger for meter updates)
-    let impulse_name = b"Impulse";
-    buf.push(impulse_name.len() as u8);
-    buf.write_all(impulse_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs (freq, phase)
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_const_input(&mut buf, 4)?; // constant 4 (20.0 Hz)
-    write_const_input(&mut buf, 0)?; // constant 0 (0.0 phase)
-    buf.push(1); // output rate: control
-
-    // UGen 12: Peak.kr (left channel peak, reset by Impulse)
-    let peak_name = b"Peak";
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    buf.push(1); // output rate: control
-
-    // UGen 13: Peak.kr (right channel peak, reset by Impulse)
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    buf.push(1); // output rate: control
-
-    // UGen 14: Amplitude.kr (left channel RMS-like)
-    let amplitude_name = b"Amplitude";
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
-    write_const_input(&mut buf, 5)?; // constant 5 (0.01 attack)
-    write_const_input(&mut buf, 6)?; // constant 6 (0.1 release)
-    buf.push(1); // output rate: control
-
-    // UGen 15: Amplitude.kr (right channel RMS-like)
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
-    write_const_input(&mut buf, 5)?; // constant 5 (0.01 attack)
-    write_const_input(&mut buf, 6)?; // constant 6 (0.1 release)
-    buf.push(1); // output rate: control
-
-    // UGen 16: SendTrig.kr (send peak_left)
-    let sendtrig_name = b"SendTrig";
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    write_const_input(&mut buf, 0)?; // constant 0 (ID = 0)
-    write_ugen_input(&mut buf, 12, 0)?; // UGen12[0] (Peak left)
-
-    // UGen 17: SendTrig.kr (send peak_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    write_const_input(&mut buf, 1)?; // constant 1 (ID = 1)
-    write_ugen_input(&mut buf, 13, 0)?; // UGen13[0] (Peak right)
-
-    // UGen 18: SendTrig.kr (send rms_left)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    write_const_input(&mut buf, 2)?; // constant 2 (ID = 2)
-    write_ugen_input(&mut buf, 14, 0)?; // UGen14[0] (Amplitude left)
-
-    // UGen 19: SendTrig.kr (send rms_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
-    write_const_input(&mut buf, 3)?; // constant 3 (ID = 3)
-    write_ugen_input(&mut buf, 15, 0)?; // UGen15[0] (Amplitude right)
-
-    // Variants: none
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_system_link_audio("system_link_audio", false)
 }
 
 /// Create the system_link_audio_mono synthdef bytes.
@@ -379,342 +279,38 @@ pub fn create_system_link_audio_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// SendTrig payload at trigger IDs 0..3 carries the same data the dashboard
 /// already understands. Mixdown to mono only affects the final `Out.ar`.
 pub fn create_system_link_audio_mono_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?; // Magic
-    buf.write_all(&2i32.to_be_bytes())?; // Version 2
-    buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
-
-    // SynthDef name
-    let name = b"system_link_audio_mono";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // Constants (7 total) — identical layout to system_link_audio.
-    // 0: 0.0   (SendTrig ID 0 / pan zero)
-    // 1: 1.0   (SendTrig ID 1 / gain unity)
-    // 2: 2.0   (SendTrig ID 2)
-    // 3: 3.0   (SendTrig ID 3)
-    // 4: 20.0  (Impulse meter rate)
-    // 5: 0.01  (Amplitude attack)
-    // 6: 0.1   (Amplitude release)
-    buf.write_all(&7i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&1.0f32.to_be_bytes())?;
-    buf.write_all(&2.0f32.to_be_bytes())?;
-    buf.write_all(&3.0f32.to_be_bytes())?;
-    buf.write_all(&20.0f32.to_be_bytes())?;
-    buf.write_all(&0.01f32.to_be_bytes())?;
-    buf.write_all(&0.1f32.to_be_bytes())?;
-
-    // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0 (same surface as stereo).
-    buf.write_all(&4i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&1.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    // Param names
-    buf.write_all(&4i32.to_be_bytes())?;
-    let inbus_name = b"inbus";
-    buf.push(inbus_name.len() as u8);
-    buf.write_all(inbus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let outbus_name = b"outbus";
-    buf.push(outbus_name.len() as u8);
-    buf.write_all(outbus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    let amp_name = b"amp";
-    buf.push(amp_name.len() as u8);
-    buf.write_all(amp_name)?;
-    buf.write_all(&2i32.to_be_bytes())?;
-    let pan_name = b"pan";
-    buf.push(pan_name.len() as u8);
-    buf.write_all(pan_name)?;
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGens (21 total)
-    //
-    // 0:  Control (4 outputs: inbus, outbus, amp, pan)
-    // 1:  In.ar (2 outputs: left, right)
-    // 2:  BinaryOp * (left * amp)            = scaled_left
-    // 3:  BinaryOp * (right * amp)           = scaled_right
-    // 4:  BinaryOp max(0, pan)               = max_pan      [kr]
-    // 5:  BinaryOp 1 - max_pan               = left_gain    [kr]
-    // 6:  BinaryOp min(0, pan)               = min_pan      [kr]
-    // 7:  BinaryOp 1 + min_pan               = right_gain   [kr]
-    // 8:  BinaryOp scaled_left * left_gain   = panned_left  [ar]
-    // 9:  BinaryOp scaled_right * right_gain = panned_right [ar]
-    // 10: BinaryOp panned_left + panned_right = mono_sum    [ar]   ← mono mixdown
-    // 11: Out.ar (outbus, mono_sum)                                   ← 1 channel
-    // 12: Impulse.kr (20Hz)
-    // 13-14: Peak.kr (panned_left, panned_right)
-    // 15-16: Amplitude.kr (panned_left, panned_right)
-    // 17-20: SendTrig.kr (peak_l, peak_r, rms_l, rms_r)
-    buf.write_all(&21i32.to_be_bytes())?;
-
-    let binop_name = b"BinaryOpUGen";
-
-    // UGen 0: Control (kr, 4 outputs)
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1);
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&4i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    buf.push(1);
-    buf.push(1);
-    buf.push(1);
-    buf.push(1);
-
-    // UGen 1: In.ar (2 outputs: left, right)
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2);
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] (inbus)
-    buf.push(2);
-    buf.push(2);
-
-    // UGen 2: scaled_left = left * amp
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&2i16.to_be_bytes())?; // mul
-    write_ugen_input(&mut buf, 1, 0)?;
-    write_ugen_input(&mut buf, 0, 2)?;
-    buf.push(2);
-
-    // UGen 3: scaled_right = right * amp
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&2i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 1, 1)?;
-    write_ugen_input(&mut buf, 0, 2)?;
-    buf.push(2);
-
-    // UGen 4: max_pan = max(0, pan)  [kr]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&13i16.to_be_bytes())?; // max
-    write_const_input(&mut buf, 0)?;
-    write_ugen_input(&mut buf, 0, 3)?;
-    buf.push(1);
-
-    // UGen 5: left_gain = 1 - max_pan  [kr]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&1i16.to_be_bytes())?; // sub
-    write_const_input(&mut buf, 1)?;
-    write_ugen_input(&mut buf, 4, 0)?;
-    buf.push(1);
-
-    // UGen 6: min_pan = min(0, pan)  [kr]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&12i16.to_be_bytes())?; // min
-    write_const_input(&mut buf, 0)?;
-    write_ugen_input(&mut buf, 0, 3)?;
-    buf.push(1);
-
-    // UGen 7: right_gain = 1 + min_pan  [kr]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?; // add
-    write_const_input(&mut buf, 1)?;
-    write_ugen_input(&mut buf, 6, 0)?;
-    buf.push(1);
-
-    // UGen 8: panned_left = scaled_left * left_gain  [ar]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&2i16.to_be_bytes())?; // mul
-    write_ugen_input(&mut buf, 2, 0)?;
-    write_ugen_input(&mut buf, 5, 0)?;
-    buf.push(2);
-
-    // UGen 9: panned_right = scaled_right * right_gain  [ar]
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&2i16.to_be_bytes())?; // mul
-    write_ugen_input(&mut buf, 3, 0)?;
-    write_ugen_input(&mut buf, 7, 0)?;
-    buf.push(2);
-
-    // UGen 10: mono_sum = panned_left + panned_right  [ar]
-    // No halving: unity-gain mono mixdown. True-stereo content runs ~6 dB hot.
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?; // add
-    write_ugen_input(&mut buf, 8, 0)?; // panned_left
-    write_ugen_input(&mut buf, 9, 0)?; // panned_right
-    buf.push(2);
-
-    // UGen 11: Out.ar(outbus, mono_sum) — 1 channel only.
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2);
-    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs: bus + 1 channel
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] (outbus)
-    write_ugen_input(&mut buf, 10, 0)?; // mono_sum
-
-    // UGen 12: Impulse.kr (20Hz)
-    let impulse_name = b"Impulse";
-    buf.push(impulse_name.len() as u8);
-    buf.write_all(impulse_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_const_input(&mut buf, 4)?;
-    write_const_input(&mut buf, 0)?;
-    buf.push(1);
-
-    // UGen 13: Peak.kr (panned_left)
-    let peak_name = b"Peak";
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 8, 0)?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    buf.push(1);
-
-    // UGen 14: Peak.kr (panned_right)
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1);
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 9, 0)?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    buf.push(1);
-
-    // UGen 15: Amplitude.kr (panned_left)
-    let amplitude_name = b"Amplitude";
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 8, 0)?;
-    write_const_input(&mut buf, 5)?;
-    write_const_input(&mut buf, 6)?;
-    buf.push(1);
-
-    // UGen 16: Amplitude.kr (panned_right)
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&1i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 9, 0)?;
-    write_const_input(&mut buf, 5)?;
-    write_const_input(&mut buf, 6)?;
-    buf.push(1);
-
-    // UGen 17: SendTrig.kr (peak_left)
-    let sendtrig_name = b"SendTrig";
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    write_const_input(&mut buf, 0)?;
-    write_ugen_input(&mut buf, 13, 0)?;
-
-    // UGen 18: SendTrig.kr (peak_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    write_const_input(&mut buf, 1)?;
-    write_ugen_input(&mut buf, 14, 0)?;
-
-    // UGen 19: SendTrig.kr (rms_left)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    write_const_input(&mut buf, 2)?;
-    write_ugen_input(&mut buf, 15, 0)?;
-
-    // UGen 20: SendTrig.kr (rms_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1);
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 12, 0)?;
-    write_const_input(&mut buf, 3)?;
-    write_ugen_input(&mut buf, 16, 0)?;
-
-    // Variants: none
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_system_link_audio("system_link_audio_mono", true)
 }
 
-/// Write a constant input reference to the buffer.
-fn write_const_input(buf: &mut Vec<u8>, const_idx: i32) -> std::io::Result<()> {
-    buf.write_all(&(-1i32).to_be_bytes())?; // -1 means constant
-    buf.write_all(&const_idx.to_be_bytes())?;
-    Ok(())
-}
+/// Build a simple `In → Out` bus-link graph with `in_bus`/`out_bus` params.
+///
+/// `channels` is the number of channels read from `in_bus`. When
+/// `dup_mono_to_stereo` is set (only valid for `channels == 1`), the single
+/// input channel is written twice, duplicating mono into a stereo pair.
+fn build_bus_link(
+    name: &str,
+    rate: Rate,
+    channels: u32,
+    dup_mono_to_stereo: bool,
+) -> Result<Vec<u8>, std::io::Error> {
+    let mut b = GraphBuilderInner::new();
+    b.add_param("in_bus".to_string(), vec![0.0], None);
+    b.add_param("out_bus".to_string(), vec![0.0], None);
+    b.create_control_ugen();
 
-/// Write a UGen input reference to the buffer.
-fn write_ugen_input(buf: &mut Vec<u8>, ugen_idx: i32, output_idx: i32) -> std::io::Result<()> {
-    buf.write_all(&ugen_idx.to_be_bytes())?;
-    buf.write_all(&output_idx.to_be_bytes())?;
-    Ok(())
+    let input = b.add_node("In".to_string(), rate, vec![param(0)], channels, 0);
+
+    let mut out_inputs = vec![param(1)];
+    for ch in 0..channels {
+        out_inputs.push(out_of(input, ch));
+    }
+    if dup_mono_to_stereo {
+        debug_assert_eq!(channels, 1);
+        out_inputs.push(out_of(input, 0));
+    }
+    b.add_node("Out".to_string(), rate, out_inputs, 0, 0);
+
+    encode(name, b)
 }
 
 /// Create the `port_to_group_link_1` synthdef bytes.
@@ -731,80 +327,7 @@ fn write_ugen_input(buf: &mut Vec<u8>, ugen_idx: i32, output_idx: i32) -> std::i
 /// Used by `RoutesHandler::finalize` to tap a voice's mono output port and
 /// mix it into a group's stereo audio bus.
 pub fn create_port_to_group_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name
-    let name = b"port_to_group_link_1";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    // 0: Control (2 control outputs: in_bus, out_bus)
-    // 1: In.ar (1 audio output, mono, reads in_bus)
-    // 2: Out.ar (writes In[0] twice → stereo dup at out_bus)
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
-    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    buf.push(1); // output 0 rate
-    buf.push(1); // output 1 rate
-
-    // UGen 1: In.ar(in_bus, 1) → mono
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(2); // output rate
-
-    // UGen 2: Out.ar(out_bus, mono, mono) → mono duplicated to stereo
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&3i32.to_be_bytes())?; // 3 inputs
-    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] (left channel)
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] again (right channel — dup)
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_bus_link("port_to_group_link_1", Rate::Audio, 1, true)
 }
 
 /// Create the `port_to_group_link_2` synthdef bytes.
@@ -821,81 +344,7 @@ pub fn create_port_to_group_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// Used by `RoutesHandler::finalize` to tap a voice's stereo output port
 /// and mix it into a group's stereo audio bus.
 pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name
-    let name = b"port_to_group_link_2";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    // 0: Control (2 control outputs: in_bus, out_bus)
-    // 1: In.ar (2 audio outputs: left, right; reads in_bus)
-    // 2: Out.ar (writes left + right → stereo passthrough at out_bus)
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    buf.push(1);
-    buf.push(1);
-
-    // UGen 1: In.ar(in_bus, 2) → stereo
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs (stereo)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(2); // output 0 rate
-    buf.push(2); // output 1 rate
-
-    // UGen 2: Out.ar(out_bus, left, right)
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] = left
-    write_ugen_input(&mut buf, 1, 1)?; // In[1] = right
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_bus_link("port_to_group_link_2", Rate::Audio, 2, false)
 }
 
 /// Create the `input_link_1` synthdef bytes.
@@ -913,79 +362,7 @@ pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// mono named-input bus. Fan-in summing is free — multiple `input_link_*`
 /// synths writing the same `out_bus` sum at the bus.
 pub fn create_input_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name
-    let name = b"input_link_1";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    // 0: Control (2 control outputs: in_bus, out_bus)
-    // 1: In.ar (1 audio output, mono, reads in_bus)
-    // 2: Out.ar (writes In[0] → mono passthrough at out_bus)
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
-    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    buf.push(1); // output 0 rate
-    buf.push(1); // output 1 rate
-
-    // UGen 1: In.ar(in_bus, 1) → mono
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(2); // output rate
-
-    // UGen 2: Out.ar(out_bus, mono) → mono passthrough
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus + 1 channel)
-    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] (mono channel)
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_bus_link("input_link_1", Rate::Audio, 1, false)
 }
 
 /// Create the `input_link_2` synthdef bytes.
@@ -1003,81 +380,7 @@ pub fn create_input_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// stereo named-input bus. Fan-in summing is free — multiple `input_link_*`
 /// synths writing the same `out_bus` sum at the bus.
 pub fn create_input_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name
-    let name = b"input_link_2";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    // 0: Control (2 control outputs: in_bus, out_bus)
-    // 1: In.ar (2 audio outputs: left, right; reads in_bus)
-    // 2: Out.ar (writes left + right → stereo passthrough at out_bus)
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    buf.push(1);
-    buf.push(1);
-
-    // UGen 1: In.ar(in_bus, 2) → stereo
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs (stereo)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(2); // output 0 rate
-    buf.push(2); // output 1 rate
-
-    // UGen 2: Out.ar(out_bus, left, right)
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&3i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] = left
-    write_ugen_input(&mut buf, 1, 1)?; // In[1] = right
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_bus_link("input_link_2", Rate::Audio, 2, false)
 }
 
 /// Create the `port_tr_to_param_link_1` synthdef bytes.
@@ -1101,84 +404,12 @@ pub fn create_input_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// no `port_tr_to_group_*` variant — group destinations are an audio-rate
 /// concept.
 pub fn create_port_tr_to_param_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name
-    let name = b"port_tr_to_param_link_1";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    //   0: Control (kr) — 2 outputs: in_bus, out_bus
-    //   1: In.kr(in_bus, 1) — 1 mono kr output
-    //   2: Out.kr(out_bus, In[0])
-    buf.write_all(&3i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    buf.push(1); // output 0 rate
-    buf.push(1); // output 1 rate
-
-    // UGen 1: In.kr(in_bus, 1) → mono kr (carries the trigger edge unchanged)
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(1); // output rate
-
-    // UGen 2: Out.kr(out_bus, In[0])
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 1, 0)?; // In[0]
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    build_bus_link("port_tr_to_param_link_1", Rate::Control, 1, false)
 }
 
 /// Create the `a2k_adapter_1` synthdef bytes.
 ///
-/// One-channel ar→kr adapter used by [`crate::handlers::routes::RoutesHandler::finalize_params`]
+/// One-channel ar→kr adapter used by `RoutesHandler::finalize_params`
 /// when a `.to_param_audio()` route demands rate coercion: it reads a single
 /// audio-rate bus, samples it once per kr cycle via SuperCollider's `A2K`
 /// UGen, and writes the kr signal to a control bus. The control bus then
@@ -1195,91 +426,22 @@ pub fn create_port_tr_to_param_link_1_bytes() -> Result<Vec<u8>, std::io::Error>
 /// Mono only — kr ports are mono by convention, and multi-channel adapters
 /// aren't needed for the param-modulation case the verb targets.
 pub fn create_a2k_adapter_1_bytes() -> Result<Vec<u8>, std::io::Error> {
-    let mut buf = Vec::new();
+    let mut b = GraphBuilderInner::new();
+    b.add_param("in_bus".to_string(), vec![0.0], None);
+    b.add_param("out_bus".to_string(), vec![0.0], None);
+    b.create_control_ugen();
 
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+    let input = b.add_node("In".to_string(), Rate::Audio, vec![param(0)], 1, 0);
+    let a2k = b.add_node("A2K".to_string(), Rate::Control, vec![first(input)], 1, 0);
+    b.add_node(
+        "Out".to_string(),
+        Rate::Control,
+        vec![param(1), first(a2k)],
+        0,
+        0,
+    );
 
-    // Name
-    let name = b"a2k_adapter_1";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
-
-    // Parameters: in_bus=0, out_bus=0
-    buf.write_all(&2i32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    buf.write_all(&0.0f32.to_be_bytes())?;
-
-    buf.write_all(&2i32.to_be_bytes())?;
-    let in_bus_name = b"in_bus";
-    buf.push(in_bus_name.len() as u8);
-    buf.write_all(in_bus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?;
-
-    // UGens:
-    //   0: Control (kr) — 2 outputs: in_bus, out_bus
-    //   1: In.ar(in_bus, 1) — 1 mono ar output
-    //   2: A2K.kr(In[0]) — 1 mono kr output (samples ar once per kr cycle)
-    //   3: Out.kr(out_bus, A2K[0])
-    buf.write_all(&4i32.to_be_bytes())?;
-
-    // UGen 0: Control
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
-    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    buf.push(1); // output 0 rate (in_bus)
-    buf.push(1); // output 1 rate (out_bus)
-
-    // UGen 1: In.ar(in_bus, 1) → mono ar
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // audio rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono ar)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
-    buf.push(2); // output rate: audio
-
-    // UGen 2: A2K.kr(In[0]) — downsample ar to kr
-    let a2k_name = b"A2K";
-    buf.push(a2k_name.len() as u8);
-    buf.write_all(a2k_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the ar signal)
-    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 1, 0)?; // In[0] (mono ar)
-    buf.push(1); // output rate: control
-
-    // UGen 3: Out.kr(out_bus, A2K[0])
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
-    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
-    write_ugen_input(&mut buf, 2, 0)?; // A2K[0]
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    encode("a2k_adapter_1", b)
 }
 
 /// Maximum number of source kr signals supported by `param_kr_modulate_<n>`.
@@ -1290,6 +452,9 @@ pub fn create_a2k_adapter_1_bytes() -> Result<Vec<u8>, std::io::Error> {
 /// modular patches (env + lfo + macro + offset + …) without bloating the
 /// synthdef set.
 pub const PARAM_KR_MODULATE_MAX: usize = 8;
+
+/// Per-source parameter suffixes for `param_kr_modulate_<n>`.
+const PORT_LETTERS: [char; PARAM_KR_MODULATE_MAX] = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
 /// Create the `param_kr_modulate_<n>` synthdef bytes for the given source count.
 ///
@@ -1323,7 +488,7 @@ pub const PARAM_KR_MODULATE_MAX: usize = 8;
 /// … in declaration order; defaults are `in_<i>=0`, `scale_<i>=1`,
 /// `offset_<i>=0`. The destination bus parameter is `out_bus`. Allocation
 /// and teardown of the intermediate bus + summer node is owned by
-/// [`crates/vibelang-core::handlers::routes::RoutesHandler::finalize_params`].
+/// `crates/vibelang-core::handlers::routes::RoutesHandler::finalize_params`.
 pub fn create_param_kr_modulate_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> {
     assert!(
         (1..=PARAM_KR_MODULATE_MAX).contains(&n),
@@ -1332,181 +497,1772 @@ pub fn create_param_kr_modulate_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Er
         n
     );
 
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?;
-    buf.write_all(&2i32.to_be_bytes())?; // version 2
-    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
-
-    // Name: "param_kr_modulate_<n>"
-    let name_string = format!("param_kr_modulate_{}", n);
-    let name_bytes = name_string.as_bytes();
-    buf.push(name_bytes.len() as u8);
-    buf.write_all(name_bytes)?;
-
-    // No constants
-    buf.write_all(&0i32.to_be_bytes())?;
+    let mut b = GraphBuilderInner::new();
 
     // Parameter layout (all kr controls):
-    //   index 0          : baseline   (default 0.0)
-    //   index 1 + 3*i    : in_<i>     (default 0.0)
-    //   index 2 + 3*i    : scale_<i>  (default 1.0)
-    //   index 3 + 3*i    : offset_<i> (default 0.0)
-    //   index 1 + 3*n    : out_bus    (default 0.0)
-    // Total params: 1 + 3*n + 1 = 3n + 2.
-    let num_params = (3 * n + 2) as i32;
-    buf.write_all(&num_params.to_be_bytes())?;
-    // baseline default
-    buf.write_all(&0.0f32.to_be_bytes())?;
-    // per-source defaults: in_<i>=0, scale_<i>=1, offset_<i>=0
-    for _ in 0..n {
-        buf.write_all(&0.0f32.to_be_bytes())?; // in_<i>
-        buf.write_all(&1.0f32.to_be_bytes())?; // scale_<i>
-        buf.write_all(&0.0f32.to_be_bytes())?; // offset_<i>
+    //   slot 0          : baseline   (default 0.0)
+    //   slot 1 + 3*i    : in_<i>     (default 0.0)
+    //   slot 2 + 3*i    : scale_<i>  (default 1.0)
+    //   slot 3 + 3*i    : offset_<i> (default 0.0)
+    //   slot 1 + 3*n    : out_bus    (default 0.0)
+    b.add_param("baseline".to_string(), vec![0.0], None);
+    for &letter in PORT_LETTERS.iter().take(n) {
+        b.add_param(format!("in_{}", letter), vec![0.0], None);
+        b.add_param(format!("scale_{}", letter), vec![1.0], None);
+        b.add_param(format!("offset_{}", letter), vec![0.0], None);
     }
-    // out_bus default
-    buf.write_all(&0.0f32.to_be_bytes())?;
+    b.add_param("out_bus".to_string(), vec![0.0], None);
+    b.create_control_ugen();
 
-    // Param names
-    let port_letters = [b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h'];
-    buf.write_all(&num_params.to_be_bytes())?;
-    let baseline_name = b"baseline";
-    buf.push(baseline_name.len() as u8);
-    buf.write_all(baseline_name)?;
-    buf.write_all(&0i32.to_be_bytes())?;
-    for i in 0..n {
-        let in_name = [b'i', b'n', b'_', port_letters[i]];
-        buf.push(in_name.len() as u8);
-        buf.write_all(&in_name)?;
-        buf.write_all(&((1 + 3 * i) as i32).to_be_bytes())?;
-        let scale_name = [b's', b'c', b'a', b'l', b'e', b'_', port_letters[i]];
-        buf.push(scale_name.len() as u8);
-        buf.write_all(&scale_name)?;
-        buf.write_all(&((2 + 3 * i) as i32).to_be_bytes())?;
-        let offset_name = [b'o', b'f', b'f', b's', b'e', b't', b'_', port_letters[i]];
-        buf.push(offset_name.len() as u8);
-        buf.write_all(&offset_name)?;
-        buf.write_all(&((3 + 3 * i) as i32).to_be_bytes())?;
-    }
-    let out_bus_name = b"out_bus";
-    buf.push(out_bus_name.len() as u8);
-    buf.write_all(out_bus_name)?;
-    buf.write_all(&((1 + 3 * n) as i32).to_be_bytes())?;
+    // Per-source In.kr(in_<i>, 1) readers.
+    let ins: Vec<NodeRef> = (0..n)
+        .map(|i| {
+            b.add_node(
+                "In".to_string(),
+                Rate::Control,
+                vec![param((1 + 3 * i) as u32)],
+                1,
+                0,
+            )
+        })
+        .collect();
 
-    // UGen layout (all kr-rate):
-    //   0              : Control with (3n + 2) outputs
-    //                    Control[0]            = baseline
-    //                    Control[1 + 3*i]      = in_<i>
-    //                    Control[2 + 3*i]      = scale_<i>
-    //                    Control[3 + 3*i]      = offset_<i>
-    //                    Control[1 + 3*n]      = out_bus
-    //   1 ..= n        : In.kr(in_<i>, 1) — one per source
-    //   n+1 ..= 2n     : BinaryOpUGen mul — scale_<i> * In.kr_<i>
-    //   2n+1 ..= 3n    : BinaryOpUGen add — (scale_<i> * In.kr_<i>) + offset_<i>
-    //   3n+1 ..= 4n    : BinaryOpUGen add — cumulative sum
-    //                       sum_0 = baseline + scaled_offset_0
-    //                       sum_k = sum_{k-1} + scaled_offset_k
-    //   4n+1           : Out.kr(out_bus, sum_{n-1})
-    let num_ugens = (4 * n + 2) as i32;
-    buf.write_all(&num_ugens.to_be_bytes())?;
+    // scale_<i> * In.kr_<i>
+    let muls: Vec<NodeRef> = (0..n)
+        .map(|i| {
+            b.add_node(
+                "BinaryOpUGen".to_string(),
+                Rate::Control,
+                vec![param((2 + 3 * i) as u32), first(ins[i])],
+                1,
+                OP_MUL,
+            )
+        })
+        .collect();
 
-    // UGen 0: Control (kr) with (3n + 2) outputs
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
-    buf.write_all(&((3 * n + 2) as i32).to_be_bytes())?; // 3n+2 outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    for _ in 0..(3 * n + 2) {
-        buf.push(1); // each output kr-rate
+    // (scale_<i> * In.kr_<i>) + offset_<i>
+    let shaped: Vec<NodeRef> = (0..n)
+        .map(|i| {
+            b.add_node(
+                "BinaryOpUGen".to_string(),
+                Rate::Control,
+                vec![first(muls[i]), param((3 + 3 * i) as u32)],
+                1,
+                OP_ADD,
+            )
+        })
+        .collect();
+
+    // Cumulative sum: sum_0 = baseline + shaped_0; sum_k = sum_{k-1} + shaped_k.
+    let mut sum = b.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![param(0), first(shaped[0])],
+        1,
+        OP_ADD,
+    );
+    for &next in shaped.iter().skip(1) {
+        sum = b.add_node(
+            "BinaryOpUGen".to_string(),
+            Rate::Control,
+            vec![first(sum), first(next)],
+            1,
+            OP_ADD,
+        );
     }
 
-    // UGens 1..=n: In.kr(in_<letter>, 1) — one per source
-    let in_name = b"In";
-    for i in 0..n {
-        buf.push(in_name.len() as u8);
-        buf.write_all(in_name)?;
-        buf.push(1); // control rate
-        buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
-        buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
-        buf.write_all(&0i16.to_be_bytes())?;
-        // Control[1 + 3*i] = in_<letter>
-        write_ugen_input(&mut buf, 0, (1 + 3 * i) as i32)?;
-        buf.push(1); // output rate
-    }
+    // Out.kr(out_bus, final_sum)
+    b.add_node(
+        "Out".to_string(),
+        Rate::Control,
+        vec![param((1 + 3 * n) as u32), first(sum)],
+        0,
+        0,
+    );
 
-    let binop_name = b"BinaryOpUGen";
-
-    // UGens n+1..=2n: scale_<i> * In.kr_<i>  (special index 2 = mul)
-    for i in 0..n {
-        buf.push(binop_name.len() as u8);
-        buf.write_all(binop_name)?;
-        buf.push(1); // control rate
-        buf.write_all(&2i32.to_be_bytes())?;
-        buf.write_all(&1i32.to_be_bytes())?;
-        buf.write_all(&2i16.to_be_bytes())?; // special index 2 = mul
-        write_ugen_input(&mut buf, 0, (2 + 3 * i) as i32)?; // Control[2+3i] = scale_<i>
-        write_ugen_input(&mut buf, (1 + i) as i32, 0)?; // UGen[1+i] = In.kr_<i>
-        buf.push(1); // output rate
-    }
-
-    // UGens 2n+1..=3n: (scale_<i> * In.kr_<i>) + offset_<i>  (special index 0 = add)
-    for i in 0..n {
-        buf.push(binop_name.len() as u8);
-        buf.write_all(binop_name)?;
-        buf.push(1); // control rate
-        buf.write_all(&2i32.to_be_bytes())?;
-        buf.write_all(&1i32.to_be_bytes())?;
-        buf.write_all(&0i16.to_be_bytes())?; // special index 0 = add
-        write_ugen_input(&mut buf, (n as i32) + 1 + (i as i32), 0)?; // mul output
-        write_ugen_input(&mut buf, 0, (3 + 3 * i) as i32)?; // Control[3+3i] = offset_<i>
-        buf.push(1); // output rate
-    }
-
-    // UGens 3n+1..=4n: cumulative BinaryOpUGen add (special index 0).
-    //   sum_0 = baseline + scaled_offset_0
-    //   sum_k = sum_{k-1} + scaled_offset_k
-    for k in 0..n {
-        buf.push(binop_name.len() as u8);
-        buf.write_all(binop_name)?;
-        buf.push(1); // control rate
-        buf.write_all(&2i32.to_be_bytes())?;
-        buf.write_all(&1i32.to_be_bytes())?;
-        buf.write_all(&0i16.to_be_bytes())?; // special index 0 = add
-        if k == 0 {
-            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = baseline
-            write_ugen_input(&mut buf, (2 * n) as i32 + 1, 0)?; // first scaled_offset (UGen 2n+1)
-        } else {
-            // prev cumulative sum: at UGen index 3n + k
-            write_ugen_input(&mut buf, (3 * n) as i32 + (k as i32), 0)?;
-            // next scaled_offset: at UGen index 2n + 1 + k
-            write_ugen_input(&mut buf, (2 * n) as i32 + 1 + (k as i32), 0)?;
-        }
-        buf.push(1); // output rate
-    }
-
-    // UGen 4n+1: Out.kr(out_bus, final_sum)
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(1); // control rate
-    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
-    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
-    buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, (1 + 3 * n) as i32)?; // Control[1+3n] = out_bus
-    write_ugen_input(&mut buf, (4 * n) as i32, 0)?; // last cumulative-sum output
-
-    // No variants
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
+    encode(&format!("param_kr_modulate_{}", n), b)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The original hand-written SCgf v2 byte encoders, kept verbatim as the
+    /// reference implementations for the `equiv_*` structural-equivalence
+    /// tests below. The production functions of the same names (in the parent
+    /// module) build the identical graphs via GraphIR/`encode_synthdef`; the
+    /// tests decode both blobs and compare them up to UGen reordering and
+    /// constant-table permutation. Do not "fix" or modernize these — their
+    /// value is being a frozen, independently-written encoding of the same
+    /// synthdefs.
+    mod legacy {
+        use std::io::Write;
+
+        pub fn create_system_link_audio_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?; // Magic
+            buf.write_all(&2i32.to_be_bytes())?; // Version 2
+            buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
+
+            // SynthDef name
+            let name = b"system_link_audio";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // Constants (7 total)
+            // 0: 0.0 (SendTrig ID 0 for peak_left, also zero for max/min)
+            // 1: 1.0 (SendTrig ID 1 for peak_right, also 1.0 for gain calc)
+            // 2: 2.0 (SendTrig ID 2 for rms_left)
+            // 3: 3.0 (SendTrig ID 3 for rms_right)
+            // 4: 20.0 (Impulse frequency - 20Hz for meter updates)
+            // 5: 0.01 (Amplitude attack time)
+            // 6: 0.1 (Amplitude release time)
+            buf.write_all(&7i32.to_be_bytes())?; // num constants
+            buf.write_all(&0.0f32.to_be_bytes())?; // constant 0
+            buf.write_all(&1.0f32.to_be_bytes())?; // constant 1
+            buf.write_all(&2.0f32.to_be_bytes())?; // constant 2
+            buf.write_all(&3.0f32.to_be_bytes())?; // constant 3
+            buf.write_all(&20.0f32.to_be_bytes())?; // constant 4
+            buf.write_all(&0.01f32.to_be_bytes())?; // constant 5
+            buf.write_all(&0.1f32.to_be_bytes())?; // constant 6
+
+            // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0
+            buf.write_all(&4i32.to_be_bytes())?; // num params
+            buf.write_all(&0.0f32.to_be_bytes())?; // inbus default = 0
+            buf.write_all(&0.0f32.to_be_bytes())?; // outbus default = 0
+            buf.write_all(&1.0f32.to_be_bytes())?; // amp default = 1.0
+            buf.write_all(&0.0f32.to_be_bytes())?; // pan default = 0.0
+
+            // Param names
+            buf.write_all(&4i32.to_be_bytes())?; // num param names
+            let inbus_name = b"inbus";
+            buf.push(inbus_name.len() as u8);
+            buf.write_all(inbus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?; // index 0
+            let outbus_name = b"outbus";
+            buf.push(outbus_name.len() as u8);
+            buf.write_all(outbus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?; // index 1
+            let amp_name = b"amp";
+            buf.push(amp_name.len() as u8);
+            buf.write_all(amp_name)?;
+            buf.write_all(&2i32.to_be_bytes())?; // index 2
+            let pan_name = b"pan";
+            buf.push(pan_name.len() as u8);
+            buf.write_all(pan_name)?;
+            buf.write_all(&3i32.to_be_bytes())?; // index 3
+
+            // UGens (20 total)
+            //
+            // 0:  Control (4 outputs: inbus, outbus, amp, pan)
+            // 1:  In.ar (2 outputs: left, right)
+            // 2:  BinaryOp * (left * amp)          = scaled_left
+            // 3:  BinaryOp * (right * amp)         = scaled_right
+            // 4:  BinaryOp max(0, pan)             = max_pan       [kr]
+            // 5:  BinaryOp 1 - max_pan             = left_gain     [kr]
+            // 6:  BinaryOp min(0, pan)             = min_pan       [kr]
+            // 7:  BinaryOp 1 + min_pan             = right_gain    [kr]
+            // 8:  BinaryOp scaled_left * left_gain = panned_left   [ar]
+            // 9:  BinaryOp scaled_right * right_gain = panned_right [ar]
+            // 10: Out.ar (outbus, panned_left, panned_right)
+            // 11: Impulse.kr (20Hz)
+            // 12-13: Peak.kr (panned_left, panned_right)
+            // 14-15: Amplitude.kr (panned_left, panned_right)
+            // 16-19: SendTrig.kr (peak_l, peak_r, rms_l, rms_r)
+            buf.write_all(&20i32.to_be_bytes())?; // num ugens
+
+            let binop_name = b"BinaryOpUGen";
+
+            // UGen 0: Control (control rate, 4 outputs: inbus, outbus, amp, pan)
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&0i32.to_be_bytes())?; // num inputs
+            buf.write_all(&4i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            buf.push(1); // output 0 rate: control (inbus)
+            buf.push(1); // output 1 rate: control (outbus)
+            buf.push(1); // output 2 rate: control (amp)
+            buf.push(1); // output 3 rate: control (pan)
+
+            // UGen 1: In.ar (audio rate, 2 outputs: left, right)
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&1i32.to_be_bytes())?; // num inputs
+            buf.write_all(&2i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 0, 0)?; // input: Control[0] (inbus)
+            buf.push(2); // output 0 rate: audio (left)
+            buf.push(2); // output 1 rate: audio (right)
+
+            // UGen 2: left * amp - audio rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&2i16.to_be_bytes())?; // special: multiply
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] (left)
+            write_ugen_input(&mut buf, 0, 2)?; // Control[2] (amp)
+            buf.push(2); // output rate: audio
+
+            // UGen 3: right * amp - audio rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&2i16.to_be_bytes())?; // special: multiply
+            write_ugen_input(&mut buf, 1, 1)?; // In[1] (right)
+            write_ugen_input(&mut buf, 0, 2)?; // Control[2] (amp)
+            buf.push(2); // output rate: audio
+
+            // UGen 4: max(0, pan) - control rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&13i16.to_be_bytes())?; // special: max
+            write_const_input(&mut buf, 0)?; // constant 0 (0.0)
+            write_ugen_input(&mut buf, 0, 3)?; // Control[3] (pan)
+            buf.push(1); // output rate: control
+
+            // UGen 5: 1 - max(0, pan) = left_gain - control rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&1i16.to_be_bytes())?; // special: subtract
+            write_const_input(&mut buf, 1)?; // constant 1 (1.0)
+            write_ugen_input(&mut buf, 4, 0)?; // UGen4[0] (max_pan)
+            buf.push(1); // output rate: control
+
+            // UGen 6: min(0, pan) - control rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&12i16.to_be_bytes())?; // special: min
+            write_const_input(&mut buf, 0)?; // constant 0 (0.0)
+            write_ugen_input(&mut buf, 0, 3)?; // Control[3] (pan)
+            buf.push(1); // output rate: control
+
+            // UGen 7: 1 + min(0, pan) = right_gain - control rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special: add
+            write_const_input(&mut buf, 1)?; // constant 1 (1.0)
+            write_ugen_input(&mut buf, 6, 0)?; // UGen6[0] (min_pan)
+            buf.push(1); // output rate: control
+
+            // UGen 8: scaled_left * left_gain = panned_left - audio rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&2i16.to_be_bytes())?; // special: multiply
+            write_ugen_input(&mut buf, 2, 0)?; // UGen2[0] (scaled_left)
+            write_ugen_input(&mut buf, 5, 0)?; // UGen5[0] (left_gain)
+            buf.push(2); // output rate: audio
+
+            // UGen 9: scaled_right * right_gain = panned_right - audio rate
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&2i16.to_be_bytes())?; // special: multiply
+            write_ugen_input(&mut buf, 3, 0)?; // UGen3[0] (scaled_right)
+            write_ugen_input(&mut buf, 7, 0)?; // UGen7[0] (right_gain)
+            buf.push(2); // output rate: audio
+
+            // UGen 10: Out.ar (outputs panned audio to outbus)
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2); // rate: audio
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&0i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] (outbus)
+            write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
+            write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
+
+            // UGen 11: Impulse.kr (20Hz trigger for meter updates)
+            let impulse_name = b"Impulse";
+            buf.push(impulse_name.len() as u8);
+            buf.write_all(impulse_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs (freq, phase)
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_const_input(&mut buf, 4)?; // constant 4 (20.0 Hz)
+            write_const_input(&mut buf, 0)?; // constant 0 (0.0 phase)
+            buf.push(1); // output rate: control
+
+            // UGen 12: Peak.kr (left channel peak, reset by Impulse)
+            let peak_name = b"Peak";
+            buf.push(peak_name.len() as u8);
+            buf.write_all(peak_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            buf.push(1); // output rate: control
+
+            // UGen 13: Peak.kr (right channel peak, reset by Impulse)
+            buf.push(peak_name.len() as u8);
+            buf.write_all(peak_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&2i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            buf.push(1); // output rate: control
+
+            // UGen 14: Amplitude.kr (left channel RMS-like)
+            let amplitude_name = b"Amplitude";
+            buf.push(amplitude_name.len() as u8);
+            buf.write_all(amplitude_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 8, 0)?; // UGen8[0] (panned_left)
+            write_const_input(&mut buf, 5)?; // constant 5 (0.01 attack)
+            write_const_input(&mut buf, 6)?; // constant 6 (0.1 release)
+            buf.push(1); // output rate: control
+
+            // UGen 15: Amplitude.kr (right channel RMS-like)
+            buf.push(amplitude_name.len() as u8);
+            buf.write_all(amplitude_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&1i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 9, 0)?; // UGen9[0] (panned_right)
+            write_const_input(&mut buf, 5)?; // constant 5 (0.01 attack)
+            write_const_input(&mut buf, 6)?; // constant 6 (0.1 release)
+            buf.push(1); // output rate: control
+
+            // UGen 16: SendTrig.kr (send peak_left)
+            let sendtrig_name = b"SendTrig";
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&0i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            write_const_input(&mut buf, 0)?; // constant 0 (ID = 0)
+            write_ugen_input(&mut buf, 12, 0)?; // UGen12[0] (Peak left)
+
+            // UGen 17: SendTrig.kr (send peak_right)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&0i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            write_const_input(&mut buf, 1)?; // constant 1 (ID = 1)
+            write_ugen_input(&mut buf, 13, 0)?; // UGen13[0] (Peak right)
+
+            // UGen 18: SendTrig.kr (send rms_left)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&0i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            write_const_input(&mut buf, 2)?; // constant 2 (ID = 2)
+            write_ugen_input(&mut buf, 14, 0)?; // UGen14[0] (Amplitude left)
+
+            // UGen 19: SendTrig.kr (send rms_right)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1); // rate: control
+            buf.write_all(&3i32.to_be_bytes())?; // num inputs
+            buf.write_all(&0i32.to_be_bytes())?; // num outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            write_ugen_input(&mut buf, 11, 0)?; // UGen11[0] (Impulse)
+            write_const_input(&mut buf, 3)?; // constant 3 (ID = 3)
+            write_ugen_input(&mut buf, 15, 0)?; // UGen15[0] (Amplitude right)
+
+            // Variants: none
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_system_link_audio_mono_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?; // Magic
+            buf.write_all(&2i32.to_be_bytes())?; // Version 2
+            buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
+
+            // SynthDef name
+            let name = b"system_link_audio_mono";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // Constants (7 total) — identical layout to system_link_audio.
+            buf.write_all(&7i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&1.0f32.to_be_bytes())?;
+            buf.write_all(&2.0f32.to_be_bytes())?;
+            buf.write_all(&3.0f32.to_be_bytes())?;
+            buf.write_all(&20.0f32.to_be_bytes())?;
+            buf.write_all(&0.01f32.to_be_bytes())?;
+            buf.write_all(&0.1f32.to_be_bytes())?;
+
+            // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0 (same surface as stereo).
+            buf.write_all(&4i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&1.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            // Param names
+            buf.write_all(&4i32.to_be_bytes())?;
+            let inbus_name = b"inbus";
+            buf.push(inbus_name.len() as u8);
+            buf.write_all(inbus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let outbus_name = b"outbus";
+            buf.push(outbus_name.len() as u8);
+            buf.write_all(outbus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            let amp_name = b"amp";
+            buf.push(amp_name.len() as u8);
+            buf.write_all(amp_name)?;
+            buf.write_all(&2i32.to_be_bytes())?;
+            let pan_name = b"pan";
+            buf.push(pan_name.len() as u8);
+            buf.write_all(pan_name)?;
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGens (21 total)
+            //
+            // 0:  Control (4 outputs: inbus, outbus, amp, pan)
+            // 1:  In.ar (2 outputs: left, right)
+            // 2:  BinaryOp * (left * amp)            = scaled_left
+            // 3:  BinaryOp * (right * amp)           = scaled_right
+            // 4:  BinaryOp max(0, pan)               = max_pan      [kr]
+            // 5:  BinaryOp 1 - max_pan               = left_gain    [kr]
+            // 6:  BinaryOp min(0, pan)               = min_pan      [kr]
+            // 7:  BinaryOp 1 + min_pan               = right_gain   [kr]
+            // 8:  BinaryOp scaled_left * left_gain   = panned_left  [ar]
+            // 9:  BinaryOp scaled_right * right_gain = panned_right [ar]
+            // 10: BinaryOp panned_left + panned_right = mono_sum    [ar]   ← mono mixdown
+            // 11: Out.ar (outbus, mono_sum)                                   ← 1 channel
+            // 12: Impulse.kr (20Hz)
+            // 13-14: Peak.kr (panned_left, panned_right)
+            // 15-16: Amplitude.kr (panned_left, panned_right)
+            // 17-20: SendTrig.kr (peak_l, peak_r, rms_l, rms_r)
+            buf.write_all(&21i32.to_be_bytes())?;
+
+            let binop_name = b"BinaryOpUGen";
+
+            // UGen 0: Control (kr, 4 outputs)
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1);
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&4i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            buf.push(1);
+            buf.push(1);
+            buf.push(1);
+            buf.push(1);
+
+            // UGen 1: In.ar (2 outputs: left, right)
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2);
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] (inbus)
+            buf.push(2);
+            buf.push(2);
+
+            // UGen 2: scaled_left = left * amp
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&2i16.to_be_bytes())?; // mul
+            write_ugen_input(&mut buf, 1, 0)?;
+            write_ugen_input(&mut buf, 0, 2)?;
+            buf.push(2);
+
+            // UGen 3: scaled_right = right * amp
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&2i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 1, 1)?;
+            write_ugen_input(&mut buf, 0, 2)?;
+            buf.push(2);
+
+            // UGen 4: max_pan = max(0, pan)  [kr]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&13i16.to_be_bytes())?; // max
+            write_const_input(&mut buf, 0)?;
+            write_ugen_input(&mut buf, 0, 3)?;
+            buf.push(1);
+
+            // UGen 5: left_gain = 1 - max_pan  [kr]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&1i16.to_be_bytes())?; // sub
+            write_const_input(&mut buf, 1)?;
+            write_ugen_input(&mut buf, 4, 0)?;
+            buf.push(1);
+
+            // UGen 6: min_pan = min(0, pan)  [kr]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&12i16.to_be_bytes())?; // min
+            write_const_input(&mut buf, 0)?;
+            write_ugen_input(&mut buf, 0, 3)?;
+            buf.push(1);
+
+            // UGen 7: right_gain = 1 + min_pan  [kr]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?; // add
+            write_const_input(&mut buf, 1)?;
+            write_ugen_input(&mut buf, 6, 0)?;
+            buf.push(1);
+
+            // UGen 8: panned_left = scaled_left * left_gain  [ar]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&2i16.to_be_bytes())?; // mul
+            write_ugen_input(&mut buf, 2, 0)?;
+            write_ugen_input(&mut buf, 5, 0)?;
+            buf.push(2);
+
+            // UGen 9: panned_right = scaled_right * right_gain  [ar]
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&2i16.to_be_bytes())?; // mul
+            write_ugen_input(&mut buf, 3, 0)?;
+            write_ugen_input(&mut buf, 7, 0)?;
+            buf.push(2);
+
+            // UGen 10: mono_sum = panned_left + panned_right  [ar]
+            // No halving: unity-gain mono mixdown. True-stereo content runs ~6 dB hot.
+            buf.push(binop_name.len() as u8);
+            buf.write_all(binop_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?; // add
+            write_ugen_input(&mut buf, 8, 0)?; // panned_left
+            write_ugen_input(&mut buf, 9, 0)?; // panned_right
+            buf.push(2);
+
+            // UGen 11: Out.ar(outbus, mono_sum) — 1 channel only.
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2);
+            buf.write_all(&2i32.to_be_bytes())?; // 2 inputs: bus + 1 channel
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] (outbus)
+            write_ugen_input(&mut buf, 10, 0)?; // mono_sum
+
+            // UGen 12: Impulse.kr (20Hz)
+            let impulse_name = b"Impulse";
+            buf.push(impulse_name.len() as u8);
+            buf.write_all(impulse_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_const_input(&mut buf, 4)?;
+            write_const_input(&mut buf, 0)?;
+            buf.push(1);
+
+            // UGen 13: Peak.kr (panned_left)
+            let peak_name = b"Peak";
+            buf.push(peak_name.len() as u8);
+            buf.write_all(peak_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 8, 0)?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            buf.push(1);
+
+            // UGen 14: Peak.kr (panned_right)
+            buf.push(peak_name.len() as u8);
+            buf.write_all(peak_name)?;
+            buf.push(1);
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 9, 0)?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            buf.push(1);
+
+            // UGen 15: Amplitude.kr (panned_left)
+            let amplitude_name = b"Amplitude";
+            buf.push(amplitude_name.len() as u8);
+            buf.write_all(amplitude_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 8, 0)?;
+            write_const_input(&mut buf, 5)?;
+            write_const_input(&mut buf, 6)?;
+            buf.push(1);
+
+            // UGen 16: Amplitude.kr (panned_right)
+            buf.push(amplitude_name.len() as u8);
+            buf.write_all(amplitude_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&1i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 9, 0)?;
+            write_const_input(&mut buf, 5)?;
+            write_const_input(&mut buf, 6)?;
+            buf.push(1);
+
+            // UGen 17: SendTrig.kr (peak_left)
+            let sendtrig_name = b"SendTrig";
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            write_const_input(&mut buf, 0)?;
+            write_ugen_input(&mut buf, 13, 0)?;
+
+            // UGen 18: SendTrig.kr (peak_right)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            write_const_input(&mut buf, 1)?;
+            write_ugen_input(&mut buf, 14, 0)?;
+
+            // UGen 19: SendTrig.kr (rms_left)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            write_const_input(&mut buf, 2)?;
+            write_ugen_input(&mut buf, 15, 0)?;
+
+            // UGen 20: SendTrig.kr (rms_right)
+            buf.push(sendtrig_name.len() as u8);
+            buf.write_all(sendtrig_name)?;
+            buf.push(1);
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 12, 0)?;
+            write_const_input(&mut buf, 3)?;
+            write_ugen_input(&mut buf, 16, 0)?;
+
+            // Variants: none
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        /// Write a constant input reference to the buffer.
+        fn write_const_input(buf: &mut Vec<u8>, const_idx: i32) -> std::io::Result<()> {
+            buf.write_all(&(-1i32).to_be_bytes())?; // -1 means constant
+            buf.write_all(&const_idx.to_be_bytes())?;
+            Ok(())
+        }
+
+        /// Write a UGen input reference to the buffer.
+        fn write_ugen_input(
+            buf: &mut Vec<u8>,
+            ugen_idx: i32,
+            output_idx: i32,
+        ) -> std::io::Result<()> {
+            buf.write_all(&ugen_idx.to_be_bytes())?;
+            buf.write_all(&output_idx.to_be_bytes())?;
+            Ok(())
+        }
+
+        pub fn create_port_to_group_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"port_to_group_link_1";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            // 0: Control (2 control outputs: in_bus, out_bus)
+            // 1: In.ar (1 audio output, mono, reads in_bus)
+            // 2: Out.ar (writes In[0] twice → stereo dup at out_bus)
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+            buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            buf.push(1); // output 0 rate
+            buf.push(1); // output 1 rate
+
+            // UGen 1: In.ar(in_bus, 1) → mono
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(2); // output rate
+
+            // UGen 2: Out.ar(out_bus, mono, mono) → mono duplicated to stereo
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&3i32.to_be_bytes())?; // 3 inputs
+            buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] (left channel)
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] again (right channel — dup)
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"port_to_group_link_2";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            // 0: Control (2 control outputs: in_bus, out_bus)
+            // 1: In.ar (2 audio outputs: left, right; reads in_bus)
+            // 2: Out.ar (writes left + right → stereo passthrough at out_bus)
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            buf.push(1);
+            buf.push(1);
+
+            // UGen 1: In.ar(in_bus, 2) → stereo
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&2i32.to_be_bytes())?; // 2 outputs (stereo)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(2); // output 0 rate
+            buf.push(2); // output 1 rate
+
+            // UGen 2: Out.ar(out_bus, left, right)
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] = left
+            write_ugen_input(&mut buf, 1, 1)?; // In[1] = right
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_input_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"input_link_1";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            // 0: Control (2 control outputs: in_bus, out_bus)
+            // 1: In.ar (1 audio output, mono, reads in_bus)
+            // 2: Out.ar (writes In[0] → mono passthrough at out_bus)
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+            buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            buf.push(1); // output 0 rate
+            buf.push(1); // output 1 rate
+
+            // UGen 1: In.ar(in_bus, 1) → mono
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(2); // output rate
+
+            // UGen 2: Out.ar(out_bus, mono) → mono passthrough
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus + 1 channel)
+            buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] (mono channel)
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_input_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"input_link_2";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            // 0: Control (2 control outputs: in_bus, out_bus)
+            // 1: In.ar (2 audio outputs: left, right; reads in_bus)
+            // 2: Out.ar (writes left + right → stereo passthrough at out_bus)
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            buf.push(1);
+            buf.push(1);
+
+            // UGen 1: In.ar(in_bus, 2) → stereo
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&2i32.to_be_bytes())?; // 2 outputs (stereo)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(2); // output 0 rate
+            buf.push(2); // output 1 rate
+
+            // UGen 2: Out.ar(out_bus, left, right)
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&3i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] = left
+            write_ugen_input(&mut buf, 1, 1)?; // In[1] = right
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_port_tr_to_param_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"port_tr_to_param_link_1";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            //   0: Control (kr) — 2 outputs: in_bus, out_bus
+            //   1: In.kr(in_bus, 1) — 1 mono kr output
+            //   2: Out.kr(out_bus, In[0])
+            buf.write_all(&3i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            buf.push(1); // output 0 rate
+            buf.push(1); // output 1 rate
+
+            // UGen 1: In.kr(in_bus, 1) → mono kr (carries the trigger edge unchanged)
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(1); // output rate
+
+            // UGen 2: Out.kr(out_bus, In[0])
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 1, 0)?; // In[0]
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_a2k_adapter_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name
+            let name = b"a2k_adapter_1";
+            buf.push(name.len() as u8);
+            buf.write_all(name)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameters: in_bus=0, out_bus=0
+            buf.write_all(&2i32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            buf.write_all(&2i32.to_be_bytes())?;
+            let in_bus_name = b"in_bus";
+            buf.push(in_bus_name.len() as u8);
+            buf.write_all(in_bus_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&1i32.to_be_bytes())?;
+
+            // UGens:
+            //   0: Control (kr) — 2 outputs: in_bus, out_bus
+            //   1: In.ar(in_bus, 1) — 1 mono ar output
+            //   2: A2K.kr(In[0]) — 1 mono kr output (samples ar once per kr cycle)
+            //   3: Out.kr(out_bus, A2K[0])
+            buf.write_all(&4i32.to_be_bytes())?;
+
+            // UGen 0: Control
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+            buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            buf.push(1); // output 0 rate (in_bus)
+            buf.push(1); // output 1 rate (out_bus)
+
+            // UGen 1: In.ar(in_bus, 1) → mono ar
+            let in_name = b"In";
+            buf.push(in_name.len() as u8);
+            buf.write_all(in_name)?;
+            buf.push(2); // audio rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+            buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono ar)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+            buf.push(2); // output rate: audio
+
+            // UGen 2: A2K.kr(In[0]) — downsample ar to kr
+            let a2k_name = b"A2K";
+            buf.push(a2k_name.len() as u8);
+            buf.write_all(a2k_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&1i32.to_be_bytes())?; // 1 input (the ar signal)
+            buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 1, 0)?; // In[0] (mono ar)
+            buf.push(1); // output rate: control
+
+            // UGen 3: Out.kr(out_bus, A2K[0])
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
+            buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+            write_ugen_input(&mut buf, 2, 0)?; // A2K[0]
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+
+        pub fn create_param_kr_modulate_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> {
+            assert!(
+                (1..=super::PARAM_KR_MODULATE_MAX).contains(&n),
+                "param_kr_modulate_<n> only supports n in 1..={} (got {})",
+                super::PARAM_KR_MODULATE_MAX,
+                n
+            );
+
+            let mut buf = Vec::new();
+
+            // File header
+            buf.write_all(b"SCgf")?;
+            buf.write_all(&2i32.to_be_bytes())?; // version 2
+            buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+            // Name: "param_kr_modulate_<n>"
+            let name_string = format!("param_kr_modulate_{}", n);
+            let name_bytes = name_string.as_bytes();
+            buf.push(name_bytes.len() as u8);
+            buf.write_all(name_bytes)?;
+
+            // No constants
+            buf.write_all(&0i32.to_be_bytes())?;
+
+            // Parameter layout (all kr controls):
+            //   index 0          : baseline   (default 0.0)
+            //   index 1 + 3*i    : in_<i>     (default 0.0)
+            //   index 2 + 3*i    : scale_<i>  (default 1.0)
+            //   index 3 + 3*i    : offset_<i> (default 0.0)
+            //   index 1 + 3*n    : out_bus    (default 0.0)
+            // Total params: 1 + 3*n + 1 = 3n + 2.
+            let num_params = (3 * n + 2) as i32;
+            buf.write_all(&num_params.to_be_bytes())?;
+            // baseline default
+            buf.write_all(&0.0f32.to_be_bytes())?;
+            // per-source defaults: in_<i>=0, scale_<i>=1, offset_<i>=0
+            for _ in 0..n {
+                buf.write_all(&0.0f32.to_be_bytes())?; // in_<i>
+                buf.write_all(&1.0f32.to_be_bytes())?; // scale_<i>
+                buf.write_all(&0.0f32.to_be_bytes())?; // offset_<i>
+            }
+            // out_bus default
+            buf.write_all(&0.0f32.to_be_bytes())?;
+
+            // Param names
+            let port_letters = [b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h'];
+            buf.write_all(&num_params.to_be_bytes())?;
+            let baseline_name = b"baseline";
+            buf.push(baseline_name.len() as u8);
+            buf.write_all(baseline_name)?;
+            buf.write_all(&0i32.to_be_bytes())?;
+            for i in 0..n {
+                let in_name = [b'i', b'n', b'_', port_letters[i]];
+                buf.push(in_name.len() as u8);
+                buf.write_all(&in_name)?;
+                buf.write_all(&((1 + 3 * i) as i32).to_be_bytes())?;
+                let scale_name = [b's', b'c', b'a', b'l', b'e', b'_', port_letters[i]];
+                buf.push(scale_name.len() as u8);
+                buf.write_all(&scale_name)?;
+                buf.write_all(&((2 + 3 * i) as i32).to_be_bytes())?;
+                let offset_name = [b'o', b'f', b'f', b's', b'e', b't', b'_', port_letters[i]];
+                buf.push(offset_name.len() as u8);
+                buf.write_all(&offset_name)?;
+                buf.write_all(&((3 + 3 * i) as i32).to_be_bytes())?;
+            }
+            let out_bus_name = b"out_bus";
+            buf.push(out_bus_name.len() as u8);
+            buf.write_all(out_bus_name)?;
+            buf.write_all(&((1 + 3 * n) as i32).to_be_bytes())?;
+
+            // UGen layout (all kr-rate):
+            //   0              : Control with (3n + 2) outputs
+            //   1 ..= n        : In.kr(in_<i>, 1) — one per source
+            //   n+1 ..= 2n     : BinaryOpUGen mul — scale_<i> * In.kr_<i>
+            //   2n+1 ..= 3n    : BinaryOpUGen add — (scale_<i> * In.kr_<i>) + offset_<i>
+            //   3n+1 ..= 4n    : BinaryOpUGen add — cumulative sum
+            //   4n+1           : Out.kr(out_bus, sum_{n-1})
+            let num_ugens = (4 * n + 2) as i32;
+            buf.write_all(&num_ugens.to_be_bytes())?;
+
+            // UGen 0: Control (kr) with (3n + 2) outputs
+            let control_name = b"Control";
+            buf.push(control_name.len() as u8);
+            buf.write_all(control_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+            buf.write_all(&((3 * n + 2) as i32).to_be_bytes())?; // 3n+2 outputs
+            buf.write_all(&0i16.to_be_bytes())?; // special index
+            for _ in 0..(3 * n + 2) {
+                buf.push(1); // each output kr-rate
+            }
+
+            // UGens 1..=n: In.kr(in_<letter>, 1) — one per source
+            let in_name = b"In";
+            for i in 0..n {
+                buf.push(in_name.len() as u8);
+                buf.write_all(in_name)?;
+                buf.push(1); // control rate
+                buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+                buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
+                buf.write_all(&0i16.to_be_bytes())?;
+                // Control[1 + 3*i] = in_<letter>
+                write_ugen_input(&mut buf, 0, (1 + 3 * i) as i32)?;
+                buf.push(1); // output rate
+            }
+
+            let binop_name = b"BinaryOpUGen";
+
+            // UGens n+1..=2n: scale_<i> * In.kr_<i>  (special index 2 = mul)
+            for i in 0..n {
+                buf.push(binop_name.len() as u8);
+                buf.write_all(binop_name)?;
+                buf.push(1); // control rate
+                buf.write_all(&2i32.to_be_bytes())?;
+                buf.write_all(&1i32.to_be_bytes())?;
+                buf.write_all(&2i16.to_be_bytes())?; // special index 2 = mul
+                write_ugen_input(&mut buf, 0, (2 + 3 * i) as i32)?; // Control[2+3i] = scale_<i>
+                write_ugen_input(&mut buf, (1 + i) as i32, 0)?; // UGen[1+i] = In.kr_<i>
+                buf.push(1); // output rate
+            }
+
+            // UGens 2n+1..=3n: (scale_<i> * In.kr_<i>) + offset_<i>  (special index 0 = add)
+            for i in 0..n {
+                buf.push(binop_name.len() as u8);
+                buf.write_all(binop_name)?;
+                buf.push(1); // control rate
+                buf.write_all(&2i32.to_be_bytes())?;
+                buf.write_all(&1i32.to_be_bytes())?;
+                buf.write_all(&0i16.to_be_bytes())?; // special index 0 = add
+                write_ugen_input(&mut buf, (n as i32) + 1 + (i as i32), 0)?; // mul output
+                write_ugen_input(&mut buf, 0, (3 + 3 * i) as i32)?; // Control[3+3i] = offset_<i>
+                buf.push(1); // output rate
+            }
+
+            // UGens 3n+1..=4n: cumulative BinaryOpUGen add (special index 0).
+            for k in 0..n {
+                buf.push(binop_name.len() as u8);
+                buf.write_all(binop_name)?;
+                buf.push(1); // control rate
+                buf.write_all(&2i32.to_be_bytes())?;
+                buf.write_all(&1i32.to_be_bytes())?;
+                buf.write_all(&0i16.to_be_bytes())?; // special index 0 = add
+                if k == 0 {
+                    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = baseline
+                    write_ugen_input(&mut buf, (2 * n) as i32 + 1, 0)?; // first scaled_offset
+                } else {
+                    // prev cumulative sum: at UGen index 3n + k
+                    write_ugen_input(&mut buf, (3 * n) as i32 + (k as i32), 0)?;
+                    // next scaled_offset: at UGen index 2n + 1 + k
+                    write_ugen_input(&mut buf, (2 * n) as i32 + 1 + (k as i32), 0)?;
+                }
+                buf.push(1); // output rate
+            }
+
+            // UGen 4n+1: Out.kr(out_bus, final_sum)
+            let out_name = b"Out";
+            buf.push(out_name.len() as u8);
+            buf.write_all(out_name)?;
+            buf.push(1); // control rate
+            buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
+            buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+            buf.write_all(&0i16.to_be_bytes())?;
+            write_ugen_input(&mut buf, 0, (1 + 3 * n) as i32)?; // Control[1+3n] = out_bus
+            write_ugen_input(&mut buf, (4 * n) as i32, 0)?; // last cumulative-sum output
+
+            // No variants
+            buf.write_all(&0i16.to_be_bytes())?;
+
+            Ok(buf)
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // SCgf v2 decoder + canonical structural comparison
+    // ---------------------------------------------------------------------
+
+    /// A decoded UGen input edge: either a constant *value* (resolved through
+    /// the constant table, so table permutation doesn't matter) or an
+    /// `(ugen index, output index)` edge.
+    #[derive(Debug, Clone, PartialEq)]
+    enum DecodedInput {
+        Const(f32),
+        Node(usize, usize),
+    }
+
+    #[derive(Debug, Clone)]
+    struct DecodedUGen {
+        class: String,
+        rate: u8,
+        special: i16,
+        inputs: Vec<DecodedInput>,
+        output_rates: Vec<u8>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct DecodedSynthDef {
+        name: String,
+        constants: Vec<f32>,
+        param_defaults: Vec<f32>,
+        param_names: Vec<(String, usize)>,
+        ugens: Vec<DecodedUGen>,
+    }
+
+    struct Cursor<'a> {
+        bytes: &'a [u8],
+        pos: usize,
+    }
+
+    impl<'a> Cursor<'a> {
+        fn new(bytes: &'a [u8]) -> Self {
+            Self { bytes, pos: 0 }
+        }
+
+        fn take(&mut self, n: usize) -> &'a [u8] {
+            assert!(
+                self.pos + n <= self.bytes.len(),
+                "decode overrun at offset {} (+{}), len {}",
+                self.pos,
+                n,
+                self.bytes.len()
+            );
+            let s = &self.bytes[self.pos..self.pos + n];
+            self.pos += n;
+            s
+        }
+
+        fn u8(&mut self) -> u8 {
+            self.take(1)[0]
+        }
+
+        fn i16(&mut self) -> i16 {
+            i16::from_be_bytes(self.take(2).try_into().unwrap())
+        }
+
+        fn i32(&mut self) -> i32 {
+            i32::from_be_bytes(self.take(4).try_into().unwrap())
+        }
+
+        fn f32(&mut self) -> f32 {
+            f32::from_be_bytes(self.take(4).try_into().unwrap())
+        }
+
+        fn pstring(&mut self) -> String {
+            let len = self.u8() as usize;
+            String::from_utf8(self.take(len).to_vec()).expect("non-utf8 pstring")
+        }
+    }
+
+    /// Decode a single-synthdef SCgf v2 blob into a structural representation.
+    fn decode_synthdef(bytes: &[u8]) -> DecodedSynthDef {
+        let mut c = Cursor::new(bytes);
+
+        assert_eq!(c.take(4), b"SCgf", "bad magic");
+        assert_eq!(c.i32(), 2, "expected SCgf version 2");
+        assert_eq!(c.i16(), 1, "expected exactly one synthdef");
+
+        let name = c.pstring();
+
+        let num_constants = c.i32() as usize;
+        let constants: Vec<f32> = (0..num_constants).map(|_| c.f32()).collect();
+
+        let num_param_slots = c.i32() as usize;
+        let param_defaults: Vec<f32> = (0..num_param_slots).map(|_| c.f32()).collect();
+
+        let num_param_names = c.i32() as usize;
+        let param_names: Vec<(String, usize)> = (0..num_param_names)
+            .map(|_| {
+                let n = c.pstring();
+                let idx = c.i32() as usize;
+                (n, idx)
+            })
+            .collect();
+
+        let num_ugens = c.i32() as usize;
+        let mut ugens = Vec::with_capacity(num_ugens);
+        for _ in 0..num_ugens {
+            let class = c.pstring();
+            let rate = c.u8();
+            let num_inputs = c.i32() as usize;
+            let num_outputs = c.i32() as usize;
+            let special = c.i16();
+            let inputs = (0..num_inputs)
+                .map(|_| {
+                    let src = c.i32();
+                    let idx = c.i32();
+                    if src == -1 {
+                        let ci = idx as usize;
+                        assert!(ci < constants.len(), "constant index out of range");
+                        DecodedInput::Const(constants[ci])
+                    } else {
+                        DecodedInput::Node(src as usize, idx as usize)
+                    }
+                })
+                .collect();
+            let output_rates = (0..num_outputs).map(|_| c.u8()).collect();
+            ugens.push(DecodedUGen {
+                class,
+                rate,
+                special,
+                inputs,
+                output_rates,
+            });
+        }
+
+        assert_eq!(c.i16(), 0, "expected zero variants");
+        assert_eq!(c.pos, bytes.len(), "trailing bytes after synthdef");
+
+        // Validate node references and topological order.
+        for (i, u) in ugens.iter().enumerate() {
+            for input in &u.inputs {
+                if let DecodedInput::Node(src, out) = input {
+                    assert!(*src < i, "UGen {} references non-preceding UGen {}", i, src);
+                    assert!(
+                        *out < ugens[*src].output_rates.len(),
+                        "UGen {} references invalid output {} of UGen {}",
+                        i,
+                        out,
+                        src
+                    );
+                }
+            }
+        }
+
+        DecodedSynthDef {
+            name,
+            constants,
+            param_defaults,
+            param_names,
+            ugens,
+        }
+    }
+
+    /// Signature of a UGen with node references remapped through `placed`
+    /// (old index → canonical index). Only valid once all node inputs of the
+    /// UGen are placed.
+    fn ugen_signature(u: &DecodedUGen, placed: &[Option<usize>]) -> String {
+        let inputs: Vec<String> = u
+            .inputs
+            .iter()
+            .map(|input| match input {
+                DecodedInput::Const(v) => format!("c{:08x}", v.to_bits()),
+                DecodedInput::Node(src, out) => format!(
+                    "n{}:{}",
+                    placed[*src].expect("signature of node with unplaced input"),
+                    out
+                ),
+            })
+            .collect();
+        format!(
+            "{}|rate{}|special{}|in[{}]|outr{:?}",
+            u.class,
+            u.rate,
+            u.special,
+            inputs.join(","),
+            u.output_rates
+        )
+    }
+
+    /// Canonicalize the UGen list: remap UGen indices by a deterministic
+    /// topological order (ready node with the lexicographically smallest
+    /// signature first; ties broken by original index) and serialize each
+    /// UGen with remapped input edges. Two graphs are structurally equivalent
+    /// iff their canonical serializations are equal — insensitive to UGen
+    /// reordering and constant-table permutation, sensitive to any change in
+    /// class, rate, special index, wiring or output rates.
+    fn canonical_ugens(def: &DecodedSynthDef) -> Vec<String> {
+        let n = def.ugens.len();
+        let mut placed: Vec<Option<usize>> = vec![None; n];
+        let mut result = Vec::with_capacity(n);
+
+        for next_idx in 0..n {
+            let mut best: Option<(String, usize)> = None;
+            for (i, u) in def.ugens.iter().enumerate() {
+                if placed[i].is_some() {
+                    continue;
+                }
+                let ready = u.inputs.iter().all(|input| match input {
+                    DecodedInput::Const(_) => true,
+                    DecodedInput::Node(src, _) => placed[*src].is_some(),
+                });
+                if !ready {
+                    continue;
+                }
+                let sig = ugen_signature(u, &placed);
+                match &best {
+                    None => best = Some((sig, i)),
+                    Some((best_sig, _)) if sig < *best_sig => best = Some((sig, i)),
+                    _ => {}
+                }
+            }
+            let (sig, i) = best.expect("no ready UGen — cycle in graph?");
+            placed[i] = Some(next_idx);
+            result.push(sig);
+        }
+
+        result
+    }
+
+    /// Assert structural equivalence of two single-synthdef SCgf v2 blobs:
+    /// same name, same parameter names/slots/defaults, same constant set
+    /// (with tolerance), and canonically identical UGen graphs.
+    fn assert_equivalent(reference: &[u8], candidate: &[u8]) {
+        let r = decode_synthdef(reference);
+        let c = decode_synthdef(candidate);
+
+        assert_eq!(r.name, c.name, "synthdef name mismatch");
+        assert_eq!(
+            r.param_defaults, c.param_defaults,
+            "{}: param default slots mismatch",
+            r.name
+        );
+        assert_eq!(
+            r.param_names, c.param_names,
+            "{}: param names/indices mismatch",
+            r.name
+        );
+
+        let mut rc = r.constants.clone();
+        let mut cc = c.constants.clone();
+        rc.sort_by(f32::total_cmp);
+        cc.sort_by(f32::total_cmp);
+        assert_eq!(
+            rc.len(),
+            cc.len(),
+            "{}: constant count mismatch ({:?} vs {:?})",
+            r.name,
+            rc,
+            cc
+        );
+        for (a, b) in rc.iter().zip(cc.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "{}: constant set mismatch ({:?} vs {:?})",
+                r.name,
+                rc,
+                cc
+            );
+        }
+
+        let r_canon = canonical_ugens(&r);
+        let c_canon = canonical_ugens(&c);
+        assert_eq!(
+            r_canon, c_canon,
+            "{}: UGen graphs are not structurally equivalent",
+            r.name
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Equivalence tests: builder-based (production) vs legacy hand-encoded
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn equiv_system_link_audio() {
+        assert_equivalent(
+            &legacy::create_system_link_audio_bytes().unwrap(),
+            &create_system_link_audio_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_system_link_audio_mono() {
+        assert_equivalent(
+            &legacy::create_system_link_audio_mono_bytes().unwrap(),
+            &create_system_link_audio_mono_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_port_to_group_link_1() {
+        assert_equivalent(
+            &legacy::create_port_to_group_link_1_bytes().unwrap(),
+            &create_port_to_group_link_1_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_port_to_group_link_2() {
+        assert_equivalent(
+            &legacy::create_port_to_group_link_2_bytes().unwrap(),
+            &create_port_to_group_link_2_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_input_link_1() {
+        assert_equivalent(
+            &legacy::create_input_link_1_bytes().unwrap(),
+            &create_input_link_1_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_input_link_2() {
+        assert_equivalent(
+            &legacy::create_input_link_2_bytes().unwrap(),
+            &create_input_link_2_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_port_tr_to_param_link_1() {
+        assert_equivalent(
+            &legacy::create_port_tr_to_param_link_1_bytes().unwrap(),
+            &create_port_tr_to_param_link_1_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_a2k_adapter_1() {
+        assert_equivalent(
+            &legacy::create_a2k_adapter_1_bytes().unwrap(),
+            &create_a2k_adapter_1_bytes().unwrap(),
+        );
+    }
+
+    #[test]
+    fn equiv_param_kr_modulate_all_arities() {
+        for n in 1..=PARAM_KR_MODULATE_MAX {
+            assert_equivalent(
+                &legacy::create_param_kr_modulate_n_bytes(n).unwrap(),
+                &create_param_kr_modulate_n_bytes(n).unwrap(),
+            );
+        }
+    }
+
+    /// Guard against a vacuously-passing harness: two genuinely different
+    /// graphs (ar passthrough vs kr passthrough) must canonicalize to
+    /// different serializations.
+    #[test]
+    fn harness_detects_structural_difference() {
+        let a = decode_synthdef(&create_input_link_1_bytes().unwrap());
+        let b = decode_synthdef(&create_port_tr_to_param_link_1_bytes().unwrap());
+        assert_ne!(canonical_ugens(&a), canonical_ugens(&b));
+
+        let mono = decode_synthdef(&create_system_link_audio_mono_bytes().unwrap());
+        let stereo = decode_synthdef(&create_system_link_audio_bytes().unwrap());
+        assert_ne!(canonical_ugens(&mono), canonical_ugens(&stereo));
+    }
+
+    // ---------------------------------------------------------------------
+    // Original sanity tests (now exercising the builder-based encoders)
+    // ---------------------------------------------------------------------
 
     #[test]
     fn test_create_system_link_audio_bytes() {
@@ -1538,59 +2294,18 @@ mod tests {
         assert!(bytes.windows(3).any(|w| w == b"amp"));
         assert!(bytes.windows(3).any(|w| w == b"pan"));
 
-        // Walk the encoded UGen list to find the final Out.ar — the mono
-        // synthdef must end with an `Out` UGen that has exactly one signal
-        // input (bus + 1 channel = 2 inputs total). The stereo synthdef writes
-        // 3 inputs (bus + 2 channels), so this assertion catches accidental
-        // regressions back to a stereo Out.ar.
-        //
-        // Layout:
-        //   "SCgf" (4) + version (4) + num_synthdefs (2) = 10
-        //   pstr name = 1 + 22 ("system_link_audio_mono")              = 23
-        //   num_constants (4) + 7 * f32 (28)                            = 32
-        //   num_params (4) + 4 * f32 (16)                               = 20
-        //   num_param_names (4)                                         = 4
-        //     pstr "inbus"  + i32  = 1 + 5 + 4                          = 10
-        //     pstr "outbus" + i32  = 1 + 6 + 4                          = 11
-        //     pstr "amp"    + i32  = 1 + 3 + 4                          = 8
-        //     pstr "pan"    + i32  = 1 + 3 + 4                          = 8
-        //   num_ugens (4)                                               = 4
-        let mut off = 10 + 23 + 32 + 20 + 4 + 10 + 11 + 8 + 8 + 4;
-        let num_ugens = i32::from_be_bytes(bytes[off - 4..off].try_into().unwrap());
-        assert_eq!(num_ugens, 21, "expected 21 UGens in mono variant");
+        // The mono synthdef must end with an `Out` UGen that has exactly one
+        // signal input (bus + 1 channel = 2 inputs total). The stereo synthdef
+        // writes 3 inputs (bus + 2 channels), so this assertion catches
+        // accidental regressions back to a stereo Out.ar.
+        let def = decode_synthdef(&bytes);
+        assert_eq!(def.ugens.len(), 21, "expected 21 UGens in mono variant");
 
-        // Walk UGens and find the one named "Out" — should be exactly one,
-        // with 2 inputs and 0 outputs.
-        let mut out_input_count: Option<i32> = None;
-        for _ in 0..num_ugens {
-            let name_len = bytes[off] as usize;
-            off += 1;
-            let ugen_name = &bytes[off..off + name_len];
-            off += name_len;
-            // rate (1 byte)
-            off += 1;
-            let num_inputs = i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
-            off += 4;
-            let num_outputs = i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
-            off += 4;
-            // special index (2 bytes)
-            off += 2;
-            // input refs: 8 bytes each (i32 ugen_idx + i32 output_idx)
-            off += (num_inputs as usize) * 8;
-            // output rates: 1 byte each
-            off += num_outputs as usize;
-
-            if ugen_name == b"Out" {
-                assert!(
-                    out_input_count.is_none(),
-                    "found multiple Out UGens — should be exactly one",
-                );
-                out_input_count = Some(num_inputs);
-            }
-        }
-        let inputs = out_input_count.expect("missing final Out UGen");
+        let outs: Vec<&DecodedUGen> = def.ugens.iter().filter(|u| u.class == "Out").collect();
+        assert_eq!(outs.len(), 1, "should be exactly one Out UGen");
         assert_eq!(
-            inputs, 2,
+            outs[0].inputs.len(),
+            2,
             "Out.ar must have 2 inputs (bus + 1 channel) for mono mixdown",
         );
     }
@@ -1729,27 +2444,11 @@ mod tests {
     #[test]
     fn test_create_param_kr_modulate_n_bytes_default_values() {
         // Per-source defaults: scale=1.0, offset=0.0. baseline default 0.0.
-        // Spot-check via the encoded f32 default block — easier to assert
-        // than walking the param-name index.
         for n in 1..=PARAM_KR_MODULATE_MAX {
             let bytes = create_param_kr_modulate_n_bytes(n).unwrap();
-            // Locate the param-default block. Layout up to it:
-            //   "SCgf"           4 bytes
-            //   version          4 bytes
-            //   num synthdefs    2 bytes
-            //   pstr name        1 + name_len
-            //   num constants    4 bytes (= 0)
-            //   num params       4 bytes
-            //   defaults...      4 * num_params bytes
-            let name = format!("param_kr_modulate_{}", n);
-            let prefix_len = 4 + 4 + 2 + 1 + name.len() + 4 + 4;
-            let num_params = 3 * n + 2;
-            let mut defaults = Vec::with_capacity(num_params);
-            for i in 0..num_params {
-                let off = prefix_len + 4 * i;
-                let v = f32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
-                defaults.push(v);
-            }
+            let def = decode_synthdef(&bytes);
+            let defaults = &def.param_defaults;
+            assert_eq!(defaults.len(), 3 * n + 2, "param slot count (n={})", n);
             assert_eq!(defaults[0], 0.0, "baseline default 0.0 (n={})", n);
             for i in 0..n {
                 assert_eq!(defaults[1 + 3 * i], 0.0, "in_<i> default 0.0");

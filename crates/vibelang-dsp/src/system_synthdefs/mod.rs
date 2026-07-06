@@ -35,8 +35,9 @@ pub use sfz::{create_sfz_synthdefs, create_sfz_voice_synthdef};
 /// Create all system synthdefs.
 ///
 /// Returns a vector of (name, encoded_bytes) pairs for all built-in synthdefs.
-/// This does NOT include system_link_audio which has a separate creation function
-/// due to its special binary encoding.
+/// This does NOT include the routing synthdefs (system_link_audio and friends),
+/// which are created via their dedicated `create_*_bytes` functions by the
+/// runtime's routing/finalize machinery.
 pub fn create_all_system_synthdefs() -> Vec<(String, Vec<u8>)> {
     let mut all_defs = Vec::new();
 
