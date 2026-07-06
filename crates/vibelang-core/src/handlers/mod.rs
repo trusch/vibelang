@@ -96,7 +96,7 @@ pub use routes::{
 };
 pub use samples::SamplesHandler;
 pub use sequences::SequencesHandler;
-pub use sfz::SfzHandler;
+pub use sfz::{sfz_note_spawn_params, SfzHandler, SfzNoteSpawn};
 pub use synthdefs::SynthDefsHandler;
 pub use transport::TransportHandler;
 pub use voices::VoicesHandler;

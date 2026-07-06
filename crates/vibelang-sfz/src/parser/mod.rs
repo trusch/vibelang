@@ -9,10 +9,12 @@ mod error;
 pub mod opcodes;
 mod parse;
 pub mod path_utils;
+pub mod preprocess;
 mod types;
 
 // Export main types
 pub use error::Error;
+pub use preprocess::{preprocess_file, preprocess_str};
 pub use types::{SfzFile, SfzSection, SfzSectionType};
 
 // Re-export available opcode traits
@@ -28,14 +30,23 @@ pub use path_utils::{combine_sample_path, normalize_path};
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Parse an SFZ file from a string
+///
+/// `#define` substitution is applied; `#include` directives are an error in
+/// this mode because there is no file location to resolve them against.
+/// Use [`parse_sfz_file`] for full preprocessor support.
 pub fn parse_sfz_str(content: &str) -> Result<SfzFile> {
-    parse::parse_sfz(content)
+    let preprocessed = preprocess::preprocess_str(content, None)?;
+    parse::parse_sfz(&preprocessed)
 }
 
 /// Parse an SFZ file from a file path
+///
+/// Runs the SFZ v2 preprocessor first: `#include "path"` (resolved relative
+/// to the including file, recursive, cycle-checked) and `#define $VAR value`
+/// textual substitution.
 pub fn parse_sfz_file<P: AsRef<Path>>(path: P) -> Result<SfzFile> {
-    let content = fs::read_to_string(path.as_ref())?;
-    let mut sfz = parse_sfz_str(&content)?;
+    let content = preprocess::preprocess_file(path.as_ref())?;
+    let mut sfz = parse::parse_sfz(&content)?;
 
     // Use the absolute path for resolving sample paths
     let absolute_path =

@@ -155,6 +155,17 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                         value = value[..comment_pos].trim();
                     }
 
+                    // Track unrecognized opcodes for a per-file summary
+                    // warning. Curve/effect sections carry free-form names
+                    // (v000..v127, vendor params) and are exempt.
+                    if !matches!(
+                        section.section_type,
+                        SfzSectionType::Curve | SfzSectionType::Effect
+                    ) && !crate::parser::opcodes::is_known_opcode(opcode)
+                    {
+                        *sfz.unknown_opcodes.entry(opcode.to_string()).or_insert(0) += 1;
+                    }
+
                     section
                         .opcodes
                         .insert(opcode.to_string(), value.to_string());

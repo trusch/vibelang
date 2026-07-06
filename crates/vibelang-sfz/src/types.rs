@@ -17,6 +17,94 @@ pub struct SfzInstrument {
     pub global_opcodes: HashMap<String, String>,
     /// Control opcodes.
     pub control_opcodes: HashMap<String, String>,
+    /// Load diagnostics: parsed/loaded/dropped region counts and
+    /// unknown-opcode summary. Populated by [`crate::load_sfz_instrument`].
+    pub diagnostics: SfzLoadDiagnostics,
+}
+
+/// Summary of what happened while loading an SFZ instrument.
+///
+/// Intended to be surfaced to the user *once* per instrument (not per
+/// region / per line).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SfzLoadDiagnostics {
+    /// Number of `<region>` sections found in the (preprocessed) file.
+    pub regions_parsed: usize,
+    /// Number of regions successfully loaded (samples resolved + buffers
+    /// allocated).
+    pub regions_loaded: usize,
+    /// Regions that were dropped, with the reason.
+    pub dropped_regions: Vec<DroppedRegion>,
+    /// Unrecognized opcode names and how often they occurred, sorted by
+    /// name. These have no effect on playback.
+    pub unknown_opcodes: Vec<(String, usize)>,
+}
+
+impl SfzLoadDiagnostics {
+    /// Number of dropped regions.
+    pub fn regions_dropped(&self) -> usize {
+        self.dropped_regions.len()
+    }
+
+    /// Human-readable one-line summary of dropped regions grouped by
+    /// reason, e.g. `"missing sample file: 2, no sample opcode: 1"`.
+    pub fn dropped_summary(&self) -> String {
+        let mut by_reason: Vec<(&str, usize)> = Vec::new();
+        for dropped in &self.dropped_regions {
+            match by_reason.iter_mut().find(|(r, _)| *r == dropped.reason.category()) {
+                Some((_, n)) => *n += 1,
+                None => by_reason.push((dropped.reason.category(), 1)),
+            }
+        }
+        by_reason
+            .iter()
+            .map(|(reason, count)| format!("{}: {}", reason, count))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Human-readable one-line summary of unknown opcodes, e.g.
+    /// `"fancy_opcode (x3), typo_opcode (x1)"`.
+    pub fn unknown_opcodes_summary(&self) -> String {
+        self.unknown_opcodes
+            .iter()
+            .map(|(name, count)| format!("{} (x{})", name, count))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// A region that failed to load, and why.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DroppedRegion {
+    /// Zero-based index of the region in file order.
+    pub index: usize,
+    /// The sample path from the region, if it had one.
+    pub sample: Option<PathBuf>,
+    /// Why the region was dropped.
+    pub reason: DropReason,
+}
+
+/// Reason a region was dropped during load.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DropReason {
+    /// The region has no `sample` opcode (nothing to play).
+    NoSampleOpcode,
+    /// The resolved sample file does not exist on disk.
+    MissingSampleFile,
+    /// The buffer-load callback returned an error.
+    BufferLoadFailed(String),
+}
+
+impl DropReason {
+    /// Short stable category label used in summaries.
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::NoSampleOpcode => "no sample opcode",
+            Self::MissingSampleFile => "missing sample file",
+            Self::BufferLoadFailed(_) => "buffer load failed",
+        }
+    }
 }
 
 impl SfzInstrument {

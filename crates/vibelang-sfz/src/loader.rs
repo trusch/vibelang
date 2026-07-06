@@ -59,17 +59,40 @@ pub fn load_sfz_instrument<P: AsRef<Path>>(
         name,
         sfz_path.display()
     );
-    log::info!("Found {} regions", sfz_file.regions.len());
+
+    // One summarized warning per file for unrecognized opcodes (they are
+    // ignored for playback), instead of per-line spam.
+    let mut unknown_opcodes: Vec<(String, usize)> = sfz_file
+        .unknown_opcodes
+        .iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+    unknown_opcodes.sort();
+    if !unknown_opcodes.is_empty() {
+        let listing = unknown_opcodes
+            .iter()
+            .map(|(op, n)| format!("{} (x{})", op, n))
+            .collect::<Vec<_>>()
+            .join(", ");
+        log::warn!(
+            "SFZ '{}' ({}): {} unrecognized opcode(s) ignored: {}",
+            name,
+            sfz_path.display(),
+            unknown_opcodes.len(),
+            listing
+        );
+    }
 
     // Extract global and control opcodes
     let global_opcodes = extract_opcodes_from_section(sfz_file.global.as_ref());
     let control_opcodes = extract_opcodes_from_section(sfz_file.control.as_ref());
 
-    // Load all regions
+    // Load all regions, tracking why any region gets dropped.
     let mut regions = Vec::new();
+    let mut dropped_regions: Vec<DroppedRegion> = Vec::new();
     let mut sample_cache: HashMap<PathBuf, i32> = HashMap::new();
 
-    for sfz_region in &sfz_file.regions {
+    for (index, sfz_region) in sfz_file.regions.iter().enumerate() {
         match load_sfz_region(
             &sfz_file,
             sfz_region,
@@ -79,18 +102,62 @@ pub fn load_sfz_instrument<P: AsRef<Path>>(
             &mut sample_cache,
         ) {
             Ok(region) => regions.push(region),
-            Err(e) => {
-                log::warn!("Failed to load region: {}", e);
+            Err(reason) => {
+                dropped_regions.push(DroppedRegion {
+                    index,
+                    sample: sfz_file.resolve_absolute_sample_path(sfz_region),
+                    reason,
+                });
                 // Continue loading other regions
             }
         }
     }
 
-    log::info!(
-        "Successfully loaded {} regions for instrument '{}'",
-        regions.len(),
-        name
-    );
+    let diagnostics = SfzLoadDiagnostics {
+        regions_parsed: sfz_file.regions.len(),
+        regions_loaded: regions.len(),
+        dropped_regions,
+        unknown_opcodes,
+    };
+
+    // Per-instrument load summary: one line, warn if anything was dropped.
+    if diagnostics.regions_dropped() > 0 {
+        let details = diagnostics
+            .dropped_regions
+            .iter()
+            .map(|d| {
+                format!(
+                    "region #{} ({}): {}",
+                    d.index,
+                    d.sample
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "<no sample>".to_string()),
+                    match &d.reason {
+                        DropReason::BufferLoadFailed(e) => format!("buffer load failed: {}", e),
+                        other => other.category().to_string(),
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        log::warn!(
+            "SFZ '{}': {} regions parsed, {} loaded, {} dropped ({}) — {}",
+            name,
+            diagnostics.regions_parsed,
+            diagnostics.regions_loaded,
+            diagnostics.regions_dropped(),
+            diagnostics.dropped_summary(),
+            details
+        );
+    } else {
+        log::info!(
+            "SFZ '{}': {} regions parsed, {} loaded",
+            name,
+            diagnostics.regions_parsed,
+            diagnostics.regions_loaded
+        );
+    }
 
     Ok(SfzInstrument {
         name,
@@ -98,10 +165,14 @@ pub fn load_sfz_instrument<P: AsRef<Path>>(
         regions,
         global_opcodes,
         control_opcodes,
+        diagnostics,
     })
 }
 
 /// Load a single SFZ region.
+///
+/// Returns a [`DropReason`] instead of a generic error so the caller can
+/// aggregate a per-instrument summary of why regions were dropped.
 fn load_sfz_region(
     sfz_file: &SfzFile,
     sfz_region: &SfzSection,
@@ -109,11 +180,15 @@ fn load_sfz_region(
     load_buffer: BufferLoadCallback,
     next_buffer_id: &mut i32,
     sample_cache: &mut HashMap<PathBuf, i32>,
-) -> Result<SfzRegion> {
+) -> std::result::Result<SfzRegion, DropReason> {
     // Get the sample path
     let sample_path = sfz_file
         .resolve_absolute_sample_path(sfz_region)
-        .context("No sample path defined in region")?;
+        .ok_or(DropReason::NoSampleOpcode)?;
+
+    if !sample_path.exists() {
+        return Err(DropReason::MissingSampleFile);
+    }
 
     // Load the sample into a buffer (or reuse if already loaded)
     let buffer_id = if let Some(&cached_id) = sample_cache.get(&sample_path) {
@@ -135,7 +210,7 @@ fn load_sfz_region(
 
         // Load the sample via callback
         load_buffer(sample_path.as_path(), buffer_id)
-            .with_context(|| format!("Failed to load sample: {}", sample_path.display()))?;
+            .map_err(|e| DropReason::BufferLoadFailed(e.to_string()))?;
 
         sample_cache.insert(sample_path.clone(), buffer_id);
         buffer_id
@@ -145,10 +220,10 @@ fn load_sfz_region(
     let (buffer_frames, sample_rate) = read_wav_info(&sample_path).unwrap_or((44100, 44100.0)); // Default to 1 second at 44.1kHz if reading fails
 
     // Extract region parameters
-    let opcodes = parse_region_opcodes(sfz_region, global_opcodes)?;
+    let opcodes = parse_region_opcodes(sfz_region, global_opcodes);
 
     // Extract key and velocity ranges
-    let key_range = extract_key_range(sfz_region)?;
+    let key_range = extract_key_range(sfz_region);
     let vel_range = extract_vel_range(sfz_region);
 
     // Extract trigger mode
@@ -248,7 +323,7 @@ fn read_wav_info(path: &Path) -> Result<(u32, f32)> {
 fn parse_region_opcodes(
     sfz_region: &SfzSection,
     global_opcodes: &HashMap<String, String>,
-) -> Result<SfzRegionOpcodes> {
+) -> SfzRegionOpcodes {
     let mut opcodes = SfzRegionOpcodes::default();
 
     // Helper to get opcode value (region overrides global)
@@ -320,7 +395,7 @@ fn parse_region_opcodes(
     opcodes.pitchlfo_freq = get_opcode("pitchlfo_freq").and_then(|s| s.parse().ok());
     opcodes.pitchlfo_depth = get_opcode("pitchlfo_depth").and_then(|s| s.parse().ok());
 
-    Ok(opcodes)
+    opcodes
 }
 
 // Helper functions
@@ -329,19 +404,19 @@ fn extract_opcodes_from_section(section: Option<&SfzSection>) -> HashMap<String,
     section.map(|s| s.opcodes.clone()).unwrap_or_default()
 }
 
-fn extract_key_range(section: &SfzSection) -> Result<(u8, u8)> {
+fn extract_key_range(section: &SfzSection) -> (u8, u8) {
     use crate::parser::opcodes::RegionLogicOpcodes;
 
     // Try to get explicit key first
     if let Ok(key) = section.key() {
-        return Ok((key as u8, key as u8));
+        return (key as u8, key as u8);
     }
 
     // Otherwise get lokey/hikey
     let lokey = section.lokey().unwrap_or(0) as u8;
     let hikey = section.hikey().unwrap_or(127) as u8;
 
-    Ok((lokey, hikey))
+    (lokey, hikey)
 }
 
 fn extract_vel_range(section: &SfzSection) -> (u8, u8) {

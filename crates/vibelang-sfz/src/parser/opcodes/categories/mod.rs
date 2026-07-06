@@ -16,15 +16,8 @@ pub use region_logic::RegionLogicOpcodes;
 pub use sample_playback::SamplePlaybackOpcodes;
 pub use sound_source::SoundSourceOpcodes;
 
-// TODO: Implement these modules
-// mod amplitude_envelope;
-// mod pitch_envelope;
-// mod filter;
-// mod filter_envelope;
-// mod sample_playback;
-//
-// pub use amplitude_envelope::AmplitudeEnvelopeOpcodes;
-// pub use pitch_envelope::PitchEnvelopeOpcodes;
-// pub use filter::FilterOpcodes;
-// pub use filter_envelope::FilterEnvelopeOpcodes;
-// pub use sample_playback::SamplePlaybackOpcodes;
+// All eight opcode-category traits are implemented above. Opcodes outside
+// these categories (SFZ v2 extensions, ARIA/sfizz vendor opcodes, MIDI CC
+// modulation targets) are accepted by the parser and stored verbatim on
+// their section, but have no playback effect; they are surfaced once per
+// file via `SfzFile::unknown_opcodes` (see `opcodes::is_known_opcode`).

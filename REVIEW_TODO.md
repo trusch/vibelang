@@ -66,6 +66,34 @@ Known limitations:
 - [x] **CR-14** Fade duration not validated — minimum 1/64th note
 - [x] **CR-15** Pattern swing — already clamped (false positive)
 
+## SFZ Subsystem (2026-07-06)
+
+- [x] **SFZ-1** `#include` / `#define` preprocessor — implemented in
+  `vibelang-sfz/src/parser/preprocess.rs` (recursive includes relative to the
+  including file, cycle detection, depth limit 32, textual `$VAR` substitution
+  with later-definition override); wired in before tokenization in
+  `parse_sfz_file` / `parse_sfz_str`
+- [x] **SFZ-2** Unknown opcodes silently ignored — now collected during parse
+  (`SfzFile::unknown_opcodes`, numbered `*occN` forms normalized) and surfaced
+  as ONE summarized warning per file; `<curve>`/`<effect>` sections exempt
+- [x] **SFZ-3** Dropped regions untracked — loader now reports
+  `N regions parsed, M loaded, K dropped (reason: count, ...)` once per
+  instrument (`SfzInstrument::diagnostics`), re-surfaced by
+  `handlers/sfz.rs::load` via tracing
+- [ ] **SFZ-4** (CRITICAL) SFZ region matching never runs at note-on: the v2
+  core rewrite kept `Sfz::find_regions` (handlers/sfz.rs) but dropped its call
+  site — `VoicesHandler::note_on_audio_at` (handlers/voices.rs:445) only
+  handles `sample_id`, so `sfz_voice_*` spawns with default params
+  (`bufnum=0`, `rate=1`, `release=0.01`, `loop=0`): wrong sample, no
+  repitching, ignored ampeg envelope, click on note-off. This is the real
+  root cause behind the "NOTE_OFF/sustain" symptom in
+  kb/tickets/core-concepts/sfz-instrument (the ticket's "melodies don't send
+  NOTE_OFF" claim is stale — they do, handlers/melodies.rs:345).
+  The region-selection helper is ready:
+  `handlers::sfz::sfz_note_spawn_params` (tested); remaining work is a small
+  patch in `note_on_audio_at` to call it (exact diff in the SFZ work report,
+  blocked on voices.rs being owned by concurrent work at the time)
+
 ## Low (deferred)
 
 - [ ] **CR-16** Voice auto-syncs before configuration

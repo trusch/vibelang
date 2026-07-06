@@ -45,7 +45,9 @@ mod values;
 pub use self::values::*;
 pub use categories::*;
 
+use std::collections::HashSet;
 use std::result::Result as StdResult;
+use std::sync::OnceLock;
 
 use crate::parser::error::Error;
 type Result<T> = StdResult<T, Error>;
@@ -112,6 +114,81 @@ impl SfzOpcodes for SfzSection {
     fn get_opcode_str(&self, name: &str) -> Option<&str> {
         self.opcodes.get(name).map(|s| s.as_str())
     }
+}
+
+/// The set of opcode names this parser recognizes.
+///
+/// Built once from the per-category opcode lists (see
+/// [`OpcodesTraitInfo::get_methods_for_trait`]) plus a handful of names the
+/// loader consumes directly that are not part of any category trait.
+fn known_opcode_set() -> &'static HashSet<&'static str> {
+    static SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    SET.get_or_init(|| {
+        let mut set: HashSet<&'static str> = HashSet::new();
+        for trait_name in [
+            "SoundSourceOpcodes",
+            "RegionLogicOpcodes",
+            "PerformanceOpcodes",
+            "AmplitudeEnvelopeOpcodes",
+            "PitchEnvelopeOpcodes",
+            "FilterOpcodes",
+            "FilterEnvelopeOpcodes",
+            "SamplePlaybackOpcodes",
+        ] {
+            for name in OpcodesTraitInfo::get_methods_for_trait(trait_name) {
+                // The category lists are 'static string literals collected
+                // into owned Strings; leak them back to 'static — this runs
+                // exactly once for a small fixed set.
+                set.insert(Box::leak(name.into_boxed_str()));
+            }
+        }
+        // Opcodes consumed directly by the loader / commonly present in
+        // real-world files but not listed in a category trait.
+        for extra in [
+            "group",
+            "off_by",
+            "on_locc",
+            "on_hicc",
+            "octave_offset",
+            "global_label",
+            "master_label",
+            "group_label",
+            "region_label",
+            "label_cc",
+            "set_cc",
+            "curve_index",
+            // SFZ v1 LFOs (parsed into SfzRegionOpcodes).
+            "amplfo_freq",
+            "amplfo_depth",
+            "amplfo_delay",
+            "amplfo_fade",
+            "fillfo_freq",
+            "fillfo_depth",
+            "fillfo_delay",
+            "fillfo_fade",
+            "pitchlfo_freq",
+            "pitchlfo_depth",
+            "pitchlfo_delay",
+            "pitchlfo_fade",
+        ] {
+            set.insert(extra);
+        }
+        set
+    })
+}
+
+/// Whether `name` is an opcode this parser recognizes.
+///
+/// Numbered opcodes (`locc64`, `amplitude_oncc7`, `amp_velcurve_96`, ...)
+/// are normalized by stripping the trailing digit run before lookup, so
+/// `cutoff_oncc23` matches the `cutoff_oncc` list entry.
+pub fn is_known_opcode(name: &str) -> bool {
+    let set = known_opcode_set();
+    if set.contains(name) {
+        return true;
+    }
+    let base = name.trim_end_matches(|c: char| c.is_ascii_digit());
+    base.len() < name.len() && !base.is_empty() && set.contains(base)
 }
 
 /// A struct for extracting information about opcode traits

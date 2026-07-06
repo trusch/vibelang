@@ -127,6 +127,19 @@ pub struct SfzFile {
     ///
     /// This is used to resolve relative paths to samples.
     pub source_file: Option<PathBuf>,
+
+    /// Opcodes encountered during parsing that this parser does not
+    /// recognize, with their occurrence counts.
+    ///
+    /// Unknown opcodes are still stored on their sections (so nothing is
+    /// lost), but they have no effect on playback. Consumers (e.g. the
+    /// instrument loader) should surface one summarized warning per file
+    /// from this map instead of warning per line.
+    ///
+    /// Opcodes in `<curve>` and `<effect>` sections are exempt — curve
+    /// value opcodes (`v000`..`v127`) and vendor effect parameters are
+    /// free-form by design.
+    pub unknown_opcodes: HashMap<String, usize>,
 }
 
 impl SfzFile {
@@ -143,6 +156,7 @@ impl SfzFile {
             curves: Vec::new(),
             effects: Vec::new(),
             source_file: None,
+            unknown_opcodes: HashMap::new(),
         }
     }
 
