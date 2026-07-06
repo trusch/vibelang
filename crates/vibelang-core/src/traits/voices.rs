@@ -292,6 +292,24 @@ pub trait Voices: Send + Sync {
     /// Creates a new synth instance with the given parameters.
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()>;
 
+    /// Trigger a voice with parameters, optionally scheduled at a future time.
+    ///
+    /// Used by the pattern lookahead scheduler: `at` is the precise
+    /// monotonic deadline the event should sound at, giving sample-accurate
+    /// timing on backends with real scheduling (scsynth OSC bundles).
+    ///
+    /// The default implementation ignores the timestamp and triggers
+    /// immediately.
+    async fn trigger_at(
+        &self,
+        id: VoiceId,
+        params: &ParamMap,
+        at: Option<crate::compat::Instant>,
+    ) -> Result<()> {
+        let _ = at;
+        self.trigger(id, params).await
+    }
+
     /// Stop all playing notes on a voice.
     async fn stop(&self, id: VoiceId) -> Result<()>;
 
@@ -334,6 +352,19 @@ pub trait Voices {
 
     /// Trigger a voice with parameters.
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()>;
+
+    /// Trigger a voice with parameters, optionally scheduled at a future time.
+    ///
+    /// Default ignores the timestamp; see the native trait variant.
+    async fn trigger_at(
+        &self,
+        id: VoiceId,
+        params: &ParamMap,
+        at: Option<crate::compat::Instant>,
+    ) -> Result<()> {
+        let _ = at;
+        self.trigger(id, params).await
+    }
 
     /// Stop all playing notes on a voice.
     async fn stop(&self, id: VoiceId) -> Result<()>;

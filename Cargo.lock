@@ -4082,6 +4082,7 @@ dependencies = [
  "tracing",
  "uuid",
  "vibelang-core",
+ "vibelang-dsp",
 ]
 
 [[package]]

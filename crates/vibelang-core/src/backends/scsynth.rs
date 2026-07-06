@@ -17,7 +17,7 @@
 use crate::backend::{AddAction, Backend, BufferInfo};
 use crate::types::{BufferId, NodeId, ParamMap};
 use async_trait::async_trait;
-use rosc::{decoder, encoder, OscMessage, OscPacket, OscType};
+use rosc::{decoder, encoder, OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -172,9 +172,6 @@ pub struct ScsynthBackend {
     socket: Arc<UdpSocket>,
     /// Target server address.
     addr: String,
-    /// Creation time for relative timing.
-    #[allow(dead_code)] // Reserved for bundle timestamping
-    start_time: Instant,
     /// Whether the listener thread should keep running.
     running: Arc<AtomicBool>,
     /// Channel sender for node end events (freed nodes, doneActions).
@@ -245,7 +242,6 @@ impl ScsynthBackend {
         let backend = Self {
             socket: socket.clone(),
             addr: addr.to_string(),
-            start_time: Instant::now(),
             running: running.clone(),
             node_end_tx,
             pending_buffer_info: pending_buffer_info.clone(),
@@ -857,6 +853,107 @@ impl ScsynthBackend {
         Ok(())
     }
 
+    /// Convert a monotonic deadline into an OSC/NTP time tag.
+    ///
+    /// The runtime's lookahead schedulers produce deadlines on the monotonic
+    /// clock (`Instant`). scsynth wants absolute NTP wall time in bundle
+    /// time-tags, so we anchor the remaining lead time (`at - now_mono`)
+    /// onto the wall clock (`now_wall + lead`). Doing the anchoring at send
+    /// time keeps the conversion immune to wall-clock jumps between
+    /// scheduling and dispatch.
+    ///
+    /// Returns `None` when `at` is not strictly in the future — the caller
+    /// must then send immediately (the OSC "execute now" idiom) instead of
+    /// emitting a late bundle that scsynth would warn about.
+    fn schedule_time_tag(at: Instant, now_mono: Instant, now_wall: SystemTime) -> Option<OscTime> {
+        let lead = at.checked_duration_since(now_mono)?;
+        if lead.is_zero() {
+            return None;
+        }
+        OscTime::try_from(now_wall + lead).ok()
+    }
+
+    /// Encode a batch of messages as a single time-tagged OSC bundle.
+    ///
+    /// scsynth executes the bundle's messages in order, sample-accurately at
+    /// the tagged time — which is also why `/s_new` and its `/n_map`s must
+    /// travel in one bundle (the node only exists once the bundle runs).
+    fn encode_bundle(timetag: OscTime, msgs: Vec<OscMessage>) -> Result<Vec<u8>, ScsynthError> {
+        let packet = OscPacket::Bundle(OscBundle {
+            timetag,
+            content: msgs.into_iter().map(OscPacket::Message).collect(),
+        });
+        Ok(encoder::encode(&packet)?)
+    }
+
+    /// Send a batch of OSC messages, optionally scheduled at `at`.
+    ///
+    /// With a future deadline the messages are wrapped in one OSC bundle
+    /// carrying an NTP time-tag, so scsynth executes them sample-accurately
+    /// at that time. With no deadline — or one that has already passed by
+    /// send time — the messages go out immediately as plain messages
+    /// (equivalent to time-tag 1, "now"), avoiding scsynth "late" warnings.
+    fn send_msgs_at(
+        &self,
+        msgs: Vec<(&'static str, Vec<OscType>)>,
+        at: Option<Instant>,
+    ) -> Result<(), ScsynthError> {
+        let timetag =
+            at.and_then(|at| Self::schedule_time_tag(at, Instant::now(), SystemTime::now()));
+
+        match timetag {
+            Some(timetag) => {
+                let msgs: Vec<OscMessage> = msgs
+                    .into_iter()
+                    .map(|(path, args)| {
+                        Self::osc_diag_log(format!(
+                            "osc_send_bundled tag=({},{}) path={} args=[{}]",
+                            timetag.seconds,
+                            timetag.fractional,
+                            path,
+                            Self::summarize_osc_args(&args)
+                        ));
+                        OscMessage {
+                            addr: path.to_string(),
+                            args,
+                        }
+                    })
+                    .collect();
+                let buf = Self::encode_bundle(timetag, msgs)?;
+                self.socket.send(&buf)?;
+                Ok(())
+            }
+            None => {
+                for (path, args) in msgs {
+                    self.send_msg(path, args)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Build the `/s_new` argument list shared by the immediate and
+    /// scheduled synth-creation paths.
+    fn s_new_args(
+        def: &str,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        params: &ParamMap,
+    ) -> Vec<OscType> {
+        let mut args: Vec<OscType> = vec![
+            OscType::String(def.to_string()),
+            OscType::Int(node.0 as i32),
+            OscType::Int(action.to_sc_int()),
+            OscType::Int(target.0 as i32),
+        ];
+        for (key, value) in params {
+            args.push(OscType::String(key.clone()));
+            args.push(OscType::Float(*value));
+        }
+        args
+    }
+
     async fn send_msg_and_await_done(
         &self,
         path: &str,
@@ -1094,19 +1191,6 @@ impl Backend for ScsynthBackend {
         action: AddAction,
         params: &ParamMap,
     ) -> Result<(), Self::Error> {
-        let mut args: Vec<OscType> = vec![
-            OscType::String(def.to_string()),
-            OscType::Int(node.0 as i32),
-            OscType::Int(action.to_sc_int()),
-            OscType::Int(target.0 as i32),
-        ];
-
-        // Add parameters
-        for (key, value) in params {
-            args.push(OscType::String(key.clone()));
-            args.push(OscType::Float(*value));
-        }
-
         tracing::debug!(
             "s_new: def='{}', node={}, target={}, params={:?}",
             def,
@@ -1115,8 +1199,42 @@ impl Backend for ScsynthBackend {
             params
         );
 
-        self.send_msg("/s_new", args)?;
+        self.send_msg("/s_new", Self::s_new_args(def, node, target, action, params))?;
         Ok(())
+    }
+
+    async fn create_synth_at(
+        &self,
+        def: &str,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        params: &ParamMap,
+        param_buses: &[(String, u32)],
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        tracing::debug!(
+            "s_new (scheduled): def='{}', node={}, target={}, at={:?}, params={:?}",
+            def,
+            node.0,
+            target.0,
+            at,
+            params
+        );
+
+        let mut msgs = vec![("/s_new", Self::s_new_args(def, node, target, action, params))];
+        for (param, bus) in param_buses {
+            msgs.push((
+                "/n_map",
+                vec![
+                    OscType::Int(node.0 as i32),
+                    OscType::String(param.clone()),
+                    OscType::Int(*bus as i32),
+                ],
+            ));
+        }
+
+        self.send_msgs_at(msgs, at)
     }
 
     async fn create_group(
@@ -1162,6 +1280,26 @@ impl Backend for ScsynthBackend {
             ],
         )?;
         Ok(())
+    }
+
+    async fn set_param_at(
+        &self,
+        node: NodeId,
+        param: &str,
+        value: f32,
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        self.send_msgs_at(
+            vec![(
+                "/n_set",
+                vec![
+                    OscType::Int(node.0 as i32),
+                    OscType::String(param.to_string()),
+                    OscType::Float(value),
+                ],
+            )],
+            at,
+        )
     }
 
     async fn map_param_to_bus(
@@ -1573,6 +1711,130 @@ mod tests {
         };
         let debug_str = format!("{:?}", response);
         assert!(debug_str.contains("Status"));
+    }
+
+    // =========================================================================
+    // Bundle time-tag scheduling
+    // =========================================================================
+
+    #[test]
+    fn schedule_time_tag_past_deadline_falls_back_to_immediate() {
+        let now_mono = Instant::now();
+        let now_wall = SystemTime::now();
+
+        // A deadline in the past must yield no time tag (send immediately).
+        let past = now_mono - Duration::from_millis(10);
+        assert_eq!(
+            ScsynthBackend::schedule_time_tag(past, now_mono, now_wall),
+            None
+        );
+
+        // A deadline exactly at "now" is not strictly in the future either.
+        assert_eq!(
+            ScsynthBackend::schedule_time_tag(now_mono, now_mono, now_wall),
+            None
+        );
+    }
+
+    #[test]
+    fn schedule_time_tag_round_trips_through_ntp() {
+        let now_mono = Instant::now();
+        let now_wall = SystemTime::now();
+        let lead = Duration::from_millis(40);
+
+        let tag = ScsynthBackend::schedule_time_tag(now_mono + lead, now_mono, now_wall)
+            .expect("future deadline must produce a time tag");
+
+        // Converting the NTP tag back to wall time must land on
+        // now_wall + lead (within the ~sub-nanosecond fractional rounding
+        // of the 32.32 fixed-point format; allow 1µs).
+        let round_tripped: SystemTime = tag.into();
+        let expected = now_wall + lead;
+        let error = match round_tripped.duration_since(expected) {
+            Ok(d) => d,
+            Err(e) => e.duration(),
+        };
+        assert!(
+            error < Duration::from_micros(1),
+            "round-trip error too large: {:?}",
+            error
+        );
+    }
+
+    #[test]
+    fn schedule_time_tag_is_monotonic() {
+        let now_mono = Instant::now();
+        let now_wall = SystemTime::now();
+
+        let mut previous: Option<(u32, u32)> = None;
+        for ms in [1u64, 2, 5, 10, 25, 50, 100, 1000] {
+            let tag = ScsynthBackend::schedule_time_tag(
+                now_mono + Duration::from_millis(ms),
+                now_mono,
+                now_wall,
+            )
+            .expect("future deadline must produce a time tag");
+            let key = (tag.seconds, tag.fractional);
+            if let Some(prev) = previous {
+                assert!(
+                    key > prev,
+                    "time tags must increase with the deadline: {:?} !> {:?}",
+                    key,
+                    prev
+                );
+            }
+            previous = Some(key);
+        }
+    }
+
+    #[test]
+    fn encode_bundle_embeds_time_tag_and_messages_in_order() {
+        let timetag = OscTime::from((3_913_056_000u32, 0x8000_0000u32));
+        let msgs = vec![
+            OscMessage {
+                addr: "/s_new".to_string(),
+                args: vec![
+                    OscType::String("kick".to_string()),
+                    OscType::Int(2001),
+                    OscType::Int(1),
+                    OscType::Int(100),
+                ],
+            },
+            OscMessage {
+                addr: "/n_map".to_string(),
+                args: vec![
+                    OscType::Int(2001),
+                    OscType::String("cutoff".to_string()),
+                    OscType::Int(7),
+                ],
+            },
+        ];
+
+        let bytes = ScsynthBackend::encode_bundle(timetag, msgs).expect("encode");
+
+        // The wire bytes must decode back to a bundle carrying the exact
+        // time tag with the messages in order.
+        let (_, packet) = decoder::decode_udp(&bytes).expect("decode");
+        let OscPacket::Bundle(bundle) = packet else {
+            panic!("expected an OSC bundle on the wire");
+        };
+        assert_eq!(bundle.timetag, timetag);
+        assert_eq!(bundle.content.len(), 2);
+        let OscPacket::Message(first) = &bundle.content[0] else {
+            panic!("expected message");
+        };
+        assert_eq!(first.addr, "/s_new");
+        assert_eq!(first.args[0], OscType::String("kick".to_string()));
+        let OscPacket::Message(second) = &bundle.content[1] else {
+            panic!("expected message");
+        };
+        assert_eq!(second.addr, "/n_map");
+        assert_eq!(second.args[1], OscType::String("cutoff".to_string()));
+
+        // Raw header check: "#bundle\0" then the big-endian 32.32 time tag.
+        assert_eq!(&bytes[0..8], b"#bundle\0");
+        assert_eq!(&bytes[8..12], &3_913_056_000u32.to_be_bytes());
+        assert_eq!(&bytes[12..16], &0x8000_0000u32.to_be_bytes());
     }
 
     #[test]

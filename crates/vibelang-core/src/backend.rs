@@ -122,6 +122,40 @@ pub trait Backend: Send + Sync + 'static {
         params: &ParamMap,
     ) -> Result<(), Self::Error>;
 
+    /// Create a new synth node, optionally scheduled at a future time.
+    ///
+    /// This is the sample-accurate trigger variant used by the pattern and
+    /// melody lookahead schedulers. `at` is a monotonic deadline (the same
+    /// clock as [`current_time`](Self::current_time)); backends with real
+    /// scheduling support (scsynth OSC bundles with NTP time-tags) execute
+    /// the creation exactly at that time.
+    ///
+    /// `param_buses` lists parameters to map to control buses (`/n_map`)
+    /// together with the creation. They must be part of the same scheduling
+    /// unit as the synth creation: when the creation is deferred, the node
+    /// does not exist until `at`, so a separately-sent immediate mapping
+    /// would fail.
+    ///
+    /// The default implementation ignores `at` and dispatches immediately,
+    /// so mock/test/WASM backends keep working unchanged.
+    async fn create_synth_at(
+        &self,
+        def: &str,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        params: &ParamMap,
+        param_buses: &[(String, u32)],
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        let _ = at;
+        self.create_synth(def, node, target, action, params).await?;
+        for (param, bus) in param_buses {
+            self.map_param_to_bus(node, param, *bus).await?;
+        }
+        Ok(())
+    }
+
     /// Create a new group node.
     ///
     /// Groups contain synths and other groups.
@@ -160,6 +194,24 @@ pub trait Backend: Send + Sync + 'static {
     /// * `param` - Parameter name
     /// * `value` - New value
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error>;
+
+    /// Set a parameter on a node, optionally scheduled at a future time.
+    ///
+    /// Used for sample-accurate note releases (`gate = 0`) from the melody
+    /// lookahead scheduler. `at` is a monotonic deadline on the same clock
+    /// as [`current_time`](Self::current_time).
+    ///
+    /// The default implementation ignores `at` and sets immediately.
+    async fn set_param_at(
+        &self,
+        node: NodeId,
+        param: &str,
+        value: f32,
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        let _ = at;
+        self.set_param(node, param, value).await
+    }
 
     /// Set multiple parameters on a node.
     ///
@@ -338,6 +390,28 @@ pub trait Backend: 'static {
         params: &ParamMap,
     ) -> Result<(), Self::Error>;
 
+    /// Create a new synth node, optionally scheduled at a future time.
+    ///
+    /// Default ignores `at` and dispatches immediately; see the native
+    /// trait variant for semantics.
+    async fn create_synth_at(
+        &self,
+        def: &str,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        params: &ParamMap,
+        param_buses: &[(String, u32)],
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        let _ = at;
+        self.create_synth(def, node, target, action, params).await?;
+        for (param, bus) in param_buses {
+            self.map_param_to_bus(node, param, *bus).await?;
+        }
+        Ok(())
+    }
+
     /// Create a new group node.
     async fn create_group(
         &self,
@@ -354,6 +428,20 @@ pub trait Backend: 'static {
 
     /// Set a parameter on a node.
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error>;
+
+    /// Set a parameter on a node, optionally scheduled at a future time.
+    ///
+    /// Default ignores `at` and sets immediately.
+    async fn set_param_at(
+        &self,
+        node: NodeId,
+        param: &str,
+        value: f32,
+        at: Option<Instant>,
+    ) -> Result<(), Self::Error> {
+        let _ = at;
+        self.set_param(node, param, value).await
+    }
 
     /// Set multiple parameters on a node.
     async fn set_params(&self, node: NodeId, params: &ParamMap) -> Result<(), Self::Error> {

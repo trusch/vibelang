@@ -224,9 +224,9 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Lookahead-aware note-on.
     ///
-    /// Sleeps until the scheduler timestamp before entering the immediate
-    /// voice path, preserving the MIDI pool's ordering while honoring pattern
-    /// and melody lookahead.
+    /// MIDI voices sleep until the scheduler timestamp (preserving pool
+    /// ordering); audio voices forward the timestamp to the backend for
+    /// sample-accurate scheduling. See [`note_on_at_tracked`](Self::note_on_at_tracked).
     #[cfg(feature = "midi")]
     pub async fn note_on_at(
         &self,
@@ -241,6 +241,12 @@ impl<B: Backend> VoicesHandler<B> {
     }
 
     /// Lookahead-aware note-on that returns the active note generation.
+    ///
+    /// MIDI-output voices sleep until the scheduler timestamp and then run
+    /// the pool path (the MIDI queue provides its own precise scheduling).
+    /// Audio-synth voices instead forward the timestamp to the backend,
+    /// which schedules the trigger sample-accurately (scsynth OSC bundle
+    /// time-tags).
     #[cfg(feature = "midi")]
     pub async fn note_on_at_tracked(
         &self,
@@ -249,8 +255,6 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: f32,
         timestamp: Option<Instant>,
     ) -> Result<u64> {
-        wait_until_timestamp(timestamp).await;
-
         let (midi_output, midi_channel, polyphony, mono_legato) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -263,6 +267,7 @@ impl<B: Backend> VoicesHandler<B> {
         };
 
         if let Some(device_id) = midi_output {
+            wait_until_timestamp(timestamp).await;
             let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
             return self
                 .midi_pool_note_on(
@@ -277,7 +282,8 @@ impl<B: Backend> VoicesHandler<B> {
                 .await;
         }
 
-        self.note_on(id, note, velocity).await?;
+        self.note_on_audio_at(id, note, velocity, &ParamMap::new(), timestamp)
+            .await?;
         self.current_note_generation(id, note).await
     }
 
@@ -285,8 +291,10 @@ impl<B: Backend> VoicesHandler<B> {
     ///
     /// Like [`note_on_at`](Self::note_on_at), but also merges `extra_params`
     /// into the synth creation params (and, for MIDI voices, sends them as CC
-    /// messages where mappings exist — handled by `note_on_with_params`). The
-    /// The scheduler timestamp is honored before dispatch; see `note_on_at`.
+    /// messages where mappings exist — handled by `note_on_with_params`).
+    /// Scheduling semantics as in [`note_on_at_tracked`](Self::note_on_at_tracked):
+    /// MIDI voices sleep until the timestamp, audio voices get a backend-
+    /// scheduled (sample-accurate) trigger.
     #[cfg(feature = "midi")]
     pub async fn note_on_at_with_params(
         &self,
@@ -296,23 +304,21 @@ impl<B: Backend> VoicesHandler<B> {
         timestamp: Option<Instant>,
         extra_params: &ParamMap,
     ) -> Result<()> {
-        wait_until_timestamp(timestamp).await;
-        self.note_on_with_params(id, note, velocity, extra_params)
-            .await
-    }
+        let is_midi = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            voice.config.midi_output.is_some()
+        };
 
-    async fn map_active_param_bindings(
-        &self,
-        node_id: NodeId,
-        bindings: &[(String, BusId)],
-    ) -> Result<()> {
-        for (param, bus) in bindings {
-            self.backend
-                .map_param_to_bus(node_id, param, bus.raw())
-                .await
-                .map_err(Error::backend)?;
+        if is_midi {
+            wait_until_timestamp(timestamp).await;
+            return self
+                .note_on_with_params(id, note, velocity, extra_params)
+                .await;
         }
-        Ok(())
+
+        self.note_on_audio_at(id, note, velocity, extra_params, timestamp)
+            .await
     }
 
     fn bend_baseline_updates_for_spawn(
@@ -421,6 +427,29 @@ impl<B: Backend> VoicesHandler<B> {
             }
         }
 
+        self.note_on_audio_at(id, note, velocity, extra_params, None)
+            .await
+    }
+
+    /// Audio-synth note-on, optionally scheduled at a future time.
+    ///
+    /// This is the shared backend path for all audio-voice note-ons:
+    /// immediate (`at = None`) and lookahead-scheduled (`at = Some`, from
+    /// the pattern/melody schedulers). A scheduled note-on is sent as one
+    /// OSC bundle carrying the `/s_new` plus any modulation `/n_map`s, so
+    /// scsynth starts the synth sample-accurately at the tagged time.
+    ///
+    /// Note: state bookkeeping (note-node tracking, polyphony) happens at
+    /// dispatch time, up to one lookahead window (~50ms) before the sound
+    /// starts — same as the previous sleep-based dispatch, minus the sleep.
+    async fn note_on_audio_at(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        extra_params: &ParamMap,
+        at: Option<Instant>,
+    ) -> Result<()> {
         // Gather info and allocate node while holding lock
         let (
             node_id,
@@ -531,18 +560,32 @@ impl<B: Backend> VoicesHandler<B> {
             )
         };
 
-        // Free old node if any (lock released)
+        // Free old node if any (lock released). This stays immediate even
+        // for scheduled note-ons: the recycled node ID may be reallocated
+        // before `at`, so its /n_free must have executed by then.
         if let Some(old) = old_node {
             let _ = self.backend.free_node(old).await;
         }
 
-        // Create synth
+        // Create synth — scheduled sample-accurately when `at` is set. The
+        // modulation /n_map bindings ride in the same scheduling unit since
+        // the node doesn't exist until then.
+        let param_buses: Vec<(String, u32)> = param_bindings
+            .iter()
+            .map(|(param, bus)| (param.clone(), bus.raw()))
+            .collect();
         self.backend
-            .create_synth(&synthdef, node_id, add_target, add_action, &params)
+            .create_synth_at(
+                &synthdef,
+                node_id,
+                add_target,
+                add_action,
+                &params,
+                &param_buses,
+                at,
+            )
             .await
             .map_err(Error::backend)?;
-        self.map_active_param_bindings(node_id, &param_bindings)
-            .await?;
         self.forward_bend_baselines(&bend_baseline_updates).await;
 
         Ok(())
@@ -550,10 +593,10 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Send a note-off scheduled for a specific time.
     ///
-    /// Lookahead-aware note-off.
-    ///
-    /// Honors the scheduler timestamp before routing through the immediate
-    /// note-off path; see [`note_on_at`](Self::note_on_at).
+    /// Lookahead-aware note-off. MIDI-output voices sleep until the
+    /// scheduler timestamp before entering the pool path; audio-synth
+    /// voices forward the timestamp to the backend so the `gate = 0`
+    /// release lands sample-accurately (scsynth OSC bundle time-tag).
     #[cfg(feature = "midi")]
     pub async fn note_off_at(
         &self,
@@ -561,8 +604,40 @@ impl<B: Backend> VoicesHandler<B> {
         note: u8,
         timestamp: Option<Instant>,
     ) -> Result<()> {
-        wait_until_timestamp(timestamp).await;
-        self.note_off(id, note).await
+        let is_midi = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            voice.config.midi_output.is_some()
+        };
+
+        if is_midi {
+            wait_until_timestamp(timestamp).await;
+            return self.note_off(id, note).await;
+        }
+
+        self.note_off_audio_at(id, note, timestamp).await
+    }
+
+    /// Audio-synth note-off (`gate = 0`), optionally scheduled at a future
+    /// time. Shared by the immediate trait path (`at = None`) and the melody
+    /// lookahead scheduler (`at = Some`).
+    async fn note_off_audio_at(&self, id: VoiceId, note: u8, at: Option<Instant>) -> Result<()> {
+        let node_to_release = {
+            let mut state = self.state.write().await;
+            state.voice_note_generations.remove(&(id, note));
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
+            voice.note_nodes.remove(&note)
+        };
+
+        // Release the note (lock released)
+        if let Some(node_id) = node_to_release {
+            self.backend
+                .set_param_at(node_id, "gate", 0.0, at)
+                .await
+                .map_err(Error::backend)?;
+        }
+
+        Ok(())
     }
 
     /// Release a note only if no newer same-pitch note has superseded it.
@@ -919,6 +994,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()> {
+        self.trigger_at(id, params, None).await
+    }
+
+    async fn trigger_at(
+        &self,
+        id: VoiceId,
+        params: &ParamMap,
+        at: Option<Instant>,
+    ) -> Result<()> {
         // Gather info and allocate node while holding lock
         let (
             node_id,
@@ -1076,21 +1160,36 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             )
         };
 
-        // Choke nodes from other voices in the same choke group (lock released)
+        // Choke nodes from other voices in the same choke group (lock
+        // released). These frees stay immediate even for scheduled triggers:
+        // their node IDs were recycled above and may be reallocated before
+        // `at`, so the /n_free must have executed by then.
         for choke_node in choke_nodes {
             let _ = self.backend.free_node(choke_node).await;
         }
 
-        // Create synth in backend
+        // Create synth in backend — scheduled sample-accurately when `at`
+        // is set. Modulation /n_map bindings ride in the same scheduling
+        // unit since the node doesn't exist until then.
+        let param_buses: Vec<(String, u32)> = param_bindings
+            .iter()
+            .map(|(param, bus)| (param.clone(), bus.raw()))
+            .collect();
         self.backend
-            .create_synth(&synthdef, node_id, add_target, add_action, &merged_params)
+            .create_synth_at(
+                &synthdef,
+                node_id,
+                add_target,
+                add_action,
+                &merged_params,
+                &param_buses,
+                at,
+            )
             .await
             .map_err(Error::backend)?;
-        self.map_active_param_bindings(node_id, &param_bindings)
-            .await?;
         self.forward_bend_baselines(&bend_baseline_updates).await;
 
-        // Free old nodes (polyphony limit)
+        // Free old nodes (polyphony limit) — immediate, see choke note above.
         for old_node in old_nodes {
             let _ = self.backend.free_node(old_node).await;
         }
@@ -1183,142 +1282,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         }
 
-        // Gather info and allocate node while holding lock
-        let (
-            node_id,
-            add_target,
-            add_action,
-            synthdef,
-            params,
-            old_node,
-            param_bindings,
-            bend_baseline_updates,
-        ) = {
-            let mut state = self.state.write().await;
-
-            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-
-            let group = state
-                .groups
-                .get(&voice.config.group)
-                .ok_or(Error::GroupNotFound(voice.config.group))?;
-
-            let synthdef = voice.config.synthdef.clone();
-            let group_node_id = group.node_id;
-
-            // Build routing params first so script/user params can override them.
-            let mut params = ParamMap::new();
-            params.insert("out".to_string(), group.audio_bus.0 as f32);
-            apply_owned_output_bus_params(voice, &mut params);
-            apply_voice_input_bus_params(&state, voice, &mut params);
-
-            params.extend(voice.config.params.clone());
-            params.insert("freq".to_string(), midi_to_freq(note));
-            params.insert("amp".to_string(), velocity);
-            params.insert("gate".to_string(), 1.0);
-
-            // Convert sample offset/length from seconds to synth params
-            if let Some(sample_id) = voice.config.sample_id {
-                if let Some(sample_info) = state.samples.get(&sample_id) {
-                    params.insert("bufnum".to_string(), sample_info.buffer_id.0 as f32);
-
-                    let sample_rate = sample_info.sample_rate;
-                    let duration = sample_info.duration_secs;
-                    let is_warp = voice.config.synthdef.contains("warp");
-
-                    // Get and remove temporary params
-                    let offset_secs = params.remove("_offset_secs").unwrap_or(0.0) as f64;
-                    let release_secs = params.remove("_release_secs").unwrap_or(0.0) as f64;
-                    let length_secs = params.remove("_length_secs");
-
-                    // Calculate effective length for fade-out
-                    let effective_length = if let Some(len) = length_secs {
-                        Some((len as f64 - release_secs).max(0.01))
-                    } else if release_secs > 0.0 {
-                        let remaining = duration - offset_secs - release_secs;
-                        if remaining > 0.0 {
-                            Some(remaining)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    if is_warp {
-                        let start_norm = (offset_secs / duration).min(1.0);
-                        params.insert("startPos".to_string(), start_norm as f32);
-
-                        if let Some(len) = effective_length {
-                            let end_norm = ((offset_secs + len) / duration).min(1.0);
-                            params.insert("endPos".to_string(), end_norm as f32);
-                        }
-                    } else {
-                        let start_frame = (offset_secs * sample_rate) as f32;
-                        params.insert("startPos".to_string(), start_frame);
-
-                        if let Some(len) = effective_length {
-                            let end_frame = ((offset_secs + len) * sample_rate) as f32;
-                            params.insert("endPos".to_string(), end_frame);
-                        }
-                    }
-
-                    tracing::debug!(
-                        "Voice {:?} note_on: sample conversion - offset={:.2}s, length={:?}s",
-                        id,
-                        offset_secs,
-                        effective_length
-                    );
-                }
-            }
-
-            let node_id = state.alloc_node_id()?;
-            bump_note_generation(&mut state, id, note);
-
-            // Update voice state
-            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
-
-            // If note already playing, collect it for cleanup
-            let old_node = voice.note_nodes.remove(&note);
-
-            // Track note -> node mapping
-            voice.note_nodes.insert(note, node_id);
-            // The replaced same-pitch node is /n_free'd below — recycle its ID.
-            if let Some(old) = old_node {
-                state.free_node_id(old);
-            }
-            let param_bindings = state.active_param_bindings_for_voice(id);
-            let bend_baseline_updates =
-                Self::bend_baseline_updates_for_spawn(&state, id, &params, &param_bindings);
-            let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
-
-            (
-                node_id,
-                add_target,
-                add_action,
-                synthdef,
-                params,
-                old_node,
-                param_bindings,
-                bend_baseline_updates,
-            )
-        };
-
-        // Free old node if any (lock released)
-        if let Some(old) = old_node {
-            let _ = self.backend.free_node(old).await;
-        }
-
-        // Create synth
-        self.backend
-            .create_synth(&synthdef, node_id, add_target, add_action, &params)
+        self.note_on_audio_at(id, note, velocity, &ParamMap::new(), None)
             .await
-            .map_err(Error::backend)?;
-        self.map_active_param_bindings(node_id, &param_bindings)
-            .await?;
-        self.forward_bend_baselines(&bend_baseline_updates).await;
-
-        Ok(())
     }
 
     async fn note_off(&self, id: VoiceId, note: u8) -> Result<()> {
@@ -1342,22 +1307,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         }
 
-        let node_to_release = {
-            let mut state = self.state.write().await;
-            state.voice_note_generations.remove(&(id, note));
-            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
-            voice.note_nodes.remove(&note)
-        };
-
-        // Release the note (lock released)
-        if let Some(node_id) = node_to_release {
-            self.backend
-                .set_param(node_id, "gate", 0.0)
-                .await
-                .map_err(Error::backend)?;
-        }
-
-        Ok(())
+        self.note_off_audio_at(id, note, None).await
     }
 
     async fn mute(&self, id: VoiceId, muted: bool) -> Result<()> {

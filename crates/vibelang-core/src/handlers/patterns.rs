@@ -328,8 +328,15 @@ impl<B: Backend> PatternsHandler<B> {
                     let state = self.state.clone();
                     let pattern_id = trigger.pattern_id;
                     let voice_id = trigger.voice_id;
+                    // Anchor the release to the note-on's scheduled start,
+                    // not to dispatch time: audio-voice note-ons are now
+                    // backend-scheduled (no sleep before dispatch returns),
+                    // so sleeping a bare `gate` here would release up to a
+                    // full lookahead window early.
+                    let off_deadline = trigger.timestamp + gate;
                     tokio::spawn(async move {
-                        tokio::time::sleep(gate).await;
+                        tokio::time::sleep_until(tokio::time::Instant::from_std(off_deadline))
+                            .await;
                         let still_playing = state
                             .read()
                             .await
@@ -345,13 +352,22 @@ impl<B: Backend> PatternsHandler<B> {
                     });
                 }
             } else {
-                // Audio synth trigger (no MIDI)
-                let _ = self.voices.trigger(trigger.voice_id, &trigger.params).await;
+                // Audio synth trigger (no MIDI note param). The lookahead
+                // timestamp flows through to the backend so the trigger
+                // lands sample-accurately (scsynth OSC bundle time-tag)
+                // instead of firing on the tick that crossed it.
+                let _ = self
+                    .voices
+                    .trigger_at(trigger.voice_id, &trigger.params, Some(trigger.timestamp))
+                    .await;
             }
 
             #[cfg(not(feature = "midi"))]
             {
-                let _ = self.voices.trigger(trigger.voice_id, &trigger.params).await;
+                let _ = self
+                    .voices
+                    .trigger_at(trigger.voice_id, &trigger.params, Some(trigger.timestamp))
+                    .await;
             }
         }
     }
@@ -604,5 +620,270 @@ mod tests {
             Beat::from_f64(4.0),
         );
         assert_eq!(triggered.len(), 1);
+    }
+
+    // =========================================================================
+    // Lookahead timestamps flow to the backend (sample-accurate triggers)
+    // =========================================================================
+
+    mod scheduling {
+        use super::*;
+        use crate::backend::{AddAction, Backend, BufferInfo};
+        use crate::state::GroupState;
+        use crate::traits::VoiceConfig;
+        use crate::types::{BufferId, BusId, GroupId, NodeId};
+        use std::path::Path;
+        use std::sync::Mutex;
+
+        #[derive(Debug)]
+        struct MockError;
+
+        impl std::fmt::Display for MockError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "mock error")
+            }
+        }
+
+        impl std::error::Error for MockError {}
+
+        /// Backend that records the scheduling deadline of every synth
+        /// creation reaching it through `create_synth_at`.
+        struct SchedulingBackend {
+            calls: Mutex<Vec<(String, Option<Instant>)>>,
+        }
+
+        impl SchedulingBackend {
+            fn new() -> Self {
+                Self {
+                    calls: Mutex::new(Vec::new()),
+                }
+            }
+
+            fn calls(&self) -> Vec<(String, Option<Instant>)> {
+                self.calls.lock().unwrap().clone()
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Backend for SchedulingBackend {
+            type Error = MockError;
+
+            async fn load_synthdef(
+                &self,
+                _name: &str,
+                _data: &[u8],
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn create_synth(
+                &self,
+                _def: &str,
+                _node: NodeId,
+                _target: NodeId,
+                _action: AddAction,
+                _params: &ParamMap,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn create_synth_at(
+                &self,
+                def: &str,
+                _node: NodeId,
+                _target: NodeId,
+                _action: AddAction,
+                _params: &ParamMap,
+                _param_buses: &[(String, u32)],
+                at: Option<Instant>,
+            ) -> std::result::Result<(), Self::Error> {
+                self.calls.lock().unwrap().push((def.to_string(), at));
+                Ok(())
+            }
+
+            async fn create_group(
+                &self,
+                _node: NodeId,
+                _target: NodeId,
+                _action: AddAction,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn run_node(
+                &self,
+                _node: NodeId,
+                _running: bool,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn set_param(
+                &self,
+                _node: NodeId,
+                _param: &str,
+                _value: f32,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn map_param_to_bus(
+                &self,
+                _node: NodeId,
+                _param: &str,
+                _bus: u32,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn load_buffer(
+                &self,
+                _id: BufferId,
+                _path: &Path,
+            ) -> std::result::Result<BufferInfo, Self::Error> {
+                Ok(BufferInfo {
+                    frames: 44100,
+                    channels: 2,
+                    sample_rate: 44100.0,
+                })
+            }
+
+            async fn alloc_buffer(
+                &self,
+                _id: BufferId,
+                frames: u32,
+                channels: u16,
+            ) -> std::result::Result<BufferInfo, Self::Error> {
+                Ok(BufferInfo {
+                    frames,
+                    channels,
+                    sample_rate: 44100.0,
+                })
+            }
+
+            async fn write_buffer(
+                &self,
+                _id: BufferId,
+                _path: &Path,
+            ) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+                Ok(())
+            }
+
+            fn current_time(&self) -> Instant {
+                Instant::now()
+            }
+        }
+
+        async fn setup_voice(
+            backend: &Arc<SchedulingBackend>,
+            state: &Arc<RwLock<State>>,
+        ) -> (Arc<VoicesHandler<SchedulingBackend>>, VoiceId) {
+            {
+                let mut s = state.write().await;
+                s.synthdefs.insert("test_synth".to_string());
+                let group_id = GroupId::new(1);
+                s.groups.insert(
+                    group_id,
+                    GroupState {
+                        id: group_id,
+                        name: "TestGroup".to_string(),
+                        parent: None,
+                        node_id: NodeId(100),
+                        audio_bus: BusId(16),
+                        link_synth_node_id: None,
+                        muted: false,
+                        soloed: false,
+                        params: ParamMap::new(),
+                        output_bus: None,
+                        output_channels: None,
+                    },
+                );
+            }
+
+            let voices = Arc::new(VoicesHandler::new(backend.clone(), state.clone()));
+            let voice_id = VoiceId::new(1);
+            voices
+                .create(
+                    voice_id,
+                    VoiceConfig::new("test_voice", "test_synth", GroupId::new(1)),
+                )
+                .await
+                .expect("voice creation");
+            (voices, voice_id)
+        }
+
+        /// A pattern step scheduled by the lookahead tick must reach the
+        /// backend with its precise future deadline — this is the end-to-end
+        /// path that makes audio triggers sample-accurate.
+        #[tokio::test]
+        async fn pattern_step_timestamp_flows_to_backend() {
+            let backend = Arc::new(SchedulingBackend::new());
+            let state = Arc::new(RwLock::new(State::default()));
+            let (voices, voice_id) = setup_voice(&backend, &state).await;
+
+            let handler = PatternsHandler::new(state.clone(), voices);
+            let pattern_id = PatternId::new(1);
+            // One step 0.05 beats into the pattern: at the default 120 BPM
+            // that is 25ms ahead of beat 0 — inside the 50ms lookahead
+            // window of the first tick.
+            let config = PatternConfig {
+                name: "p".to_string(),
+                voice: Some(voice_id),
+                steps: vec![Step {
+                    beat: Beat::from_f64(0.05),
+                    params: ParamMap::new(),
+                }],
+                length: Beat::from_f64(4.0),
+                swing: 0.0,
+            };
+            handler.create(pattern_id, config).await.expect("create");
+            handler.start(pattern_id).await.expect("start");
+
+            let before = Instant::now();
+            handler.tick(Beat::ZERO).await;
+
+            let calls = backend.calls();
+            assert_eq!(calls.len(), 1, "exactly one step should fire");
+            let (def, at) = &calls[0];
+            assert_eq!(def, "test_synth");
+            let at = at.expect("pattern trigger must carry a future timestamp");
+            assert!(at >= before, "timestamp must not be in the past");
+            let lead = at.duration_since(before);
+            assert!(
+                lead >= Duration::from_millis(20) && lead <= Duration::from_millis(250),
+                "timestamp should be ~25ms ahead of the tick, got {:?}",
+                lead
+            );
+        }
+
+        /// Direct (non-lookahead) triggers — live MIDI input, HTTP API,
+        /// immediate script eval — must keep the immediate path: no
+        /// scheduling deadline is attached.
+        #[tokio::test]
+        async fn immediate_trigger_carries_no_timestamp() {
+            let backend = Arc::new(SchedulingBackend::new());
+            let state = Arc::new(RwLock::new(State::default()));
+            let (voices, voice_id) = setup_voice(&backend, &state).await;
+
+            voices
+                .trigger(voice_id, &ParamMap::new())
+                .await
+                .expect("trigger");
+
+            let calls = backend.calls();
+            assert_eq!(calls.len(), 1);
+            assert!(
+                calls[0].1.is_none(),
+                "immediate triggers must not carry a schedule deadline"
+            );
+        }
     }
 }
