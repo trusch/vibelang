@@ -29,6 +29,12 @@ static SYNTHDEF_OUTPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<OutputPort>
 // outputs registry so the runtime can allocate / route input buses without
 // re-running the builder.
 static SYNTHDEF_INPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<InputPort>>>> = OnceLock::new();
+// Per-synthdef content hash of the encoded SCgf bytes, keyed by name.
+// Populated at deploy time (both `define_synthdef` and `define_fx` paths) so
+// the reload differ can detect body-only edits: same name, same params, but
+// a different compiled graph. Names not in this map (builtins, auto-generated
+// sample voices) have no hash and are never treated as body-changed.
+static SYNTHDEF_HASH_REGISTRY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 // Callback for deploying synthdef bytes to scsynth
 static DEPLOY_CALLBACK: OnceLock<Mutex<Option<DeployCallback>>> = OnceLock::new();
 
@@ -103,6 +109,47 @@ pub fn clear_synthdef_inputs_registry() {
     get_synthdef_inputs_registry().lock().unwrap().clear();
 }
 
+fn get_synthdef_hash_registry() -> &'static Mutex<HashMap<String, u64>> {
+    SYNTHDEF_HASH_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Content hash of encoded SCgf bytes (stable within a process run).
+fn hash_synthdef_bytes(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Record the content hash for a deployed synthdef / effect body.
+///
+/// Called by the deploy paths with a hash of the encoded SCgf bytes. Tests
+/// may call it directly to simulate body edits without running the builder.
+pub fn register_synthdef_hash(name: String, hash: u64) {
+    get_synthdef_hash_registry()
+        .lock()
+        .unwrap()
+        .insert(name, hash);
+}
+
+/// Look up the content hash for a deployed synthdef / effect body.
+///
+/// Returns `None` for names that never went through the script deploy path
+/// (builtins, auto-generated voices) — callers must treat that as "unknown,
+/// assume unchanged".
+pub fn get_synthdef_hash(name: &str) -> Option<u64> {
+    get_synthdef_hash_registry()
+        .lock()
+        .unwrap()
+        .get(name)
+        .copied()
+}
+
+/// Clear the synthdef content-hash registry. Useful for tests.
+pub fn clear_synthdef_hash_registry() {
+    get_synthdef_hash_registry().lock().unwrap().clear();
+}
+
 fn get_deploy_callback() -> &'static Mutex<Option<DeployCallback>> {
     DEPLOY_CALLBACK.get_or_init(|| Mutex::new(None))
 }
@@ -152,6 +199,7 @@ fn deploy_synthdef_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     );
 
     let bytes = encode_synthdef(&ir)?;
+    register_synthdef_hash(name.to_string(), hash_synthdef_bytes(&bytes));
     log::debug!(
         "[SYNTHDEF] Encoded synthdef '{}' ({} bytes)",
         name,
@@ -182,6 +230,7 @@ fn deploy_fx_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     }
 
     let bytes = encode_synthdef(&ir)?;
+    register_synthdef_hash(name.to_string(), hash_synthdef_bytes(&bytes));
     deploy_bytes(bytes)?;
     log::debug!("[FX] ✓ Effect '{}' loaded successfully", name);
 

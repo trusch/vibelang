@@ -129,12 +129,19 @@ impl<B: Backend> SynthDefsHandler<B> {
                 state.synthdef_inputs.insert(name.to_string(), inputs);
                 Vec::new()
             } else {
+                // Snapshot the old input set ONCE: the first voice's
+                // reconcile overwrites `state.synthdef_inputs[name]`, so a
+                // per-voice registry lookup would make every later voice
+                // sharing this synthdef compare new-vs-new and skip its own
+                // bus/route teardown.
+                let old_inputs = state.synthdef_inputs(name);
                 let mut current_input_routes = std::mem::take(&mut state.input_routes);
                 let mut nodes = Vec::new();
                 for voice_id in voice_ids {
-                    let reconcile = crate::reload::reconcile_voice_input_ports(
+                    let reconcile = crate::reload::reconcile_voice_input_ports_from(
                         &mut state,
                         voice_id,
+                        &old_inputs,
                         &inputs,
                         &mut current_input_routes,
                     );

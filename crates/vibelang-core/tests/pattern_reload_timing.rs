@@ -486,9 +486,10 @@ async fn quantized_swap_plays_new_downbeat_at_boundary() {
     let sbeats = backend.param_seq("sbeat");
 
     // Everything before the bar line came from the old content...
-    let boundary_idx = markers.iter().position(|&m| m == 2.0).expect(
-        "the new content must fire after the boundary",
-    );
+    let boundary_idx = markers
+        .iter()
+        .position(|&m| m == 2.0)
+        .expect("the new content must fire after the boundary");
     assert!(
         markers[..boundary_idx].iter().all(|&m| m == 1.0),
         "no new-content step may fire before the bar line: {:?}",
@@ -502,9 +503,7 @@ async fn quantized_swap_plays_new_downbeat_at_boundary() {
     let downbeat_triggers: Vec<_> = backend
         .triggers()
         .iter()
-        .filter(|t| {
-            t.params.get("marker") == Some(&2.0) && t.params.get("sbeat") == Some(&0.0)
-        })
+        .filter(|t| t.params.get("marker") == Some(&2.0) && t.params.get("sbeat") == Some(&0.0))
         .cloned()
         .collect();
     assert_eq!(
@@ -822,7 +821,7 @@ async fn runtime_reload_wires_script_quantization_into_swap() {
 
     // Reload with changed steps and a 1-beat quantization grid.
     let mut script = base_script(0.5, pattern_config(1.0, 4.0, &[0.0, 2.0]), true);
-    script.quantization = 1.0;
+    script.quantization = Some(1.0);
     apply(&mut runtime, script).await;
 
     let state = runtime.state().read().await;
@@ -835,6 +834,88 @@ async fn runtime_reload_wires_script_quantization_into_swap() {
         *quant,
         ChangeQuant::NextBeat,
         "set_quantization(1) must map to a NextBeat swap"
+    );
+}
+
+/// An explicit `set_quantization(0)` means "swap immediately" and must map
+/// to `ChangeQuant::Immediate`, not fall back to the NextBar default.
+#[tokio::test(flavor = "current_thread")]
+async fn runtime_reload_explicit_zero_quantization_swaps_immediately() {
+    let backend = MockBackend::new();
+    let mut runtime = Runtime::new(backend.clone());
+    runtime
+        .send(
+            SynthDefMessage::Load {
+                name: SYNTH.to_string(),
+                data: Vec::new(),
+            }
+            .into(),
+        )
+        .await
+        .unwrap();
+    runtime.tick().await;
+
+    apply(
+        &mut runtime,
+        base_script(0.5, pattern_config(1.0, 4.0, &[0.0]), true),
+    )
+    .await;
+
+    let mut script = base_script(0.5, pattern_config(1.0, 4.0, &[0.0, 2.0]), true);
+    script.quantization = Some(0.0);
+    apply(&mut runtime, script).await;
+
+    let state = runtime.state().read().await;
+    let p = state.patterns.get(&PATTERN).expect("pattern exists");
+    let (_, quant) = p
+        .pending_content
+        .as_ref()
+        .expect("content swap queued on the playing pattern");
+    assert_eq!(
+        *quant,
+        ChangeQuant::Immediate,
+        "explicit set_quantization(0) must map to an Immediate swap"
+    );
+}
+
+/// Never calling `set_quantization` (quantization: None) keeps the default
+/// NextBar boundary — the pre-Option behaviour.
+#[tokio::test(flavor = "current_thread")]
+async fn runtime_reload_unset_quantization_uses_default_bar_grid() {
+    let backend = MockBackend::new();
+    let mut runtime = Runtime::new(backend.clone());
+    runtime
+        .send(
+            SynthDefMessage::Load {
+                name: SYNTH.to_string(),
+                data: Vec::new(),
+            }
+            .into(),
+        )
+        .await
+        .unwrap();
+    runtime.tick().await;
+
+    apply(
+        &mut runtime,
+        base_script(0.5, pattern_config(1.0, 4.0, &[0.0]), true),
+    )
+    .await;
+
+    let script = base_script(0.5, pattern_config(1.0, 4.0, &[0.0, 2.0]), true);
+    assert_eq!(script.quantization, None, "fixture never sets quantization");
+    apply(&mut runtime, script).await;
+
+    let state = runtime.state().read().await;
+    let p = state.patterns.get(&PATTERN).expect("pattern exists");
+    let (_, quant) = p
+        .pending_content
+        .as_ref()
+        .expect("content swap queued on the playing pattern");
+    assert_eq!(
+        *quant,
+        ChangeQuant::NextBar,
+        "unset quantization must keep the default NextBar swap grid"
     );
 }
 

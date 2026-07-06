@@ -551,8 +551,13 @@ pub struct ScriptState {
     /// Time signature.
     pub time_sig: TimeSignature,
 
-    /// Quantization in beats (0 = no quantization).
-    pub quantization: f64,
+    /// Quantization grid in beats for reload content swaps.
+    ///
+    /// `None` means the script never called `set_quantization` — the runtime
+    /// falls back to the default boundary ([`super::ChangeQuant::NextBar`]).
+    /// An explicit `Some(0.0)` (`set_quantization(0)`) means "swap
+    /// immediately, no boundary wait" ([`super::ChangeQuant::Immediate`]).
+    pub quantization: Option<f64>,
 
     /// Groups defined in the script.
     pub groups: HashMap<GroupId, GroupConfig>,
@@ -596,6 +601,19 @@ pub struct ScriptState {
 
     /// Effects defined in the script.
     pub effects: HashMap<EffectId, EffectConfig>,
+
+    /// Content hashes for script-deployed synthdef / effect bodies, keyed by
+    /// synthdef name.
+    ///
+    /// Populated at script-eval time (vibelang-rhai) from the vibelang-dsp
+    /// hash registry for every synthdef referenced by a voice or effect. The
+    /// reload differ compares these against the snapshot recorded on the last
+    /// applied reload ([`State::script_synthdef_hashes`]) to detect body-only
+    /// edits — same name, same params, different compiled graph — which must
+    /// structurally recreate dependent voices/effects so reload equals cold
+    /// boot. Names absent on either side are treated as "unknown, assume
+    /// unchanged" (builtins and auto-generated synthdefs never hash).
+    pub synthdef_hashes: HashMap<String, u64>,
 
     /// First successful effect declarations in total script evaluation order.
     ///
@@ -1437,6 +1455,32 @@ pub fn reconcile_voice_input_ports(
     new_inputs: &[InputPort],
     input_routes: &mut InputRouteMap,
 ) -> InputPortReconcile {
+    let Some(voice) = state.voices.get(&voice_id) else {
+        tracing::warn!(
+            "reconcile_voice_input_ports: voice {:?} not found, skipping",
+            voice_id
+        );
+        return InputPortReconcile::default();
+    };
+    let old_inputs = state.synthdef_inputs(&voice.config.synthdef);
+    reconcile_voice_input_ports_from(state, voice_id, &old_inputs, new_inputs, input_routes)
+}
+
+/// [`reconcile_voice_input_ports`] against an explicit old-input snapshot.
+///
+/// When several voices share one synthdef, the first voice's reconcile
+/// overwrites `state.synthdef_inputs[synthdef]` with the new set, so a
+/// registry lookup for the second voice would compare new-vs-new and no-op —
+/// leaving its buses and route synths stale. Callers that reconcile multiple
+/// voices for the same synthdef must capture the old input set once, before
+/// the first reconcile, and pass it to every call.
+pub fn reconcile_voice_input_ports_from(
+    state: &mut State,
+    voice_id: VoiceId,
+    old_inputs: &[InputPort],
+    new_inputs: &[InputPort],
+    input_routes: &mut InputRouteMap,
+) -> InputPortReconcile {
     let synthdef = match state.voices.get(&voice_id) {
         Some(voice) => voice.config.synthdef.clone(),
         None => {
@@ -1448,7 +1492,6 @@ pub fn reconcile_voice_input_ports(
         }
     };
 
-    let old_inputs = state.synthdef_inputs(&synthdef);
     let new_by_name: HashMap<&str, &InputPort> =
         new_inputs.iter().map(|p| (p.name.as_str(), p)).collect();
     let old_by_name: HashMap<&str, &InputPort> =
@@ -1466,7 +1509,7 @@ pub fn reconcile_voice_input_ports(
     }
 
     let mut removed = Vec::new();
-    for input in &old_inputs {
+    for input in old_inputs {
         if let Some(reason) =
             InputPortDropReason::from_ports(input, new_by_name.get(input.name.as_str()).copied())
         {
@@ -1716,7 +1759,10 @@ mod tests {
 
         let mut input_buses = Vec::new();
         for input in old_inputs {
-            input_buses.push((input.name.clone(), state.alloc_audio_bus(input.channels).unwrap()));
+            input_buses.push((
+                input.name.clone(),
+                state.alloc_audio_bus(input.channels).unwrap(),
+            ));
         }
         state.voices.insert(
             voice_id,

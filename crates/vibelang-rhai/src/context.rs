@@ -232,11 +232,30 @@ pub fn clear_context() {
 /// Take the built script state.
 pub fn take_state() -> ScriptState {
     CONTEXT.with(|ctx| {
-        let state = ctx
+        let mut state = ctx
             .borrow_mut()
             .as_mut()
             .map(|c| std::mem::take(&mut c.state))
             .unwrap_or_default();
+
+        // Record content hashes for every script-deployed synthdef referenced
+        // by a voice or effect. The reload differ compares these against the
+        // hashes snapshotted on the last applied reload to detect body-only
+        // synthdef edits (same name/params, different compiled graph), which
+        // must structurally recreate dependent voices/effects. Names without
+        // a registry hash (builtins, sample voices) are simply not recorded.
+        let referenced: std::collections::HashSet<String> = state
+            .voices
+            .values()
+            .map(|v| v.synthdef.clone())
+            .chain(state.effects.values().map(|e| e.synthdef.clone()))
+            .filter(|name| !name.is_empty())
+            .collect();
+        for name in referenced {
+            if let Some(hash) = vibelang_dsp::get_synthdef_hash(&name) {
+                state.synthdef_hashes.insert(name, hash);
+            }
+        }
 
         tracing::debug!(
             "take_state: melodies={}, playing_melodies={}, voices={}, groups={}",

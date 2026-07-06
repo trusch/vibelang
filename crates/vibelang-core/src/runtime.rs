@@ -170,6 +170,11 @@ pub struct Runtime<B: Backend> {
 #[derive(Clone, Debug)]
 struct PendingVoicePortReconcile {
     voice_id: VoiceId,
+    /// Old port set snapshotted BEFORE any reconcile runs. Voices sharing a
+    /// synthdef must each reconcile against this snapshot — the first
+    /// voice's reconcile overwrites `state.synthdef_outputs`, so a live
+    /// lookup for later voices would compare new-vs-new and no-op.
+    old_ports: Vec<OutputPort>,
     new_ports: Vec<OutputPort>,
     refreshed_ports: Vec<String>,
 }
@@ -622,9 +627,7 @@ impl<B: Backend> Runtime<B> {
                             // A reload sent before this sync is still staging
                             // off-task. Defer the notification until it has
                             // applied so the sync keeps its barrier meaning.
-                            tracing::debug!(
-                                "Sync request deferred until staged reload applies"
-                            );
+                            tracing::debug!("Sync request deferred until staged reload applies");
                             self.deferred_sync_notifies.push(notify);
                             return Ok(());
                         }
@@ -975,7 +978,9 @@ impl<B: Backend> Runtime<B> {
             .iter()
             .filter_map(|(id, new_config)| {
                 let current = state.voices.get(id)?;
-                Self::voice_needs_structural_recreate(&current.config, new_config).then_some(*id)
+                (Self::voice_needs_structural_recreate(&current.config, new_config)
+                    || reload::synthdef_body_changed(&state, new_state, &new_config.synthdef))
+                .then_some(*id)
             })
             .collect();
         ids.sort_by_key(|id| {
@@ -1121,6 +1126,7 @@ impl<B: Backend> Runtime<B> {
 
             pending.push(PendingVoicePortReconcile {
                 voice_id,
+                old_ports,
                 new_ports,
                 refreshed_ports,
             });
@@ -1142,9 +1148,10 @@ impl<B: Backend> Runtime<B> {
         let mut changed = false;
 
         for reconcile in pending {
-            let outcome = match reload::reconcile_voice_ports(
+            let outcome = match reload::reconcile_voice_ports_from(
                 &mut state,
                 reconcile.voice_id,
+                &reconcile.old_ports,
                 &reconcile.new_ports,
                 effective_routes,
             ) {
@@ -1475,6 +1482,7 @@ impl<B: Backend> Runtime<B> {
             .iter()
             .map(|(id, config)| (*id, config.params.clone()))
             .collect();
+        state.script_synthdef_hashes = new_state.synthdef_hashes.clone();
     }
 
     /// Builds the reload diff and derived route maps used by the apply phases.
@@ -1704,13 +1712,11 @@ impl<B: Backend> Runtime<B> {
             let deleted = diff.voices.deleted.iter();
             let recreated = diff.voices.updated.iter().filter_map(|(id, new_config)| {
                 let current = state.voices.get(id)?;
-                Self::voice_needs_structural_recreate(&current.config, new_config)
-                    .then_some(id)
+                Self::voice_needs_structural_recreate(&current.config, new_config).then_some(id)
             });
             for id in deleted.chain(recreated) {
                 if let Some(voice) = state.voices.get(id) {
-                    let sounding =
-                        !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
+                    let sounding = !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
                     if sounding && crate::handlers::voice_is_gated(&voice.config) {
                         grace = grace.max(crate::handlers::voice_release_grace(&voice.config));
                     }
@@ -1736,7 +1742,10 @@ impl<B: Backend> Runtime<B> {
         };
         for id in ordered_group_deletions {
             tracing::debug!("Reload: deleting group {:?}", id);
-            let _ = self.groups.delete_with_grace(id, group_teardown_grace).await;
+            let _ = self
+                .groups
+                .delete_with_grace(id, group_teardown_grace)
+                .await;
         }
 
         // Delete samples
@@ -2011,9 +2020,7 @@ impl<B: Backend> Runtime<B> {
                     .expect("just collected")
                     .clone();
                 match staged.samples.remove(&id) {
-                    Some(info)
-                        if info.path == config.path && info.source_mtime == config.mtime =>
-                    {
+                    Some(info) if info.path == config.path && info.source_mtime == config.mtime => {
                         tracing::debug!("Reload: committing pre-staged sample {:?}", id);
                         self.samples.commit(info).await;
                     }
@@ -2347,11 +2354,7 @@ impl<B: Backend> Runtime<B> {
             // every reload is redundant backend traffic and would fight solo
             // recomputation across unrelated groups.
             if cur_muted != new_config.muted {
-                tracing::debug!(
-                    "Reload: updating group {:?} muted={}",
-                    id,
-                    new_config.muted
-                );
+                tracing::debug!("Reload: updating group {:?} muted={}", id, new_config.muted);
                 if let Err(e) = self.groups.mute(*id, new_config.muted).await {
                     tracing::warn!(
                         "Reload: failed to set mute={} on group {:?} '{}': {}",
@@ -2456,7 +2459,9 @@ impl<B: Backend> Runtime<B> {
             let (needs_recreate, old_script_params) = {
                 let state = self.state.read().await;
                 if let Some(current_voice) = state.voices.get(id) {
-                    // Recreate if synthdef, group, or sfz_instrument changed.
+                    // Recreate if synthdef, group, or sfz_instrument changed,
+                    // or if the synthdef's BODY changed (same name, different
+                    // compiled graph — detected via the content-hash snapshot).
                     //
                     // The old-param baseline for the in-place update is the
                     // script-config snapshot; the live `config.params` map is
@@ -2465,7 +2470,12 @@ impl<B: Backend> Runtime<B> {
                     // hold runtime-only keys like `gate` that must never be
                     // "reset").
                     (
-                        Self::voice_needs_structural_recreate(&current_voice.config, new_config),
+                        Self::voice_needs_structural_recreate(&current_voice.config, new_config)
+                            || reload::synthdef_body_changed(
+                                &state,
+                                new_state,
+                                &new_config.synthdef,
+                            ),
                         state.script_voice_params.get(id).cloned(),
                     )
                 } else {
@@ -2516,8 +2526,7 @@ impl<B: Backend> Runtime<B> {
                     // the cold-boot config). Recreating the voice instead
                     // would kill sounding notes, which is worse than a
                     // warn-and-skip when no default is known.
-                    let defaults =
-                        vibelang_dsp::get_synthdef_param_defaults(&new_config.synthdef);
+                    let defaults = vibelang_dsp::get_synthdef_param_defaults(&new_config.synthdef);
                     for param in &param_diff.removed {
                         match defaults.get(param) {
                             Some(default) => {
@@ -2583,9 +2592,9 @@ impl<B: Backend> Runtime<B> {
         }
 
         // Content swaps honour the script's `set_quantization(beats)` grid,
-        // snapped to the discrete ChangeQuant boundaries (NextBar when the
-        // script never sets one — see ChangeQuant::from_grid for the mapping
-        // and the TODO about explicit `set_quantization(0)`).
+        // snapped to the discrete ChangeQuant boundaries: NextBar when the
+        // script never sets one (None), Immediate for an explicit
+        // `set_quantization(0)` — see ChangeQuant::from_grid.
         let swap_quant = reload::ChangeQuant::from_grid(new_state.quantization, new_state.time_sig);
 
         // Update patterns - queue content swap for seamless hot reload
@@ -2805,10 +2814,16 @@ impl<B: Backend> Runtime<B> {
             let (needs_recreate, old_script_params) = {
                 let state = self.state.read().await;
                 if let Some(current_effect) = state.effects.get(&id) {
-                    // Recreate if synthdef or group changed
+                    // Recreate if synthdef or group changed, or if the
+                    // synthdef's body changed (content hash mismatch).
                     (
                         current_effect.synthdef != new_config.synthdef
-                            || current_effect.group != new_config.group,
+                            || current_effect.group != new_config.group
+                            || reload::synthdef_body_changed(
+                                &state,
+                                new_state,
+                                &new_config.synthdef,
+                            ),
                         state.script_effect_params.get(&id).cloned(),
                     )
                 } else {
@@ -2870,8 +2885,7 @@ impl<B: Backend> Runtime<B> {
                     // remove+re-add (which would move the effect to the tail
                     // of the chain and cut its tail through the grace-period
                     // fade).
-                    let fx_defaults =
-                        vibelang_dsp::get_effect_param_defaults(&new_config.synthdef);
+                    let fx_defaults = vibelang_dsp::get_effect_param_defaults(&new_config.synthdef);
                     let synth_defaults =
                         vibelang_dsp::get_synthdef_param_defaults(&new_config.synthdef);
                     for param in &param_diff.removed {

@@ -216,6 +216,33 @@ pub fn reconcile_voice_ports(
     new_ports: &[OutputPort],
     routes: &mut RouteMap,
 ) -> crate::Result<PortReconcile> {
+    let Some(voice) = state.voices.get(&voice_id) else {
+        tracing::warn!(
+            "reconcile_voice_ports: voice {:?} not found, skipping",
+            voice_id
+        );
+        return Ok(PortReconcile::default());
+    };
+    let old_ports = state.synthdef_outputs(&voice.config.synthdef);
+    reconcile_voice_ports_from(state, voice_id, &old_ports, new_ports, routes)
+}
+
+/// [`reconcile_voice_ports`] against an explicit old-port snapshot.
+///
+/// When several voices share one synthdef, the first voice's reconcile
+/// overwrites `state.synthdef_outputs[synthdef]` with the new set. A
+/// registry lookup for the second voice would then compare new-vs-new and
+/// no-op, leaving its buses on the old shape and its stale routes in place.
+/// Callers that reconcile multiple voices for the same synthdef must capture
+/// the old port set once, before the first reconcile, and pass it to every
+/// call (the runtime records it on each `PendingVoicePortReconcile`).
+pub fn reconcile_voice_ports_from(
+    state: &mut State,
+    voice_id: VoiceId,
+    old_ports: &[OutputPort],
+    new_ports: &[OutputPort],
+    routes: &mut RouteMap,
+) -> crate::Result<PortReconcile> {
     let synthdef = match state.voices.get(&voice_id) {
         Some(v) => v.config.synthdef.clone(),
         None => {
@@ -226,8 +253,7 @@ pub fn reconcile_voice_ports(
             return Ok(PortReconcile::default());
         }
     };
-    let old_ports = state.synthdef_outputs(&synthdef);
-    let diff = diff_port_set(&old_ports, new_ports);
+    let diff = diff_port_set(old_ports, new_ports);
 
     if diff.is_unchanged() {
         // Body-only edit: keep the registry fresh in case channel widths or

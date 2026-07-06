@@ -931,6 +931,13 @@ pub struct State {
     /// Script-declared effect params as of the last applied reload.
     pub script_effect_params: HashMap<EffectId, ParamMap>,
 
+    /// Content hashes of script-deployed synthdef / effect bodies as of the
+    /// last applied reload. Mirrors [`crate::reload::ScriptState::synthdef_hashes`];
+    /// compared against the incoming script's hashes by
+    /// [`crate::reload::synthdef_body_changed`] to detect body-only synthdef
+    /// edits that must structurally recreate dependent voices/effects.
+    pub script_synthdef_hashes: HashMap<String, u64>,
+
     // =========================================================================
     // Control Buses
     // =========================================================================
@@ -1268,6 +1275,7 @@ impl Default for State {
             group_effect_chain: HashMap::new(),
             script_voice_params: HashMap::new(),
             script_effect_params: HashMap::new(),
+            script_synthdef_hashes: HashMap::new(),
             control_buses: ControlBusAllocator::default(),
             param_summer_group: None,
             active_fades: Vec::new(),

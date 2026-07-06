@@ -2425,7 +2425,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            (state.quantization - 4.0).abs() < 0.001,
+            (state.quantization.unwrap() - 4.0).abs() < 0.001,
             "Quantization should be 4.0"
         );
     }
@@ -2441,10 +2441,80 @@ mod tests {
             )
             .unwrap();
 
-        // Default quantization should be 0 (no quantization)
+        // Default quantization should be unset (runtime default grid)
         assert!(
-            (state.quantization - 0.0).abs() < 0.001,
-            "Default quantization should be 0.0"
+            state.quantization.is_none(),
+            "Default quantization should be unset"
+        );
+    }
+
+    #[test]
+    fn test_quantization_explicit_zero_is_distinct_from_unset() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(0); // Explicit: swap immediately, no boundary wait
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.quantization,
+            Some(0.0),
+            "explicit set_quantization(0) must be recorded as Some(0.0), not unset"
+        );
+    }
+
+    #[test]
+    fn synthdef_body_hash_stable_across_evals_and_changes_on_body_edit() {
+        vibelang_dsp::set_deploy_callback(|_| Ok(()));
+        let mut engine = ScriptEngine::new();
+
+        const SYNTH: &str = "engine_hash_probe_synth";
+        let script_v1 = format!(
+            r#"
+            define_synthdef("{SYNTH}")
+                .param("freq", 440.0)
+                .body(|freq| {{
+                    let sig = saw_ar(freq) * 0.2;
+                    [sig, sig]
+                }});
+            define_group("Probe", || {{
+                let v = voice("probe").synth("{SYNTH}");
+            }});
+        "#
+        );
+
+        let first = engine.execute(&script_v1).unwrap();
+        let second = engine.execute(&script_v1).unwrap();
+        let h1 = first
+            .synthdef_hashes
+            .get(SYNTH)
+            .copied()
+            .expect("hash recorded for script-deployed synthdef");
+        let h2 = second
+            .synthdef_hashes
+            .get(SYNTH)
+            .copied()
+            .expect("hash recorded on re-eval");
+        assert_eq!(
+            h1, h2,
+            "identical synthdef body must hash identically across evals (no reload churn)"
+        );
+
+        // Body edit: same name, same params, different gain constant.
+        let script_v2 = script_v1.replace("* 0.2", "* 0.3");
+        let third = engine.execute(&script_v2).unwrap();
+        let h3 = third
+            .synthdef_hashes
+            .get(SYNTH)
+            .copied()
+            .expect("hash recorded after body edit");
+        assert_ne!(
+            h1, h3,
+            "a body-only edit must change the synthdef content hash"
         );
     }
 
@@ -2467,7 +2537,7 @@ mod tests {
             let script = format!("set_tempo(120); set_quantization({});", value);
             let state = engine.execute(&script).unwrap();
             assert!(
-                (state.quantization - value).abs() < 0.001,
+                (state.quantization.unwrap() - value).abs() < 0.001,
                 "Quantization should be {} for {}",
                 value,
                 description
@@ -2978,7 +3048,10 @@ mod tests {
             )
             .unwrap();
 
-        assert!(state.quantization >= 0.0, "Quantization should be >= 0");
+        assert!(
+            state.quantization.unwrap() >= 0.0,
+            "Quantization should be >= 0"
+        );
     }
 
     #[test]
@@ -3029,7 +3102,7 @@ mod tests {
 
         // Verify everything was set up correctly
         assert_eq!(state.tempo, 130.0);
-        assert!((state.quantization - 4.0).abs() < 0.001);
+        assert!((state.quantization.unwrap() - 4.0).abs() < 0.001);
 
         // Check groups
         assert!(state.groups.len() >= 3);

@@ -65,11 +65,13 @@ pub use diff::{
     diff_entities, diff_param_routes, diff_param_routes_with_shaping, diff_routes, EntityDiff,
     ParamDiff, ReloadDiff,
 };
-pub use port_diff::{diff_port_set, reconcile_voice_ports, PortReconcile, PortSetDiff};
+pub use port_diff::{
+    diff_port_set, reconcile_voice_ports, reconcile_voice_ports_from, PortReconcile, PortSetDiff,
+};
 pub use script_state::{
-    reconcile_voice_input_ports, BodyContribution, EffectConfig, GroupAliasError, GroupAliasTarget,
-    GroupConfig, InputPortDropReason, InputPortReconcile, ParamRouteConflict, ParamRouteKind,
-    ScriptState,
+    reconcile_voice_input_ports, reconcile_voice_input_ports_from, BodyContribution, EffectConfig,
+    GroupAliasError, GroupAliasTarget, GroupConfig, InputPortDropReason, InputPortReconcile,
+    ParamRouteConflict, ParamRouteKind, ScriptState,
 };
 // ChangeQuant is defined in this module and exported directly
 
@@ -210,16 +212,16 @@ impl ChangeQuant {
     /// up to one beat → [`ChangeQuant::NextBeat`], up to one bar →
     /// [`ChangeQuant::NextBar`], anything longer → [`ChangeQuant::NextCycle`].
     ///
-    /// TODO: `quantization == 0.0` cannot be distinguished from "script never
-    /// called `set_quantization`" because `ScriptState::quantization` is a
-    /// plain `f64` defaulting to `0.0`. An explicit `set_quantization(0)`
-    /// therefore maps to the [`ChangeQuant::NextBar`] default instead of
-    /// [`ChangeQuant::Immediate`]. Honouring it requires
-    /// `ScriptState::quantization: Option<f64>` (reload/script_state.rs plus
-    /// the vibelang-rhai getters/setters).
-    pub fn from_grid(quantization: f64, time_sig: TimeSignature) -> Self {
+    /// `None` means the script never called `set_quantization` and maps to
+    /// the [`ChangeQuant::NextBar`] default. An explicit
+    /// `set_quantization(0)` (`Some(0.0)`) means "swap immediately, no
+    /// boundary wait" and maps to [`ChangeQuant::Immediate`].
+    pub fn from_grid(quantization: Option<f64>, time_sig: TimeSignature) -> Self {
+        let Some(quantization) = quantization else {
+            return ChangeQuant::default();
+        };
         if quantization <= 0.0 {
-            ChangeQuant::default()
+            ChangeQuant::Immediate
         } else if quantization <= 1.0 {
             ChangeQuant::NextBeat
         } else if quantization <= time_sig.numerator.max(1) as f64 {
@@ -416,6 +418,24 @@ fn effective_output_routes(
     merge_default_routes(&user_routes, &filtered)
 }
 
+/// True when a synthdef's compiled body changed between the last applied
+/// reload and the incoming script state.
+///
+/// Compares the content hash recorded on the last applied reload
+/// ([`State::script_synthdef_hashes`]) against the incoming
+/// [`ScriptState::synthdef_hashes`]. Missing entries on either side mean
+/// "unknown" (builtins, auto-generated synthdefs, or pre-hash-tracking
+/// states) and are treated as unchanged so they never cause recreate churn.
+pub fn synthdef_body_changed(current: &State, new: &ScriptState, synthdef: &str) -> bool {
+    match (
+        current.script_synthdef_hashes.get(synthdef),
+        new.synthdef_hashes.get(synthdef),
+    ) {
+        (Some(old_hash), Some(new_hash)) => old_hash != new_hash,
+        _ => false,
+    }
+}
+
 /// Calculate the diff between current runtime state and new script state.
 pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &RouteMap) -> ReloadDiff {
     let mut diff = ReloadDiff::default();
@@ -477,6 +497,28 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
         })
     });
 
+    // Synthdef body edits (same name, possibly identical params) leave the
+    // VoiceConfig equal, so promote otherwise-unchanged voices to `updated`
+    // when their synthdef's content hash changed — the apply phase then
+    // structurally recreates them so the new compiled graph actually plays.
+    let body_changed_voices: Vec<VoiceId> = diff
+        .voices
+        .unchanged
+        .iter()
+        .filter(|id| {
+            new.voices
+                .get(id)
+                .is_some_and(|config| synthdef_body_changed(current, new, &config.synthdef))
+        })
+        .copied()
+        .collect();
+    for id in body_changed_voices {
+        diff.voices.unchanged.remove(&id);
+        if let Some(config) = new.voices.get(&id) {
+            diff.voices.updated.insert(id, config.clone());
+        }
+    }
+
     // Patterns
     let current_pattern_ids: HashSet<PatternId> = current
         .patterns
@@ -535,6 +577,26 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
                 .unwrap_or_else(|| e.params.clone()),
         })
     });
+
+    // Same body-hash promotion as voices: a `define_fx` body edit must
+    // recreate the running effect node.
+    let body_changed_effects: Vec<EffectId> = diff
+        .effects
+        .unchanged
+        .iter()
+        .filter(|id| {
+            new.effects
+                .get(id)
+                .is_some_and(|config| synthdef_body_changed(current, new, &config.synthdef))
+        })
+        .copied()
+        .collect();
+    for id in body_changed_effects {
+        diff.effects.unchanged.remove(&id);
+        if let Some(config) = new.effects.get(&id) {
+            diff.effects.updated.insert(id, config.clone());
+        }
+    }
 
     // Samples
     let current_sample_ids: HashSet<SampleId> = current.samples.keys().copied().collect();
@@ -784,11 +846,21 @@ mod tests {
         let q = ChangeQuant::NextBar;
         let len = Beat::from_f64(4.0);
         assert_eq!(
-            q.next_boundary(Beat::from_f64(7.99), Beat::ZERO, len, TimeSignature::new(4, 4)),
+            q.next_boundary(
+                Beat::from_f64(7.99),
+                Beat::ZERO,
+                len,
+                TimeSignature::new(4, 4)
+            ),
             Beat::from_f64(8.0)
         );
         assert_eq!(
-            q.next_boundary(Beat::from_f64(8.0), Beat::ZERO, len, TimeSignature::new(4, 4)),
+            q.next_boundary(
+                Beat::from_f64(8.0),
+                Beat::ZERO,
+                len,
+                TimeSignature::new(4, 4)
+            ),
             Beat::from_f64(8.0)
         );
         // Watermark just past the bar: defer to the NEXT bar — the current
@@ -804,7 +876,12 @@ mod tests {
         );
         // 3/4 bars.
         assert_eq!(
-            q.next_boundary(Beat::from_f64(7.0), Beat::ZERO, len, TimeSignature::new(3, 4)),
+            q.next_boundary(
+                Beat::from_f64(7.0),
+                Beat::ZERO,
+                len,
+                TimeSignature::new(3, 4)
+            ),
             Beat::from_f64(9.0)
         );
     }
@@ -842,14 +919,23 @@ mod tests {
     #[test]
     fn from_grid_maps_script_quantization() {
         let ts = TimeSignature::new(4, 4);
-        assert_eq!(ChangeQuant::from_grid(0.0, ts), ChangeQuant::NextBar); // unset -> default
-        assert_eq!(ChangeQuant::from_grid(0.5, ts), ChangeQuant::NextBeat);
-        assert_eq!(ChangeQuant::from_grid(1.0, ts), ChangeQuant::NextBeat);
-        assert_eq!(ChangeQuant::from_grid(4.0, ts), ChangeQuant::NextBar);
-        assert_eq!(ChangeQuant::from_grid(8.0, ts), ChangeQuant::NextCycle);
+        // Unset (script never called set_quantization) -> default NextBar.
+        assert_eq!(ChangeQuant::from_grid(None, ts), ChangeQuant::NextBar);
+        // Explicit set_quantization(0) -> swap immediately.
+        assert_eq!(
+            ChangeQuant::from_grid(Some(0.0), ts),
+            ChangeQuant::Immediate
+        );
+        assert_eq!(ChangeQuant::from_grid(Some(0.5), ts), ChangeQuant::NextBeat);
+        assert_eq!(ChangeQuant::from_grid(Some(1.0), ts), ChangeQuant::NextBeat);
+        assert_eq!(ChangeQuant::from_grid(Some(4.0), ts), ChangeQuant::NextBar);
+        assert_eq!(
+            ChangeQuant::from_grid(Some(8.0), ts),
+            ChangeQuant::NextCycle
+        );
         // 3/4: anything above 3 beats is beyond a bar.
         assert_eq!(
-            ChangeQuant::from_grid(4.0, TimeSignature::new(3, 4)),
+            ChangeQuant::from_grid(Some(4.0), TimeSignature::new(3, 4)),
             ChangeQuant::NextCycle
         );
     }

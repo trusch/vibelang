@@ -68,11 +68,12 @@ pub fn set_time_signature(numerator: i64, denominator: i64) {
 
 /// Set the quantization in beats.
 ///
-/// Quantization affects when patterns and melodies start.
-/// Set to 0 for no quantization.
+/// Quantization affects when reload content swaps apply.
+/// An explicit 0 means "swap immediately, no boundary wait"; never calling
+/// this keeps the runtime's default grid (next bar).
 pub fn set_quantization(beats: f64) {
     context::with_state(|state| {
-        state.quantization = beats.max(0.0);
+        state.quantization = Some(beats.max(0.0));
     });
 }
 
@@ -81,9 +82,9 @@ pub fn set_quantization_int(beats: i64) {
     set_quantization(beats as f64);
 }
 
-/// Get the current quantization setting.
+/// Get the current quantization setting (0.0 when unset).
 pub fn get_quantization() -> f64 {
-    context::with_state(|state| state.quantization)
+    context::with_state(|state| state.quantization.unwrap_or(0.0))
 }
 
 /// Get the current bar number (1-indexed).
