@@ -1270,6 +1270,14 @@ impl Backend for ScsynthBackend {
         Ok(())
     }
 
+    async fn move_node_before(&self, node: NodeId, before: NodeId) -> Result<(), Self::Error> {
+        self.send_msg(
+            "/n_before",
+            vec![OscType::Int(node.0 as i32), OscType::Int(before.0 as i32)],
+        )?;
+        Ok(())
+    }
+
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error> {
         self.send_msg(
             "/n_set",

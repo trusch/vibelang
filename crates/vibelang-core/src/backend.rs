@@ -182,6 +182,19 @@ pub trait Backend: Send + Sync + 'static {
     /// Paused nodes don't process audio but retain their state.
     async fn run_node(&self, node: NodeId, running: bool) -> Result<(), Self::Error>;
 
+    /// Move a live node immediately before another node (scsynth `/n_before`).
+    ///
+    /// Used by the reload path to reorder a group's effect chain in place —
+    /// the node keeps running (no free/respawn, no state loss), only its
+    /// position in the server's execution order changes.
+    ///
+    /// The default implementation is a no-op so mock/test backends and
+    /// backends without ordering support keep working unchanged.
+    async fn move_node_before(&self, node: NodeId, before: NodeId) -> Result<(), Self::Error> {
+        let _ = (node, before);
+        Ok(())
+    }
+
     // =========================================================================
     // Parameter Control
     // =========================================================================
@@ -425,6 +438,14 @@ pub trait Backend: 'static {
 
     /// Pause or resume a node.
     async fn run_node(&self, node: NodeId, running: bool) -> Result<(), Self::Error>;
+
+    /// Move a live node immediately before another node (`/n_before`).
+    ///
+    /// Default is a no-op; see the native trait variant for semantics.
+    async fn move_node_before(&self, node: NodeId, before: NodeId) -> Result<(), Self::Error> {
+        let _ = (node, before);
+        Ok(())
+    }
 
     /// Set a parameter on a node.
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error>;

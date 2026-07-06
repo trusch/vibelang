@@ -913,6 +913,18 @@ pub struct State {
     /// applied reload. Mirrors `reload::GroupConfig::effects`.
     pub script_group_effects: HashMap<GroupId, Vec<EffectId>>,
 
+    /// Live effect-chain order per group, in scsynth tree order.
+    ///
+    /// Unlike the script snapshot above, this tracks where the effect nodes
+    /// *actually* sit on the server: `EffectsHandler::add` appends (new
+    /// effects always land at the chain tail — `Tail` on first build,
+    /// `Before` the link synth on later reloads), `EffectsHandler::remove`
+    /// drops the entry, and the reload chain-order reconcile rewrites it
+    /// after issuing `/n_before` moves. [`Self::first_effect_node_in_group`]
+    /// and [`Self::effect_ids_in_group`] consult this before falling back to
+    /// id-order (which only equals tree order for never-reordered chains).
+    pub group_effect_chain: HashMap<GroupId, Vec<EffectId>>,
+
     /// Script-declared voice params as of the last applied reload.
     pub script_voice_params: HashMap<VoiceId, ParamMap>,
 
@@ -1253,6 +1265,7 @@ impl Default for State {
             effects: HashMap::new(),
             script_group_params: HashMap::new(),
             script_group_effects: HashMap::new(),
+            group_effect_chain: HashMap::new(),
             script_voice_params: HashMap::new(),
             script_effect_params: HashMap::new(),
             control_buses: ControlBusAllocator::default(),
@@ -1573,17 +1586,25 @@ impl State {
     /// `In.ar`, and scsynth evaluates nodes in tree order, so anything
     /// inserted after an effect is invisible to it within the cycle.
     ///
-    /// Effects are only ever appended to the end of a group's chain
-    /// (`Tail` on first build, `Before` the link synth on later reloads)
-    /// and are never reordered in the tree, so tree order equals creation
-    /// order. Effect ids come from a monotonic per-session counter that is
-    /// name-stable across reloads, so the smallest id in the group is the
-    /// earliest-created effect — the head of the chain. The one mismatch
-    /// is a remove + re-add of an effect name within one session: the old
-    /// (small) id re-attaches at the chain *tail*, so a later mixer
-    /// inserted before it lands mid-chain — still audible and still ahead
-    /// of the link synth, just skipping the effects created earlier.
+    /// The authoritative order is [`Self::group_effect_chain`], maintained
+    /// by the effect add/remove paths and rewritten by the reload
+    /// chain-order reconcile after `/n_before` moves. For chains assembled
+    /// outside those paths (tests building state directly) we fall back to
+    /// id order: effects are appended to the chain tail on creation (`Tail`
+    /// on first build, `Before` the link synth on later reloads) and ids
+    /// come from a monotonic per-session counter that is name-stable across
+    /// reloads, so for a never-reordered chain the smallest id is the
+    /// earliest-created effect — the head of the chain.
     pub fn first_effect_node_in_group(&self, group: GroupId) -> Option<NodeId> {
+        if let Some(chain) = self.group_effect_chain.get(&group) {
+            if let Some(first) = chain
+                .iter()
+                .filter_map(|id| self.effects.get(id))
+                .find(|e| e.group == group)
+            {
+                return Some(first.node_id);
+            }
+        }
         self.effects
             .values()
             .filter(|e| e.group == group)
@@ -1591,15 +1612,21 @@ impl State {
             .map(|e| e.node_id)
     }
 
-    /// Effect ids attached to a group, in chain (creation) order.
+    /// Effect ids attached to a group, in live chain (tree) order.
     ///
-    /// Same ordering argument as [`Self::first_effect_node_in_group`]: effect
-    /// ids come from a monotonic per-session counter that is name-stable
-    /// across reloads and effects are only ever appended, so sorting by
-    /// `EffectId::raw()` reproduces SC tree order. Used as the fallback
+    /// Prefers the tracked [`Self::group_effect_chain`]; falls back to id
+    /// order with the same reasoning as
+    /// [`Self::first_effect_node_in_group`]. Used as the fallback
     /// runtime-side view of `reload::GroupConfig::effects` when no
     /// [`Self::script_group_effects`] snapshot exists for the group.
     pub fn effect_ids_in_group(&self, group: GroupId) -> Vec<EffectId> {
+        if let Some(chain) = self.group_effect_chain.get(&group) {
+            return chain
+                .iter()
+                .copied()
+                .filter(|id| self.effects.get(id).map(|e| e.group == group) == Some(true))
+                .collect();
+        }
         let mut ids: Vec<EffectId> = self
             .effects
             .values()

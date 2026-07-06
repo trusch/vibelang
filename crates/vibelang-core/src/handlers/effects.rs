@@ -147,6 +147,12 @@ impl<B: Backend> Effects for EffectsHandler<B> {
                     params: params.clone(),
                 },
             );
+            // New effects always land at the chain tail (Tail on first
+            // build, Before the link synth on later reloads), so append to
+            // the live chain-order tracking.
+            let chain = state.group_effect_chain.entry(group).or_default();
+            chain.retain(|e| *e != id);
+            chain.push(id);
 
             (node_id, audio_bus, target_node, add_action)
         };
@@ -188,6 +194,9 @@ impl<B: Backend> Effects for EffectsHandler<B> {
             // there are no source-side entries to follow up on; the in-place
             // scrub is sufficient.
             state.take_effect_param_routes(id);
+            if let Some(chain) = state.group_effect_chain.get_mut(&effect.group) {
+                chain.retain(|e| *e != id);
+            }
             effect.node_id
         };
 

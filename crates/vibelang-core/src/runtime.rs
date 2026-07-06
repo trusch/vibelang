@@ -2836,6 +2836,95 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+
+        // Reconcile effect-chain ORDER. A script that reorders effects
+        // within a group (same set, same per-effect configs) produces no
+        // effect create/delete above, so without this step the live nodes
+        // keep their stale tree order and the reload sounds different from
+        // a cold boot. Move existing nodes into script order with /n_before
+        // instead of recreating them: cheap, glitch-free, and effect state
+        // (reverb tails, delay lines) survives. This also repairs the
+        // recreate path above, which re-attaches an updated effect at the
+        // chain tail.
+        self.reconcile_effect_chain_order(new_state).await;
+    }
+
+    /// Moves live effect nodes into script-declared chain order via
+    /// `/n_before`.
+    ///
+    /// Node-order invariant inside a group: route mixers first, then the
+    /// effects in script order, then the link synth. Every effect node
+    /// already sits between the mixers and the link synth, and each
+    /// `/n_before` targets another effect node in the same window, so the
+    /// moves cannot cross either boundary.
+    async fn reconcile_effect_chain_order(&mut self, new_state: &reload::ScriptState) {
+        // Compute moves under the state lock; dispatch after release.
+        let mut moves: Vec<(crate::types::NodeId, crate::types::NodeId)> = Vec::new();
+        {
+            let mut state = self.state.write().await;
+            // Story 4: hash-stable group order so dispatch is deterministic.
+            let mut group_ids: Vec<_> = new_state.groups.keys().copied().collect();
+            group_ids.sort_by_key(|id| id.raw());
+            for group_id in group_ids {
+                let Some(config) = new_state.groups.get(&group_id) else {
+                    continue;
+                };
+                // Desired chain: script order, first occurrence wins for
+                // repeated ids (matching the creation loop, which sorts by
+                // first position in `effect_order`), restricted to effects
+                // that actually exist in this group (creation can fail).
+                let mut seen = std::collections::HashSet::new();
+                let desired: Vec<crate::types::EffectId> = config
+                    .effects
+                    .iter()
+                    .copied()
+                    .filter(|id| seen.insert(*id))
+                    .filter(|id| state.effects.get(id).map(|e| e.group == group_id) == Some(true))
+                    .collect();
+                let current = state.effect_ids_in_group(group_id);
+                if current == desired {
+                    continue;
+                }
+                tracing::debug!(
+                    "Reload: reordering effect chain in group {:?}: {:?} -> {:?}",
+                    group_id,
+                    current,
+                    desired
+                );
+                // Rebuild back-to-front: desired[len-1] stays where it is;
+                // moving desired[i] immediately before desired[i+1] (already
+                // in final relative position) leaves the chain contiguous
+                // and in order around wherever the last effect sits.
+                if desired.len() >= 2 {
+                    for i in (0..desired.len() - 1).rev() {
+                        let node = state.effects[&desired[i]].node_id;
+                        let before = state.effects[&desired[i + 1]].node_id;
+                        moves.push((node, before));
+                    }
+                }
+                // Track the new live order. Any ids in the group but absent
+                // from the script chain (degenerate — shouldn't survive the
+                // delete phase) are kept at the tail so tracking stays
+                // complete.
+                let mut new_chain = desired;
+                for id in current {
+                    if !new_chain.contains(&id) {
+                        new_chain.push(id);
+                    }
+                }
+                state.group_effect_chain.insert(group_id, new_chain);
+            }
+        }
+        for (node, before) in moves {
+            if let Err(e) = self.backend.move_node_before(node, before).await {
+                tracing::error!(
+                    "Reload: failed to move effect node {:?} before {:?}: {}",
+                    node,
+                    before,
+                    e
+                );
+            }
+        }
     }
 
     /// Finalizes changed groups so link synths exist with the current routing configuration.

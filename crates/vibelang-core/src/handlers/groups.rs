@@ -222,6 +222,9 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             // Return the group's stereo audio bus to the free pool so
             // long-running sessions don't burn through bus IDs.
             state.free_audio_bus(group.audio_bus, 2);
+            // Drop the live chain-order tracking; a recreated group with the
+            // same id starts a fresh chain.
+            state.group_effect_chain.remove(&id);
             group
         };
 
