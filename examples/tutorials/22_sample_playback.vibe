@@ -1,0 +1,118 @@
+// Tutorial: Sample Playback
+// Difficulty: intermediate | Duration: 6 min
+// Description: Load audio files and play them back with pitch, slicing, and warp.
+
+// Synthdefs generate sound from scratch - samples play back audio
+// files. Load a .wav with sample(), attach it to a voice, and
+// trigger it with patterns like any other sound.
+
+set_tempo(100);
+
+// ------------------------------------------------------------
+// STEP 1: Load a sample
+// ------------------------------------------------------------
+// sample(id, path) loads an audio file into a buffer.
+// The path is resolved relative to THIS script file.
+// (assets/pluck_a3.wav is a short pluck recorded at A3.)
+
+let pluck = sample("pluck", "assets/pluck_a3.wav")
+    .amp(0.9);          // playback level (0.0 - 1.0+)
+
+// ------------------------------------------------------------
+// STEP 2: Pitch variants
+// ------------------------------------------------------------
+// Load the same file under different IDs to give each voice its
+// own settings. Two ways to change pitch:
+//
+//   .rate(x)       - varispeed, like a tape machine: 0.5 = half
+//                    speed AND an octave down (pitch + length change
+//                    together)
+//   .semitones(n)  - warp engine: shifts pitch WITHOUT changing
+//                    length (granular time-stretch under the hood)
+
+let deep = sample("pluck_deep", "assets/pluck_a3.wav")
+    .rate(0.5)          // octave down, twice as long
+    .amp(0.9);
+
+let fifth = sample("pluck_fifth", "assets/pluck_a3.wav")
+    .semitones(7.0)     // up a fifth, same length
+    .amp(0.7);
+
+// ------------------------------------------------------------
+// STEP 3: Slicing
+// ------------------------------------------------------------
+// .slice(start, end) plays only part of the file (in seconds).
+// Great for chopping breaks or grabbing transients.
+// .one_shot() makes every trigger play the whole slice,
+// ignoring note-off (the right mode for drum-style hits).
+
+let chirp = sample("pluck_chop", "assets/pluck_a3.wav")
+    .slice(0.0, 0.12)   // just the attack
+    .one_shot()
+    .amp(0.8);
+
+// ------------------------------------------------------------
+// STEP 4: Time-stretch (warp)
+// ------------------------------------------------------------
+// .speed(x) changes duration WITHOUT changing pitch - the
+// opposite of .rate(). Combine with .pitch()/.semitones() to
+// move both axes independently.
+
+let smear = sample("pluck_smear", "assets/pluck_a3.wav")
+    .speed(0.25)        // 4x longer, same pitch
+    .semitones(-5.0)    // ...and a fourth down
+    .amp(0.6);
+
+// ------------------------------------------------------------
+// STEP 5: Attach samples to voices and make a groove
+// ------------------------------------------------------------
+define_group("Sampler", || {
+    let hit = voice("hit").on(pluck).gain(db(-6));
+    let bass_hit = voice("bass_hit").on(deep).gain(db(-6));
+    let sparkle = voice("sparkle").on(fifth).gain(db(-12));
+    let tick = voice("tick").on(chirp).gain(db(-10));
+    let pad = voice("pad").on(smear).gain(db(-9));
+
+    pattern("hits").on(hit).step("x... .... x... ....").start();
+    pattern("bass_hits").on(bass_hit).step(".... x... .... x...").start();
+    pattern("sparkles").on(sparkle).step(".... ..x. .... ..x.").start();
+    pattern("ticks").on(tick).step("..x. x.x. ..x. x.x.").start();
+    pattern("pads").on(pad).step("x... .... .... ....").start();
+});
+
+// ============================================================
+// SAMPLE BUILDER REFERENCE:
+//
+// PLAYBACK:
+//   .amp(x)            volume multiplier
+//   .rate(x)           varispeed (pitch + length together)
+//   .offset(sec)       start position in the file
+//   .length(sec)       how much to play
+//   .slice(start, end) shorthand for offset + length
+//   .loop_mode(true)   loop instead of one-shot playback
+//
+// ENVELOPE:
+//   .attack(sec) / .sustain(level) / .release(sec)
+//
+// WARP (granular time-stretch - pitch and time independent):
+//   .speed(x)          duration change, pitch unchanged
+//   .pitch(x)          pitch multiplier, duration unchanged
+//   .semitones(n)      pitch in semitones, duration unchanged
+//   .warp_to_bpm(bpm)  auto-speed a loop to match the set tempo
+//                      (needs rhythmic material with a known BPM)
+//   .window_size(sec)  grain size (default 0.1) - bigger = smoother
+//   .overlaps(n)       grain overlap (default 8) - more = denser
+//
+// TRIGGER MODE:
+//   .one_shot()        play to the end, ignore note-off
+//   .gate()            release on note-off (default)
+//
+// ADVANCED: sampler synthdefs (like the stdlib morphagene) take a
+// buffer directly - pass it with .set_param("bufnum", s.bufnum).
+// See examples/morphagene_loop.vibe for that style.
+//
+// TRY THIS:
+// - Reverse-ish smear: .speed(0.15).window_size(0.3)
+// - Chipmunk ticks: change chirp to .semitones(12.0)
+// - Drop in your own .wav files and build a full kit
+// ============================================================

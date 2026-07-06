@@ -1,6 +1,6 @@
 # VibeLang Tutorials
 
-A hands-on course in 20 short lessons. Each tutorial is a runnable `.vibe`
+A hands-on course in 23 short lessons. Each tutorial is a runnable `.vibe`
 script — open it, run it, tweak it. Run any tutorial from the repo root:
 
 ```bash
@@ -33,6 +33,9 @@ Natural continuation after the core course:
 | # | Tutorial | Difficulty | Duration | What you learn |
 |---|----------|------------|----------|----------------|
 | 20 | [Scale Degree Notation](20_scale_degree_notation.vibe) | intermediate | 5 min | Write melodies using scale degrees instead of note names |
+| 21 | [Multi-Output Voices & CV Routing](21_multi_output_voices.vibe) | advanced | 10 min | Route named synth outputs to groups, main, and parameters |
+| 22 | [Sample Playback](22_sample_playback.vibe) | intermediate | 6 min | Load audio files and play them back with pitch, slicing, and warp |
+| 23 | [SFZ Instruments](23_sfz_instruments.vibe) | intermediate | 5 min | Play multi-sampled instruments from .sfz files (experimental — see the caveat in the file) |
 
 ## Advanced: Script Extensions
 

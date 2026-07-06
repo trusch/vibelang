@@ -24,6 +24,7 @@ Thumbs.db
 !samples/**/*.wav
 !**/samples/**/*.wav
 !stdlib/**/*.wav
+!examples/tutorials/assets/*.wav
 
 # Recording outputs
 jack_capture_*.wav

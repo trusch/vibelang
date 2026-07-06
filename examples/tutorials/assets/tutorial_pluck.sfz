@@ -1,0 +1,26 @@
+// tutorial_pluck.sfz — minimal two-region SFZ instrument for the
+// VibeLang SFZ tutorial (23_sfz_instruments.vibe).
+//
+// Two pluck samples, one recorded at A3 (MIDI 57) and one at A4
+// (MIDI 69). The key range is split at C4 (MIDI 60) so each note
+// is repitched from the nearest sample — the core idea of SFZ.
+//
+// Sample paths are resolved relative to this file.
+
+<group>
+ampeg_attack=0.001
+ampeg_release=0.15
+
+// Lower half of the keyboard: repitch from the A3 recording.
+<region>
+sample=pluck_a3.wav
+pitch_keycenter=57
+lokey=0
+hikey=59
+
+// C4 and above: repitch from the A4 recording.
+<region>
+sample=pluck_a4.wav
+pitch_keycenter=69
+lokey=60
+hikey=127

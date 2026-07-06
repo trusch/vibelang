@@ -1,0 +1,191 @@
+// Tutorial: Multi-Output Voices & CV Routing
+// Difficulty: advanced | Duration: 10 min
+// Description: Route named synth outputs to groups, main, and parameters.
+
+// So far every synth had ONE output that went to its group. But a
+// synthdef can declare MULTIPLE named output ports - like a modular
+// synth module with several jacks - and you route each one separately:
+// audio ports to groups or main, control-rate (kr) ports into
+// parameters of other voices.
+
+import "stdlib/effects/reverbs/reverb.vibe";
+import "stdlib/synths/tb303.vibe";
+
+set_tempo(110);
+
+// ------------------------------------------------------------
+// STEP 1: A synthdef with named output ports
+// ------------------------------------------------------------
+// .output("name")    declares an audio-rate (ar) port
+// .output_kr("name") declares a control-rate (kr) CV port
+// With multiple ports, use .body_map(|p| ...) and return one
+// signal per port, in the order they were declared.
+
+define_synthdef("split_saw")
+    .output("body")       // ar: the main filtered saw sound
+    .output("shimmer")    // ar: an octave-up sparkle layer
+    .output_kr("trem")    // kr: a CV tap - a slow wobble, 0..1
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .param("cutoff", 1200.0)
+    .body_map(|p| {
+        let env = envelope()
+            .adsr(0.01, 0.15, 0.7, 0.4)
+            .gate(p.gate)
+            .cleanup_on_finish()
+            .build();
+
+        // Port 1: two detuned saws through a resonant lowpass
+        let saws = saw_ar(p.freq) + saw_ar(p.freq * 1.004);
+        let body = rlpf_ar(saws * 0.5, p.cutoff, 0.4) * env * p.amp;
+
+        // Port 2: a quiet sine one octave up
+        let shimmer = sin_osc_ar(p.freq * 2.0) * env * p.amp * 0.5;
+
+        // Port 3: an internal LFO exposed as a CV tap (0..1).
+        // a2k_kr converts the audio-rate signal to control rate.
+        let trem = a2k_kr(sin_osc_ar(3.0) * 0.5 + 0.5);
+
+        // One signal per declared port, in declaration order:
+        [body, shimmer, trem]
+    });
+
+// ------------------------------------------------------------
+// STEP 2: Groups - one dry, one owning an FX chain
+// ------------------------------------------------------------
+// To send a port through effects, route it into a sub-group that
+// owns the FX. The sub-group automatically mixes back into the
+// main output, so the wet signal "just works".
+
+define_group("Leads", || { });
+
+define_group("ShimmerFX", || {
+    fx("shimmer_verb")
+        .synth("reverb")
+        .param("room", 0.9)
+        .param("damp", 0.3)
+        .param("mix", 0.7)
+        .apply();
+});
+
+// ------------------------------------------------------------
+// STEP 3: Route the audio ports
+// ------------------------------------------------------------
+let lead = voice("lead")
+    .synth("split_saw")
+    .group("Leads")
+    .gain(db(-9));
+
+lead.output("body").to_current_group();      // dry -> Leads
+lead.output("shimmer").to(group("ShimmerFX")); // wet -> reverb -> main
+
+// Other audio verbs you could use instead:
+//   lead.output("body").to_main();   // skip groups, straight to output
+//   lead.output("shimmer").mute();   // discard the port entirely
+//   lead.outputs(["body", "shimmer"]).to_main();  // plural sugar
+
+// ------------------------------------------------------------
+// STEP 4: SET - drive another voice's param from a kr port
+// ------------------------------------------------------------
+// The "trem" CV tap is a 0..1 wobble. .to_param() maps it onto a
+// target parameter; .scale() and .offset() turn the unit range
+// into useful values: here 300..1200 Hz on the bass filter.
+
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("Leads")
+    .set_param("resonance", 0.5)
+    .set_param("env_mod", 0.0)    // disable internal env->cutoff
+    .gain(db(-8));
+
+lead.output("trem")
+    .to_param(bass, "cutoff")     // source-first: "this port SETs that param"
+    .scale(900.0)                 // value = trem * 900 + 300
+    .offset(300.0);
+
+// ------------------------------------------------------------
+// STEP 5: BEND - fan several CV sources into ONE param
+// ------------------------------------------------------------
+// .to_param() allows one source per param. To combine sources,
+// go target-first with .param().modulate_by() - the runtime sums
+// all sources automatically. Here a slow sweep plus a fast wobble
+// both drive the lead's cutoff.
+
+// A reusable kr-only LFO synthdef (same idea as in tutorial 16).
+// It has no audio ports at all - it exists purely to make CV.
+define_synthdef("lfo_cv")
+    .output_kr("out")
+    .param("rate", 1.0)
+    .param("lo", 0.0)
+    .param("hi", 1.0)
+    .body(|rate, lo, hi| {
+        let osc = lf_tri_kr(rate);          // triangle, -1..1
+        let normalized = osc * 0.5 + 0.5;   // map to 0..1
+        [normalized * (hi - lo) + lo]       // one signal per port
+    });
+
+let sweep = voice("sweep")
+    .synth("lfo_cv")
+    .set_param("rate", 0.15)     // one sweep every ~7 seconds
+    .set_param("lo", 500.0)
+    .set_param("hi", 2200.0);
+
+let wobble = voice("wobble")
+    .synth("lfo_cv")
+    .set_param("rate", 6.0)      // fast shallow ripple
+    .set_param("lo", 0.0)
+    .set_param("hi", 250.0);
+
+lead.param("cutoff")
+    .modulate_by(sweep, "out")   // target-first: "this param is BENT by..."
+    .modulate_by(wobble, "out"); // ...both sources, summed
+
+// Note: SET and BEND are two views of the same routing system, but
+// you must pick ONE per (target, param) - using both on the same
+// param is rejected with an error.
+
+// ------------------------------------------------------------
+// STEP 6: Play something to hear it all
+// ------------------------------------------------------------
+melody("lead_line")
+    .on(lead)
+    .notes("A3 - C4 . | E4 - - . | D4 . C4 . | A3 - - -")
+    .gate(0.6)
+    .start();
+
+melody("bass_line")
+    .on(bass)
+    .notes("A1 . A1 . | A1 . G1 . | F1 . F1 . | G1 . G1 .")
+    .gate(0.4)
+    .start();
+
+// ============================================================
+// ROUTING CHEAT SHEET:
+//
+// Declaring ports (on define_synthdef, before body_map):
+//   .output("name")        audio-rate port, 1 channel
+//   .output("name", 2)     audio-rate port, stereo
+//   .output_kr("name")     control-rate CV port
+//
+// Audio-rate verbs (on voice.output("name")):
+//   .to(group(...))        sum into a group (chainable: fan-out!)
+//   .to_main()             straight to hardware output
+//   .to_current_group()    into the voice's own group
+//   .mute()                discard
+//
+// Control-rate verbs:
+//   .to_param(v, "p")      SET: one source drives one param
+//   .scale(s).offset(o)    shape the CV: value = cv * s + o
+//   v.param("p").modulate_by(src, "port")
+//                          BEND: many sources sum into one param
+//
+// Defaults when you declare no routes: 1 ar port -> group;
+// 2 ar ports -> both to group; extra ports stay silent.
+// kr ports are NEVER auto-routed - wire or mute them yourself.
+//
+// TRY THIS:
+// - Mute the shimmer: lead.output("shimmer").mute()
+// - Slow the wobble LFO to 0.5 Hz for a lazy filter pulse
+// - Fan out: lead.output("body").to(group("Leads")).to(group("ShimmerFX"))
+// ============================================================

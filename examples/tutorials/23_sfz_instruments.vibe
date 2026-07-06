@@ -1,0 +1,106 @@
+// Tutorial: SFZ Instruments (Experimental)
+// Difficulty: intermediate | Duration: 5 min
+// Description: Play multi-sampled instruments from .sfz files.
+
+// SFZ is an open text format for sample-based instruments: it maps
+// audio files across the keyboard so each note plays (and repitches)
+// the nearest recording. Tons of free instruments exist in this
+// format - pianos, strings, drums, and more.
+//
+// !! EXPERIMENTAL - KNOWN LIMITATION !!
+// SFZ voices use MIDI-style NOTE_ON/NOTE_OFF, but melodies currently
+// do NOT send NOTE_OFF. Consequences:
+//   - Note lengths in your melody can't cut a note short: every
+//     trigger plays its sample to the end, then releases on its own.
+//   - Sustaining or looping SFZ patches (organs, pads, anything with
+//     loop_mode=loop_continuous / loop_sustain) will hang and never
+//     release. AVOID them.
+// Stick to naturally-decaying instruments - plucks, pianos, drums,
+// mallets - which auto-release when the sample finishes. That is
+// what this tutorial uses.
+
+set_tempo(90);
+
+// ------------------------------------------------------------
+// STEP 1: Load an SFZ instrument
+// ------------------------------------------------------------
+// load_sfz(id, path) parses the .sfz file and loads every sample
+// it references (paths inside the .sfz resolve relative to the
+// .sfz file itself).
+//
+// assets/tutorial_pluck.sfz is a minimal two-region instrument:
+//
+//   <group>
+//   ampeg_attack=0.001
+//   ampeg_release=0.15
+//
+//   <region>
+//   sample=pluck_a3.wav      // recorded at A3...
+//   pitch_keycenter=57       // ...so tell the player that
+//   lokey=0
+//   hikey=59                 // used for notes below C4
+//
+//   <region>
+//   sample=pluck_a4.wav
+//   pitch_keycenter=69       // recorded at A4
+//   lokey=60
+//   hikey=127                // used for C4 and above
+//
+// pitch_keycenter matters! It tells the engine what note the
+// sample was recorded at, so other notes can be repitched from
+// it. Without it, everything sounds out of tune.
+
+let pluck = load_sfz("pluck", "assets/tutorial_pluck.sfz");
+
+// ------------------------------------------------------------
+// STEP 2: Put it on a voice
+// ------------------------------------------------------------
+// .on(sfz_handle) works exactly like .synth() - the voice now
+// plays the SFZ instrument.
+
+define_group("Plucks", || {
+    let keys = voice("keys")
+        .on(pluck)
+        .gain(db(-6));
+
+    // ------------------------------------------------------------
+    // STEP 3: Play it
+    // ------------------------------------------------------------
+    // This melody crosses the C4 region split, so you hear both
+    // samples being repitched - listen for the subtle timbre
+    // change between the low and high halves.
+
+    melody("keys_arp")
+        .on(keys)
+        .notes("A2 . C3 . E3 . A3 . | C4 . E4 . A4 . E4 .")
+        .start();
+
+    melody("keys_chords")
+        .on(keys)
+        .notes("[A2 E3 A3] - - - - - - - | [F2 C3 F3] - - - - - - -")
+        .start();
+});
+
+// ============================================================
+// WHERE TO GET INSTRUMENTS:
+// Free SFZ libraries: VSCO 2 Community Edition (orchestral),
+// Pianobook, sfz.org's instrument list. Remember the caveat at
+// the top: prefer decaying instruments (piano, harp, mallets,
+// drums) and avoid looped/sustaining patches for now.
+//
+// SUPPORTED OPCODES (the important ones):
+//   sample            audio file for the region
+//   lokey / hikey     key range that selects the region
+//   lovel / hivel     velocity range (for velocity layers)
+//   pitch_keycenter   the note the sample was recorded at
+//   ampeg_attack / ampeg_decay / ampeg_sustain / ampeg_release
+//                     amplitude envelope
+//   volume / pan      per-region level and stereo position
+//   seq_position / seq_length
+//                     round-robin sample alternation
+//
+// TRY THIS:
+// - Download a free SFZ piano and point load_sfz() at it
+// - Add lovel/hivel regions to layer soft and hard samples
+// - Change ampeg_release in the .sfz and reload
+// ============================================================
