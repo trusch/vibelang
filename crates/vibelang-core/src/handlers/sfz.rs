@@ -5,7 +5,8 @@
 //! persistent round-robin state for proper sample alternation.
 
 use crate::backend::Backend;
-use crate::compat::RwLock;
+use crate::compat::{Instant, RwLock};
+use crate::handlers::samples::BUFFER_FREE_GRACE_PERIOD_MS;
 use crate::state::{SfzInstrumentState, SfzRegionState, State};
 use crate::traits::{Sfz, SfzTriggerInfo, SfzTriggerMode};
 use crate::types::{BufferId, SfzId};
@@ -14,6 +15,9 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::compat::Duration;
 
 /// Handler for SFZ instrument management.
 ///
@@ -30,12 +34,93 @@ use std::sync::Arc;
 pub struct SfzHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+    /// Region buffers pending backend free after the grace period (same
+    /// deferred-free discipline as `SamplesHandler`: never `/b_free` a
+    /// buffer a live synth node may still read). Drained by [`Self::tick`];
+    /// buffer IDs return to the allocator pool only when the free executes.
+    pending_frees: Arc<RwLock<Vec<(BufferId, Instant)>>>,
 }
 
 impl<B: Backend> SfzHandler<B> {
     /// Create a new SFZ handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
-        Self { backend, state }
+        Self {
+            backend,
+            state,
+            pending_frees: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Schedule an instrument's region buffers for backend free after the
+    /// grace period (deduplicated — one buffer may back multiple regions).
+    async fn defer_free_instrument_buffers(&self, instrument: &SfzInstrumentState) {
+        let unique: std::collections::HashSet<BufferId> =
+            instrument.regions.iter().map(|r| r.buffer_id).collect();
+        if unique.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let mut pending = self.pending_frees.write().await;
+        for buffer_id in unique {
+            pending.push((buffer_id, now));
+        }
+        tracing::debug!(
+            "SFZ instrument {}: scheduled {} buffer(s) for free after {}ms grace period",
+            instrument.id.0,
+            instrument.regions.len(),
+            BUFFER_FREE_GRACE_PERIOD_MS
+        );
+    }
+
+    /// Process pending buffer frees whose grace period elapsed.
+    ///
+    /// Called by the runtime's tick loop.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn tick(&self) {
+        let now = Instant::now();
+        let grace_period = Duration::from_millis(BUFFER_FREE_GRACE_PERIOD_MS);
+
+        let buffers_to_free: Vec<BufferId> = {
+            let mut pending = self.pending_frees.write().await;
+            if pending.is_empty() {
+                return;
+            }
+            let mut to_free = Vec::new();
+            let mut remaining = Vec::new();
+            for (buffer_id, requested_at) in pending.drain(..) {
+                if now.duration_since(requested_at) >= grace_period {
+                    to_free.push(buffer_id);
+                } else {
+                    remaining.push((buffer_id, requested_at));
+                }
+            }
+            *pending = remaining;
+            to_free
+        };
+
+        for buffer_id in buffers_to_free {
+            tracing::debug!(
+                "SFZ buffer grace period elapsed, freeing buffer {}",
+                buffer_id.0
+            );
+            if let Err(e) = self.backend.free_buffer(buffer_id).await {
+                tracing::warn!("free_buffer({}) failed: {}", buffer_id.0, e);
+            }
+            self.state.write().await.free_buffer_id(buffer_id);
+        }
+    }
+
+    /// Process pending buffer frees (WASM version - immediate free).
+    #[cfg(target_arch = "wasm32")]
+    pub async fn tick(&self) {
+        let buffers_to_free: Vec<BufferId> = {
+            let mut pending = self.pending_frees.write().await;
+            pending.drain(..).map(|(buffer_id, _)| buffer_id).collect()
+        };
+        for buffer_id in buffers_to_free {
+            let _ = self.backend.free_buffer(buffer_id).await;
+            self.state.write().await.free_buffer_id(buffer_id);
+        }
     }
 
     /// Convert vibelang-sfz LoopMode to our boolean.
@@ -215,12 +300,19 @@ impl<B: Backend> SfzHandler<B> {
     }
 
     /// Publish a staged instrument into state (synchronous mutation only).
+    ///
+    /// If the insert displaces an existing instrument under the same ID
+    /// (in-place reload), the OLD instrument's region buffers are freed
+    /// only after the grace period — playing notes keep reading them,
+    /// while new note-ons match regions against the new instrument.
     pub async fn commit(&self, instrument: SfzInstrumentState) {
-        self.state
-            .write()
-            .await
-            .sfz_instruments
-            .insert(instrument.id, instrument);
+        let displaced = {
+            let mut state = self.state.write().await;
+            state.sfz_instruments.insert(instrument.id, instrument)
+        };
+        if let Some(old) = displaced {
+            self.defer_free_instrument_buffers(&old).await;
+        }
     }
 }
 
@@ -236,29 +328,17 @@ impl<B: Backend> Sfz for SfzHandler<B> {
     async fn unload(&self, id: SfzId) -> Result<()> {
         tracing::info!("Unloading SFZ instrument {}", id.0);
 
-        // Get the instrument and collect buffer IDs to free
-        let buffer_ids: Vec<BufferId> = {
+        // Remove the mapping now (no new note may match this instrument),
+        // but defer the backend frees and ID-pool returns past the grace
+        // period — live nodes may still be reading the region buffers.
+        let instrument = {
             let mut state = self.state.write().await;
-            let instrument = state
+            state
                 .sfz_instruments
                 .remove(&id)
-                .ok_or(Error::SfzNotFound(id))?;
-
-            // Deduplicate before freeing (same buffer may back multiple regions)
-            let unique: std::collections::HashSet<BufferId> =
-                instrument.regions.iter().map(|r| r.buffer_id).collect();
-            for buf_id in &unique {
-                state.free_buffer_id(*buf_id);
-            }
-            unique.into_iter().collect()
+                .ok_or(Error::SfzNotFound(id))?
         };
-
-        // Free buffers in backend
-        for buffer_id in buffer_ids {
-            if let Err(e) = self.backend.free_buffer(buffer_id).await {
-                tracing::warn!("Failed to free buffer {}: {}", buffer_id.0, e);
-            }
-        }
+        self.defer_free_instrument_buffers(&instrument).await;
 
         Ok(())
     }

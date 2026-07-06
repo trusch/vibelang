@@ -180,7 +180,9 @@ struct PendingVoicePortReconcile {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Default)]
 struct ReloadStagingPlan {
-    /// New samples to load (created entries only).
+    /// New or content-changed samples to load (created entries, plus
+    /// updated ones whose path or source-file mtime changed — those swap
+    /// to a fresh buffer at apply time).
     samples: Vec<(crate::types::SampleId, crate::traits::SampleConfig)>,
     /// New or path-changed SFZ instruments to load.
     sfz: Vec<(crate::types::SfzId, std::path::PathBuf)>,
@@ -432,6 +434,11 @@ impl<B: Backend> Runtime<B> {
         // node-ID recycling, and bus reclaim for gate-released nodes.
         self.voices.tick().await;
         self.groups.tick().await;
+
+        // Tick sample/SFZ buffer frees deferred past their grace period
+        // (buffers displaced by in-place content reloads or unloads).
+        self.samples.tick().await;
+        self.sfz.tick().await;
 
         // Tick schedulers (patterns and melodies now use updated fade values)
         self.patterns.tick(current_beat).await;
@@ -1223,9 +1230,10 @@ impl<B: Backend> Runtime<B> {
     /// Computes which buffer-backed assets a reload would have to load.
     ///
     /// Mirrors the sample/SFZ portions of `reload::calculate_diff`:
-    /// samples are loaded only when created (an in-place path change is not
-    /// reloaded by the apply phases today), SFZ instruments when created or
-    /// when their path changed (the apply tears down and recreates those).
+    /// samples are loaded when created or when their buffer identity
+    /// (path or source-file mtime) changed — the apply phases swap those
+    /// to a fresh buffer ID; SFZ instruments when created or when their
+    /// path changed (the apply tears down and recreates those).
     /// Entries are sorted by raw ID so staged buffer allocation stays
     /// deterministic — cold boot must produce identical buffer IDs on
     /// every run.
@@ -1235,7 +1243,11 @@ impl<B: Backend> Runtime<B> {
         let mut samples: Vec<_> = new_state
             .samples
             .iter()
-            .filter(|(id, _)| !state.samples.contains_key(id))
+            .filter(|(id, config)| {
+                state.samples.get(id).is_none_or(|info| {
+                    info.path != config.path || info.source_mtime != config.mtime
+                })
+            })
             .map(|(id, config)| (*id, config.clone()))
             .collect();
         samples.sort_by_key(|(id, _)| id.raw());
@@ -1966,16 +1978,28 @@ impl<B: Backend> Runtime<B> {
         new_state: &reload::ScriptState,
         staged: &mut reload::StagedReloadAssets,
     ) {
-        // Publish new samples first (other entities may depend on them).
-        // On native these were already loaded off-task and arrive in
-        // `staged` — committing is a plain state insert. Anything the
-        // staging missed falls back to an inline load; those parallelize
-        // (scsynth /b_allocRead + /b_query round-trips overlap).
+        // Publish new samples first (other entities may depend on them),
+        // and swap UPDATED samples (path or source mtime changed) to their
+        // freshly loaded buffers. On native these were already loaded
+        // off-task into fresh buffer IDs and arrive in `staged` —
+        // committing is a plain state insert; for updated samples the
+        // insert displaces the old mapping and `SamplesHandler::commit`
+        // defers the old buffer's free past the grace period, so playing
+        // notes never see their buffer freed or reallocated under them.
+        // Anything the staging missed falls back to an inline load; those
+        // parallelize (scsynth /b_allocRead + /b_query round-trips
+        // overlap).
         //
         // Story 4: stable iteration via sorted IDs, so logging / error
         // reporting surfaces deterministic per-reboot output.
-        if !diff.samples.created.is_empty() {
-            let mut sample_ids: Vec<_> = diff.samples.created.keys().copied().collect();
+        if !diff.samples.created.is_empty() || !diff.samples.updated.is_empty() {
+            let mut sample_ids: Vec<_> = diff
+                .samples
+                .created
+                .keys()
+                .chain(diff.samples.updated.keys())
+                .copied()
+                .collect();
             sample_ids.sort_by_key(|id| id.raw());
             let mut to_load = Vec::new();
             for id in sample_ids {
@@ -1983,17 +2007,21 @@ impl<B: Backend> Runtime<B> {
                     .samples
                     .created
                     .get(&id)
+                    .or_else(|| diff.samples.updated.get(&id))
                     .expect("just collected")
                     .clone();
                 match staged.samples.remove(&id) {
-                    Some(info) if info.path == config.path => {
+                    Some(info)
+                        if info.path == config.path && info.source_mtime == config.mtime =>
+                    {
                         tracing::debug!("Reload: committing pre-staged sample {:?}", id);
                         self.samples.commit(info).await;
                     }
                     Some(info) => {
-                        // Staged against a different path (state drifted
-                        // between staging and apply) — leave it for the
-                        // leftover cleanup and load inline instead.
+                        // Staged against a different path or file version
+                        // (state drifted between staging and apply) — leave
+                        // it for the leftover cleanup and load inline
+                        // instead.
                         staged.samples.insert(id, info);
                         to_load.push((id, config));
                     }

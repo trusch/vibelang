@@ -231,6 +231,7 @@ impl<B: Backend> RecordingsHandler<B> {
                     sample_rate: sample_rate as f64,
                     channels: num_channels as u16,
                     detected_bpm: None,
+                    source_mtime: None,
                 };
                 state.samples.insert(sample_id, sample_info);
             }

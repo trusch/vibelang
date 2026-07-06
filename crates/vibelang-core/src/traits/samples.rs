@@ -30,6 +30,12 @@ pub struct SampleInfo {
 
     /// Detected BPM (if analyzed).
     pub detected_bpm: Option<f64>,
+
+    /// File modification time of the source file for the load that filled
+    /// this buffer (copied from [`SampleConfig::mtime`]). Reload diffing
+    /// compares it against the incoming script config's mtime to detect
+    /// an overwritten file at an unchanged path.
+    pub source_mtime: Option<std::time::SystemTime>,
 }
 
 /// Configuration for loading a sample.
@@ -37,6 +43,17 @@ pub struct SampleInfo {
 pub struct SampleConfig {
     /// Path to the audio file.
     pub path: PathBuf,
+
+    /// File modification time captured at script-eval time (see
+    /// [`SampleConfig::refresh_mtime`]). Part of the buffer identity for
+    /// reload diffing: a changed mtime at an unchanged path means the file
+    /// was overwritten and the buffer must be reloaded. mtime is used
+    /// instead of a content hash because it costs one `stat` per sample
+    /// per reload instead of reading the whole file; the tradeoff is that
+    /// rewrites which preserve mtime (e.g. `rsync -t`, sub-granularity
+    /// writes) go undetected. `None` when the file could not be stat'ed
+    /// (or on targets without a filesystem).
+    pub mtime: Option<std::time::SystemTime>,
 
     /// Enable time-stretching (warp mode).
     pub warp: bool,
@@ -91,6 +108,7 @@ impl Default for SampleConfig {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
+            mtime: None,
             warp: false,
             target_bpm: None,
             attack: 0.001,
@@ -118,6 +136,24 @@ impl SampleConfig {
             ..Default::default()
         }
     }
+
+    /// Capture the source file's current modification time into
+    /// [`SampleConfig::mtime`].
+    ///
+    /// Called at script-eval time so the reload diff can detect an
+    /// overwritten file at an unchanged path. A failed `stat` (missing
+    /// file, permissions) leaves `mtime = None` — the load itself will
+    /// surface the real error.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn refresh_mtime(&mut self) {
+        self.mtime = std::fs::metadata(&self.path)
+            .and_then(|meta| meta.modified())
+            .ok();
+    }
+
+    /// No-op on WASM: there is no filesystem to stat.
+    #[cfg(target_arch = "wasm32")]
+    pub fn refresh_mtime(&mut self) {}
 
     /// Enable warp mode.
     pub fn with_warp(mut self) -> Self {

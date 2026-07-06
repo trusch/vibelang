@@ -538,11 +538,25 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
 
     // Samples
     let current_sample_ids: HashSet<SampleId> = current.samples.keys().copied().collect();
+    //
+    // Only the buffer identity — path plus source-file mtime — is compared.
+    // The playback params on `SampleConfig` (amp, envelope, warp, ...) are
+    // baked into voice params at script-eval time and never require a
+    // buffer reload, so the current-side config is reconstructed from the
+    // new config with path/mtime substituted from the live `SampleInfo`:
+    // an `updated` entry therefore always means "reload this buffer"
+    // (in-place path change, or same path overwritten with a newer mtime).
     diff.samples = diff_entities(&current_sample_ids, &new.samples, |id| {
-        current
-            .samples
-            .get(id)
-            .map(|s| SampleConfig::new(s.path.clone()))
+        current.samples.get(id).map(|s| {
+            let mut config = new
+                .samples
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| SampleConfig::new(s.path.clone()));
+            config.path = s.path.clone();
+            config.mtime = s.source_mtime;
+            config
+        })
     });
 
     // Script-allocated buffers

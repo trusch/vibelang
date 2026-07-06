@@ -330,7 +330,11 @@ pub fn sample(id: String, path: String) -> SampleHandle {
     #[cfg(target_arch = "wasm32")]
     let resolved_path = PathBuf::from(&path);
 
-    let config = SampleConfig::new(resolved_path.clone());
+    let mut config = SampleConfig::new(resolved_path.clone());
+    // Capture the file's mtime at script-eval time: the reload diff uses
+    // it to detect an overwritten file at an unchanged path (re-recorded
+    // sample) and reload the buffer.
+    config.refresh_mtime();
 
     context::with_state(|state| {
         state.samples.insert(sample_id, config);

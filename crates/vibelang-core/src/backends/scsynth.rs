@@ -423,11 +423,13 @@ impl ScsynthBackend {
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
-        Self::osc_diag_log(format!(
-            "osc_recv path={} args=[{}]",
-            msg.addr,
-            Self::summarize_osc_args(&msg.args)
-        ));
+        Self::osc_diag_log(|| {
+            format!(
+                "osc_recv path={} args=[{}]",
+                msg.addr,
+                Self::summarize_osc_args(&msg.args)
+            )
+        });
         let response = match msg.addr.as_str() {
             "/status.reply" => {
                 // Parse status response
@@ -543,7 +545,17 @@ impl ScsynthBackend {
                     }
                 }
                 if let Ok(mut pending) = pending_done.lock() {
-                    if let Some(sender) = pending.remove(&command) {
+                    // Async buffer commands (/b_allocRead, /b_alloc, ...)
+                    // echo the buffer number as a second /done argument.
+                    // Try the bufnum-correlated key first so concurrent
+                    // loads of different buffers each complete their own
+                    // waiter; fall back to the plain command key.
+                    let keyed_sender = Self::get_int(&msg.args, 1).and_then(|bufnum| {
+                        pending.remove(&Self::done_key_for_buffer(&command, bufnum as u32))
+                    });
+                    if let Some(sender) = keyed_sender {
+                        let _ = sender.send(());
+                    } else if let Some(sender) = pending.remove(&command) {
                         let _ = sender.send(());
                     }
                 }
@@ -720,16 +732,23 @@ impl ScsynthBackend {
         command == "/d_recv" || command == "/d_load"
     }
 
+    /// Whether OSC diagnostics are enabled (`VIBELANG_LOG_OSC=1`).
+    ///
+    /// Cached in a `OnceLock`: this sits on the per-message send/receive
+    /// hot path, so it must cost a single atomic load — not an env lookup.
     fn osc_diag_enabled() -> bool {
-        std::env::var("VIBELANG_LOG_OSC")
-            .map(|value| {
-                let value = value.trim();
-                value == "1"
-                    || value.eq_ignore_ascii_case("true")
-                    || value.eq_ignore_ascii_case("yes")
-                    || value.eq_ignore_ascii_case("on")
-            })
-            .unwrap_or(false)
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("VIBELANG_LOG_OSC")
+                .map(|value| {
+                    let value = value.trim();
+                    value == "1"
+                        || value.eq_ignore_ascii_case("true")
+                        || value.eq_ignore_ascii_case("yes")
+                        || value.eq_ignore_ascii_case("on")
+                })
+                .unwrap_or(false)
+        })
     }
 
     fn osc_diag_timestamp_ms() -> u128 {
@@ -739,12 +758,21 @@ impl ScsynthBackend {
             .unwrap_or(0)
     }
 
-    fn osc_diag_log(message: impl AsRef<str>) {
+    /// Emit an OSC diagnostic line, formatting lazily.
+    ///
+    /// Takes a closure so callers pay zero formatting/summarization cost
+    /// when diagnostics are disabled (the common case — this runs for
+    /// every OSC message sent and received).
+    fn osc_diag_log<F, S>(message: F)
+    where
+        F: FnOnce() -> S,
+        S: AsRef<str>,
+    {
         if Self::osc_diag_enabled() {
             eprintln!(
                 "[vibelang-osc-diag t_ms={}] {}",
                 Self::osc_diag_timestamp_ms(),
-                message.as_ref()
+                message().as_ref()
             );
         }
     }
@@ -838,11 +866,13 @@ impl ScsynthBackend {
 
     /// Send an OSC message to scsynth.
     fn send_msg(&self, path: &str, args: Vec<OscType>) -> Result<(), ScsynthError> {
-        Self::osc_diag_log(format!(
-            "osc_send path={} args=[{}]",
-            path,
-            Self::summarize_osc_args(&args)
-        ));
+        Self::osc_diag_log(|| {
+            format!(
+                "osc_send path={} args=[{}]",
+                path,
+                Self::summarize_osc_args(&args)
+            )
+        });
         let msg = OscMessage {
             addr: path.to_string(),
             args,
@@ -906,13 +936,15 @@ impl ScsynthBackend {
                 let msgs: Vec<OscMessage> = msgs
                     .into_iter()
                     .map(|(path, args)| {
-                        Self::osc_diag_log(format!(
-                            "osc_send_bundled tag=({},{}) path={} args=[{}]",
-                            timetag.seconds,
-                            timetag.fractional,
-                            path,
-                            Self::summarize_osc_args(&args)
-                        ));
+                        Self::osc_diag_log(|| {
+                            format!(
+                                "osc_send_bundled tag=({},{}) path={} args=[{}]",
+                                timetag.seconds,
+                                timetag.fractional,
+                                path,
+                                Self::summarize_osc_args(&args)
+                            )
+                        });
                         OscMessage {
                             addr: path.to_string(),
                             args,
@@ -959,6 +991,30 @@ impl ScsynthBackend {
         path: &str,
         args: Vec<OscType>,
     ) -> Result<(), ScsynthError> {
+        self.send_msg_and_await_done_key(path, path, args, Duration::from_secs(5))
+            .await
+    }
+
+    /// The `pending_done` key for a buffer-async command's `/done` reply.
+    ///
+    /// scsynth echoes the buffer number as the second `/done` argument for
+    /// asynchronous buffer commands, so waiters can be correlated
+    /// per-buffer instead of per-command — required for concurrent
+    /// `/b_allocRead`s (staged reload loads overlap deliberately).
+    fn done_key_for_buffer(command: &str, bufnum: u32) -> String {
+        format!("{} {}", command, bufnum)
+    }
+
+    /// Send `path` and wait for its `/done` reply registered under
+    /// `done_key` (either the bare command, or a bufnum-correlated key from
+    /// [`Self::done_key_for_buffer`]).
+    async fn send_msg_and_await_done_key(
+        &self,
+        path: &str,
+        done_key: &str,
+        args: Vec<OscType>,
+        timeout: Duration,
+    ) -> Result<(), ScsynthError> {
         let (tx, rx) = oneshot::channel();
 
         {
@@ -966,30 +1022,30 @@ impl ScsynthBackend {
                 .pending_done
                 .lock()
                 .map_err(|_| ScsynthError::LockPoisoned)?;
-            if pending.insert(path.to_string(), tx).is_some() {
+            if pending.insert(done_key.to_string(), tx).is_some() {
                 return Err(ScsynthError::ConnectionFailed(format!(
                     "command already pending: {}",
-                    path
+                    done_key
                 )));
             }
         }
 
         if let Err(err) = self.send_msg(path, args) {
             if let Ok(mut pending) = self.pending_done.lock() {
-                pending.remove(path);
+                pending.remove(done_key);
             }
             return Err(err);
         }
 
-        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(format!(
                 "{} completion response channel closed",
-                path
+                done_key
             ))),
             Err(_) => {
                 if let Ok(mut pending) = self.pending_done.lock() {
-                    pending.remove(path);
+                    pending.remove(done_key);
                 }
                 Err(ScsynthError::Timeout)
             }
@@ -1064,18 +1120,20 @@ impl ScsynthBackend {
 
         // Send sync command
         self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
-        Self::osc_diag_log(format!("sync_wait_start id={sync_id}"));
+        Self::osc_diag_log(|| format!("sync_wait_start id={sync_id}"));
 
         // Wait for response with reasonable timeout.
         // Since MIDI clock is now handled in a dedicated thread, we don't need
         // aggressive timeouts here anymore.
         match tokio::time::timeout(Duration::from_secs(5), rx).await {
             Ok(Ok(())) => {
-                Self::osc_diag_log(format!(
-                    "sync_wait_done id={} elapsed_ms={:.3}",
-                    sync_id,
-                    started.elapsed().as_secs_f64() * 1000.0
-                ));
+                Self::osc_diag_log(|| {
+                    format!(
+                        "sync_wait_done id={} elapsed_ms={:.3}",
+                        sync_id,
+                        started.elapsed().as_secs_f64() * 1000.0
+                    )
+                });
                 tracing::trace!("Sync {} completed", sync_id);
                 Ok(())
             }
@@ -1083,11 +1141,13 @@ impl ScsynthBackend {
                 "Sync response channel closed".to_string(),
             )),
             Err(_) => {
-                Self::osc_diag_log(format!(
-                    "sync_wait_timeout id={} elapsed_ms={:.3}",
-                    sync_id,
-                    started.elapsed().as_secs_f64() * 1000.0
-                ));
+                Self::osc_diag_log(|| {
+                    format!(
+                        "sync_wait_timeout id={} elapsed_ms={:.3}",
+                        sync_id,
+                        started.elapsed().as_secs_f64() * 1000.0
+                    )
+                });
                 tracing::warn!("Sync {} timed out after 5 seconds", sync_id);
                 Err(ScsynthError::Timeout)
             }
@@ -1109,14 +1169,16 @@ impl Backend for ScsynthBackend {
     async fn load_synthdef(&self, name: &str, data: &[u8]) -> Result<(), Self::Error> {
         let use_disk_load = data.len() > D_RECV_MAX_BYTES;
         let command = if use_disk_load { "/d_load" } else { "/d_recv" };
-        ScsynthBackend::osc_diag_log(format!(
-            "synthdef_load name={} bytes={} command={} over_32k={} over_64k={}",
-            name,
-            data.len(),
-            command,
-            data.len() > 32 * 1024,
-            data.len() >= 64 * 1024
-        ));
+        ScsynthBackend::osc_diag_log(|| {
+            format!(
+                "synthdef_load name={} bytes={} command={} over_32k={} over_64k={}",
+                name,
+                data.len(),
+                command,
+                data.len() > 32 * 1024,
+                data.len() >= 64 * 1024
+            )
+        });
         let (tx, rx) = oneshot::channel();
 
         {
@@ -1451,15 +1513,25 @@ impl Backend for ScsynthBackend {
             ScsynthError::Io(io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))
         })?;
 
-        self.send_msg(
+        // /b_allocRead is asynchronous (NRT thread), while /b_query answers
+        // immediately on the RT thread — querying without awaiting the
+        // /done would race the load and report stale metadata (0 frames on
+        // a fresh buffer, or the PREVIOUS contents of a reused buffer ID).
+        // The /done reply echoes the bufnum, so waiters are correlated
+        // per-buffer and concurrent loads (staged reloads) don't collide.
+        // Generous timeout: large sample files legitimately take a while.
+        self.send_msg_and_await_done_key(
             "/b_allocRead",
+            &Self::done_key_for_buffer("/b_allocRead", id.0),
             vec![
                 OscType::Int(id.0 as i32),
                 OscType::String(path_str.to_string()),
                 OscType::Int(0),  // start frame
                 OscType::Int(-1), // num frames (-1 = all)
             ],
-        )?;
+            Duration::from_secs(30),
+        )
+        .await?;
 
         // scsynth sends /done /b_allocRead but not /b_info — query explicitly.
         let info = self.query_buffer_info(id).await?;
@@ -2078,6 +2150,78 @@ mod tests {
         );
     }
 
+    /// `/b_allocRead` is asynchronous (NRT thread) while `/b_query` answers
+    /// immediately on the RT thread: querying before the load's `/done`
+    /// lands returns stale metadata (0 frames on a fresh buffer, the
+    /// previous contents on a reused buffer ID). `load_buffer` must await
+    /// the bufnum-correlated `/done /b_allocRead <id>` before `/b_query`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn load_buffer_awaits_alloc_read_done_before_query() {
+        use std::sync::atomic::AtomicBool;
+
+        let server = UdpSocket::bind("127.0.0.1:0").expect("bind fake scsynth");
+        server
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("set timeout");
+        let server_addr = server.local_addr().expect("server addr").to_string();
+
+        let recorded: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let recorded_clone = Arc::clone(&recorded);
+        let stop_clone = Arc::clone(&stop);
+        let server_thread = thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            while !stop_clone.load(Ordering::Relaxed) {
+                let (size, peer) = match server.recv_from(&mut buf) {
+                    Ok(x) => x,
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                    Err(_) => break,
+                };
+                let Ok((_, packet)) = decoder::decode_udp(&buf[..size]) else {
+                    continue;
+                };
+                fake_scsynth_handle(packet, &server, peer, &recorded_clone);
+            }
+        });
+
+        let backend = ScsynthBackend::connect(&server_addr)
+            .await
+            .expect("connect should succeed against fake scsynth");
+
+        let info = backend
+            .load_buffer(BufferId::new(4021), Path::new("/tmp/kick.wav"))
+            .await
+            .expect("load_buffer should complete against fake scsynth");
+
+        drop(backend);
+        stop.store(true, Ordering::Relaxed);
+        server_thread.join().expect("server thread join");
+
+        assert_eq!(info.frames, 384000);
+
+        let log = recorded.lock().expect("recorded lock").clone();
+        let alloc_read_pos = log
+            .iter()
+            .position(|entry| entry == "/b_allocRead(4021)")
+            .unwrap_or_else(|| panic!("expected /b_allocRead record; got: {:?}", log));
+        let query_pos = log
+            .iter()
+            .position(|entry| entry == "/b_query(4021)")
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected /b_query after /b_allocRead completion; got: {:?}",
+                    log
+                )
+            });
+        assert!(
+            alloc_read_pos < query_pos,
+            "/b_query must be sent only after /b_allocRead's /done; got: {:?}",
+            log
+        );
+    }
+
     /// Regression test for the scsynth-zombie-on-reconnect bug.
     ///
     /// scsynth is a separate process that survives `systemctl restart
@@ -2298,6 +2442,31 @@ mod tests {
                             let _ = server.send_to(&buf, peer);
                         }
                         format!("/b_zero({})", id.unwrap_or(i32::MIN))
+                    }
+                    "/b_allocRead" => {
+                        // Real scsynth echoes the bufnum in the /done reply
+                        // (asynchronous buffer command) — the backend
+                        // correlates its waiter on it.
+                        let id = msg.args.first().and_then(|v| {
+                            if let OscType::Int(id) = v {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(id) = id {
+                            let reply = OscPacket::Message(OscMessage {
+                                addr: "/done".to_string(),
+                                args: vec![
+                                    OscType::String("/b_allocRead".to_string()),
+                                    OscType::Int(id),
+                                ],
+                            });
+                            if let Ok(buf) = encoder::encode(&reply) {
+                                let _ = server.send_to(&buf, peer);
+                            }
+                        }
+                        format!("/b_allocRead({})", id.unwrap_or(i32::MIN))
                     }
                     "/b_query" => {
                         let id = msg.args.first().and_then(|v| {

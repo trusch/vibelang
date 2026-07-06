@@ -193,6 +193,7 @@ fn install_sample(state: &mut State, sample_id: SampleId, buffer_id: BufferId, n
             sample_rate: 48_000.0,
             channels: 1,
             detected_bpm: None,
+            source_mtime: None,
         },
     );
 }
