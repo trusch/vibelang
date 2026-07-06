@@ -15,6 +15,17 @@ pub struct GroupsHandler<B: Backend> {
     state: Arc<RwLock<State>>,
 }
 
+/// Compute whether a group should be audibly muted, given the global solo
+/// state. Solo mode (any group soloed) silences every group that is not
+/// itself soloed; a muted group stays silent even when soloed.
+fn effective_mute(muted: bool, soloed: bool, any_soloed: bool) -> bool {
+    if any_soloed {
+        muted || !soloed
+    } else {
+        muted
+    }
+}
+
 impl<B: Backend> GroupsHandler<B> {
     /// Create a new groups handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
@@ -27,8 +38,14 @@ impl<B: Backend> GroupsHandler<B> {
     /// group's audio bus to its parent's bus (or bus 0 for the main output).
     pub async fn finalize(&self) -> Result<()> {
         // Collect groups that need link synths
-        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId, Option<u32>, f32)> = {
+        #[allow(clippy::type_complexity)]
+        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId, Option<u32>, f32, f32)> = {
             let state = self.state.read().await;
+
+            // Mute/solo state must survive finalize: a group muted (or
+            // implicitly muted by another group's solo) before its link synth
+            // exists gets the mute passed as an initial /s_new arg.
+            let any_soloed = state.groups.values().any(|g| g.soloed);
 
             state
                 .groups
@@ -48,6 +65,11 @@ impl<B: Backend> GroupsHandler<B> {
                             .unwrap_or(BusId::new(0))
                     };
                     let amp = g.params.get("amp").copied().unwrap_or(1.0);
+                    let mute = if effective_mute(g.muted, g.soloed, any_soloed) {
+                        1.0
+                    } else {
+                        0.0
+                    };
 
                     (
                         g.id,
@@ -56,6 +78,7 @@ impl<B: Backend> GroupsHandler<B> {
                         out_bus,
                         g.output_channels,
                         amp,
+                        mute,
                     )
                 })
                 .collect()
@@ -63,7 +86,8 @@ impl<B: Backend> GroupsHandler<B> {
 
         // Create link synths for each group
         let num_groups = groups_to_link.len();
-        for (group_id, group_node_id, in_bus, out_bus, output_channels, amp) in groups_to_link {
+        for (group_id, group_node_id, in_bus, out_bus, output_channels, amp, mute) in groups_to_link
+        {
             // Allocate node ID for link synth
             let link_node_id = {
                 let mut state = self.state.write().await;
@@ -77,6 +101,7 @@ impl<B: Backend> GroupsHandler<B> {
             params.insert("inbus".to_string(), in_bus.0 as f32);
             params.insert("outbus".to_string(), out_bus.0 as f32);
             params.insert("amp".to_string(), amp);
+            params.insert("mute".to_string(), mute);
 
             // Pick the link-synth variant based on the group's hardware
             // channel count: Some(1) → mono mixdown variant; Some(2) or
@@ -246,24 +271,44 @@ impl<B: Backend> Groups for GroupsHandler<B> {
     }
 
     async fn mute(&self, id: GroupId, muted: bool) -> Result<()> {
-        let mut state = self.state.write().await;
+        // De-click: actuate through the link synth's lagged `mute` param
+        // (/n_set) instead of pausing the group node (/n_run). The link
+        // synth ramps its output over the lag time, and the group's children
+        // (including FX tails) keep running while muted, so unmute resumes
+        // cleanly instead of releasing a frozen buffer. The `mute` param is
+        // separate from `amp`, so the script's amp value is never clobbered.
+        let (link, mute_value) = {
+            let mut state = self.state.write().await;
 
-        let group = state.groups.get_mut(&id).ok_or(Error::GroupNotFound(id))?;
+            let group = state.groups.get_mut(&id).ok_or(Error::GroupNotFound(id))?;
+            group.muted = muted;
+            let soloed = group.soloed;
+            let link = group.link_synth_node_id;
 
-        group.muted = muted;
+            let any_soloed = state.groups.values().any(|g| g.soloed);
+            let mute_value = if effective_mute(muted, soloed, any_soloed) {
+                1.0
+            } else {
+                0.0
+            };
+            (link, mute_value)
+        };
 
-        // Run/pause the group node
-        self.backend
-            .run_node(group.node_id, !muted)
-            .await
-            .map_err(Error::backend)?;
+        // If the link synth isn't spawned yet, the state flag alone is
+        // enough — finalize passes it as an initial /s_new arg.
+        if let Some(link) = link {
+            self.backend
+                .set_param(link, "mute", mute_value)
+                .await
+                .map_err(Error::backend)?;
+        }
 
         Ok(())
     }
 
     async fn solo(&self, id: GroupId, solo: bool) -> Result<()> {
         // Collect data about what to do, then release lock before backend calls
-        let updates: Vec<(NodeId, bool)> = {
+        let updates: Vec<(NodeId, f32)> = {
             let mut state = self.state.write().await;
 
             // Update the target group's soloed state
@@ -273,29 +318,31 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             // Check if ANY group is now soloed
             let any_soloed = state.groups.values().any(|g| g.soloed);
 
-            // Determine run state for each group
-            // If any group is soloed: run only soloed groups (unless muted)
-            // If no groups are soloed: run groups based on their mute state
+            // Recompute the effective mute for every group:
+            // if any group is soloed, only soloed (and unmuted) groups play;
+            // otherwise each group follows its own mute flag. Actuation is
+            // the link synth's lagged `mute` param — groups whose link isn't
+            // spawned yet are skipped here and picked up at finalize.
             state
                 .groups
                 .values()
-                .map(|g| {
-                    let should_run = if any_soloed {
-                        // Solo mode: only run if soloed AND not muted
-                        g.soloed && !g.muted
-                    } else {
-                        // Normal mode: run if not muted
-                        !g.muted
-                    };
-                    (g.node_id, should_run)
+                .filter_map(|g| {
+                    g.link_synth_node_id.map(|link| {
+                        let mute_value = if effective_mute(g.muted, g.soloed, any_soloed) {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        (link, mute_value)
+                    })
                 })
                 .collect()
         };
 
         // Apply updates to backend (lock released)
-        for (node_id, should_run) in updates {
+        for (link, mute_value) in updates {
             self.backend
-                .run_node(node_id, should_run)
+                .set_param(link, "mute", mute_value)
                 .await
                 .map_err(Error::backend)?;
         }
@@ -338,6 +385,7 @@ mod tests {
         run_node_calls: AtomicU32,
         synth_names: Mutex<Vec<String>>,
         synth_params: Mutex<Vec<ParamMap>>,
+        set_param_calls: Mutex<Vec<(NodeId, String, f32)>>,
     }
 
     impl MockBackend {
@@ -350,6 +398,7 @@ mod tests {
                 run_node_calls: AtomicU32::new(0),
                 synth_names: Mutex::new(Vec::new()),
                 synth_params: Mutex::new(Vec::new()),
+                set_param_calls: Mutex::new(Vec::new()),
             }
         }
 
@@ -379,6 +428,19 @@ mod tests {
 
         fn synth_params(&self) -> Vec<ParamMap> {
             self.synth_params.lock().unwrap().clone()
+        }
+
+        fn set_param_calls(&self) -> Vec<(NodeId, String, f32)> {
+            self.set_param_calls.lock().unwrap().clone()
+        }
+
+        /// The set_param calls that targeted the `mute` parameter.
+        fn mute_calls(&self) -> Vec<(NodeId, f32)> {
+            self.set_param_calls()
+                .into_iter()
+                .filter(|(_, p, _)| p == "mute")
+                .map(|(n, _, v)| (n, v))
+                .collect()
         }
     }
 
@@ -434,11 +496,15 @@ mod tests {
 
         async fn set_param(
             &self,
-            _node: NodeId,
-            _param: &str,
-            _value: f32,
+            node: NodeId,
+            param: &str,
+            value: f32,
         ) -> std::result::Result<(), Self::Error> {
             self.params_set.fetch_add(1, Ordering::Relaxed);
+            self.set_param_calls
+                .lock()
+                .unwrap()
+                .push((node, param.to_string(), value));
             Ok(())
         }
 
@@ -651,7 +717,23 @@ mod tests {
 
     // =========================================================================
     // Group Mute Tests
+    //
+    // Mute/solo actuate through the link synth's lagged `mute` param via
+    // /n_set — never through /n_run (which pauses children mid-sample and
+    // freezes FX tails).
     // =========================================================================
+
+    /// Fetch a group's link synth node id (panics if not finalized).
+    async fn link_node(state: &Arc<RwLock<State>>, id: GroupId) -> NodeId {
+        state
+            .read()
+            .await
+            .groups
+            .get(&id)
+            .unwrap()
+            .link_synth_node_id
+            .expect("group not finalized")
+    }
 
     #[tokio::test]
     async fn test_mute_group() {
@@ -659,10 +741,21 @@ mod tests {
 
         let group_id = GroupId::new(1);
         handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.finalize().await.unwrap();
+        let link = link_node(&state, group_id).await;
 
         let result = handler.mute(group_id, true).await;
         assert!(result.is_ok(), "Muting group should succeed");
-        assert_eq!(backend.run_node_calls(), 1, "run_node should be called");
+        assert_eq!(
+            backend.run_node_calls(),
+            0,
+            "mute must not pause the group node via /n_run"
+        );
+        assert_eq!(
+            backend.mute_calls(),
+            vec![(link, 1.0)],
+            "mute must set the link synth's mute param to 1.0"
+        );
 
         let state_read = state.read().await;
         let group = state_read.groups.get(&group_id).unwrap();
@@ -671,17 +764,88 @@ mod tests {
 
     #[tokio::test]
     async fn test_unmute_group() {
-        let (handler, _, state) = create_handler();
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.finalize().await.unwrap();
+        let link = link_node(&state, group_id).await;
+
+        handler.mute(group_id, true).await.unwrap();
+        handler.mute(group_id, false).await.unwrap();
+
+        assert_eq!(
+            backend.mute_calls(),
+            vec![(link, 1.0), (link, 0.0)],
+            "unmute must set the link synth's mute param back to 0.0"
+        );
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(!group.muted);
+    }
+
+    #[tokio::test]
+    async fn test_mute_before_finalize_applies_at_finalize() {
+        // Muting a group whose link synth isn't spawned yet must not fail;
+        // the mute state is passed as an initial /s_new arg at finalize.
+        let (handler, backend, state) = create_handler();
 
         let group_id = GroupId::new(1);
         handler.create(group_id, "TestGroup", None).await.unwrap();
 
         handler.mute(group_id, true).await.unwrap();
+        assert!(
+            backend.mute_calls().is_empty(),
+            "no link synth yet — nothing to actuate"
+        );
+
+        handler.finalize().await.unwrap();
+        let params = backend.synth_params();
+        assert_eq!(params.len(), 1);
+        assert_eq!(
+            params[0].get("mute"),
+            Some(&1.0),
+            "finalize must spawn the link synth pre-muted"
+        );
+
+        let state_read = state.read().await;
+        assert!(state_read.groups.get(&group_id).unwrap().muted);
+    }
+
+    #[tokio::test]
+    async fn test_mute_does_not_clobber_group_amp() {
+        // The mute gate is a separate synth param — the script's amp value
+        // must survive a mute/unmute cycle untouched.
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.set_param(group_id, "amp", 0.7).await.unwrap();
+        handler.finalize().await.unwrap();
+
+        let amp_sets_before = backend
+            .set_param_calls()
+            .iter()
+            .filter(|(_, p, _)| p == "amp")
+            .count();
+
+        handler.mute(group_id, true).await.unwrap();
         handler.mute(group_id, false).await.unwrap();
+
+        let amp_sets_after = backend
+            .set_param_calls()
+            .iter()
+            .filter(|(_, p, _)| p == "amp")
+            .count();
+        assert_eq!(
+            amp_sets_before, amp_sets_after,
+            "mute/unmute must not touch the amp param"
+        );
 
         let state_read = state.read().await;
         let group = state_read.groups.get(&group_id).unwrap();
-        assert!(!group.muted);
+        assert_eq!(*group.params.get("amp").unwrap(), 0.7);
     }
 
     #[tokio::test]
@@ -702,10 +866,21 @@ mod tests {
 
         let group_id = GroupId::new(1);
         handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.finalize().await.unwrap();
+        let link = link_node(&state, group_id).await;
 
         let result = handler.solo(group_id, true).await;
         assert!(result.is_ok(), "Soloing group should succeed");
-        assert!(backend.run_node_calls() >= 1, "run_node should be called");
+        assert_eq!(
+            backend.run_node_calls(),
+            0,
+            "solo must not use /n_run"
+        );
+        assert_eq!(
+            backend.mute_calls(),
+            vec![(link, 0.0)],
+            "the soloed group itself stays audible"
+        );
 
         let state_read = state.read().await;
         let group = state_read.groups.get(&group_id).unwrap();
@@ -718,6 +893,7 @@ mod tests {
 
         let group_id = GroupId::new(1);
         handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.finalize().await.unwrap();
 
         handler.solo(group_id, true).await.unwrap();
         handler.solo(group_id, false).await.unwrap();
@@ -737,21 +913,82 @@ mod tests {
 
     #[tokio::test]
     async fn test_solo_affects_multiple_groups() {
-        let (handler, backend, _state) = create_handler();
+        let (handler, backend, state) = create_handler();
 
         let group1 = GroupId::new(1);
         let group2 = GroupId::new(2);
 
         handler.create(group1, "Group1", None).await.unwrap();
         handler.create(group2, "Group2", None).await.unwrap();
+        handler.finalize().await.unwrap();
+        let link1 = link_node(&state, group1).await;
+        let link2 = link_node(&state, group2).await;
 
-        // Solo group1 - should update run state for both groups
+        // Solo group1: group1 stays audible, group2 gets muted.
         handler.solo(group1, true).await.unwrap();
 
-        // Should have called run_node for both groups
+        let mut calls = backend.mute_calls();
+        calls.sort_by_key(|(n, _)| n.0);
+        let mut expected = vec![(link1, 0.0), (link2, 1.0)];
+        expected.sort_by_key(|(n, _)| n.0);
+        assert_eq!(
+            calls, expected,
+            "solo must mute all other groups via their link synths"
+        );
+        assert_eq!(backend.run_node_calls(), 0, "solo must not use /n_run");
+
+        // Unsolo: both groups become audible again.
+        handler.solo(group1, false).await.unwrap();
+        let calls = backend.mute_calls();
+        assert_eq!(calls.len(), 4);
         assert!(
-            backend.run_node_calls() >= 2,
-            "run_node should be called for all groups"
+            calls[2..].iter().all(|(_, v)| *v == 0.0),
+            "unsolo must unmute all groups: {:?}",
+            calls
+        );
+    }
+
+    #[tokio::test]
+    async fn test_solo_respects_muted_group() {
+        // A muted group must stay muted even when soloed.
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.finalize().await.unwrap();
+        let link = link_node(&state, group_id).await;
+
+        handler.mute(group_id, true).await.unwrap();
+        handler.solo(group_id, true).await.unwrap();
+
+        assert_eq!(
+            backend.mute_calls(),
+            vec![(link, 1.0), (link, 1.0)],
+            "soloing a muted group must keep it muted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_finalize_applies_solo_state() {
+        // Solo before finalize: the non-soloed group's link synth must spawn
+        // pre-muted.
+        let (handler, backend, _state) = create_handler();
+
+        let group1 = GroupId::new(1);
+        let group2 = GroupId::new(2);
+        handler.create(group1, "Soloed", None).await.unwrap();
+        handler.create(group2, "Other", None).await.unwrap();
+
+        handler.solo(group1, true).await.unwrap();
+        handler.finalize().await.unwrap();
+
+        let params = backend.synth_params();
+        assert_eq!(params.len(), 2);
+        let mutes: Vec<f32> = params.iter().map(|p| *p.get("mute").unwrap()).collect();
+        assert!(
+            mutes.contains(&0.0) && mutes.contains(&1.0),
+            "soloed group spawns unmuted, the other pre-muted: {:?}",
+            mutes
         );
     }
 

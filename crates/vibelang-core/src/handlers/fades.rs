@@ -1,18 +1,29 @@
 //! Fades handler implementation.
 
 use crate::backend::Backend;
-use crate::compat::RwLock;
+use crate::compat::{Duration, Instant, RwLock};
 use crate::state::{ActiveFade, State};
 use crate::traits::{FadeConfig, FadeTarget, Fades};
 use crate::types::NodeId;
 use crate::Result;
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+/// Minimum interval between backend emissions per (target, param) while a
+/// fade is in flight. The link synth smooths each step with a ~30 ms Lag
+/// (see `vibelang-dsp::system_synthdefs::routing::DECLICK_LAG_S`), so
+/// emitting every ~5 ms is audibly identical to emitting at tick rate
+/// (500-1000 Hz) at a fraction of the /n_set traffic. The final value of a
+/// completed fade is always emitted regardless of this limit.
+const MIN_EMIT_INTERVAL: Duration = Duration::from_millis(5);
 
 /// Handler for fade operations.
 pub struct FadesHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+    /// Last backend emission per (target, param), for rate limiting.
+    last_emit: Mutex<HashMap<(FadeTarget, String), Instant>>,
 }
 
 /// Collected fade data for processing.
@@ -34,7 +45,32 @@ struct FadeUpdate {
 impl<B: Backend> FadesHandler<B> {
     /// Create a new fades handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
-        Self { backend, state }
+        Self {
+            backend,
+            state,
+            last_emit: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Decide whether to emit to the backend for this (target, param) now.
+    ///
+    /// Completed fades always emit (the fade must land exactly on its target
+    /// value); in-flight fades emit at most once per [`MIN_EMIT_INTERVAL`].
+    /// Records `now` as the last emission time when emitting.
+    fn should_emit(&self, target: &FadeTarget, param: &str, now: Instant, is_complete: bool) -> bool {
+        let mut last_emit = self.last_emit.lock().unwrap();
+        let key = (target.clone(), param.to_string());
+        if is_complete {
+            last_emit.remove(&key);
+            return true;
+        }
+        match last_emit.get(&key) {
+            Some(prev) if now.duration_since(*prev) < MIN_EMIT_INTERVAL => false,
+            _ => {
+                last_emit.insert(key, now);
+                true
+            }
+        }
     }
 
     /// Process active fades.
@@ -62,6 +98,7 @@ impl<B: Backend> FadesHandler<B> {
         };
 
         // Phase 2: Apply updates to state and collect node IDs
+        let now = self.backend.current_time();
         let updates = {
             let mut state = self.state.write().await;
             let mut updates = Vec::new();
@@ -73,7 +110,18 @@ impl<B: Backend> FadesHandler<B> {
                     FadeTarget::Group(id) => {
                         if let Some(group) = state.groups.get_mut(id) {
                             group.params.insert(data.param.clone(), data.value);
-                            vec![group.node_id]
+                            // amp/pan flow through the link synth (same
+                            // dispatch as GroupsHandler::set_param): fading
+                            // the raw group node would broadcast /n_set to
+                            // every child — gain applied twice (link amp ×
+                            // per-note amp) and each note's velocity-derived
+                            // amp permanently overwritten.
+                            let node = if matches!(data.param.as_str(), "amp" | "pan") {
+                                group.link_synth_node_id.unwrap_or(group.node_id)
+                            } else {
+                                group.node_id
+                            };
+                            vec![node]
                         } else {
                             vec![]
                         }
@@ -95,6 +143,11 @@ impl<B: Backend> FadesHandler<B> {
                         }
                     }
                     FadeTarget::Pattern(id) => {
+                        // TODO: pattern-content fades clone the entire
+                        // pattern content on every tick — expensive and
+                        // tracked separately. Intentionally left out of the
+                        // emission rate limit below (no backend sends here);
+                        // do not redesign as part of the de-click work.
                         if let Some(pattern) = state.patterns.get_mut(id) {
                             // Clone content, modify steps, and replace
                             let mut new_steps = pattern.content.steps.clone();
@@ -126,7 +179,12 @@ impl<B: Backend> FadesHandler<B> {
                     completed_indices.push(data.index);
                 }
 
-                if !nodes.is_empty() {
+                // Rate-limit backend emission: with the Lag smoothing inside
+                // the link synth a fade stays audibly smooth at ~200 Hz, so
+                // there is no need to flood /n_set at tick rate.
+                if !nodes.is_empty()
+                    && self.should_emit(&data.target, &data.param, now, data.is_complete)
+                {
                     updates.push(FadeUpdate {
                         nodes,
                         param: data.param,
@@ -198,6 +256,13 @@ impl<B: Backend> Fades for FadesHandler<B> {
             .active_fades
             .retain(|f| f.config.target != config.target || f.config.param != config.param);
 
+        // Reset the emission rate limiter so the new fade's first tick emits
+        // immediately.
+        self.last_emit
+            .lock()
+            .unwrap()
+            .remove(&(config.target.clone(), config.param.clone()));
+
         // Add the new fade
         state.active_fades.push(ActiveFade {
             config,
@@ -215,6 +280,290 @@ impl<B: Backend> Fades for FadesHandler<B> {
             .active_fades
             .retain(|f| &f.config.target != target || f.config.param != param);
 
+        self.last_emit
+            .lock()
+            .unwrap()
+            .remove(&(target.clone(), param.to_string()));
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{AddAction, BufferInfo};
+    use crate::state::GroupState;
+    use crate::types::{BufferId, BusId, GroupId, ParamMap};
+    use std::path::Path;
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+
+    impl std::error::Error for MockError {}
+
+    #[derive(Default)]
+    struct MockBackend {
+        set_param_calls: Mutex<Vec<(NodeId, String, f32)>>,
+    }
+
+    impl MockBackend {
+        fn set_param_calls(&self) -> Vec<(NodeId, String, f32)> {
+            self.set_param_calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            node: NodeId,
+            param: &str,
+            value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            self.set_param_calls
+                .lock()
+                .unwrap()
+                .push((node, param.to_string(), value));
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 44100,
+                channels: 2,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    const GROUP_NODE: NodeId = NodeId(10);
+    const LINK_NODE: NodeId = NodeId(77);
+
+    /// Build a handler whose state contains one group. `with_link` controls
+    /// whether the group's link synth is spawned.
+    async fn handler_with_group(
+        with_link: bool,
+    ) -> (FadesHandler<MockBackend>, Arc<MockBackend>, GroupId) {
+        let backend = Arc::new(MockBackend::default());
+        let mut state = State::default();
+        state.tempo = 120.0;
+
+        let group_id = GroupId::new(1);
+        state.groups.insert(
+            group_id,
+            GroupState {
+                id: group_id,
+                name: "g".to_string(),
+                parent: None,
+                node_id: GROUP_NODE,
+                audio_bus: BusId::new(16),
+                link_synth_node_id: with_link.then_some(LINK_NODE),
+                muted: false,
+                soloed: false,
+                params: ParamMap::new(),
+                output_bus: None,
+                output_channels: None,
+            },
+        );
+
+        let state = Arc::new(RwLock::new(state));
+        let handler = FadesHandler::new(backend.clone(), state);
+        (handler, backend, group_id)
+    }
+
+    /// An instantly-complete fade (0 beats) emits its final value once.
+    #[tokio::test]
+    async fn test_group_amp_fade_targets_link_synth() {
+        let (handler, backend, group_id) = handler_with_group(true).await;
+
+        handler
+            .fade(FadeConfig::group(group_id, "amp", 0.5, 0.0))
+            .await
+            .unwrap();
+        handler.tick().await;
+
+        assert_eq!(
+            backend.set_param_calls(),
+            vec![(LINK_NODE, "amp".to_string(), 0.5)],
+            "group amp fades must dispatch to the link synth, not the group node"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_group_non_amp_fade_targets_group_node() {
+        let (handler, backend, group_id) = handler_with_group(true).await;
+
+        handler
+            .fade(FadeConfig::group(group_id, "cutoff", 800.0, 0.0))
+            .await
+            .unwrap();
+        handler.tick().await;
+
+        assert_eq!(
+            backend.set_param_calls(),
+            vec![(GROUP_NODE, "cutoff".to_string(), 800.0)],
+            "non-amp/pan group fades keep the group-node broadcast convention"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_group_amp_fade_falls_back_to_group_node_without_link() {
+        let (handler, backend, group_id) = handler_with_group(false).await;
+
+        handler
+            .fade(FadeConfig::group(group_id, "amp", 0.5, 0.0))
+            .await
+            .unwrap();
+        handler.tick().await;
+
+        assert_eq!(
+            backend.set_param_calls(),
+            vec![(GROUP_NODE, "amp".to_string(), 0.5)],
+            "without a link synth the group node is the only available target"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fade_emission_is_rate_limited() {
+        let (handler, backend, group_id) = handler_with_group(true).await;
+
+        // Long-running fade (100 beats at 120 BPM = 50 s) — never completes
+        // during the test, so every emission goes through the rate limiter.
+        handler
+            .fade(FadeConfig::group(group_id, "amp", 1.0, 100.0))
+            .await
+            .unwrap();
+
+        // Back-to-back ticks (far less than 5 ms apart): only one emission.
+        handler.tick().await;
+        handler.tick().await;
+        assert_eq!(
+            backend.set_param_calls().len(),
+            1,
+            "second tick within MIN_EMIT_INTERVAL must be suppressed"
+        );
+
+        // After the interval passes, the next tick emits again.
+        std::thread::sleep(std::time::Duration::from_millis(6));
+        handler.tick().await;
+        assert_eq!(
+            backend.set_param_calls().len(),
+            2,
+            "tick after MIN_EMIT_INTERVAL must emit"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_completed_fade_emits_final_value_and_is_removed() {
+        let (handler, backend, group_id) = handler_with_group(true).await;
+
+        handler
+            .fade(FadeConfig::group(group_id, "amp", 0.25, 0.0))
+            .await
+            .unwrap();
+        handler.tick().await;
+        // Fade completed on the first tick: exact target value, fade removed.
+        assert_eq!(
+            backend.set_param_calls(),
+            vec![(LINK_NODE, "amp".to_string(), 0.25)]
+        );
+
+        handler.tick().await;
+        assert_eq!(
+            backend.set_param_calls().len(),
+            1,
+            "completed fades must not keep emitting"
+        );
     }
 }
