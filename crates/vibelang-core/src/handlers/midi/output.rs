@@ -474,6 +474,94 @@ mod tests {
     }
 
     #[test]
+    fn equal_deadline_events_keep_enqueue_order() {
+        // A pool steal emits NoteOff(stolen) then NoteOn(new) with the same
+        // deadline; the heap must preserve that enqueue order (seq
+        // tie-break), otherwise the new note would be killed by the off.
+        let deadline = Instant::now() + std::time::Duration::from_millis(10);
+        let mut scheduled = BinaryHeap::new();
+        scheduled.push(
+            QueuedMidiEvent::NoteOff {
+                channel: 0,
+                note: 60,
+            }
+            .at(deadline),
+        );
+        scheduled.push(
+            QueuedMidiEvent::NoteOn {
+                channel: 0,
+                note: 64,
+                velocity: 100,
+            }
+            .at(deadline),
+        );
+
+        assert!(matches!(
+            scheduled.pop().unwrap().event,
+            QueuedMidiEvent::NoteOff { note: 60, .. }
+        ));
+        assert!(matches!(
+            scheduled.pop().unwrap().event,
+            QueuedMidiEvent::NoteOn { note: 64, .. }
+        ));
+        assert!(scheduled.pop().is_none());
+    }
+
+    #[test]
+    fn events_fire_in_timestamp_order_regardless_of_enqueue_order() {
+        // Two melodies dispatching in the same tick enqueue out of timestamp
+        // order; the heap must reorder them by deadline.
+        let base = Instant::now();
+        let ms = |n: u64| base + std::time::Duration::from_millis(n);
+        let mut scheduled = BinaryHeap::new();
+        scheduled.push(
+            QueuedMidiEvent::NoteOn {
+                channel: 0,
+                note: 60,
+                velocity: 100,
+            }
+            .at(ms(30)),
+        );
+        scheduled.push(
+            QueuedMidiEvent::NoteOn {
+                channel: 1,
+                note: 62,
+                velocity: 100,
+            }
+            .at(ms(10)),
+        );
+        scheduled.push(
+            QueuedMidiEvent::NoteOff {
+                channel: 0,
+                note: 60,
+            }
+            .at(ms(30)),
+        );
+        scheduled.push(
+            QueuedMidiEvent::NoteOn {
+                channel: 1,
+                note: 64,
+                velocity: 100,
+            }
+            .at(ms(20)),
+        );
+
+        let order: Vec<ScheduledMidiEvent> =
+            std::iter::from_fn(|| scheduled.pop()).collect();
+
+        assert_eq!(order.len(), 4);
+        assert!(
+            order.windows(2).all(|w| w[0].timestamp <= w[1].timestamp),
+            "not sorted by timestamp"
+        );
+        assert_eq!(order[0].timestamp, ms(10));
+        assert_eq!(order[1].timestamp, ms(20));
+        // Same-deadline pair: NoteOn (enqueued first) before NoteOff.
+        assert!(matches!(order[2].event, QueuedMidiEvent::NoteOn { note: 60, .. }));
+        assert!(matches!(order[3].event, QueuedMidiEvent::NoteOff { note: 60, .. }));
+    }
+
+    #[test]
     fn channel_pressure_does_not_block_isolated_clock_channel() {
         let (normal_tx, _normal_rx) = crossbeam_channel::bounded::<ScheduledMidiEvent>(1);
         let pressure = QueuedMidiEvent::Midi2ChannelPressure {

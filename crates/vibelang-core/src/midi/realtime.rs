@@ -161,20 +161,22 @@ pub enum QueuedMidiEvent {
 impl QueuedMidiEvent {
     /// Create a scheduled version of this event at the given timestamp.
     pub fn at(self, timestamp: Instant) -> ScheduledMidiEvent {
-        ScheduledMidiEvent {
-            timestamp,
-            event: self,
-        }
+        ScheduledMidiEvent::new(self, timestamp)
     }
 
     /// Create an immediate scheduled event (timestamp = now).
     pub fn immediate(self) -> ScheduledMidiEvent {
-        ScheduledMidiEvent {
-            timestamp: Instant::now(),
-            event: self,
-        }
+        ScheduledMidiEvent::immediate(self)
     }
 }
+
+/// Global monotonic sequence for [`ScheduledMidiEvent`] creation order.
+///
+/// The output-thread heap orders by timestamp; this breaks ties so that
+/// events scheduled for the same instant are sent in the order they were
+/// created (e.g. a voice-pool `NoteOff(stolen)` before the `NoteOn(new)`
+/// that stole its slot, or a same-deadline retrigger's off-before-on).
+static SCHEDULED_EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// A MIDI event scheduled for a specific wall-clock time.
 ///
@@ -186,20 +188,23 @@ pub struct ScheduledMidiEvent {
     pub timestamp: Instant,
     /// The MIDI event to send.
     pub event: QueuedMidiEvent,
+    /// Creation order, used to break timestamp ties in the output heap.
+    seq: u64,
 }
 
 impl ScheduledMidiEvent {
     /// Create a new scheduled event.
     pub fn new(event: QueuedMidiEvent, timestamp: Instant) -> Self {
-        Self { timestamp, event }
+        Self {
+            timestamp,
+            event,
+            seq: SCHEDULED_EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
+        }
     }
 
     /// Create an immediate event (timestamp = now).
     pub fn immediate(event: QueuedMidiEvent) -> Self {
-        Self {
-            timestamp: Instant::now(),
-            event,
-        }
+        Self::new(event, Instant::now())
     }
 
     /// Check if this event is due (timestamp has passed).
@@ -219,10 +224,11 @@ impl ScheduledMidiEvent {
     }
 }
 
-// Implement ordering for BinaryHeap (min-heap by timestamp)
+// Implement ordering for BinaryHeap (min-heap by timestamp, then by
+// creation sequence so equal-deadline events keep their enqueue order)
 impl PartialEq for ScheduledMidiEvent {
     fn eq(&self, other: &Self) -> bool {
-        self.timestamp == other.timestamp
+        self.timestamp == other.timestamp && self.seq == other.seq
     }
 }
 
@@ -236,8 +242,13 @@ impl PartialOrd for ScheduledMidiEvent {
 
 impl Ord for ScheduledMidiEvent {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Reverse ordering for min-heap (earlier timestamps have higher priority)
-        other.timestamp.cmp(&self.timestamp)
+        // Reverse ordering for min-heap (earlier timestamps have higher
+        // priority); ties broken by creation order (earlier seq first) so
+        // e.g. NoteOn→NoteOff pairs at the same instant stay ordered.
+        other
+            .timestamp
+            .cmp(&self.timestamp)
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
@@ -1363,8 +1374,13 @@ mod tests {
         let e1 = QueuedMidiEvent::Clock.at(t);
         let e2 = QueuedMidiEvent::Clock.at(t);
 
-        // Same timestamp should be equal (for Eq trait)
-        assert_eq!(e1, e2);
+        // Distinct events at the same timestamp are NOT equal: each gets a
+        // unique creation sequence, which keeps Eq consistent with the
+        // heap's total order (timestamp, then enqueue order).
+        assert_ne!(e1, e2);
+
+        // A clone shares the sequence and stays equal.
+        assert_eq!(e1, e1.clone());
     }
 
     // =========================================================================

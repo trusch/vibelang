@@ -75,20 +75,49 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Send a single Note-On/Note-Off MIDI event to a device immediately.
     ///
-    /// Prefers the low-latency direct channel; falls back to a sample-accurate
-    /// `vibelang_midi_note_{on,off}` synthdef when the direct channel is
-    /// unavailable or full. Used by the `poly(1)` mono note-stack path.
+    /// Thin wrapper over [`send_midi_event_at`](Self::send_midi_event_at)
+    /// with no deadline (send as soon as the output thread picks it up).
     #[cfg(feature = "midi")]
     async fn send_midi_event_now(
         &self,
         device_id: MidiDeviceId,
         event: QueuedMidiEvent,
     ) -> Result<()> {
+        self.send_midi_event_at(device_id, event, None).await
+    }
+
+    /// Send a single Note-On/Note-Off MIDI event to a device, optionally
+    /// scheduled at a future wall-clock time.
+    ///
+    /// The event is enqueued on the device's output thread, which holds it
+    /// in a timestamp-ordered heap and sends it when `at` arrives (~0.1ms
+    /// polling precision). This call never sleeps — lookahead dispatch from
+    /// the runtime tick computes, enqueues, and returns.
+    ///
+    /// Prefers the low-latency direct channel; falls back to a sample-accurate
+    /// `vibelang_midi_note_{on,off}` synthdef when the direct channel is
+    /// unavailable or full. Used by the unified voice-allocation pool path.
+    #[cfg(feature = "midi")]
+    async fn send_midi_event_at(
+        &self,
+        device_id: MidiDeviceId,
+        event: QueuedMidiEvent,
+        at: Option<Instant>,
+    ) -> Result<()> {
         // Try direct path first (lower latency).
         match self.get_midi_sender(device_id) {
             Some(sender) => {
-                if sender.try_send(event.clone().immediate()).is_ok() {
-                    tracing::debug!("MIDI pool: direct {:?} -> device {:?}", event, device_id);
+                let scheduled = match at {
+                    Some(timestamp) => event.clone().at(timestamp),
+                    None => event.clone().immediate(),
+                };
+                if sender.try_send(scheduled).is_ok() {
+                    tracing::debug!(
+                        "MIDI pool: direct {:?} -> device {:?} (at {:?})",
+                        event,
+                        device_id,
+                        at
+                    );
                     return Ok(());
                 }
                 tracing::warn!(
@@ -139,7 +168,15 @@ impl<B: Backend> VoicesHandler<B> {
         let node_id = { self.state.write().await.alloc_node_id()? };
         if let Err(e) = self
             .backend
-            .create_synth(synthdef, node_id, NodeId::new(0), AddAction::Tail, &params)
+            .create_synth_at(
+                synthdef,
+                node_id,
+                NodeId::new(0),
+                AddAction::Tail,
+                &params,
+                &[],
+                at,
+            )
             .await
         {
             tracing::warn!("MIDI mono: failed to create {} synth: {:?}", synthdef, e);
@@ -151,7 +188,14 @@ impl<B: Backend> VoicesHandler<B> {
     /// voice with `n` slots (`poly(1)` is `n == 1`) and emit the resulting
     /// MIDI event sequence (retrigger / free-slot assign / steal with an
     /// optional `NoteOff(stolen)`, see [`midi_pool_note_on`]).
+    ///
+    /// Pool state advances at dispatch time; the emitted events are enqueued
+    /// on the device's output thread with the `at` deadline (up to one
+    /// lookahead window ahead) so this call never sleeps. Events emitted by
+    /// one pool decision share the deadline and keep their relative order in
+    /// the output heap (creation-sequence tie-break).
     #[cfg(feature = "midi")]
+    #[allow(clippy::too_many_arguments)]
     async fn midi_pool_note_on(
         &self,
         id: VoiceId,
@@ -161,6 +205,7 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: u8,
         polyphony: usize,
         legato: bool,
+        at: Option<Instant>,
     ) -> Result<u64> {
         let (generation, events) = {
             let mut state = self.state.write().await;
@@ -170,7 +215,7 @@ impl<B: Backend> VoicesHandler<B> {
             (generation, events)
         };
         for event in events {
-            let _ = self.send_midi_event_now(device_id, event).await;
+            let _ = self.send_midi_event_at(device_id, event, at).await;
         }
         Ok(generation)
     }
@@ -178,6 +223,10 @@ impl<B: Backend> VoicesHandler<B> {
     /// Run the unified voice-allocation pool on note-off: free the released
     /// note's slot, return to the most-recently-stolen still-held note (re-
     /// `NoteOn`), or `NoteOff` when nothing remains in that slot.
+    ///
+    /// As with [`midi_pool_note_on`](Self::midi_pool_note_on), pool state
+    /// advances at dispatch time and the events are enqueued with the `at`
+    /// deadline — no inline sleeping.
     #[cfg(feature = "midi")]
     async fn midi_pool_note_off(
         &self,
@@ -186,6 +235,7 @@ impl<B: Backend> VoicesHandler<B> {
         channel: u8,
         note: u8,
         polyphony: usize,
+        at: Option<Instant>,
     ) -> Result<()> {
         let events = {
             let mut state = self.state.write().await;
@@ -193,7 +243,7 @@ impl<B: Backend> VoicesHandler<B> {
             midi_pool_note_off(&mut state, id, channel, note, polyphony)
         };
         for event in events {
-            let _ = self.send_midi_event_now(device_id, event).await;
+            let _ = self.send_midi_event_at(device_id, event, at).await;
         }
         Ok(())
     }
@@ -224,9 +274,10 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Lookahead-aware note-on.
     ///
-    /// MIDI voices sleep until the scheduler timestamp (preserving pool
-    /// ordering); audio voices forward the timestamp to the backend for
-    /// sample-accurate scheduling. See [`note_on_at_tracked`](Self::note_on_at_tracked).
+    /// MIDI voices enqueue the note on the device's output thread with the
+    /// scheduler timestamp as deadline; audio voices forward the timestamp
+    /// to the backend for sample-accurate scheduling. Never sleeps.
+    /// See [`note_on_at_tracked`](Self::note_on_at_tracked).
     #[cfg(feature = "midi")]
     pub async fn note_on_at(
         &self,
@@ -242,11 +293,18 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Lookahead-aware note-on that returns the active note generation.
     ///
-    /// MIDI-output voices sleep until the scheduler timestamp and then run
-    /// the pool path (the MIDI queue provides its own precise scheduling).
-    /// Audio-synth voices instead forward the timestamp to the backend,
-    /// which schedules the trigger sample-accurately (scsynth OSC bundle
-    /// time-tags).
+    /// MIDI-output voices run the pool path at dispatch time and enqueue
+    /// the resulting events on the device's output thread with the
+    /// scheduler timestamp as deadline (the output thread's heap provides
+    /// ~0.1ms-precision delivery). Audio-synth voices instead forward the
+    /// timestamp to the backend, which schedules the trigger
+    /// sample-accurately (scsynth OSC bundle time-tags). Neither path
+    /// sleeps — dispatch from the runtime tick computes, enqueues, and
+    /// returns.
+    ///
+    /// Note: as with the audio path, pool/state bookkeeping (slot
+    /// allocation, note generations) happens at dispatch time, up to one
+    /// lookahead window (~50ms) before the event sounds.
     #[cfg(feature = "midi")]
     pub async fn note_on_at_tracked(
         &self,
@@ -267,7 +325,6 @@ impl<B: Backend> VoicesHandler<B> {
         };
 
         if let Some(device_id) = midi_output {
-            wait_until_timestamp(timestamp).await;
             let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
             return self
                 .midi_pool_note_on(
@@ -278,6 +335,7 @@ impl<B: Backend> VoicesHandler<B> {
                     midi_velocity,
                     polyphony,
                     mono_legato,
+                    timestamp,
                 )
                 .await;
         }
@@ -291,10 +349,11 @@ impl<B: Backend> VoicesHandler<B> {
     ///
     /// Like [`note_on_at`](Self::note_on_at), but also merges `extra_params`
     /// into the synth creation params (and, for MIDI voices, sends them as CC
-    /// messages where mappings exist — handled by `note_on_with_params`).
+    /// messages where mappings exist).
     /// Scheduling semantics as in [`note_on_at_tracked`](Self::note_on_at_tracked):
-    /// MIDI voices sleep until the timestamp, audio voices get a backend-
-    /// scheduled (sample-accurate) trigger.
+    /// MIDI voices enqueue events (CCs first, then the pool note-on) on the
+    /// output thread with the timestamp as deadline; audio voices get a
+    /// backend-scheduled (sample-accurate) trigger. Never sleeps.
     #[cfg(feature = "midi")]
     pub async fn note_on_at_with_params(
         &self,
@@ -304,17 +363,61 @@ impl<B: Backend> VoicesHandler<B> {
         timestamp: Option<Instant>,
         extra_params: &ParamMap,
     ) -> Result<()> {
-        let is_midi = {
+        let (midi_output, midi_channel, polyphony, mono_legato) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-            voice.config.midi_output.is_some()
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony as usize,
+                voice.config.mono_legato,
+            )
         };
 
-        if is_midi {
-            wait_until_timestamp(timestamp).await;
+        if let Some(device_id) = midi_output {
+            let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+            // Send extra params as CC where mappings exist, scheduled at the
+            // same deadline as the note. They are enqueued before the pool
+            // note-on, so the output heap's creation-order tie-break delivers
+            // CC-before-NoteOn at the deadline (matching the previous
+            // immediate-send ordering).
+            if let Some(sender) = self.get_midi_sender(device_id) {
+                let state = self.state.read().await;
+                if let Some(voice) = state.voices.get(&id) {
+                    for (param, value) in extra_params {
+                        if let Some(&cc) = voice.config.param_cc_map.get(param) {
+                            let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
+                            let cc_event = QueuedMidiEvent::ControlChange {
+                                channel: midi_channel,
+                                cc,
+                                value: cc_value,
+                            };
+                            let scheduled = match timestamp {
+                                Some(at) => cc_event.at(at),
+                                None => cc_event.immediate(),
+                            };
+                            let _ = sender.try_send(scheduled);
+                        }
+                    }
+                }
+            }
+
+            // The per-note params are applied as CC above; the note itself
+            // goes through the unified voice-allocation pool.
             return self
-                .note_on_with_params(id, note, velocity, extra_params)
-                .await;
+                .midi_pool_note_on(
+                    id,
+                    device_id,
+                    midi_channel,
+                    note,
+                    midi_velocity,
+                    polyphony,
+                    mono_legato,
+                    timestamp,
+                )
+                .await
+                .map(|_| ());
         }
 
         self.note_on_audio_at(id, note, velocity, extra_params, timestamp)
@@ -375,58 +478,14 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: f32,
         extra_params: &ParamMap,
     ) -> Result<()> {
-        // Check for MIDI output first
+        // The MIDI-output branch (CC sends + voice-allocation pool) lives in
+        // the lookahead variant; `None` means "as soon as possible".
         #[cfg(feature = "midi")]
-        {
-            let (midi_output, midi_channel, polyphony, mono_legato) = {
-                let state = self.state.read().await;
-                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-                (
-                    voice.config.midi_output,
-                    voice.config.midi_channel,
-                    voice.config.polyphony as usize,
-                    voice.config.mono_legato,
-                )
-            };
+        return self
+            .note_on_at_with_params(id, note, velocity, None, extra_params)
+            .await;
 
-            if let Some(device_id) = midi_output {
-                let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
-
-                // Send extra params as CC if mappings exist
-                if let Some(sender) = self.get_midi_sender(device_id) {
-                    let state = self.state.read().await;
-                    if let Some(voice) = state.voices.get(&id) {
-                        for (param, value) in extra_params {
-                            if let Some(&cc) = voice.config.param_cc_map.get(param) {
-                                let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
-                                let cc_event = QueuedMidiEvent::ControlChange {
-                                    channel: midi_channel,
-                                    cc,
-                                    value: cc_value,
-                                };
-                                let _ = sender.try_send(cc_event.immediate());
-                            }
-                        }
-                    }
-                }
-
-                // The per-note params are applied as CC above; the note itself
-                // goes through the unified voice-allocation pool.
-                return self
-                    .midi_pool_note_on(
-                        id,
-                        device_id,
-                        midi_channel,
-                        note,
-                        midi_velocity,
-                        polyphony,
-                        mono_legato,
-                    )
-                    .await
-                    .map(|_| ());
-            }
-        }
-
+        #[cfg(not(feature = "midi"))]
         self.note_on_audio_at(id, note, velocity, extra_params, None)
             .await
     }
@@ -593,10 +652,11 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Send a note-off scheduled for a specific time.
     ///
-    /// Lookahead-aware note-off. MIDI-output voices sleep until the
-    /// scheduler timestamp before entering the pool path; audio-synth
-    /// voices forward the timestamp to the backend so the `gate = 0`
-    /// release lands sample-accurately (scsynth OSC bundle time-tag).
+    /// Lookahead-aware note-off. MIDI-output voices run the pool path at
+    /// dispatch time and enqueue the resulting events on the device's
+    /// output thread with the timestamp as deadline; audio-synth voices
+    /// forward the timestamp to the backend so the `gate = 0` release
+    /// lands sample-accurately (scsynth OSC bundle time-tag). Never sleeps.
     #[cfg(feature = "midi")]
     pub async fn note_off_at(
         &self,
@@ -604,15 +664,20 @@ impl<B: Backend> VoicesHandler<B> {
         note: u8,
         timestamp: Option<Instant>,
     ) -> Result<()> {
-        let is_midi = {
+        let (midi_output, midi_channel, polyphony) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-            voice.config.midi_output.is_some()
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony as usize,
+            )
         };
 
-        if is_midi {
-            wait_until_timestamp(timestamp).await;
-            return self.note_off(id, note).await;
+        if let Some(device_id) = midi_output {
+            return self
+                .midi_pool_note_off(id, device_id, midi_channel, note, polyphony, timestamp)
+                .await;
         }
 
         self.note_off_audio_at(id, note, timestamp).await
@@ -641,6 +706,15 @@ impl<B: Backend> VoicesHandler<B> {
     }
 
     /// Release a note only if no newer same-pitch note has superseded it.
+    ///
+    /// The generation guard is checked at dispatch time (note generations
+    /// are also bumped at dispatch time by the note-on paths, so guard and
+    /// bump stay ordered by dispatch order); the release itself is then
+    /// scheduled at `timestamp` — enqueued on the MIDI output thread or
+    /// backend-scheduled (`gate = 0` time-tag) for audio voices. Callers
+    /// that need the guard evaluated at the deadline (e.g. the pattern
+    /// gate-release task, whose deadline can be far beyond the lookahead
+    /// window) delay the call itself and pass `None`.
     #[cfg(feature = "midi")]
     pub async fn note_off_at_if_generation(
         &self,
@@ -649,8 +723,6 @@ impl<B: Backend> VoicesHandler<B> {
         generation: u64,
         timestamp: Option<Instant>,
     ) -> Result<()> {
-        wait_until_timestamp(timestamp).await;
-
         enum Release {
             Audio(Option<NodeId>),
             #[cfg(feature = "midi")]
@@ -688,7 +760,7 @@ impl<B: Backend> VoicesHandler<B> {
         match release {
             Release::Audio(Some(node_id)) => {
                 self.backend
-                    .set_param(node_id, "gate", 0.0)
+                    .set_param_at(node_id, "gate", 0.0, timestamp)
                     .await
                     .map_err(Error::backend)?;
             }
@@ -696,7 +768,7 @@ impl<B: Backend> VoicesHandler<B> {
             #[cfg(feature = "midi")]
             Release::Midi(device_id, events) => {
                 for event in events {
-                    let _ = self.send_midi_event_now(device_id, event).await;
+                    let _ = self.send_midi_event_at(device_id, event, timestamp).await;
                 }
             }
         }
@@ -714,16 +786,6 @@ impl<B: Backend> VoicesHandler<B> {
             .ok_or(Error::VoiceNotFound(id))
     }
 }
-
-#[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
-async fn wait_until_timestamp(timestamp: Option<Instant>) {
-    if let Some(timestamp) = timestamp {
-        tokio::time::sleep_until(tokio::time::Instant::from_std(timestamp)).await;
-    }
-}
-
-#[cfg(all(feature = "midi", target_arch = "wasm32"))]
-async fn wait_until_timestamp(_timestamp: Option<Instant>) {}
 
 fn bump_note_generation(state: &mut State, id: VoiceId, note: u8) -> u64 {
     let generation = state.next_voice_note_generation;
@@ -1276,6 +1338,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                         midi_velocity,
                         polyphony,
                         mono_legato,
+                        None,
                     )
                     .await
                     .map(|_| ());
@@ -1302,7 +1365,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             if let Some(device_id) = midi_output {
                 return self
-                    .midi_pool_note_off(id, device_id, midi_channel, note, polyphony)
+                    .midi_pool_note_off(id, device_id, midi_channel, note, polyphony, None)
                     .await;
             }
         }
@@ -2924,6 +2987,85 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
+        }
+
+        /// Dispatching a full tick's batch of future-timestamped MIDI notes
+        /// must return immediately (no inline sleeping on the runtime task)
+        /// and enqueue every event with its exact scheduled deadline, with
+        /// note-on before note-off per pitch.
+        #[tokio::test]
+        async fn batch_dispatch_of_future_notes_returns_without_sleeping() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 8, false).await;
+
+            let start = Instant::now();
+            let lookahead = Duration::from_millis(50);
+            let base = start + lookahead;
+
+            for i in 0..8u8 {
+                let on = base + Duration::from_millis(i as u64);
+                let off = base + Duration::from_millis(20 + i as u64);
+                handler.note_on_at(v, 60 + i, 1.0, Some(on)).await.unwrap();
+                handler.note_off_at(v, 60 + i, Some(off)).await.unwrap();
+            }
+
+            let elapsed = start.elapsed();
+            assert!(
+                elapsed < Duration::from_millis(25),
+                "MIDI dispatch must not park the runtime task until the \
+                 deadlines (lookahead {:?}): took {:?}",
+                lookahead,
+                elapsed
+            );
+
+            let events = drained_scheduled(&rx);
+            assert_eq!(events.len(), 16, "8 note-ons + 8 note-offs expected");
+            for i in 0..8u64 {
+                let note = 60 + i as u8;
+                let on = events
+                    .iter()
+                    .find(|e| e.1 == "on" && e.3 == note)
+                    .unwrap_or_else(|| panic!("missing note-on for {}", note));
+                let off = events
+                    .iter()
+                    .find(|e| e.1 == "off" && e.3 == note)
+                    .unwrap_or_else(|| panic!("missing note-off for {}", note));
+                assert_eq!(on.0, base + Duration::from_millis(i));
+                assert_eq!(off.0, base + Duration::from_millis(20 + i));
+                assert!(on.0 < off.0, "note-on must precede note-off");
+            }
+        }
+
+        /// A mono-pool steal scheduled for a single future deadline emits
+        /// NoteOn(A), NoteOff(A), NoteOn(B) — and that order must survive
+        /// the output thread's timestamp heap (creation-seq tie-break),
+        /// so B is not killed by A's release.
+        #[tokio::test]
+        async fn same_deadline_steal_keeps_order_through_output_heap() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let deadline = Instant::now() + Duration::from_millis(30);
+
+            handler.note_on_at(v, 60, 1.0, Some(deadline)).await.unwrap();
+            handler.note_on_at(v, 64, 0.5, Some(deadline)).await.unwrap(); // steals 60
+
+            // Replay the enqueued events through the same structure the
+            // output thread uses.
+            let mut heap = std::collections::BinaryHeap::new();
+            while let Ok(scheduled) = rx.try_recv() {
+                assert_eq!(scheduled.timestamp, deadline);
+                heap.push(scheduled);
+            }
+
+            let order: Vec<(&'static str, u8)> = std::iter::from_fn(|| heap.pop())
+                .map(|s| match s.event {
+                    QueuedMidiEvent::NoteOn { note, .. } => ("on", note),
+                    QueuedMidiEvent::NoteOff { note, .. } => ("off", note),
+                    other => panic!("unexpected MIDI event: {:?}", other),
+                })
+                .collect();
+
+            assert_eq!(order, vec![("on", 60), ("off", 60), ("on", 64)]);
         }
 
         // Acceptance #1: overlapping stream A on, B on, A off ⇒
