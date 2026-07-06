@@ -80,19 +80,35 @@ Known limitations:
   `N regions parsed, M loaded, K dropped (reason: count, ...)` once per
   instrument (`SfzInstrument::diagnostics`), re-surfaced by
   `handlers/sfz.rs::load` via tracing
-- [ ] **SFZ-4** (CRITICAL) SFZ region matching never runs at note-on: the v2
-  core rewrite kept `Sfz::find_regions` (handlers/sfz.rs) but dropped its call
-  site — `VoicesHandler::note_on_audio_at` (handlers/voices.rs:445) only
-  handles `sample_id`, so `sfz_voice_*` spawns with default params
-  (`bufnum=0`, `rate=1`, `release=0.01`, `loop=0`): wrong sample, no
-  repitching, ignored ampeg envelope, click on note-off. This is the real
-  root cause behind the "NOTE_OFF/sustain" symptom in
-  kb/tickets/core-concepts/sfz-instrument (the ticket's "melodies don't send
-  NOTE_OFF" claim is stale — they do, handlers/melodies.rs:345).
-  The region-selection helper is ready:
-  `handlers::sfz::sfz_note_spawn_params` (tested); remaining work is a small
-  patch in `note_on_audio_at` to call it (exact diff in the SFZ work report,
-  blocked on voices.rs being owned by concurrent work at the time)
+- [x] **SFZ-4** (CRITICAL) SFZ region matching never ran at note-on — fixed:
+  `note_on_audio_at` now calls `handlers::sfz::sfz_note_spawn_params` when the
+  voice has an SFZ instrument (correct region/buffer, repitching, ampeg
+  envelope, note-off release); notes with no matching region are skipped
+  instead of playing buffer 0
+
+## Audio Path / Hot-Reload Hotlist Close-Out (2026-07-06)
+
+All ten hotlist items landed (reload staging off the tick task, gate-release
+teardown, route-mixer placement, effect chain order, pattern anchoring +
+content swaps, MIDI dispatch threads, param diff snapshots, synthdef body
+hashing + shared-port reconcile, de-click package, sample/SFZ buffer-swap
+safety). Known limitations deliberately left open:
+
+- [ ] **AP-1** Buffers displaced by a sample/SFZ content reload are freed
+  after a fixed 500 ms grace; a loop-mode note still reading past that goes
+  silent (no glitch). Proper fix needs per-buffer node refcounting —
+  adjacent to the `/n_end` bookkeeping already noted in CR-13
+- [ ] **AP-2** Direct `SampleMessage::Load`/`SfzMessage::Load` (non-reload
+  path) still load inline on the runtime task; only reload rides the
+  off-task staging plan
+- [ ] **AP-3** SFZ change detection is path-only: editing a .sfz's
+  *referenced sample files* in place isn't detected (the buffer-swap
+  discipline keeps it safe once detected)
+- [ ] **AP-4** Route-diff mixer frees (re-routing a live voice) are still
+  immediate, not grace-deferred — re-routing mid-note can truncate the
+  routed tail
+- [ ] **AP-5** Rapid reloads queued during staging apply every intermediate
+  state in order rather than latest-wins
 
 ## Low (deferred)
 
