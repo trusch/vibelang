@@ -42,11 +42,16 @@ print(result);
 let filename = "my file with spaces.txt";
 exec_with_args("touch", [filename]);
 
+// Clean up the demo file the same way
+exec_with_args("rm", [filename]);
+
 // ============================================================
 // FULL COMMAND RESULT
 // ============================================================
 
-// Get stdout, stderr, status, and success flag
+// Get stdout, stderr, status, and success flag.
+// NOTE: this command fails on purpose - the point is to show that
+// exec_full captures stderr and the exit status instead of aborting.
 let result = exec_full("ls /nonexistent 2>&1");
 
 print("stdout: " + result.stdout);
@@ -124,8 +129,11 @@ let has_ffmpeg = exec_status("which ffmpeg") == 0;
 let has_sox = exec_status("which sox") == 0;
 
 if has_ffmpeg {
-    // Convert a sample to a different format
-    let result = exec_full("ffmpeg -i input.wav -ar 44100 output.wav -y");
+    // Generate a short test tone so the pipeline has a real input file
+    exec_full("ffmpeg -f lavfi -i sine=frequency=440:duration=0.2 -ar 48000 exec_demo_input.wav -y");
+
+    // Convert the sample to a different sample rate
+    let result = exec_full("ffmpeg -i exec_demo_input.wav -ar 44100 exec_demo_output.wav -y");
     if result.success {
         print("Conversion successful!");
     } else {
@@ -134,13 +142,19 @@ if has_ffmpeg {
 }
 
 if has_sox {
+    // sox can synthesize its own test file
+    shell("sox -n exec_demo_sox.wav synth 0.2 sine 440");
+
     // Get audio file info
-    let info = exec("soxi drums.wav");
+    let info = exec("soxi exec_demo_sox.wav");
     print(info);
 
     // Apply effects with sox
-    shell("sox input.wav output.wav reverb 50 50 100");
+    shell("sox exec_demo_sox.wav exec_demo_reverb.wav reverb 50 50 100");
 }
+
+// Clean up the demo audio files so re-runs start fresh
+shell("rm -f exec_demo_input.wav exec_demo_output.wav exec_demo_sox.wav exec_demo_reverb.wav");
 
 // ============================================================
 // PRACTICAL EXAMPLE: Git Integration

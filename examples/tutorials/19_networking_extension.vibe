@@ -7,41 +7,85 @@
 //
 // LIMITATION: Basic version only supports HTTP (not HTTPS).
 // For HTTPS, enable the `ext-net-tls` feature.
+//
+// NOTE: Talking to servers on the internet needs internet access, and
+// public test services (like httpbin.org) can be slow, down, or change
+// their responses - such failures are environmental, not a bug in your
+// script or in VibeLang. To keep this tutorial runnable out of the box,
+// the executed requests below target VibeLang's own HTTP API, which every
+// `vibelang run` session serves on http://127.0.0.1:1606. The commented
+// variants show the same calls against public internet services. Every
+// live request is wrapped in try/catch so a failure just prints a message
+// and the tutorial continues; the pure-local utilities (URL encoding,
+// URL parsing, JSON) always run.
+
+let api = "http://127.0.0.1:1606";
 
 // ============================================================
 // HTTP GET REQUESTS
 // ============================================================
 
 // Simple GET request - returns body as string
-let response = http_get("http://httpbin.org/get");
-print(response);
-
-// GET request returning lines
-let lines = http_get_lines("http://example.com/data.txt");
-for line in lines {
-    print(line);
+try {
+    let response = http_get(api + "/transport");
+    // Internet variant: http_get("http://httpbin.org/get")
+    print(response);
+} catch (err) {
+    print("[network unavailable] http_get failed: " + err);
 }
 
-// GET request with JSON parsing
-let data = http_get_json("http://httpbin.org/json");
-print("Title: " + data.slideshow.title);
+// GET request returning an array of lines
+// (most useful for line-oriented text resources)
+try {
+    let lines = http_get_lines(api + "/transport");
+    // Internet variant: http_get_lines("http://example.com/data.txt")
+    for line in lines {
+        print(line);
+    }
+} catch (err) {
+    print("[network unavailable] http_get_lines failed: " + err);
+}
+
+// GET request with JSON parsing - returns a Rhai map
+try {
+    let data = http_get_json(api + "/transport");
+    print("Current tempo: " + data.bpm + " BPM, running: " + data.running);
+    // Internet variant:
+    // let data = http_get_json("http://httpbin.org/json");
+    // print("Title: " + data.slideshow.title);
+} catch (err) {
+    print("[network unavailable] http_get_json failed: " + err);
+}
 
 // ============================================================
 // HTTP POST REQUESTS
 // ============================================================
 
-// POST with form data
-let result = http_post("http://httpbin.org/post", "name=vibelang&version=1.0");
-print(result);
+// POST with form data (this endpoint ignores the body; a service like
+// httpbin.org/post would echo it back)
+try {
+    let result = http_post(api + "/transport/start", "name=vibelang&version=1.0");
+    // Internet variant: http_post("http://httpbin.org/post", "name=vibelang&version=1.0")
+    print(result);
+} catch (err) {
+    print("[network unavailable] http_post failed: " + err);
+}
 
-// POST with JSON data
+// POST with JSON data - the map is serialized to a JSON body,
+// and the JSON response comes back as a Rhai map
 let payload = #{
-    title: "My Song",
-    bpm: 120,
-    key: "C minor"
+    beat: 0.0
 };
-let response = http_post_json("http://httpbin.org/post", payload);
-print("Response: " + response.json);
+try {
+    let response = http_post_json(api + "/transport/seek", payload);
+    print("Seeked to beat " + response.current_beat + " at " + response.bpm + " BPM");
+    // Internet variant:
+    // let payload = #{ title: "My Song", bpm: 120, key: "C minor" };
+    // let response = http_post_json("http://httpbin.org/post", payload);
+    // print("Response: " + response.json);
+} catch (err) {
+    print("[network unavailable] http_post_json failed: " + err);
+}
 
 // ============================================================
 // URL UTILITIES

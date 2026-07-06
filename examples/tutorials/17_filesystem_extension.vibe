@@ -4,6 +4,24 @@
 //
 // NOTE: This extension must be enabled with the `ext-fs` feature flag.
 // Run with: vibelang run --ext-fs example.vibe
+//
+// This tutorial is self-contained: every file and directory it reads,
+// copies, renames, or removes is created by the script first, and a
+// cleanup section at the end removes everything so repeated runs stay
+// clean.
+
+// ============================================================
+// WRITING FILES
+// ============================================================
+
+// Write content to a file (creates or overwrites)
+write_file("my_notes.txt", "Remember: the bridge needs more cowbell.\n");
+
+// Append content to a file
+append_file("my_notes.txt", "Also: try a half-time feel in the outro.\n");
+
+// Write a multi-line file we'll read back line by line
+write_file("song_list.txt", "Midnight Drive\nNeon Rain\nLast Train Home\n");
 
 // ============================================================
 // READING FILES
@@ -20,87 +38,83 @@ for line in lines {
 }
 
 // ============================================================
-// WRITING FILES
-// ============================================================
-
-// Write content to a file (creates or overwrites)
-write_file("output.txt", "Hello from VibeLang!\n");
-
-// Append content to a file
-append_file("output.txt", "Adding more content...\n");
-
-// ============================================================
 // FILE INFORMATION
 // ============================================================
 
 // Check if a file exists
-if file_exists("config.json") {
-    print("Config file found!");
+if file_exists("my_notes.txt") {
+    print("Notes file found!");
 }
 
-// Check if path is a directory
+// Check if path is a directory (negative branch is harmless)
 if is_dir("samples") {
     print("Samples directory exists");
 }
 
 // Check if path is a file
-if is_file("main.vibe") {
-    print("Main script exists");
+if is_file("song_list.txt") {
+    print("Song list is a regular file");
 }
 
 // Get file size in bytes
-let size = file_size("audio.wav");
-print("Audio file size: " + size + " bytes");
+let size = file_size("my_notes.txt");
+print("Notes file size: " + size + " bytes");
 
 // ============================================================
 // DIRECTORY OPERATIONS
 // ============================================================
 
+// Create a directory
+create_dir("fs_demo");
+
+// Create nested directories in one call
+create_dir_all("fs_demo/renders/2024");
+
 // List directory contents
-let files = list_dir("samples");
-for file in files {
-    print("Found: " + file);
+let entries = list_dir("fs_demo");
+for entry in entries {
+    print("Found in fs_demo: " + entry);
 }
 
-// Create a directory
-create_dir("output");
-
-// Create nested directories
-create_dir_all("output/renders/2024");
-
-// Remove an empty directory
-remove_dir("temp_folder");
+// Remove an empty directory (only works when it's empty)
+create_dir("fs_demo/temp_folder");
+remove_dir("fs_demo/temp_folder");
 
 // ============================================================
 // FILE OPERATIONS
 // ============================================================
 
 // Copy a file
-let bytes_copied = copy_file("source.wav", "backup.wav");
+let bytes_copied = copy_file("my_notes.txt", "fs_demo/notes_backup.txt");
 print("Copied " + bytes_copied + " bytes");
 
 // Rename or move a file
-rename_file("old_name.txt", "new_name.txt");
+rename_file("fs_demo/notes_backup.txt", "fs_demo/notes_archive.txt");
 
 // Remove a file
-remove_file("temp_file.txt");
+write_file("fs_demo/temp_file.txt", "scratch data");
+remove_file("fs_demo/temp_file.txt");
 
 // ============================================================
 // GLOB PATTERN MATCHING
 // ============================================================
 
-// Find all .wav files in current directory
-let wav_files = glob("*.wav");
-for f in wav_files {
-    print("WAV file: " + f);
+// Find all .txt files in the current directory
+let txt_files = glob("*.txt");
+for f in txt_files {
+    print("Text file: " + f);
 }
 
-// Find all .vibe files recursively
-let all_vibes = glob("**/*.vibe");
+// Find all .vibe files in the current directory
+let all_vibes = glob("*.vibe");
 print("Found " + all_vibes.len() + " vibe files");
 
-// Find files with wildcards
+// Patterns can also reach into subdirectories,
+// e.g. glob("stems/**/*.wav") for a recursive search below stems/.
+
+// Find files with wildcards (an empty result is fine)
 let tracks = glob("track_??.wav");  // Matches track_01.wav, track_02.wav, etc.
+print("Matched " + tracks.len() + " track files");
 
 // ============================================================
 // PATH UTILITIES
@@ -134,7 +148,8 @@ import "stdlib/drums/kicks/kick_808.vibe";
 
 set_tempo(120);
 
-// Find all kick samples in a directory and load them
+// Find all kick samples in a directory and load them.
+// (If the directory doesn't exist, glob simply returns no matches.)
 let kick_files = glob("samples/kicks/*.wav");
 
 for file in kick_files {
@@ -171,3 +186,20 @@ if file_exists("session.json") {
     let loaded = json_parse(read_file("session.json"));
     print("Loaded session at tempo: " + loaded.tempo);
 }
+
+// ============================================================
+// CLEANUP
+// ============================================================
+
+// Remove everything this tutorial created so re-runs start fresh.
+remove_file("my_notes.txt");
+remove_file("song_list.txt");
+remove_file("session.json");
+remove_file("fs_demo/notes_archive.txt");
+
+// remove_dir only removes empty directories, so delete innermost first.
+remove_dir("fs_demo/renders/2024");
+remove_dir("fs_demo/renders");
+remove_dir("fs_demo");
+
+print("Filesystem tutorial complete, demo files cleaned up.");
