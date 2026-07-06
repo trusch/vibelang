@@ -1716,7 +1716,7 @@ mod tests {
 
         let mut input_buses = Vec::new();
         for input in old_inputs {
-            input_buses.push((input.name.clone(), state.alloc_audio_bus(input.channels)));
+            input_buses.push((input.name.clone(), state.alloc_audio_bus(input.channels).unwrap()));
         }
         state.voices.insert(
             voice_id,
@@ -1740,7 +1740,7 @@ mod tests {
             state
                 .input_routes
                 .insert((voice_id, input.to_string()), vec![InputRouteSrc::Silent]);
-            let route_node = state.alloc_node_id();
+            let route_node = state.alloc_node_id().unwrap();
             state.input_route_synths.insert(
                 (voice_id, input.to_string(), InputRouteSrc::Silent),
                 route_node,

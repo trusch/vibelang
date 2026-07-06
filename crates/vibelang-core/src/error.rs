@@ -139,6 +139,13 @@ pub enum Error {
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
 
+    /// An ID allocator ran out of IDs (node IDs, buffer IDs, or bus IDs).
+    ///
+    /// Surfaced instead of panicking so a single failed operation degrades
+    /// gracefully while the runtime keeps running.
+    #[error("{0} exhausted")]
+    IdsExhausted(&'static str),
+
     // =========================================================================
     // Channel Errors
     // =========================================================================

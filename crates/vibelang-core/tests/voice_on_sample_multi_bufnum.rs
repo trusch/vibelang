@@ -215,8 +215,8 @@ async fn note_on_with_two_samples_emits_distinct_bufnums() {
 
     {
         let mut s = state.write().await;
-        let group_node = s.alloc_node_id();
-        let group_bus = s.alloc_audio_bus(2);
+        let group_node = s.alloc_node_id().unwrap();
+        let group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             group,
             GroupState {
@@ -287,8 +287,8 @@ async fn trigger_with_two_samples_emits_distinct_bufnums() {
 
     {
         let mut s = state.write().await;
-        let group_node = s.alloc_node_id();
-        let group_bus = s.alloc_audio_bus(2);
+        let group_node = s.alloc_node_id().unwrap();
+        let group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             group,
             GroupState {

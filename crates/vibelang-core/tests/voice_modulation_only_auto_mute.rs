@@ -288,8 +288,8 @@ async fn setup(ports: &[OutputPort]) -> Harness {
         s.synthdefs.insert(SYNTH.to_string());
         s.synthdef_outputs.insert(SYNTH.to_string(), ports.to_vec());
 
-        let voice_group_node = s.alloc_node_id();
-        let voice_group_bus = s.alloc_audio_bus(2);
+        let voice_group_node = s.alloc_node_id().unwrap();
+        let voice_group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             voice_group,
             GroupState {
@@ -325,8 +325,8 @@ async fn setup(ports: &[OutputPort]) -> Harness {
 async fn add_group(state: &Arc<RwLock<State>>, id: u32, name: &str) -> (GroupId, u32) {
     let group_id = GroupId::new(id);
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     s.groups.insert(
         group_id,
         GroupState {

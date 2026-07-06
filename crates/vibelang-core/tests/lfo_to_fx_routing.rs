@@ -175,8 +175,8 @@ fn ar_port(name: &str, channels: u8) -> OutputPort {
 
 async fn insert_group(state: &Arc<RwLock<State>>, group_id: GroupId, name: &str) {
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     s.groups.insert(
         group_id,
         GroupState {
@@ -210,8 +210,8 @@ async fn insert_voice(
     let mut output_buses = Vec::with_capacity(ports.len());
     for p in ports {
         let bus = match p.rate {
-            PortRate::Ar => s.alloc_audio_bus(p.channels),
-            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().raw()),
+            PortRate::Ar => s.alloc_audio_bus(p.channels).unwrap(),
+            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().unwrap().raw()),
         };
         output_buses.push((p.name.clone(), bus));
     }
@@ -243,7 +243,7 @@ async fn insert_effect(
 ) -> NodeId {
     let mut s = state.write().await;
     s.synthdefs.insert(synthdef.to_string());
-    let node_id = s.alloc_node_id();
+    let node_id = s.alloc_node_id().unwrap();
     let audio_bus = s
         .groups
         .get(&group)

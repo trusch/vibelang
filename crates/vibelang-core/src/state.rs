@@ -462,9 +462,9 @@ impl ControlBusAllocator {
         }
     }
 
-    /// Allocate a new control bus.
-    pub fn allocate(&mut self) -> ControlBusId {
-        ControlBusId::new(self.inner.alloc().expect("control bus IDs exhausted"))
+    /// Allocate a new control bus, or `None` when the ID space is exhausted.
+    pub fn allocate(&mut self) -> Option<ControlBusId> {
+        self.inner.alloc().map(ControlBusId::new)
     }
 
     /// Return a control bus to the pool for reuse.
@@ -526,28 +526,28 @@ impl AudioBusAllocator {
         }
     }
 
-    /// Allocate a contiguous audio bus chunk of `channels` consecutive IDs.
+    /// Allocate a contiguous audio bus chunk of `channels` consecutive IDs,
+    /// or `None` when the ID space is exhausted.
     ///
     /// Reuses a freed chunk with a matching channel count if one exists,
     /// otherwise carves a fresh chunk from the monotonic counter.
-    pub fn alloc(&mut self, channels: u8) -> BusId {
+    pub fn alloc(&mut self, channels: u8) -> Option<BusId> {
         debug_assert!(channels >= 1, "channels must be >= 1");
         if let Some(idx) = self.free_list.iter().position(|&(_, c)| c == channels) {
             let (id, _) = self
                 .free_list
                 .remove(idx)
                 .expect("position returned a valid index");
-            return BusId::new(id);
+            return Some(BusId::new(id));
         }
         let id = self.next;
         let span = channels as u32;
-        let new_next = self
-            .next
-            .checked_add(span)
-            .expect("audio bus IDs exhausted");
-        assert!(new_next <= self.max, "audio bus IDs exhausted");
+        let new_next = self.next.checked_add(span)?;
+        if new_next > self.max {
+            return None;
+        }
         self.next = new_next;
-        BusId::new(id)
+        Some(BusId::new(id))
     }
 
     /// Return a previously allocated chunk to the pool for reuse.
@@ -1256,8 +1256,14 @@ impl State {
     }
 
     /// Allocate a new node ID.
-    pub fn alloc_node_id(&mut self) -> NodeId {
-        NodeId::new(self.node_ids.alloc().expect("node IDs exhausted"))
+    ///
+    /// Errors with [`crate::Error::IdsExhausted`] instead of panicking so a
+    /// failed allocation aborts one operation, not the runtime task.
+    pub fn alloc_node_id(&mut self) -> crate::Result<NodeId> {
+        self.node_ids
+            .alloc()
+            .map(NodeId::new)
+            .ok_or(crate::Error::IdsExhausted("node IDs"))
     }
 
     /// Return a node ID to the pool for reuse.
@@ -1266,8 +1272,11 @@ impl State {
     }
 
     /// Allocate a new buffer ID.
-    pub fn alloc_buffer_id(&mut self) -> crate::types::BufferId {
-        crate::types::BufferId::new(self.buffer_ids.alloc().expect("buffer IDs exhausted"))
+    pub fn alloc_buffer_id(&mut self) -> crate::Result<crate::types::BufferId> {
+        self.buffer_ids
+            .alloc()
+            .map(crate::types::BufferId::new)
+            .ok_or(crate::Error::IdsExhausted("buffer IDs"))
     }
 
     /// Return a buffer ID to the pool for reuse.
@@ -1280,8 +1289,10 @@ impl State {
     /// SuperCollider's `In.ar(bus, n)` reads `n` consecutive buses starting
     /// at `bus`, so a stereo allocation reserves the pair `(id, id+1)`.
     /// Reuses freed chunks with the same channel count when available.
-    pub fn alloc_audio_bus(&mut self, channels: u8) -> BusId {
-        self.audio_buses.alloc(channels)
+    pub fn alloc_audio_bus(&mut self, channels: u8) -> crate::Result<BusId> {
+        self.audio_buses
+            .alloc(channels)
+            .ok_or(crate::Error::IdsExhausted("audio bus IDs"))
     }
 
     /// Return a previously allocated audio bus chunk to the pool.
@@ -1298,7 +1309,7 @@ impl State {
     ///
     /// Convenience wrapper for [`alloc_audio_bus(2)`](Self::alloc_audio_bus)
     /// — each group gets its own stereo pair for audio routing.
-    pub fn alloc_bus_id(&mut self) -> BusId {
+    pub fn alloc_bus_id(&mut self) -> crate::Result<BusId> {
         self.alloc_audio_bus(2)
     }
 
@@ -1306,8 +1317,10 @@ impl State {
     ///
     /// Used for kr-rate output ports — `Out.kr` writes to a control bus that
     /// `MapN` later maps onto a target voice param. Reuses freed IDs FIFO.
-    pub fn alloc_control_bus(&mut self) -> ControlBusId {
-        self.control_buses.allocate()
+    pub fn alloc_control_bus(&mut self) -> crate::Result<ControlBusId> {
+        self.control_buses
+            .allocate()
+            .ok_or(crate::Error::IdsExhausted("control bus IDs"))
     }
 
     /// Return a control bus to the pool for reuse.
@@ -1552,8 +1565,8 @@ mod tests {
     #[test]
     fn test_alloc_node_id() {
         let mut state = State::new();
-        let id1 = state.alloc_node_id();
-        let id2 = state.alloc_node_id();
+        let id1 = state.alloc_node_id().unwrap();
+        let id2 = state.alloc_node_id().unwrap();
         assert_ne!(id1, id2);
     }
 
@@ -1627,11 +1640,11 @@ mod tests {
     #[test]
     fn test_state_free_node_id_reuse() {
         let mut state = State::new();
-        let id1 = state.alloc_node_id();
-        let id2 = state.alloc_node_id();
+        let id1 = state.alloc_node_id().unwrap();
+        let id2 = state.alloc_node_id().unwrap();
         state.free_node_id(id1);
         // Next alloc should reuse id1
-        let id3 = state.alloc_node_id();
+        let id3 = state.alloc_node_id().unwrap();
         assert_eq!(id3, id1);
         assert_ne!(id3, id2);
     }
@@ -1639,10 +1652,10 @@ mod tests {
     #[test]
     fn test_state_free_buffer_id_reuse() {
         let mut state = State::new();
-        let b1 = state.alloc_buffer_id();
-        let b2 = state.alloc_buffer_id();
+        let b1 = state.alloc_buffer_id().unwrap();
+        let b2 = state.alloc_buffer_id().unwrap();
         state.free_buffer_id(b1);
-        let b3 = state.alloc_buffer_id();
+        let b3 = state.alloc_buffer_id().unwrap();
         assert_eq!(b3, b1);
         assert_ne!(b3, b2);
     }
@@ -1650,22 +1663,87 @@ mod tests {
     #[test]
     fn test_control_bus_alloc_free_reuse() {
         let mut alloc = ControlBusAllocator::new(1000);
-        let b1 = alloc.allocate();
-        let b2 = alloc.allocate();
+        let b1 = alloc.allocate().unwrap();
+        let b2 = alloc.allocate().unwrap();
         assert_eq!(b1.raw(), 1000);
         assert_eq!(b2.raw(), 1001);
         alloc.free(b1);
-        let b3 = alloc.allocate();
+        let b3 = alloc.allocate().unwrap();
         assert_eq!(b3.raw(), 1000);
     }
 
     #[test]
     fn test_control_bus_reset() {
         let mut alloc = ControlBusAllocator::new(1000);
-        alloc.allocate();
-        alloc.allocate();
+        alloc.allocate().unwrap();
+        alloc.allocate().unwrap();
         alloc.reset();
-        assert_eq!(alloc.allocate().raw(), 1000);
+        assert_eq!(alloc.allocate().unwrap().raw(), 1000);
+    }
+
+    // =========================================================================
+    // Exhaustion tests (CR-12 / CR-13): allocators return None/Err, never panic
+    // =========================================================================
+
+    #[test]
+    fn test_free_list_allocator_exhaustion_returns_none() {
+        let mut alloc = FreeListAllocator::new(10, 12);
+        assert!(alloc.alloc().is_some());
+        assert!(alloc.alloc().is_some());
+        assert_eq!(alloc.alloc(), None, "counter at max must not panic");
+        // Freeing brings the ID space back.
+        alloc.free(10);
+        assert_eq!(alloc.alloc(), Some(10));
+    }
+
+    #[test]
+    fn test_state_alloc_node_id_exhaustion_errs_and_recovers() {
+        let mut state = State::new();
+        state.node_ids = FreeListAllocator::new(1000, 1001);
+        let id = state.alloc_node_id().unwrap();
+        assert!(matches!(
+            state.alloc_node_id(),
+            Err(crate::Error::IdsExhausted(_))
+        ));
+        state.free_node_id(id);
+        assert_eq!(state.alloc_node_id().unwrap(), id);
+    }
+
+    #[test]
+    fn test_state_alloc_buffer_id_exhaustion_errs() {
+        let mut state = State::new();
+        state.buffer_ids = FreeListAllocator::new(0, 1);
+        let b = state.alloc_buffer_id().unwrap();
+        assert!(matches!(
+            state.alloc_buffer_id(),
+            Err(crate::Error::IdsExhausted(_))
+        ));
+        state.free_buffer_id(b);
+        assert_eq!(state.alloc_buffer_id().unwrap(), b);
+    }
+
+    #[test]
+    fn test_state_alloc_control_bus_exhaustion_errs() {
+        let mut state = State::new();
+        state.control_buses = ControlBusAllocator::new(u32::MAX);
+        assert!(matches!(
+            state.alloc_control_bus(),
+            Err(crate::Error::IdsExhausted(_))
+        ));
+    }
+
+    #[test]
+    fn test_state_alloc_audio_bus_exhaustion_errs_and_reuses_freed_chunk() {
+        let mut state = State::new();
+        state.audio_buses = AudioBusAllocator::new(u32::MAX - 1);
+        // A stereo pair would overflow the counter — must Err, not panic.
+        assert!(matches!(
+            state.alloc_audio_bus(2),
+            Err(crate::Error::IdsExhausted(_))
+        ));
+        // A freed chunk makes the same request succeed again.
+        state.free_audio_bus(BusId::new(u32::MAX - 1), 2);
+        assert_eq!(state.alloc_audio_bus(2).unwrap().raw(), u32::MAX - 1);
     }
 
     // =========================================================================
@@ -1675,13 +1753,13 @@ mod tests {
     #[test]
     fn test_audio_bus_alloc_free_alloc_reuses() {
         let mut alloc = AudioBusAllocator::new(16);
-        let a = alloc.alloc(2);
-        let b = alloc.alloc(2);
+        let a = alloc.alloc(2).unwrap();
+        let b = alloc.alloc(2).unwrap();
         assert_eq!(a.raw(), 16);
         assert_eq!(b.raw(), 18);
         alloc.free(a, 2);
         // Second alloc of matching width reuses the freed pair.
-        let c = alloc.alloc(2);
+        let c = alloc.alloc(2).unwrap();
         assert_eq!(c.raw(), 16);
         // Counter did not advance for the reused chunk.
         assert_eq!(alloc.allocated_count(), 4);
@@ -1690,17 +1768,17 @@ mod tests {
     #[test]
     fn test_audio_bus_stereo_pair_consecutive_on_reuse() {
         let mut alloc = AudioBusAllocator::new(16);
-        let pair = alloc.alloc(2);
+        let pair = alloc.alloc(2).unwrap();
         // The pair occupies (pair, pair+1) — confirm the next alloc is offset by 2.
-        let next = alloc.alloc(2);
+        let next = alloc.alloc(2).unwrap();
         assert_eq!(next.raw(), pair.raw() + 2);
 
         alloc.free(pair, 2);
-        let reused = alloc.alloc(2);
+        let reused = alloc.alloc(2).unwrap();
         assert_eq!(reused.raw(), pair.raw());
         // After reuse, a fresh stereo alloc continues from the monotonic frontier
         // without colliding with the reused pair.
-        let fresh = alloc.alloc(2);
+        let fresh = alloc.alloc(2).unwrap();
         assert_eq!(fresh.raw(), next.raw() + 2);
         assert_ne!(fresh.raw(), reused.raw());
         assert_ne!(fresh.raw(), reused.raw() + 1);
@@ -1710,14 +1788,14 @@ mod tests {
     fn test_audio_bus_hammer_bounded_growth() {
         let mut alloc = AudioBusAllocator::new(16);
         // Prime a steady-state working set of 4 stereo buses.
-        let initial: Vec<BusId> = (0..4).map(|_| alloc.alloc(2)).collect();
+        let initial: Vec<BusId> = (0..4).map(|_| alloc.alloc(2).unwrap()).collect();
         let baseline_count = alloc.allocated_count();
         let mut held = initial.clone();
         for _ in 0..1000 {
             // Release the oldest, allocate a replacement — working set stays at 4.
             let evicted = held.remove(0);
             alloc.free(evicted, 2);
-            held.push(alloc.alloc(2));
+            held.push(alloc.alloc(2).unwrap());
         }
         // The monotonic counter never advanced past the priming round.
         assert_eq!(alloc.allocated_count(), baseline_count);
@@ -1734,37 +1812,37 @@ mod tests {
         // A freed mono chunk is not handed out to a stereo request,
         // and vice versa — preventing accidental width mismatches.
         let mut alloc = AudioBusAllocator::new(16);
-        let mono = alloc.alloc(1);
+        let mono = alloc.alloc(1).unwrap();
         assert_eq!(mono.raw(), 16);
         alloc.free(mono, 1);
         // Stereo alloc should NOT reuse the mono slot (different width).
-        let stereo = alloc.alloc(2);
+        let stereo = alloc.alloc(2).unwrap();
         assert_ne!(stereo.raw(), mono.raw());
         assert_eq!(stereo.raw(), 17);
         // The mono chunk is still in the pool for a matching mono request.
-        let mono2 = alloc.alloc(1);
+        let mono2 = alloc.alloc(1).unwrap();
         assert_eq!(mono2.raw(), mono.raw());
     }
 
     #[test]
     fn test_audio_bus_reset() {
         let mut alloc = AudioBusAllocator::new(16);
-        alloc.alloc(2);
-        alloc.alloc(2);
+        alloc.alloc(2).unwrap();
+        alloc.alloc(2).unwrap();
         alloc.reset();
-        assert_eq!(alloc.alloc(2).raw(), 16);
+        assert_eq!(alloc.alloc(2).unwrap().raw(), 16);
         assert_eq!(alloc.allocated_count(), 2);
     }
 
     #[test]
     fn test_state_alloc_audio_bus_reuses() {
         let mut state = State::new();
-        let a = state.alloc_audio_bus(2);
-        let b = state.alloc_audio_bus(2);
+        let a = state.alloc_audio_bus(2).unwrap();
+        let b = state.alloc_audio_bus(2).unwrap();
         assert_eq!(a.raw(), 16);
         assert_eq!(b.raw(), 18);
         state.free_audio_bus(a, 2);
-        let c = state.alloc_audio_bus(2);
+        let c = state.alloc_audio_bus(2).unwrap();
         assert_eq!(c.raw(), a.raw());
     }
 
@@ -1772,8 +1850,8 @@ mod tests {
     fn test_state_alloc_bus_id_back_compat() {
         // The legacy stereo helper still produces consecutive pairs.
         let mut state = State::new();
-        let a = state.alloc_bus_id();
-        let b = state.alloc_bus_id();
+        let a = state.alloc_bus_id().unwrap();
+        let b = state.alloc_bus_id().unwrap();
         assert_eq!(b.raw(), a.raw() + 2);
     }
 

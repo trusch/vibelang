@@ -67,7 +67,7 @@ impl<B: Backend> GroupsHandler<B> {
             // Allocate node ID for link synth
             let link_node_id = {
                 let mut state = self.state.write().await;
-                state.alloc_node_id()
+                state.alloc_node_id()?
             };
 
             // Create the link synth
@@ -135,8 +135,8 @@ impl<B: Backend> Groups for GroupsHandler<B> {
         }
 
         // Allocate node ID and audio bus
-        let node_id = state.alloc_node_id();
-        let audio_bus = state.alloc_bus_id();
+        let node_id = state.alloc_node_id()?;
+        let audio_bus = state.alloc_bus_id()?;
 
         // Determine target for placement
         let (target, action) = if let Some(parent_id) = parent {

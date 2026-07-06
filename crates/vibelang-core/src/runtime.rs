@@ -1003,12 +1003,24 @@ impl<B: Backend> Runtime<B> {
         let mut changed = false;
 
         for reconcile in pending {
-            let outcome = reload::reconcile_voice_ports(
+            let outcome = match reload::reconcile_voice_ports(
                 &mut state,
                 reconcile.voice_id,
                 &reconcile.new_ports,
                 effective_routes,
-            );
+            ) {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    // Bus allocation failed (ID space exhausted) — skip this
+                    // voice's port reconcile rather than aborting the reload.
+                    tracing::error!(
+                        "Reload: port reconcile failed for voice {:?}: {}",
+                        reconcile.voice_id,
+                        e
+                    );
+                    continue;
+                }
+            };
             if !outcome.diff.is_unchanged() {
                 changed = true;
             }

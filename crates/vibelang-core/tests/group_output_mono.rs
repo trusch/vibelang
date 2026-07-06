@@ -220,8 +220,8 @@ async fn insert_group(
     hardware: Option<(u32, u32)>,
 ) -> u32 {
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     let (output_bus, output_channels) = match hardware {
         Some((b, ch)) => (Some(b), Some(ch)),
         None => (None, None),

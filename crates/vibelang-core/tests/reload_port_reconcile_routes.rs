@@ -239,8 +239,8 @@ async fn setup(ports: &[OutputPort]) -> Harness {
         s.synthdefs.insert(SYNTH.to_string());
         s.synthdef_outputs.insert(SYNTH.to_string(), ports.to_vec());
 
-        let voice_group_node = s.alloc_node_id();
-        let voice_group_bus = s.alloc_audio_bus(2);
+        let voice_group_node = s.alloc_node_id().unwrap();
+        let voice_group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             voice_group,
             GroupState {
@@ -258,8 +258,8 @@ async fn setup(ports: &[OutputPort]) -> Harness {
             },
         );
 
-        let dest_group_node = s.alloc_node_id();
-        let dest_group_bus = s.alloc_audio_bus(2);
+        let dest_group_node = s.alloc_node_id().unwrap();
+        let dest_group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             dest_group,
             GroupState {
@@ -279,7 +279,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
 
         let mut output_buses = Vec::with_capacity(ports.len());
         for p in ports {
-            output_buses.push((p.name.clone(), s.alloc_audio_bus(p.channels)));
+            output_buses.push((p.name.clone(), s.alloc_audio_bus(p.channels).unwrap()));
         }
         s.voices.insert(
             voice,
@@ -302,7 +302,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
             // Pretend `finalize` already ran on a prior reload and these
             // mixer synths are alive. We just need a unique node id per
             // port so tests can identify which ones get freed.
-            let node = s.alloc_node_id();
+            let node = s.alloc_node_id().unwrap();
             s.route_synths
                 .insert((key.0, key.1, RouteDest::Group(dest_group)), node);
             mixer_nodes.push((p.name.clone(), node));
@@ -341,7 +341,7 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
 
     let outcome = {
         let mut s = h.state.write().await;
-        reconcile_voice_ports(&mut s, h.voice, &ports, &mut routes)
+        reconcile_voice_ports(&mut s, h.voice, &ports, &mut routes).unwrap()
     };
 
     assert!(
@@ -391,8 +391,8 @@ fn calculate_diff_is_identical_for_authored_and_prestripped_routes_on_rate_flip(
     current
         .synthdef_outputs
         .insert(synth.to_string(), old_ports.clone());
-    let group_node = current.alloc_node_id();
-    let group_bus = current.alloc_audio_bus(2);
+    let group_node = current.alloc_node_id().unwrap();
+    let group_bus = current.alloc_audio_bus(2).unwrap();
     current.groups.insert(
         group,
         GroupState {
@@ -409,7 +409,7 @@ fn calculate_diff_is_identical_for_authored_and_prestripped_routes_on_rate_flip(
             output_channels: None,
         },
     );
-    let env_bus = current.alloc_audio_bus(1);
+    let env_bus = current.alloc_audio_bus(1).unwrap();
     current.voices.insert(
         voice,
         VoiceState {
@@ -510,7 +510,7 @@ async fn port_removed_drops_route_warns_and_finalize_frees_orphan_mixer() {
 
     let outcome = {
         let mut s = h.state.write().await;
-        reconcile_voice_ports(&mut s, h.voice, &new_ports, &mut routes)
+        reconcile_voice_ports(&mut s, h.voice, &new_ports, &mut routes).unwrap()
     };
 
     // Reconcile reports the dropped port back to the caller — this is
@@ -602,7 +602,7 @@ async fn port_renamed_drops_old_warns_and_new_name_is_silent() {
 
     let outcome = {
         let mut s = h.state.write().await;
-        reconcile_voice_ports(&mut s, h.voice, &new_ports, &mut routes)
+        reconcile_voice_ports(&mut s, h.voice, &new_ports, &mut routes).unwrap()
     };
 
     assert_eq!(outcome.diff.removed, vec![port("cv_old", 1)]);

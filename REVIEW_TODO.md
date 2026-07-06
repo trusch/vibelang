@@ -48,8 +48,18 @@ Known limitations:
 - [x] **CR-9** Voice with empty synthdef — now logs warning
 - [x] **CR-10** Pattern `.on()` doesn't verify voice exists — now warns
 - [x] **CR-11** MIDI channel convention — standardized to 1-16 (musician convention)
-- [ ] **CR-12** ControlBusAllocator never reclaims buses
-- [ ] **CR-13** node_id and buffer_id allocators never reclaim
+- [x] **CR-12** ControlBusAllocator never reclaims buses — free-list reclamation wired
+  through voice/effect/route/summer/adapter/trigger teardown and reload port diffs;
+  exhaustion now returns `Error::IdsExhausted` instead of panicking the runtime task
+- [x] **CR-13** node_id and buffer_id allocators never reclaim — buffer IDs freed on
+  sample/SFZ unload and recording cancel; node IDs recycled on group/effect/route
+  teardown and on voice delete/stop, polyphony eviction, choke, and same-pitch
+  retrigger (all explicit `/n_free` paths); all four `expect()` exhaustion panics
+  converted to `Error::IdsExhausted` results. Still leaked (ambiguous lifetime,
+  skipped deliberately): node IDs of gate-released nodes (`note_off`,
+  `graceful_delete`) and self-freeing one-shot synths (doneAction=2, incl. the
+  MIDI-fallback packed-event synths) — reclaiming those safely needs `/n_end`
+  bookkeeping that dedupes against explicit-free recycling
 - [x] **CR-14** Fade duration not validated — minimum 1/64th note
 - [x] **CR-15** Pattern swing — already clamped (false positive)
 

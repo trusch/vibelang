@@ -141,7 +141,7 @@ impl<B: Backend> Sfz for SfzHandler<B> {
             for load in buffer_loads {
                 let our_buffer_id = {
                     let mut state = self.state.write().await;
-                    state.alloc_buffer_id()
+                    state.alloc_buffer_id()?
                 };
 
                 self.backend

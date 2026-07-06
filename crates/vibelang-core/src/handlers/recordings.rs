@@ -135,7 +135,7 @@ impl<B: Backend> RecordingsHandler<B> {
         // Allocate node ID for the recording synth
         let node_id = {
             let mut state = self.state.write().await;
-            state.alloc_node_id()
+            state.alloc_node_id()?
         };
 
         // Choose synthdef based on channel count
@@ -255,7 +255,7 @@ impl<B: Backend> Recordings for RecordingsHandler<B> {
             }
 
             // Allocate buffer ID
-            let buffer_id = state.alloc_buffer_id();
+            let buffer_id = state.alloc_buffer_id()?;
 
             // Get audio bus from the group
             let group_state = state

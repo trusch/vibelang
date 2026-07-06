@@ -271,8 +271,8 @@ fn register_analyzer_fixture() {
 
 async fn insert_group(state: &Arc<RwLock<State>>, group_id: GroupId, name: &str) -> (NodeId, u32) {
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     let bus_id = bus.raw();
     s.groups.insert(
         group_id,

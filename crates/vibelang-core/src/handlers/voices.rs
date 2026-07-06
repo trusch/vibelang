@@ -136,7 +136,7 @@ impl<B: Backend> VoicesHandler<B> {
 
         let mut params = std::collections::HashMap::new();
         params.insert("packed_data".to_string(), packed_data);
-        let node_id = { self.state.write().await.alloc_node_id() };
+        let node_id = { self.state.write().await.alloc_node_id()? };
         if let Err(e) = self
             .backend
             .create_synth(synthdef, node_id, NodeId::new(0), AddAction::Tail, &params)
@@ -504,12 +504,16 @@ impl<B: Backend> VoicesHandler<B> {
                 }
             }
 
-            let node_id = state.alloc_node_id();
+            let node_id = state.alloc_node_id()?;
             bump_note_generation(&mut state, id, note);
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
+            // The replaced same-pitch node is /n_free'd below — recycle its ID.
+            if let Some(old) = old_node {
+                state.free_node_id(old);
+            }
             let param_bindings = state.active_param_bindings_for_voice(id);
             let bend_baseline_updates =
                 Self::bend_baseline_updates_for_spawn(&state, id, &params, &param_bindings);
@@ -694,11 +698,11 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let mut output_buses = Vec::with_capacity(ports.len());
         for port in &ports {
             let bus = match port.rate {
-                vibelang_dsp::PortRate::Ar => state.alloc_audio_bus(port.channels),
+                vibelang_dsp::PortRate::Ar => state.alloc_audio_bus(port.channels)?,
                 // Tr ports share the control-bus allocator with Kr — both
                 // ride the Out.kr path; only downstream routing differs.
                 vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
-                    BusId::new(state.alloc_control_bus().raw())
+                    BusId::new(state.alloc_control_bus()?.raw())
                 }
             };
             output_buses.push((port.name.clone(), bus));
@@ -803,6 +807,11 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let pool_cleanup = voice.config.midi_output.map(|dev| (dev, pool_events));
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
+            // Recycle the node IDs: every node is explicitly /n_free'd below,
+            // so after this call the IDs cannot reach the backend again.
+            for node in &voice_nodes {
+                state.free_node_id(*node);
+            }
             (voice_nodes, route_nodes, pool_cleanup)
         };
         #[cfg(not(feature = "midi"))]
@@ -817,6 +826,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
+            for node in &voice_nodes {
+                state.free_node_id(*node);
+            }
             (voice_nodes, route_nodes)
         };
 
@@ -1004,7 +1016,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let round_robin_count = voice.config.round_robin_count;
             let choke_group = voice.config.choke_group.clone();
 
-            let node_id = state.alloc_node_id();
+            let node_id = state.alloc_node_id()?;
 
             // Handle choke groups: collect nodes to choke from other voices in same group
             let mut choke_nodes = Vec::new();
@@ -1040,6 +1052,11 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                     voice.active_nodes.remove(0);
                     old_nodes.push(old_node);
                 }
+            }
+            // Recycle evicted/choked node IDs — every one of them is
+            // explicitly /n_free'd below, so the IDs are definitively done.
+            for node in old_nodes.iter().chain(choke_nodes.iter()) {
+                state.free_node_id(*node);
             }
             let param_bindings = state.active_param_bindings_for_voice(id);
             let bend_baseline_updates =
@@ -1097,6 +1114,10 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let mut nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
             nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
+            // Recycle the node IDs: every node is explicitly /n_free'd below.
+            for node in &nodes {
+                state.free_node_id(*node);
+            }
             (nodes, pool_cleanup)
         };
         #[cfg(not(feature = "midi"))]
@@ -1108,6 +1129,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
             let mut nodes = nodes;
             nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
+            for node in &nodes {
+                state.free_node_id(*node);
+            }
             nodes
         };
 
@@ -1248,7 +1272,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
             }
 
-            let node_id = state.alloc_node_id();
+            let node_id = state.alloc_node_id()?;
             bump_note_generation(&mut state, id, note);
 
             // Update voice state
@@ -1259,6 +1283,10 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
+            // The replaced same-pitch node is /n_free'd below — recycle its ID.
+            if let Some(old) = old_node {
+                state.free_node_id(old);
+            }
             let param_bindings = state.active_param_bindings_for_voice(id);
             let bend_baseline_updates =
                 Self::bend_baseline_updates_for_spawn(&state, id, &params, &param_bindings);
@@ -2440,6 +2468,127 @@ mod tests {
             2,
             "Held note nodes should be freed on delete"
         );
+    }
+
+    // =========================================================================
+    // Node ID Reclamation Tests (CR-13)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn delete_voice_recycles_node_ids() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config.clone()).await.unwrap();
+        handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        handler.note_on(voice_id, 64, 0.8).await.unwrap();
+        let high_water = state.read().await.node_ids.allocated_count();
+
+        handler.delete(voice_id).await.unwrap();
+        handler.create(voice_id, config).await.unwrap();
+        handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        handler.note_on(voice_id, 64, 0.8).await.unwrap();
+
+        assert_eq!(
+            state.read().await.node_ids.allocated_count(),
+            high_water,
+            "delete must recycle note-node IDs so recreate reuses them"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_voice_recycles_node_ids() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+        let high_water = state.read().await.node_ids.allocated_count();
+
+        handler.stop(voice_id).await.unwrap();
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+
+        assert_eq!(
+            state.read().await.node_ids.allocated_count(),
+            high_water,
+            "stop must recycle active-node IDs so later triggers reuse them"
+        );
+    }
+
+    #[tokio::test]
+    async fn trigger_polyphony_eviction_keeps_node_id_high_water_flat() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config =
+            VoiceConfig::new("test_voice", "test_synth", GroupId::new(1)).with_polyphony(2);
+        handler.create(voice_id, config).await.unwrap();
+
+        for _ in 0..10 {
+            handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+        }
+
+        // Steady state: polyphony sounding nodes + the one just allocated
+        // before the eviction recycles the oldest.
+        assert_eq!(
+            state.read().await.node_ids.allocated_count(),
+            3,
+            "polyphony eviction must recycle node IDs (high-water = polyphony + 1)"
+        );
+    }
+
+    #[tokio::test]
+    async fn note_on_same_pitch_retrigger_recycles_node_id() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        for _ in 0..5 {
+            handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        }
+
+        assert_eq!(
+            state.read().await.node_ids.allocated_count(),
+            2,
+            "same-pitch retrigger must recycle the replaced node's ID"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_id_exhaustion_fails_operation_but_handler_survives() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        // Shrink the node-ID space to exactly two IDs.
+        state.write().await.node_ids = crate::state::FreeListAllocator::new(1000, 1002);
+
+        handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        handler.note_on(voice_id, 64, 0.8).await.unwrap();
+        let err = handler.note_on(voice_id, 67, 0.8).await;
+        assert!(
+            matches!(err, Err(Error::IdsExhausted(_))),
+            "exhausted allocator must surface as Err, got {:?}",
+            err
+        );
+
+        // The failed note must not corrupt the handler: freeing IDs via stop
+        // makes the next note succeed again.
+        handler.stop(voice_id).await.unwrap();
+        handler.note_on(voice_id, 67, 0.8).await.unwrap();
     }
 
     // =========================================================================
@@ -3787,7 +3936,7 @@ mod tests {
 
         // Stereo pair returned to the pool — a new stereo alloc reuses bus 16.
         let mut state_write = state.write().await;
-        let bus = state_write.alloc_audio_bus(2);
+        let bus = state_write.alloc_audio_bus(2).unwrap();
         assert_eq!(bus.raw(), 16, "freed stereo pair must be reused");
     }
 
@@ -4032,7 +4181,7 @@ mod tests {
         // Next alloc reuses the freed id.
         let reused = {
             let mut s = state.write().await;
-            s.alloc_control_bus()
+            s.alloc_control_bus().unwrap()
         };
         assert_eq!(
             reused.raw(),
@@ -4049,15 +4198,15 @@ mod tests {
         let mut s = state.write().await;
 
         // Audio pool: alloc → free → alloc returns the same starting ID.
-        let a1 = s.alloc_audio_bus(1);
+        let a1 = s.alloc_audio_bus(1).unwrap();
         s.free_audio_bus(a1, 1);
-        let a2 = s.alloc_audio_bus(1);
+        let a2 = s.alloc_audio_bus(1).unwrap();
         assert_eq!(a1.raw(), a2.raw(), "audio bus is reused after free");
 
         // Control pool: alloc → free → alloc returns the same ID.
-        let c1 = s.alloc_control_bus();
+        let c1 = s.alloc_control_bus().unwrap();
         s.free_control_bus(c1);
-        let c2 = s.alloc_control_bus();
+        let c2 = s.alloc_control_bus().unwrap();
         assert_eq!(c1.raw(), c2.raw(), "control bus is reused after free");
 
         // The two pools live in disjoint ranges (audio < 1000 ≤ control).

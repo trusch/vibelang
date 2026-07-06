@@ -245,8 +245,8 @@ async fn insert_voice(
     let mut output_buses = Vec::with_capacity(ports.len());
     for p in ports {
         let bus = match p.rate {
-            PortRate::Ar => s.alloc_audio_bus(p.channels),
-            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().raw()),
+            PortRate::Ar => s.alloc_audio_bus(p.channels).unwrap(),
+            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().unwrap().raw()),
         };
         output_buses.push((p.name.clone(), bus));
     }
@@ -270,8 +270,8 @@ async fn insert_voice(
 /// Insert a group with a freshly-allocated stereo audio bus and node id.
 async fn insert_group(state: &Arc<RwLock<State>>, group_id: GroupId, name: &str) -> u32 {
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     s.groups.insert(
         group_id,
         GroupState {
@@ -358,8 +358,8 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     // on each.
     let target_active: Vec<NodeId> = {
         let mut s = state.write().await;
-        let n0 = s.alloc_node_id();
-        let n1 = s.alloc_node_id();
+        let n0 = s.alloc_node_id().unwrap();
+        let n1 = s.alloc_node_id().unwrap();
         vec![n0, n1]
     };
     insert_voice(
@@ -478,7 +478,7 @@ async fn multiple_to_param_routes_from_one_source() {
 
     let (node_a, node_b) = {
         let mut s = state.write().await;
-        (s.alloc_node_id(), s.alloc_node_id())
+        (s.alloc_node_id().unwrap(), s.alloc_node_id().unwrap())
     };
     insert_voice(
         &state,
@@ -616,7 +616,7 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
 
     let outcome = {
         let mut s = state.write().await;
-        reconcile_voice_ports(&mut s, src, &ports, &mut routes)
+        reconcile_voice_ports(&mut s, src, &ports, &mut routes).unwrap()
     };
 
     assert!(

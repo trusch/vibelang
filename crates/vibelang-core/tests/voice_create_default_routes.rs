@@ -229,8 +229,8 @@ async fn setup(ports: &[OutputPort]) -> Harness {
         s.synthdefs.insert(SYNTH.to_string());
         s.synthdef_outputs.insert(SYNTH.to_string(), ports.to_vec());
 
-        let voice_group_node = s.alloc_node_id();
-        let voice_group_bus = s.alloc_audio_bus(2);
+        let voice_group_node = s.alloc_node_id().unwrap();
+        let voice_group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             voice_group,
             GroupState {
@@ -564,8 +564,8 @@ async fn explicit_user_route_on_port_zero_not_overridden_by_default() {
     let dest_group = GroupId::new(99);
     let dest_group_bus_id = {
         let mut s = h.state.write().await;
-        let dest_group_node = s.alloc_node_id();
-        let dest_group_bus = s.alloc_audio_bus(2);
+        let dest_group_node = s.alloc_node_id().unwrap();
+        let dest_group_bus = s.alloc_audio_bus(2).unwrap();
         s.groups.insert(
             dest_group,
             GroupState {

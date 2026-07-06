@@ -194,7 +194,7 @@ async fn setup(
 
     {
         let mut state = state.write().await;
-        let group_bus = state.alloc_audio_bus(2);
+        let group_bus = state.alloc_audio_bus(2).unwrap();
         state.synthdefs.insert(synthdef.to_string());
         state.synthdef_outputs.insert(synthdef.to_string(), ports);
         state.groups.insert(
@@ -231,7 +231,7 @@ async fn setup_empty() -> (
 
     {
         let mut state = state.write().await;
-        let group_bus = state.alloc_audio_bus(2);
+        let group_bus = state.alloc_audio_bus(2).unwrap();
         state.groups.insert(
             GroupId::new(1),
             GroupState {

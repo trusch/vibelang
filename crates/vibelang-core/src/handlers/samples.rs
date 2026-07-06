@@ -71,7 +71,7 @@ impl<B: Backend> Samples for SamplesHandler<B> {
         let mut state = self.state.write().await;
 
         // Allocate buffer ID
-        let buffer_id = state.alloc_buffer_id();
+        let buffer_id = state.alloc_buffer_id()?;
 
         // Load buffer via backend
         let buffer_info = self

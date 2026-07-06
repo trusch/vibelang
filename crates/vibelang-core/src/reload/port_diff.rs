@@ -215,7 +215,7 @@ pub fn reconcile_voice_ports(
     voice_id: VoiceId,
     new_ports: &[OutputPort],
     routes: &mut RouteMap,
-) -> PortReconcile {
+) -> crate::Result<PortReconcile> {
     let synthdef = match state.voices.get(&voice_id) {
         Some(v) => v.config.synthdef.clone(),
         None => {
@@ -223,7 +223,7 @@ pub fn reconcile_voice_ports(
                 "reconcile_voice_ports: voice {:?} not found, skipping",
                 voice_id
             );
-            return PortReconcile::default();
+            return Ok(PortReconcile::default());
         }
     };
     let old_ports = state.synthdef_outputs(&synthdef);
@@ -233,10 +233,10 @@ pub fn reconcile_voice_ports(
         // Body-only edit: keep the registry fresh in case channel widths or
         // metadata shifted on a kept port, but do not touch buses or routes.
         state.synthdef_outputs.insert(synthdef, new_ports.to_vec());
-        return PortReconcile {
+        return Ok(PortReconcile {
             diff,
             ..Default::default()
-        };
+        });
     }
 
     // ---- Free buses and drop routes for removed ports --------------------
@@ -311,8 +311,8 @@ pub fn reconcile_voice_ports(
     let mut default_muted = Vec::new();
     for port in &diff.added {
         let bus = match port.rate {
-            PortRate::Ar => state.alloc_audio_bus(port.channels),
-            PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus().raw()),
+            PortRate::Ar => state.alloc_audio_bus(port.channels)?,
+            PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus()?.raw()),
         };
         if let Some(voice) = state.voices.get_mut(&voice_id) {
             voice.output_buses.push((port.name.clone(), bus));
@@ -368,13 +368,13 @@ pub fn reconcile_voice_ports(
         }
     }
 
-    PortReconcile {
+    Ok(PortReconcile {
         diff,
         dropped_routes,
         dropped_param_routes,
         default_muted,
         rate_changes,
-    }
+    })
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -486,8 +486,8 @@ mod tests {
             .synthdef_outputs
             .insert(synth.to_string(), ports.to_vec());
 
-        let group_node = state.alloc_node_id();
-        let group_bus = state.alloc_audio_bus(2);
+        let group_node = state.alloc_node_id().unwrap();
+        let group_bus = state.alloc_audio_bus(2).unwrap();
         state.groups.insert(
             group_id,
             GroupState {
@@ -508,8 +508,8 @@ mod tests {
         let mut output_buses = Vec::with_capacity(ports.len());
         for p in ports {
             let bus = match p.rate {
-                PortRate::Ar => state.alloc_audio_bus(p.channels),
-                PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus().raw()),
+                PortRate::Ar => state.alloc_audio_bus(p.channels).unwrap(),
+                PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus().unwrap().raw()),
             };
             output_buses.push((p.name.clone(), bus));
         }
@@ -550,7 +550,7 @@ mod tests {
         }
         let routes_before = routes.clone();
 
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes).unwrap();
 
         assert!(outcome.diff.is_unchanged());
         assert!(outcome.dropped_routes.is_empty());
@@ -581,7 +581,7 @@ mod tests {
             port("c", 1),
             port("d", 1),
         ];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.added, vec![port("d", 1)]);
         assert!(outcome.diff.removed.is_empty());
@@ -627,7 +627,7 @@ mod tests {
 
         let mut routes: RouteMap = HashMap::new();
         let new = vec![port("cv", 1), port("out", 2)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.added, vec![port("out", 2)]);
         assert!(outcome.default_muted.is_empty());
@@ -657,7 +657,7 @@ mod tests {
         routes.insert((voice_id, "send".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![port("out", 2)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.removed, vec![port("send", 1)]);
         assert_eq!(outcome.dropped_routes, vec![(voice_id, "send".to_string())]);
@@ -671,7 +671,7 @@ mod tests {
         );
 
         // Bus chunk back in the allocator's free list.
-        let reused = state.alloc_audio_bus(1);
+        let reused = state.alloc_audio_bus(1).unwrap();
         assert_eq!(
             reused, send_bus,
             "freed bus chunk should be the next allocation of matching width"
@@ -700,7 +700,7 @@ mod tests {
         );
 
         let new = vec![port("cv_new", 1)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.removed, vec![port("cv_old", 1)]);
         assert_eq!(outcome.diff.added, vec![port("cv_new", 1)]);
@@ -739,7 +739,7 @@ mod tests {
         routes.insert((voice_id, "send".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![port("out", 2), port("send", 1)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.added, vec![port("send", 1)]);
         assert_eq!(
@@ -812,7 +812,7 @@ mod tests {
             port("a", 1),
             port("b", 1),
         ];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         // Diff: env appears in both removed (ar) and added (kr).
         assert_eq!(outcome.diff.removed, vec![port("env", 1)]);
@@ -852,7 +852,7 @@ mod tests {
 
         // Old audio chunk back in the audio-bus free list — next mono alloc
         // returns it.
-        let reused = state.alloc_audio_bus(1);
+        let reused = state.alloc_audio_bus(1).unwrap();
         assert_eq!(
             reused, env_old_bus,
             "freed audio chunk should be the next mono alloc"
@@ -907,7 +907,7 @@ mod tests {
         );
 
         let new = vec![port("out", 2), port("env", 1), port("a", 1), port("b", 1)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         // Diff: env appears in both removed (kr) and added (ar).
         assert_eq!(outcome.diff.removed, vec![kr_port("env", 1)]);
@@ -969,7 +969,7 @@ mod tests {
         );
 
         // Next control-bus alloc reuses the freed env bus.
-        let reused = state.alloc_control_bus();
+        let reused = state.alloc_control_bus().unwrap();
         assert_eq!(
             reused.raw(),
             env_old_bus.raw(),
@@ -1076,7 +1076,7 @@ mod tests {
         );
 
         let new = vec![port("out", 2), tr_port("env", 1)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.removed, vec![kr_port("env", 1)]);
         assert_eq!(outcome.diff.added, vec![tr_port("env", 1)]);
@@ -1160,7 +1160,7 @@ mod tests {
         routes.insert((voice_id, "out".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![tr_port("env", 1), port("out", 2)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.removed, vec![port("env", 1)]);
         assert_eq!(outcome.diff.added, vec![tr_port("env", 1)]);
@@ -1193,7 +1193,7 @@ mod tests {
 
         // Old audio chunk is back in the audio-bus free list — next mono
         // alloc returns it.
-        let reused = state.alloc_audio_bus(1);
+        let reused = state.alloc_audio_bus(1).unwrap();
         assert_eq!(reused, env_old_bus, "freed audio chunk reused");
     }
 
@@ -1217,7 +1217,7 @@ mod tests {
 
         let mut routes: RouteMap = HashMap::new();
         let new = vec![port("out", 2)];
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes).unwrap();
 
         assert_eq!(outcome.diff.removed, vec![tr_port("trig", 1)]);
         assert!(!state.voices[&voice_id]
@@ -1226,7 +1226,7 @@ mod tests {
             .any(|(n, _)| n == "trig"));
 
         // Bus back in the control-bus pool — next alloc reuses it.
-        let reused = state.alloc_control_bus();
+        let reused = state.alloc_control_bus().unwrap();
         assert_eq!(
             reused.raw(),
             trig_bus.raw(),
@@ -1265,7 +1265,7 @@ mod tests {
             )],
         );
 
-        let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes);
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes).unwrap();
 
         assert!(outcome.diff.is_unchanged());
         assert!(outcome.dropped_routes.is_empty());

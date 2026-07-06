@@ -189,8 +189,8 @@ fn kr_port(name: &str) -> OutputPort {
 
 async fn insert_group(state: &Arc<RwLock<State>>, group_id: GroupId, name: &str) {
     let mut s = state.write().await;
-    let node = s.alloc_node_id();
-    let bus = s.alloc_audio_bus(2);
+    let node = s.alloc_node_id().unwrap();
+    let bus = s.alloc_audio_bus(2).unwrap();
     s.groups.insert(
         group_id,
         GroupState {
@@ -226,8 +226,8 @@ async fn insert_voice(
     let mut output_buses = Vec::with_capacity(ports.len());
     for p in ports {
         let bus = match p.rate {
-            PortRate::Ar => s.alloc_audio_bus(p.channels),
-            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().raw()),
+            PortRate::Ar => s.alloc_audio_bus(p.channels).unwrap(),
+            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().unwrap().raw()),
         };
         output_buses.push((p.name.clone(), bus));
     }
@@ -287,7 +287,7 @@ async fn kr_lfo_to_param_via_modulate_by() {
     // must `/n_map` that node's `cutoff` param to the kr summer's bus.
     let target_node = {
         let mut s = state.write().await;
-        s.alloc_node_id()
+        s.alloc_node_id().unwrap()
     };
     let tgt = VoiceId::new(102);
     insert_voice(

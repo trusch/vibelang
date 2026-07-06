@@ -633,7 +633,7 @@ impl<B: Backend> RoutesHandler<B> {
             if let Some(node) = state.param_summer_group {
                 return Ok(node);
             }
-            let node_id = state.alloc_node_id();
+            let node_id = state.alloc_node_id()?;
             state.param_summer_group = Some(node_id);
             node_id
         };
@@ -990,7 +990,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         }) {
             bus
         } else {
-            let bus = state.alloc_audio_bus(input_port.channels);
+            let bus = state.alloc_audio_bus(input_port.channels)?;
             state
                 .voices
                 .get_mut(&route.voice_id)
@@ -1000,7 +1000,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             bus
         };
 
-        let node = state.alloc_node_id();
+        let node = state.alloc_node_id()?;
 
         let synthdef = match input_port.channels {
             1 => "input_link_1",
@@ -1125,7 +1125,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 let bus = match state.silent_ar_bus {
                     Some(bus) => bus,
                     None => {
-                        let bus = state.alloc_audio_bus(2);
+                        let bus = state.alloc_audio_bus(2)?;
                         state.silent_ar_bus = Some(bus);
                         bus
                     }
@@ -1303,7 +1303,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
 
         let (planned, summers_to_free, adapters_to_spawn, adapters_to_free, triggers_to_free) =
             self.plan_param_actions(set_diff, bend_diff, trigger_diff, set_shaping, bend_shaping)
-                .await;
+                .await?;
 
         for &(node, _) in &summers_to_free {
             if let Err(e) = self.backend.free_node(node).await {
@@ -1397,13 +1397,13 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         trigger_diff: &ParamRouteDiff,
         set_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
         bend_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
-    ) -> (
+    ) -> Result<(
         Vec<PlannedParamAction>,
         Vec<(NodeId, ControlBusId)>,
         Vec<AdapterSpawn>,
         Vec<(NodeId, ControlBusId)>,
         Vec<(NodeId, ControlBusId)>,
-    ) {
+    )> {
         let mut state = self.state.write().await;
 
         apply_param_diff_to_map(&mut state, set_diff, ParamMapKind::Set);
@@ -1454,8 +1454,8 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             })
             .collect();
         for (sv, sp, in_bus) in need_adapter {
-            let out_bus = state.alloc_control_bus();
-            let node = state.alloc_node_id();
+            let out_bus = state.alloc_control_bus()?;
+            let node = state.alloc_node_id()?;
             state.ar_to_kr_adapters.insert((sv, sp), (node, out_bus));
             adapters_to_spawn.push(AdapterSpawn {
                 node,
@@ -1595,7 +1595,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                         trigger_buses.len(),
                     );
                 }
-                self.plan_trigger_link(&mut state, &tgt, trigger_buses[0])
+                self.plan_trigger_link(&mut state, &tgt, trigger_buses[0])?
             } else if !set_inputs.is_empty() && !bend_inputs.is_empty() {
                 tracing::warn!(
                     "RoutesHandler::finalize_params: target {:?} param {:?} has both \
@@ -1621,7 +1621,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     );
                 }
                 let used = vec![set_inputs[0].clone()];
-                self.plan_summer(&mut state, &tgt, &used, /*baseline=*/ 0.0)
+                self.plan_summer(&mut state, &tgt, &used, /*baseline=*/ 0.0)?
             } else if !bend_inputs.is_empty() {
                 // BEND path: baseline rides the user's set_param value so
                 // modulators add on top.
@@ -1640,7 +1640,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     bend_inputs
                 };
                 let baseline = baseline_for_target(&state, &tgt).unwrap_or(0.0);
-                self.plan_summer(&mut state, &tgt, &used, baseline)
+                self.plan_summer(&mut state, &tgt, &used, baseline)?
             } else {
                 let restore_value = baseline_for_target(&state, &tgt);
                 ParamPlan::Unmap { restore_value }
@@ -1654,13 +1654,13 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             });
         }
 
-        (
+        Ok((
             planned,
             summers_to_free,
             adapters_to_spawn,
             adapters_to_free,
             triggers_to_free,
-        )
+        ))
     }
 
     /// Allocate intermediate bus + summer node, register
@@ -1676,11 +1676,11 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         tgt: &(ParamRouteTarget, String),
         used: &[ParamSummerSource],
         baseline: f32,
-    ) -> ParamPlan {
+    ) -> Result<ParamPlan> {
         let arity = used.len();
-        let intermediate = state.alloc_control_bus();
+        let intermediate = state.alloc_control_bus()?;
         let intermediate_bus = BusId::new(intermediate.raw());
-        let summer_node = state.alloc_node_id();
+        let summer_node = state.alloc_node_id()?;
         let sources: Vec<ParamSummerSource> = used.to_vec();
         state.param_summers.insert(
             tgt.clone(),
@@ -1704,13 +1704,13 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         }
         params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
 
-        ParamPlan::Summer {
+        Ok(ParamPlan::Summer {
             synthdef: format!("param_kr_modulate_{}", arity),
             summer_node,
             target_group,
             params,
             intermediate_bus,
-        }
+        })
     }
 
     /// Allocate intermediate bus + link node for a `port_tr_to_param_link_1`
@@ -1723,10 +1723,10 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         state: &mut State,
         tgt: &(ParamRouteTarget, String),
         in_bus: BusId,
-    ) -> ParamPlan {
-        let intermediate = state.alloc_control_bus();
+    ) -> Result<ParamPlan> {
+        let intermediate = state.alloc_control_bus()?;
         let intermediate_bus = BusId::new(intermediate.raw());
-        let link_node = state.alloc_node_id();
+        let link_node = state.alloc_node_id()?;
         state
             .param_triggers
             .insert(tgt.clone(), (link_node, intermediate_bus));
@@ -1737,12 +1737,12 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         params.insert("in_bus".to_string(), in_bus.raw() as f32);
         params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
 
-        ParamPlan::TriggerLink {
+        Ok(ParamPlan::TriggerLink {
             link_node,
             target_group,
             params,
             intermediate_bus,
-        }
+        })
     }
 
     /// Drive a single [`PlannedParamAction`] to the backend.
@@ -1926,7 +1926,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
 
         let link_node = {
             let mut state = self.state.write().await;
-            state.alloc_node_id()
+            state.alloc_node_id()?
         };
 
         let mut params = ParamMap::new();
@@ -2697,8 +2697,8 @@ mod tests {
                 }],
             );
 
-            let voice_group_node = s.alloc_node_id();
-            let voice_group_bus = s.alloc_audio_bus(2);
+            let voice_group_node = s.alloc_node_id().unwrap();
+            let voice_group_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 voice_group_id,
                 GroupState {
@@ -2716,8 +2716,8 @@ mod tests {
                 },
             );
 
-            let dest_node = s.alloc_node_id();
-            let dest_bus = s.alloc_audio_bus(2);
+            let dest_node = s.alloc_node_id().unwrap();
+            let dest_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 dest_group_id,
                 GroupState {
@@ -2735,7 +2735,7 @@ mod tests {
                 },
             );
 
-            let port_bus = s.alloc_audio_bus(port_channels);
+            let port_bus = s.alloc_audio_bus(port_channels).unwrap();
             s.voices.insert(
                 voice_id,
                 VoiceState {
@@ -2873,8 +2873,8 @@ mod tests {
         let dest_b = GroupId::new(99);
         {
             let mut s = state.write().await;
-            let node = s.alloc_node_id();
-            let bus = s.alloc_audio_bus(2);
+            let node = s.alloc_node_id().unwrap();
+            let bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 dest_b,
                 GroupState {
@@ -2951,8 +2951,8 @@ mod tests {
         let dest_b = GroupId::new(99);
         {
             let mut s = state.write().await;
-            let node = s.alloc_node_id();
-            let bus = s.alloc_audio_bus(2);
+            let node = s.alloc_node_id().unwrap();
+            let bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 dest_b,
                 GroupState {
@@ -3064,7 +3064,7 @@ mod tests {
         // Add a second port to the voice and a second route.
         {
             let mut s = state.write().await;
-            let extra_bus = s.audio_buses.alloc(2);
+            let extra_bus = s.audio_buses.alloc(2).unwrap();
             s.voices
                 .get_mut(&voice_id)
                 .unwrap()
@@ -3164,8 +3164,8 @@ mod tests {
                 }],
             );
 
-            let group_node = s.alloc_node_id();
-            let group_bus = s.alloc_audio_bus(2);
+            let group_node = s.alloc_node_id().unwrap();
+            let group_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 group_id,
                 GroupState {
@@ -3198,7 +3198,7 @@ mod tests {
                 },
             );
 
-            let source_bus = s.alloc_audio_bus(source_channels);
+            let source_bus = s.alloc_audio_bus(source_channels).unwrap();
             s.voices.insert(
                 source_id,
                 VoiceState {
@@ -3539,8 +3539,8 @@ mod tests {
         let dest_b = GroupId::new(99);
         let bus_b = {
             let mut s = state.write().await;
-            let node = s.alloc_node_id();
-            let bus = s.alloc_audio_bus(2);
+            let node = s.alloc_node_id().unwrap();
+            let bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 dest_b,
                 GroupState {
@@ -3599,8 +3599,8 @@ mod tests {
         let dest_b = GroupId::new(99);
         {
             let mut s = state.write().await;
-            let node = s.alloc_node_id();
-            let bus = s.alloc_audio_bus(2);
+            let node = s.alloc_node_id().unwrap();
+            let bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 dest_b,
                 GroupState {
@@ -3726,8 +3726,8 @@ mod tests {
                 }],
             );
 
-            let voice_group_node = s.alloc_node_id();
-            let voice_group_bus = s.alloc_audio_bus(2);
+            let voice_group_node = s.alloc_node_id().unwrap();
+            let voice_group_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 voice_group_id,
                 GroupState {
@@ -3747,7 +3747,7 @@ mod tests {
 
             for i in 0..n_sources {
                 let vid = VoiceId::new(10 + i as u32);
-                let kr_bus = s.alloc_control_bus();
+                let kr_bus = s.alloc_control_bus().unwrap();
                 let bus = BusId::new(kr_bus.raw());
                 s.voices.insert(
                     vid,
@@ -3768,9 +3768,9 @@ mod tests {
             }
 
             for _ in 0..active_target_nodes {
-                target_nodes.push(s.alloc_node_id());
+                target_nodes.push(s.alloc_node_id().unwrap());
             }
-            let target_audio_bus = s.alloc_audio_bus(2);
+            let target_audio_bus = s.alloc_audio_bus(2).unwrap();
             s.voices.insert(
                 target_voice,
                 VoiceState {
@@ -4250,7 +4250,7 @@ mod tests {
 
         // Old intermediate bus is back in the pool — next alloc reuses it.
         let mut s = state.write().await;
-        let reused = s.alloc_control_bus().raw();
+        let reused = s.alloc_control_bus().unwrap().raw();
         assert_eq!(reused, old_intermediate.raw(), "intermediate bus recycled");
     }
 
@@ -4463,8 +4463,8 @@ mod tests {
                 }],
             );
 
-            let voice_group_node = s.alloc_node_id();
-            let voice_group_bus = s.alloc_audio_bus(2);
+            let voice_group_node = s.alloc_node_id().unwrap();
+            let voice_group_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 voice_group_id,
                 GroupState {
@@ -4484,7 +4484,7 @@ mod tests {
 
             for i in 0..n_ar_sources {
                 let vid = VoiceId::new(50 + i as u32);
-                let ar_bus = s.alloc_audio_bus(1);
+                let ar_bus = s.alloc_audio_bus(1).unwrap();
                 s.voices.insert(
                     vid,
                     VoiceState {
@@ -4508,9 +4508,9 @@ mod tests {
             }
 
             for _ in 0..active_target_nodes {
-                target_nodes.push(s.alloc_node_id());
+                target_nodes.push(s.alloc_node_id().unwrap());
             }
-            let target_audio_bus = s.alloc_audio_bus(2);
+            let target_audio_bus = s.alloc_audio_bus(2).unwrap();
             s.voices.insert(
                 target_voice,
                 VoiceState {
@@ -4716,10 +4716,10 @@ mod tests {
                     rate: vibelang_dsp::PortRate::Ar,
                 }],
             );
-            let a_node = s.alloc_node_id();
-            let b_node = s.alloc_node_id();
-            let bus_a = s.alloc_audio_bus(2);
-            let bus_b = s.alloc_audio_bus(2);
+            let a_node = s.alloc_node_id().unwrap();
+            let b_node = s.alloc_node_id().unwrap();
+            let bus_a = s.alloc_audio_bus(2).unwrap();
+            let bus_b = s.alloc_audio_bus(2).unwrap();
             s.voices.insert(
                 target_a,
                 VoiceState {
@@ -4897,8 +4897,8 @@ mod tests {
                 }],
             );
 
-            let voice_group_node = s.alloc_node_id();
-            let voice_group_bus = s.alloc_audio_bus(2);
+            let voice_group_node = s.alloc_node_id().unwrap();
+            let voice_group_bus = s.alloc_audio_bus(2).unwrap();
             s.groups.insert(
                 voice_group_id,
                 GroupState {
@@ -4918,7 +4918,7 @@ mod tests {
 
             for i in 0..n_sources {
                 let vid = VoiceId::new(20 + i as u32);
-                let kr_bus = s.alloc_control_bus();
+                let kr_bus = s.alloc_control_bus().unwrap();
                 let bus = BusId::new(kr_bus.raw());
                 s.voices.insert(
                     vid,
@@ -4943,9 +4943,9 @@ mod tests {
             }
 
             for _ in 0..active_target_nodes {
-                target_nodes.push(s.alloc_node_id());
+                target_nodes.push(s.alloc_node_id().unwrap());
             }
-            let target_audio_bus = s.alloc_audio_bus(2);
+            let target_audio_bus = s.alloc_audio_bus(2).unwrap();
             s.voices.insert(
                 target_voice,
                 VoiceState {
@@ -5141,7 +5141,7 @@ mod tests {
 
         // Intermediate bus is back in the pool — next alloc reuses it.
         let mut s = state.write().await;
-        let reused = s.alloc_control_bus().raw();
+        let reused = s.alloc_control_bus().unwrap().raw();
         assert_eq!(reused, link_bus.raw(), "intermediate bus recycled");
     }
 
@@ -5218,7 +5218,7 @@ mod tests {
                     rate: vibelang_dsp::PortRate::Kr,
                 }],
             );
-            let kr_bus = s.alloc_control_bus();
+            let kr_bus = s.alloc_control_bus().unwrap();
             let voice_group_id = GroupId::new(1);
             s.voices.insert(
                 kr_source_id,

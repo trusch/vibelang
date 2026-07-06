@@ -123,7 +123,7 @@ impl<B: Backend> Effects for EffectsHandler<B> {
             let audio_bus = group_state.audio_bus;
             let link_synth_node_id = group_state.link_synth_node_id;
 
-            let node_id = state.alloc_node_id();
+            let node_id = state.alloc_node_id()?;
 
             // Determine placement: effects should run AFTER voices but BEFORE link synth
             // - If link synth exists: insert BEFORE it
