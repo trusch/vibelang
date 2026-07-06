@@ -1507,6 +1507,31 @@ impl State {
             .retain(|(_, _, target, _), _| *target != ParamRouteTarget::Effect(effect_id));
     }
 
+    /// Node id of the group's first effect in scsynth tree order, if any.
+    ///
+    /// Late-spawned audio-rate writers (route mixer synths) must land
+    /// *before* the group's fx chain — effects read the group bus with
+    /// `In.ar`, and scsynth evaluates nodes in tree order, so anything
+    /// inserted after an effect is invisible to it within the cycle.
+    ///
+    /// Effects are only ever appended to the end of a group's chain
+    /// (`Tail` on first build, `Before` the link synth on later reloads)
+    /// and are never reordered in the tree, so tree order equals creation
+    /// order. Effect ids come from a monotonic per-session counter that is
+    /// name-stable across reloads, so the smallest id in the group is the
+    /// earliest-created effect — the head of the chain. The one mismatch
+    /// is a remove + re-add of an effect name within one session: the old
+    /// (small) id re-attaches at the chain *tail*, so a later mixer
+    /// inserted before it lands mid-chain — still audible and still ahead
+    /// of the link synth, just skipping the effects created earlier.
+    pub fn first_effect_node_in_group(&self, group: GroupId) -> Option<NodeId> {
+        self.effects
+            .values()
+            .filter(|e| e.group == group)
+            .min_by_key(|e| e.id.raw())
+            .map(|e| e.node_id)
+    }
+
     /// Resolve the output-port set for a synthdef name.
     ///
     /// Returns the explicitly declared ports if registered, otherwise the

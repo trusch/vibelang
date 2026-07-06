@@ -1862,7 +1862,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             return Ok(None);
         }
 
-        let (group_node, link_in_bus, channels, link_out_bus) = {
+        let (add_target, add_action, link_in_bus, channels, link_out_bus) = {
             let state = self.state.read().await;
 
             let voice = state
@@ -1890,14 +1890,35 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 .unwrap_or(2);
 
             // The mixer synth is parented on the *voice's* group node so that
-            // it sits in tree order between voice synths (added at Tail) and
-            // the group's link synth (effects insert Before link). This gives
-            // the runtime tick order: voices → routes → effects → link.
+            // it sits in tree order between voice synths (added at Head) and
+            // the group's fx chain + link synth. This gives the runtime tick
+            // order: voices → routes → effects → link.
+            //
+            // Placement must hold for mixers spawned at ANY time, not just
+            // first build. scsynth evaluates nodes in tree order and `In.ar`
+            // reads zeros from buses written later in the cycle, so a mixer
+            // Tail-added after the group's link synth (created at the first
+            // FinalizeGroups and never respawned) — or after its effects —
+            // writes a bus nobody reads anymore: the routed audio is silently
+            // lost, or bypasses the fx chain. Mirror the effects handler's
+            // placement logic (handlers/effects.rs) one slot earlier:
+            // - group has effects  → insert Before the first effect node,
+            // - else link exists   → insert Before the link synth,
+            // - else               → Tail on the group (first-build case,
+            //                        reproduces the cold-boot order).
             let voice_group = state
                 .groups
                 .get(&voice_group_id)
                 .ok_or(Error::GroupNotFound(voice_group_id))?;
-            let group_node = voice_group.node_id;
+            let (add_target, add_action) = if let Some(first_fx_node) =
+                state.first_effect_node_in_group(voice_group_id)
+            {
+                (first_fx_node, AddAction::Before)
+            } else if let Some(link_node) = voice_group.link_synth_node_id {
+                (link_node, AddAction::Before)
+            } else {
+                (voice_group.node_id, AddAction::Tail)
+            };
 
             let out_bus = match dest {
                 RouteDest::Group(g) => {
@@ -1910,7 +1931,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 }
             };
 
-            (group_node, port_bus, channels, out_bus)
+            (add_target, add_action, port_bus, channels, out_bus)
         };
 
         let synthdef_name = match channels {
@@ -1934,25 +1955,20 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         params.insert("out_bus".to_string(), link_out_bus.0 as f32);
 
         tracing::debug!(
-            "RoutesHandler: spawning {} (node={:?}) voice={:?} port={:?} in_bus={} out_bus={} group_node={:?}",
+            "RoutesHandler: spawning {} (node={:?}) voice={:?} port={:?} in_bus={} out_bus={} action={:?} target={:?}",
             synthdef_name,
             link_node,
             voice_id,
             port_name,
             link_in_bus.0,
             link_out_bus.0,
-            group_node
+            add_action,
+            add_target
         );
 
         if let Err(err) = self
             .backend
-            .create_synth(
-                synthdef_name,
-                link_node,
-                group_node,
-                AddAction::Tail,
-                &params,
-            )
+            .create_synth(synthdef_name, link_node, add_target, add_action, &params)
             .await
         {
             let mut state = self.state.write().await;
