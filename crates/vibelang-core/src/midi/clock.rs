@@ -1,9 +1,12 @@
-//! MIDI clock synchronization and timestamp conversion.
+//! MIDI clock timestamp conversion.
 //!
-//! This module provides:
-//! - Conversion between midir timestamps and audio frame positions
-//! - Synchronization between MIDI and audio clocks
-//! - BPM derivation from MIDI clock messages
+//! This module provides conversion between midir timestamps, system time,
+//! and audio frame positions (`MidiClock`), plus a BPM tracker for incoming
+//! clock pulses (`MidiClockSync`).
+//!
+//! TODO: external MIDI clock sync is unimplemented — `MidiClockSync` is not
+//! wired into the runtime; incoming Clock/Start/Stop/Continue messages are
+//! only logged and never drive the transport or tempo.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -149,12 +152,15 @@ impl Default for MidiClock {
 }
 
 // ============================================================================
-// MIDI Clock Sync (for external sync)
+// MIDI Clock Sync (BPM tracking; not wired into the runtime)
 // ============================================================================
 
-/// MIDI clock synchronization for deriving BPM from incoming clock messages.
+/// Tracker for deriving BPM from incoming MIDI clock messages.
 ///
 /// MIDI clock sends 24 pulses per quarter note (PPQN).
+///
+/// Note: this type is currently not wired into the runtime — external MIDI
+/// clock sync is unimplemented.
 pub struct MidiClockSync {
     /// Timestamps of recent clock pulses (for BPM calculation).
     pulse_times: Vec<Instant>,

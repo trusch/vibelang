@@ -1,7 +1,7 @@
 //! MIDI event types with full MIDI 1.0 support and MIDI 2.0 future-proofing.
 //!
 //! This module provides:
-//! - `TimestampedMidiEvent` - MIDI events with preserved timestamps for jitter compensation
+//! - `TimestampedMidiEvent` - MIDI events with preserved timestamps for latency measurement
 //! - `MidiMessage` - Full MIDI 1.0 message types including SysEx, aftertouch, etc.
 //! - `Velocity` / `ControlValue` - Value types that can hold both MIDI 1.0 and 2.0 resolution
 
@@ -711,7 +711,7 @@ pub struct TimestampedMidiEvent {
     pub timestamp_us: u64,
 
     /// Monotonic instant when the event was received by our callback.
-    /// Used for jitter compensation and latency measurement.
+    /// Used for latency measurement and beat-accurate capture.
     pub received_at: Instant,
 
     /// The MIDI device that sent this event.

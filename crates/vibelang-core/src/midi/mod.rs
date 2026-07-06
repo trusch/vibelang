@@ -1,22 +1,21 @@
 //! MIDI infrastructure for vibelang-core.
 //!
-//! This module provides a professional-grade MIDI implementation with:
+//! This module provides:
 //!
 //! ## Core Infrastructure
-//! - **Event-driven processing** - Dedicated async task (no polling)
 //! - **Timestamp preservation** - Microsecond-accurate timing from midir
-//! - **Jitter compensation** - Statistical analysis for stable timing
 //! - **Lock-free queues** - High-performance event routing
 //!
 //! ## Full MIDI 1.0 Support
 //! - All channel voice messages (note, CC, aftertouch, pitch bend)
 //! - System exclusive (SysEx) with multi-packet support
-//! - System realtime (clock, start, stop, continue)
+//! - System realtime message parsing (clock, start, stop, continue).
+//!   TODO: external clock sync is unimplemented — incoming clock/transport
+//!   messages are parsed and logged but never drive the transport or tempo.
 //! - NRPN/RPN 14-bit parameter control
 //!
 //! ## Advanced Features
 //! - **MPE (MIDI Polyphonic Expression)** - Per-note expression for Seaboard, Linnstrument, etc.
-//! - **MIDI Learn** - Automatic CC-to-parameter mapping
 //! - **Device Hot-Plug** - Detection of device connection/disconnection
 //! - **MIDI 2.0 Ready** - Types designed for future expansion
 //!
@@ -28,23 +27,21 @@
 //!     ▼
 //! ┌─────────────────────────────────────────┐
 //! │    MidiEventQueue (lock-free)           │
-//! │    - SPSC crossbeam channel             │
+//! │    - MPSC crossbeam channel             │
 //! │    - 4096 event capacity                │
 //! └─────────────────────────────────────────┘
 //!     │
 //!     ▼
 //! ┌─────────────────────────────────────────┐
-//! │    MidiInputTask (dedicated async)      │
-//! │    - Immediate processing (<1ms)        │
-//! │    - Jitter compensation                │
-//! │    - MPE/NRPN decoding                  │
+//! │    MidiHandler::tick (runtime loop)     │
+//! │    - Drains queue, routes to voices     │
+//! │    - Non-blocking runtime dispatch      │
 //! └─────────────────────────────────────────┘
 //!     │
 //!     ▼
 //! ┌─────────────────────────────────────────┐
 //! │    MidiClock                            │
 //! │    - Timestamp → audio frame            │
-//! │    - External sync (BPM derivation)     │
 //! └─────────────────────────────────────────┘
 //! ```
 //!
@@ -91,9 +88,6 @@ mod devices;
 mod encoder;
 mod events;
 mod hotplug;
-mod input_task;
-mod jitter;
-mod learn;
 pub mod looper;
 mod mpe;
 mod nrpn;
@@ -142,14 +136,6 @@ pub use queue::{AsyncMidiEventReceiver, MidiEventQueue, MidiEventSender, QueueSt
 // Clock synchronization
 pub use clock::{MidiClock, MidiClockSync};
 
-// Jitter compensation
-pub use jitter::{JitterCompensator, JitterStats};
-
-// Dedicated input task (replaces polling)
-pub use input_task::{
-    CallbackHandler, ChannelHandler, MidiEventHandler, MidiInputTask, MidiInputTaskBuilder,
-};
-
 // MIDI message parsing
 pub use parser::{parse_midi_bytes, MidiParser};
 
@@ -173,9 +159,6 @@ pub use nrpn::{
     NrpnDecoder, ParameterMessage, CC_DATA_ENTRY_LSB, CC_DATA_ENTRY_MSB, CC_NRPN_LSB, CC_NRPN_MSB,
     CC_RPN_LSB, CC_RPN_MSB,
 };
-
-// MIDI Learn
-pub use learn::{LearnManager, LearnTarget, LearnedMapping, MidiLearn};
 
 // Device hot-plug detection
 pub use hotplug::{AutoReconnect, AutoReconnectConfig, HotPlugEvent, HotPlugWatcher};

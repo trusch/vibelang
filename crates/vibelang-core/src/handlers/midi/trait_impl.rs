@@ -16,6 +16,7 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use midir::{MidiInput, MidiOutput};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -135,6 +136,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
         let event_sender = self.event_queue.sender();
         let midi_clock = Arc::clone(&self.midi_clock);
         let device_id = id;
+        let input_drops = Arc::clone(&self.input_callback_drops);
 
         let conn = midi_in
             .connect(
@@ -157,11 +159,20 @@ impl<B: Backend> Midi for MidiHandler<B> {
                         };
 
                         if !event_sender.try_send(timestamped_event) {
-                            tracing::warn!(
-                                "[MIDI] Event queue full, falling back to legacy input channel"
-                            );
-                            if let Some(legacy_msg) = convert_new_to_legacy_message(&new_msg) {
-                                let _ = tx.blocking_send((device_id, legacy_msg));
+                            // Event queue full. Fall back to the legacy channel,
+                            // but never block: this closure runs on the MIDI
+                            // driver's realtime thread. The crossbeam bounded
+                            // channel has no overwrite-oldest semantics, so on
+                            // double overflow the *newest* event is dropped —
+                            // under sustained overload this can lose a note-off;
+                            // the panic-clear on device open bounds the damage.
+                            // Drops are counted here and reported (rate-limited)
+                            // from the consumer side in `tick()`.
+                            let fell_back = convert_new_to_legacy_message(&new_msg)
+                                .map(|legacy_msg| tx.try_send((device_id, legacy_msg)).is_ok())
+                                .unwrap_or(false);
+                            if !fell_back {
+                                input_drops.fetch_add(1, Ordering::Relaxed);
                             }
                         }
                     }

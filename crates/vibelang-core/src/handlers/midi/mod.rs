@@ -56,15 +56,13 @@ pub use types::{map_to_range, Midi2ControllerType};
 use crate::backend::Backend;
 use crate::compat::RwLock;
 use crate::midi::{
-    CallbackData, CallbackType, CcRouteBuilder, JitterCompensator, KeyboardRouteBuilder, MidiClock,
-    MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
-    MidiRecording, NoteRouteBuilder, PipeWireMidiInputConnection, ScheduledMidiEvent,
-    TimestampedMidiEvent,
+    CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiClock, MidiEventQueue,
+    MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService, MidiRecording,
+    NoteRouteBuilder, PipeWireMidiInputConnection, ScheduledMidiEvent, TimestampedMidiEvent,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
 
-use crate::compat::SenderExt;
 use crate::handlers::ParamRouteTarget;
 use crate::message::{Message, PatternMessage, VoiceMessage};
 #[cfg(feature = "midi")]
@@ -81,10 +79,52 @@ use crate::types::{NodeId, VoiceId};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+/// Maximum number of runtime messages parked while the runtime channel is
+/// full. When exceeded, the oldest non-protected message is dropped.
+const PENDING_RUNTIME_CAP: usize = 16384;
+
+/// A runtime message parked because the runtime channel was full.
+struct PendingRuntimeMessage {
+    msg: Message,
+    /// Protected messages (note-offs and looper actions) are never dropped
+    /// on overflow — losing one leaves stuck notes or orphaned patterns.
+    protected: bool,
+}
+
+/// Outcome of a non-blocking send to the runtime channel.
+enum RuntimeTrySend {
+    Sent,
+    Full(Message),
+    Closed,
+}
+
+/// Try to send a runtime message without ever blocking.
+fn try_send_runtime(tx: &crate::compat::Sender<Message>, msg: Message) -> RuntimeTrySend {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use tokio::sync::mpsc::error::TrySendError;
+        match tx.try_send(msg) {
+            Ok(()) => RuntimeTrySend::Sent,
+            Err(TrySendError::Full(m)) => RuntimeTrySend::Full(m),
+            Err(TrySendError::Closed(_)) => RuntimeTrySend::Closed,
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut tx = tx.clone();
+        match tx.try_send(msg) {
+            Ok(()) => RuntimeTrySend::Sent,
+            Err(e) if e.is_full() => RuntimeTrySend::Full(e.into_inner()),
+            Err(_) => RuntimeTrySend::Closed,
+        }
+    }
+}
 
 #[derive(Default)]
 struct VoiceCcTelemetry {
@@ -179,11 +219,6 @@ pub struct MidiHandler<B: Backend> {
     /// MIDI clock for timestamp-to-frame conversion.
     midi_clock: Arc<MidiClock>,
 
-    /// Jitter compensator for stable timing.
-    /// Reserved for advanced MIDI timing compensation - not yet integrated into event processing.
-    #[allow(dead_code)]
-    jitter_compensator: Arc<parking_lot::RwLock<JitterCompensator>>,
-
     // ========================================================================
     // MIDI 2.0 Support
     // ========================================================================
@@ -220,6 +255,24 @@ pub struct MidiHandler<B: Backend> {
     /// Latest voice CC values observed during the current MIDI tick.
     pending_voice_cc: Mutex<HashMap<(VoiceId, String), f32>>,
 
+    /// FIFO of runtime messages that could not be sent because the runtime
+    /// channel was full. Drained at the START of the next tick, before new
+    /// events, with `try_send` again. A single global FIFO preserves order
+    /// across all targets, so a parked NoteOn can never be overtaken by its
+    /// own NoteOff.
+    pending_runtime: Mutex<VecDeque<PendingRuntimeMessage>>,
+
+    /// Overflow-drop telemetry for `pending_runtime`: (total dropped, last warn).
+    pending_runtime_drops: Mutex<(u64, Option<Instant>)>,
+
+    /// Events dropped in the midir input callback because both the event
+    /// queue and the legacy channel were full (the callback must never block).
+    input_callback_drops: Arc<AtomicU64>,
+
+    /// Consumer-side reporting state for input callback drops:
+    /// (last reported total, last warn instant).
+    input_drops_reported: Mutex<(u64, Option<Instant>)>,
+
     /// Rate-limited counters for live-rig MIDI CC pressure diagnostics.
     voice_cc_telemetry: Mutex<VoiceCcTelemetry>,
 
@@ -242,7 +295,6 @@ impl<B: Backend> MidiHandler<B> {
         // Initialize new infrastructure
         let event_queue = Arc::new(MidiEventQueue::with_default_capacity());
         let midi_clock = Arc::new(MidiClock::default());
-        let jitter_compensator = Arc::new(parking_lot::RwLock::new(JitterCompensator::new()));
 
         Self {
             backend,
@@ -260,7 +312,6 @@ impl<B: Backend> MidiHandler<B> {
             // New infrastructure
             event_queue,
             midi_clock,
-            jitter_compensator,
             // MIDI 2.0
             capability_cache: Arc::new(parking_lot::RwLock::new(HashMap::new())),
 
@@ -277,6 +328,11 @@ impl<B: Backend> MidiHandler<B> {
 
             pending_voice_cc: Mutex::new(HashMap::new()),
             voice_cc_telemetry: Mutex::new(VoiceCcTelemetry::default()),
+
+            pending_runtime: Mutex::new(VecDeque::new()),
+            pending_runtime_drops: Mutex::new((0, None)),
+            input_callback_drops: Arc::new(AtomicU64::new(0)),
+            input_drops_reported: Mutex::new((0, None)),
 
             looper_manager: Mutex::new(LooperManager::new()),
             last_script_routes: Mutex::new(MidiRouteSnapshot::default()),
@@ -700,6 +756,13 @@ impl<B: Backend> MidiHandler<B> {
     ///
     /// Called by the runtime's tick loop.
     pub async fn tick(&self) {
+        // First, retry runtime messages parked while the runtime channel was
+        // full — before new events, so per-target ordering is preserved.
+        self.drain_pending_runtime();
+
+        // Report input-callback drops from the consumer side (rate-limited).
+        self.report_input_callback_drops();
+
         // Collect messages from the channel (holding the lock briefly)
         let messages: Vec<_> = {
             if let Ok(mut rx) = self.rx.lock() {
@@ -735,7 +798,137 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.tick(current_beat, time_sig_num)
         };
-        self.dispatch_looper_actions(looper_actions).await;
+        self.dispatch_looper_actions(looper_actions);
+    }
+
+    // ========================================================================
+    // Non-blocking runtime channel access
+    // ========================================================================
+
+    /// Send a message to the runtime without ever awaiting channel capacity.
+    ///
+    /// The MIDI tick must never block on the bounded runtime channel: the
+    /// runtime may itself be waiting on work that needs this tick to finish
+    /// (self-backpressure deadlock). If the channel is full, the message is
+    /// parked in `pending_runtime` and retried at the start of the next tick.
+    /// If older messages are already parked, the new message queues behind
+    /// them so global FIFO order is preserved.
+    fn send_runtime_from_tick(&self, msg: Message, from_looper: bool, context: &'static str) {
+        let mut pending = self
+            .pending_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        let msg = if pending.is_empty() {
+            match try_send_runtime(&self.runtime_tx, msg) {
+                RuntimeTrySend::Sent => return,
+                RuntimeTrySend::Closed => {
+                    tracing::warn!("MIDI {}: runtime channel closed, dropping message", context);
+                    return;
+                }
+                RuntimeTrySend::Full(m) => m,
+            }
+        } else {
+            // Messages are already parked: append behind them instead of
+            // sending directly, so a parked NoteOn cannot be overtaken by
+            // its own NoteOff.
+            msg
+        };
+
+        let protected =
+            from_looper || matches!(msg, Message::Voice(VoiceMessage::NoteOff { .. }));
+        pending.push_back(PendingRuntimeMessage { msg, protected });
+
+        if pending.len() > PENDING_RUNTIME_CAP {
+            // Drop the oldest non-protected message. Note-offs and looper
+            // actions are never dropped, so the queue may exceed the cap if
+            // every parked message is protected.
+            if let Some(idx) = pending.iter().position(|p| !p.protected) {
+                pending.remove(idx);
+                drop(pending);
+                self.note_pending_runtime_drop(context);
+            }
+        }
+    }
+
+    /// Retry parked runtime messages in FIFO order until the channel fills
+    /// up again. Called at the start of every tick, before new events.
+    fn drain_pending_runtime(&self) {
+        let mut pending = self
+            .pending_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        while let Some(entry) = pending.pop_front() {
+            match try_send_runtime(&self.runtime_tx, entry.msg) {
+                RuntimeTrySend::Sent => {}
+                RuntimeTrySend::Full(msg) => {
+                    pending.push_front(PendingRuntimeMessage {
+                        msg,
+                        protected: entry.protected,
+                    });
+                    break;
+                }
+                RuntimeTrySend::Closed => {
+                    let dropped = pending.len() + 1;
+                    pending.clear();
+                    tracing::warn!(
+                        "MIDI: runtime channel closed, dropping {} pending messages",
+                        dropped
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Count an overflow drop from the pending runtime queue (warn rate-limited).
+    fn note_pending_runtime_drop(&self, context: &'static str) {
+        let now = Instant::now();
+        let mut drops = self
+            .pending_runtime_drops
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        drops.0 = drops.0.saturating_add(1);
+        if drops
+            .1
+            .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+        {
+            drops.1 = Some(now);
+            tracing::warn!(
+                "MIDI pending runtime queue overflow (cap={}): dropped oldest non-protected message; total_dropped={}, latest_context={}",
+                PENDING_RUNTIME_CAP,
+                drops.0,
+                context
+            );
+        }
+    }
+
+    /// Report events dropped in the midir input callback (rate-limited).
+    ///
+    /// The callback itself must never block or log; it only increments an
+    /// atomic counter, which we report here from the consumer side.
+    fn report_input_callback_drops(&self) {
+        let total = self.input_callback_drops.load(Ordering::Relaxed);
+        let mut reported = self
+            .input_drops_reported
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if total > reported.0 {
+            let now = Instant::now();
+            if reported
+                .1
+                .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+            {
+                tracing::warn!(
+                    "MIDI input callback dropped {} events since last report (total={}): event queue and legacy channel both full",
+                    total - reported.0,
+                    total
+                );
+                reported.0 = total;
+                reported.1 = Some(now);
+            }
+        }
     }
 
     // ========================================================================
@@ -753,11 +946,14 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.reconcile(configs)
         };
-        self.dispatch_looper_actions(actions).await;
+        self.dispatch_looper_actions(actions);
     }
 
-    /// Dispatch a batch of looper actions to the runtime.
-    async fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
+    /// Dispatch a batch of looper actions to the runtime (non-blocking).
+    ///
+    /// Looper messages are dispatched as protected: they are parked (never
+    /// dropped) when the runtime channel is full.
+    fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
         for action in actions {
             match action {
                 LooperAction::NoteOn {
@@ -765,53 +961,53 @@ impl<B: Backend> MidiHandler<B> {
                     note,
                     velocity,
                 } => {
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOn {
                             voice: voice_id,
                             note,
                             velocity: velocity as f32 / 127.0,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Looper: failed to send NoteOn: {}", e);
-                    }
+                        }),
+                        true,
+                        "looper note_on",
+                    );
                 }
                 LooperAction::NoteOff { voice_id, note } => {
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOff {
                             voice: voice_id,
                             note,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Looper: failed to send NoteOff: {}", e);
-                    }
+                        }),
+                        true,
+                        "looper note_off",
+                    );
                 }
                 LooperAction::StopPattern { pattern_id } => {
-                    let _ = self
-                        .runtime_tx
-                        .send_async(Message::Pattern(PatternMessage::Stop { id: pattern_id }))
-                        .await;
-                    let _ = self
-                        .runtime_tx
-                        .send_async(Message::Pattern(PatternMessage::Delete { id: pattern_id }))
-                        .await;
+                    self.send_runtime_from_tick(
+                        Message::Pattern(PatternMessage::Stop { id: pattern_id }),
+                        true,
+                        "looper stop_pattern",
+                    );
+                    self.send_runtime_from_tick(
+                        Message::Pattern(PatternMessage::Delete { id: pattern_id }),
+                        true,
+                        "looper delete_pattern",
+                    );
                 }
                 LooperAction::StartPattern { config, pattern_id } => {
-                    let _ = self
-                        .runtime_tx
-                        .send_async(Message::Pattern(PatternMessage::Create {
+                    self.send_runtime_from_tick(
+                        Message::Pattern(PatternMessage::Create {
                             id: pattern_id,
                             config,
                             owner: PatternOwner::Looper,
-                        }))
-                        .await;
-                    let _ = self
-                        .runtime_tx
-                        .send_async(Message::Pattern(PatternMessage::Start { id: pattern_id }))
-                        .await;
+                        }),
+                        true,
+                        "looper create_pattern",
+                    );
+                    self.send_runtime_from_tick(
+                        Message::Pattern(PatternMessage::Start { id: pattern_id }),
+                        true,
+                        "looper start_pattern",
+                    );
                 }
             }
         }
@@ -961,6 +1157,9 @@ impl<B: Backend> MidiHandler<B> {
                 self.handle_pitch_bend(basic_routes, advanced_routes, advanced_bend_routes, *value)
                     .await;
             }
+            // TODO: external MIDI clock sync is unimplemented — Clock/Start/
+            // Stop/Continue from devices are only logged and never drive the
+            // transport or tempo.
             MidiMessage::Clock => {
                 tracing::trace!("MIDI Clock pulse from device {}", device_id.0);
             }
@@ -1029,7 +1228,7 @@ impl<B: Backend> MidiHandler<B> {
                     time_sig_num,
                 )
             };
-            self.dispatch_looper_actions(actions).await;
+            self.dispatch_looper_actions(actions);
             return;
         }
 
@@ -1046,17 +1245,15 @@ impl<B: Backend> MidiHandler<B> {
                     note,
                     velocity
                 );
-                if let Err(e) = self
-                    .runtime_tx
-                    .send_async(Message::Voice(VoiceMessage::NoteOn {
+                self.send_runtime_from_tick(
+                    Message::Voice(VoiceMessage::NoteOn {
                         voice: route.voice_id,
                         note,
                         velocity: vel_f32,
-                    }))
-                    .await
-                {
-                    tracing::warn!("Failed to send MIDI note_on to runtime: {}", e);
-                }
+                    }),
+                    false,
+                    "keyboard note_on",
+                );
             }
         }
 
@@ -1079,17 +1276,15 @@ impl<B: Backend> MidiHandler<B> {
                         velocity,
                         curved_velocity
                     );
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOn {
                             voice: voice_id,
                             note: transposed_note,
                             velocity: vel,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Failed to send MIDI advanced note_on to runtime: {}", e);
-                    }
+                        }),
+                        false,
+                        "advanced keyboard note_on",
+                    );
                 }
             }
         }
@@ -1120,30 +1315,26 @@ impl<B: Backend> MidiHandler<B> {
                             voice_id.0,
                             note
                         );
-                        if let Err(e) = self
-                            .runtime_tx
-                            .send_async(Message::Voice(VoiceMessage::SetParam {
+                        self.send_runtime_from_tick(
+                            Message::Voice(VoiceMessage::SetParam {
                                 id: voice_id,
                                 param: param.to_string(),
                                 value: value as f32,
-                            }))
-                            .await
-                        {
-                            tracing::warn!("Failed to send MIDI velocity param to runtime: {}", e);
-                        }
+                            }),
+                            false,
+                            "note route velocity param",
+                        );
                     }
 
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOn {
                             voice: voice_id,
                             note,
                             velocity: vel_curved,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Failed to send MIDI note route on to runtime: {}", e);
-                    }
+                        }),
+                        false,
+                        "note route note_on",
+                    );
                 }
             }
         }
@@ -1176,7 +1367,7 @@ impl<B: Backend> MidiHandler<B> {
                     .unwrap_or_else(|e| e.into_inner());
                 mgr.handle_note_off(device_id, channel, note, capture_beat)
             };
-            self.dispatch_looper_actions(actions).await;
+            self.dispatch_looper_actions(actions);
             return;
         }
 
@@ -1186,16 +1377,14 @@ impl<B: Backend> MidiHandler<B> {
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
                 tracing::debug!("MIDI note_off: voice={}, note={}", route.voice_id.0, note);
-                if let Err(e) = self
-                    .runtime_tx
-                    .send_async(Message::Voice(VoiceMessage::NoteOff {
+                self.send_runtime_from_tick(
+                    Message::Voice(VoiceMessage::NoteOff {
                         voice: route.voice_id,
                         note,
-                    }))
-                    .await
-                {
-                    tracing::warn!("Failed to send MIDI note_off to runtime: {}", e);
-                }
+                    }),
+                    false,
+                    "keyboard note_off",
+                );
             }
         }
 
@@ -1214,16 +1403,14 @@ impl<B: Backend> MidiHandler<B> {
                         note,
                         transposed_note
                     );
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOff {
                             voice: voice_id,
                             note: transposed_note,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Failed to send MIDI advanced note_off to runtime: {}", e);
-                    }
+                        }),
+                        false,
+                        "advanced keyboard note_off",
+                    );
                 }
             }
         }
@@ -1236,16 +1423,14 @@ impl<B: Backend> MidiHandler<B> {
             {
                 if let Some(voice_id) = route.target_voice {
                     tracing::debug!("MIDI note route off: voice={}, note={}", voice_id.0, note);
-                    if let Err(e) = self
-                        .runtime_tx
-                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                    self.send_runtime_from_tick(
+                        Message::Voice(VoiceMessage::NoteOff {
                             voice: voice_id,
                             note,
-                        }))
-                        .await
-                    {
-                        tracing::warn!("Failed to send MIDI note route off to runtime: {}", e);
-                    }
+                        }),
+                        false,
+                        "note route note_off",
+                    );
                 }
             }
         }
@@ -1904,17 +2089,15 @@ impl<B: Backend> MidiHandler<B> {
                 transposed_note,
                 velocity.as_f32()
             );
-            if let Err(e) = self
-                .runtime_tx
-                .send_async(Message::Voice(VoiceMessage::NoteOn {
+            self.send_runtime_from_tick(
+                Message::Voice(VoiceMessage::NoteOn {
                     voice: route.voice_id,
                     note: transposed_note,
                     velocity: velocity.as_f32(),
-                }))
-                .await
-            {
-                tracing::warn!("Failed to send MIDI 2.0 note_on to runtime: {}", e);
-            }
+                }),
+                false,
+                "midi2 note_on",
+            );
         }
     }
 
@@ -1955,16 +2138,14 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 transposed_note
             );
-            if let Err(e) = self
-                .runtime_tx
-                .send_async(Message::Voice(VoiceMessage::NoteOff {
+            self.send_runtime_from_tick(
+                Message::Voice(VoiceMessage::NoteOff {
                     voice: route.voice_id,
                     note: transposed_note,
-                }))
-                .await
-            {
-                tracing::warn!("Failed to send MIDI 2.0 note_off to runtime: {}", e);
-            }
+                }),
+                false,
+                "midi2 note_off",
+            );
         }
     }
 
@@ -2546,6 +2727,100 @@ mod tests {
         let create_params = backend.synth_create_params();
         let note_params = create_params.last().expect("NoteOn should create a synth");
         assert_eq!(note_params.get("cutoff"), Some(&2000.0));
+    }
+
+    #[tokio::test]
+    async fn note_flood_against_full_runtime_channel_does_not_block_or_lose_note_offs() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+
+        // Tiny runtime channel: fills after two messages, like a busy runtime.
+        let (runtime_tx, mut runtime_rx) = channel(2);
+        let midi = MidiHandler::new(Arc::clone(&backend), Arc::clone(&state), runtime_tx);
+        midi.add_note_route(NoteRouteBuilder::new(device_id, 36).to(voice_id))
+            .await;
+
+        const PAIRS: usize = 32;
+        let mut sequence = 0;
+        for _ in 0..PAIRS {
+            sequence += 1;
+            assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+                sequence,
+                Instant::now(),
+                device_id,
+                NewMidiMessage::NoteOn {
+                    channel: Channel::new(0),
+                    note: 36,
+                    velocity: Velocity::from_midi1(100),
+                },
+            )));
+            sequence += 1;
+            assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+                sequence,
+                Instant::now(),
+                device_id,
+                NewMidiMessage::NoteOff {
+                    channel: Channel::new(0),
+                    note: 36,
+                    velocity: Velocity::ZERO,
+                },
+            )));
+        }
+
+        // The runtime channel is full after two messages; the tick must park
+        // the rest instead of awaiting channel capacity (self-backpressure
+        // deadlock).
+        timeout(Duration::from_millis(100), midi.tick())
+            .await
+            .expect("note flood against a full runtime channel must not block the MIDI tick");
+
+        // Drain the runtime channel tick-by-tick, as the real runtime would.
+        let mut received = Vec::new();
+        for _ in 0..1000 {
+            while let Ok(msg) = runtime_rx.try_recv() {
+                received.push(msg);
+            }
+            if received.len() == PAIRS * 2 {
+                break;
+            }
+            timeout(Duration::from_millis(100), midi.tick())
+                .await
+                .expect("draining parked runtime messages must not block the MIDI tick");
+        }
+
+        assert_eq!(
+            received.len(),
+            PAIRS * 2,
+            "all NoteOn/NoteOff messages must reach the runtime once the channel drains"
+        );
+
+        let mut ons = 0;
+        let mut offs = 0;
+        for (i, msg) in received.iter().enumerate() {
+            match msg {
+                Message::Voice(VoiceMessage::NoteOn { voice, note, .. }) => {
+                    assert_eq!(*voice, voice_id);
+                    assert_eq!(*note, 36);
+                    assert_eq!(i % 2, 0, "NoteOn overtaken by a NoteOff at index {i}");
+                    ons += 1;
+                }
+                Message::Voice(VoiceMessage::NoteOff { voice, note }) => {
+                    assert_eq!(*voice, voice_id);
+                    assert_eq!(*note, 36);
+                    assert_eq!(i % 2, 1, "NoteOff overtook its NoteOn at index {i}");
+                    offs += 1;
+                }
+                other => panic!("expected only NoteOn/NoteOff, got {other:?}"),
+            }
+        }
+        assert_eq!(ons, PAIRS, "no NoteOn may be lost");
+        assert_eq!(offs, PAIRS, "no NoteOff may be lost");
     }
 
     #[tokio::test]

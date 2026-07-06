@@ -215,8 +215,11 @@ impl MidiEventSender {
                 true
             }
             Err(TrySendError::Full(_)) => {
+                // No warn here: this runs on MIDI driver callback threads and
+                // would flood the log exactly when the system is overloaded.
+                // Drops are counted in stats; consumers report them.
                 self.stats.events_dropped.fetch_add(1, Ordering::Relaxed);
-                tracing::warn!("[MIDI_QUEUE] Event dropped: queue full");
+                tracing::trace!("[MIDI_QUEUE] Event dropped: queue full");
                 false
             }
             Err(TrySendError::Disconnected(_)) => {
