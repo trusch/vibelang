@@ -324,47 +324,22 @@ fn get_note_hints(line_num: u32, line: &str) -> Vec<InlayHint> {
 }
 
 /// Convert note name to frequency.
+///
+/// Delegates to the canonical parser in `vibelang_dsp::notes`. Unclamped on
+/// purpose: hints for out-of-MIDI-range notes (e.g. "b9") keep displaying
+/// the raw value, as before.
 fn note_to_frequency(note: &str, octave: i32) -> Option<f64> {
-    let semitone = match note {
-        "c" => 0,
-        "c#" | "db" => 1,
-        "d" => 2,
-        "d#" | "eb" => 3,
-        "e" => 4,
-        "f" => 5,
-        "f#" | "gb" => 6,
-        "g" => 7,
-        "g#" | "ab" => 8,
-        "a" => 9,
-        "a#" | "bb" => 10,
-        "b" => 11,
-        _ => return None,
-    };
-
+    let midi_note = vibelang_dsp::notes::parse_note_name_raw(&format!("{}{}", note, octave))?;
     // A4 = 440 Hz, MIDI note 69
-    let midi_note = (octave + 1) * 12 + semitone;
     let freq = 440.0 * 2.0_f64.powf((midi_note as f64 - 69.0) / 12.0);
     Some(freq)
 }
 
-/// Convert note name to MIDI number.
+/// Convert note name to MIDI number (unclamped; invalid note letter maps
+/// to semitone 0, matching the previous behavior).
 fn note_to_midi(note: &str, octave: i32) -> i32 {
-    let semitone = match note {
-        "c" => 0,
-        "c#" | "db" => 1,
-        "d" => 2,
-        "d#" | "eb" => 3,
-        "e" => 4,
-        "f" => 5,
-        "f#" | "gb" => 6,
-        "g" => 7,
-        "g#" | "ab" => 8,
-        "a" => 9,
-        "a#" | "bb" => 10,
-        "b" => 11,
-        _ => 0,
-    };
-    (octave + 1) * 12 + semitone
+    vibelang_dsp::notes::parse_note_name_raw(&format!("{}{}", note, octave))
+        .unwrap_or((octave + 1) * 12)
 }
 
 /// Get duration hints for note values (tempo-aware).

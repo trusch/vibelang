@@ -233,46 +233,22 @@ pub async fn stop_melody(
 
 /// Parse a note string to MIDI note number.
 /// Supports formats like "C4", "60", "C#4", "Db4".
+///
+/// Delegates to the canonical parser in `vibelang_dsp::notes`, with the
+/// HTTP-specific adjustments this endpoint has always had: numeric strings
+/// pass through as-is, the input is lowercased so all-caps flats ("DB4")
+/// keep working, out-of-range results are clamped to 0..=127, and
+/// unparseable input falls back to middle C (60).
 fn parse_note(note: &str) -> u8 {
     // Try parsing as number first
     if let Ok(n) = note.parse::<u8>() {
         return n;
     }
 
-    // Parse note name
-    let note_upper = note.to_uppercase();
-    let mut chars = note_upper.chars().peekable();
-
-    let base = match chars.next() {
-        Some('C') => 0,
-        Some('D') => 2,
-        Some('E') => 4,
-        Some('F') => 5,
-        Some('G') => 7,
-        Some('A') => 9,
-        Some('B') => 11,
-        _ => return 60, // Default to middle C
-    };
-
-    let mut offset = 0i8;
-    while let Some(&c) = chars.peek() {
-        match c {
-            '#' => {
-                offset += 1;
-                chars.next();
-            }
-            'B' if chars.clone().count() > 1 => {
-                offset -= 1;
-                chars.next();
-            } // 'b' for flat
-            _ => break,
-        }
+    match vibelang_dsp::notes::parse_note_name_raw(&note.to_lowercase()) {
+        Some(v) => v.clamp(0, 127) as u8,
+        None => 60, // Default to middle C
     }
-
-    // Parse octave
-    let octave: i8 = chars.collect::<String>().parse().unwrap_or(4);
-
-    ((octave + 1) * 12 + base as i8 + offset).clamp(0, 127) as u8
 }
 
 /// POST /melodies - Create a new melody

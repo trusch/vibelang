@@ -4,7 +4,7 @@
 
 use rhai::{Array, Dynamic, Engine, EvalAltResult, Position};
 use std::sync::atomic::{AtomicU64, Ordering};
-use vibelang_core::midi::parse_note_name;
+use vibelang_dsp::notes::parse_note_name;
 
 use crate::context;
 

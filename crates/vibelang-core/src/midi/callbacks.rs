@@ -575,57 +575,10 @@ impl CcRouteBuilder {
 // ============================================================================
 
 /// Parse a note name like "C4", "F#3", or "Bb4" to a MIDI note number.
-/// Supports multiple accidentals (#, b, ♯, ♭), Unicode symbols, and defaults
-/// to octave 4 when no octave is specified (e.g. "C" → 60).
-pub fn parse_note_name(name: &str) -> Option<u8> {
-    let name = name.trim();
-    if name.is_empty() {
-        return None;
-    }
-
-    let mut chars = name.chars().peekable();
-
-    // Parse note letter (C, D, E, F, G, A, B)
-    let base = match chars.next()?.to_ascii_uppercase() {
-        'C' => 0,
-        'D' => 2,
-        'E' => 4,
-        'F' => 5,
-        'G' => 7,
-        'A' => 9,
-        'B' => 11,
-        _ => return None,
-    };
-
-    // Parse accidentals (# or b, multiple, Unicode)
-    let mut accidental = 0i8;
-    while let Some(&c) = chars.peek() {
-        match c {
-            '#' | '♯' => {
-                accidental += 1;
-                chars.next();
-            }
-            'b' | '♭' => {
-                accidental -= 1;
-                chars.next();
-            }
-            _ => break,
-        }
-    }
-
-    // Parse octave (defaults to 4 if absent)
-    let octave_str: String = chars.collect();
-    let octave: i8 = octave_str.parse().unwrap_or(4);
-
-    // Calculate MIDI note (C4 = 60)
-    let midi = (octave + 1) as i16 * 12 + base as i16 + accidental as i16;
-
-    if (0..=127).contains(&midi) {
-        Some(midi as u8)
-    } else {
-        None
-    }
-}
+///
+/// Canonical implementation lives in `vibelang_dsp::notes`; re-exported
+/// here so `vibelang_core::midi::parse_note_name` keeps working.
+pub use vibelang_dsp::notes::parse_note_name;
 
 #[cfg(test)]
 mod tests {
@@ -661,22 +614,6 @@ mod tests {
         // Exponential at midpoint should be less than linear
         let exp_mid = ParameterCurve::Exponential.apply(0.5, 0.0, 100.0);
         assert!(exp_mid < 50.0);
-    }
-
-    #[test]
-    fn test_parse_note_name() {
-        assert_eq!(parse_note_name("C4"), Some(60));
-        assert_eq!(parse_note_name("A4"), Some(69));
-        assert_eq!(parse_note_name("C#4"), Some(61));
-        assert_eq!(parse_note_name("Bb4"), Some(70));
-        assert_eq!(parse_note_name("C##4"), Some(62));
-        assert_eq!(parse_note_name("C♯4"), Some(61));
-        assert_eq!(parse_note_name("D♭4"), Some(61));
-        assert_eq!(parse_note_name("C0"), Some(12));
-        assert_eq!(parse_note_name("C-1"), Some(0));
-        assert_eq!(parse_note_name("G9"), Some(127));
-        assert_eq!(parse_note_name("C"), Some(60)); // defaults to octave 4
-        assert_eq!(parse_note_name("c4"), Some(60)); // lowercase
     }
 
     #[test]

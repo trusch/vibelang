@@ -44,7 +44,10 @@ Known limitations:
 
 ## Medium
 
-- [ ] **CR-8** Duplicate `parse_note_name` — helpers.rs vs midi/callbacks.rs
+- [x] **CR-8** Duplicate `parse_note_name` — canonical impl now lives in
+  `vibelang_dsp::notes` (`parse_note_name` + unclamped `parse_note_name_raw`);
+  core re-exports it via `vibelang_core::midi::parse_note_name`, and the
+  wasm/http/lsp copies were replaced with thin delegating wrappers
 - [x] **CR-9** Voice with empty synthdef — now logs warning
 - [x] **CR-10** Pattern `.on()` doesn't verify voice exists — now warns
 - [x] **CR-11** MIDI channel convention — standardized to 1-16 (musician convention)

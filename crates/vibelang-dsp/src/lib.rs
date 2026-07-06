@@ -25,6 +25,7 @@ pub mod encoder;
 pub mod errors;
 pub mod graph;
 pub mod helpers;
+pub mod notes;
 pub mod rhainodes;
 pub mod system_synthdefs;
 
@@ -53,6 +54,7 @@ pub use helpers::{
     amp_to_db, channel, channels, db_to_amp, detune_spread, dup, env_gen, env_gen_with_env,
     env_gen_with_env_n, in_ar, in_ar_n, mix, replace_out_ar, replace_out_ar_n, Env, EnvGenBuilder,
 };
+pub use notes::{parse_note_name, parse_note_name_raw};
 pub use rhainodes::{register_node_ref, NodeRef};
 
 /// Re-export the generated UGen registration function.

@@ -17,6 +17,9 @@ midi = ["vibelang-core/midi", "dep:midir"]
 # Core runtime
 vibelang-core = { version = "0.4.0", default-features = false }
 
+# Canonical note-name parsing (already in the dependency graph via core)
+vibelang-dsp = "0.4.0"
+
 # HTTP framework
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors"] }

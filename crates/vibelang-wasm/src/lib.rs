@@ -45,7 +45,7 @@ use vibelang_core::message::TransportMessage;
 use vibelang_core::{Message, Runtime};
 use vibelang_dsp::{
     clear_effect_registry, clear_synthdef_registry, get_all_effects_encoded,
-    get_all_synthdefs_encoded, set_deploy_callback, system_synthdefs,
+    get_all_synthdefs_encoded, notes::parse_note_name, set_deploy_callback, system_synthdefs,
 };
 use vibelang_rhai::ScriptEngine;
 #[cfg(target_arch = "wasm32")]
@@ -59,50 +59,6 @@ pub fn init_panic_hook() {
 
     // Set a no-op deploy callback since we handle synthdefs manually in WASM
     set_deploy_callback(|_| Ok(()));
-}
-
-fn parse_note_name(name: &str) -> Option<u8> {
-    let name = name.trim();
-    if name.is_empty() {
-        return None;
-    }
-
-    let mut chars = name.chars().peekable();
-    let base = match chars.next()?.to_ascii_uppercase() {
-        'C' => 0,
-        'D' => 2,
-        'E' => 4,
-        'F' => 5,
-        'G' => 7,
-        'A' => 9,
-        'B' => 11,
-        _ => return None,
-    };
-
-    let mut accidental = 0i8;
-    while let Some(&c) = chars.peek() {
-        match c {
-            '#' | '\u{266f}' => {
-                accidental += 1;
-                chars.next();
-            }
-            'b' | '\u{266d}' => {
-                accidental -= 1;
-                chars.next();
-            }
-            _ => break,
-        }
-    }
-
-    let octave_str: String = chars.collect();
-    let octave = if octave_str.is_empty() {
-        4
-    } else {
-        octave_str.parse().ok()?
-    };
-    let note = (octave + 1) as i16 * 12 + base as i16 + accidental as i16;
-
-    (0..=127).contains(&note).then_some(note as u8)
 }
 
 /// Result from executing a VibeLang script.
