@@ -43,7 +43,9 @@ define_synthdef("lfo_tri")
     .body(|rate, lo, hi| {
     let osc = lf_tri_kr(rate); // Triangle wave LFO (-1 to 1)
     let normalized = osc * 0.5 + 0.5; // Map to [0, 1]
-    normalized * (hi - lo) + lo // Map to [lo, hi]
+    // A synthdef with declared output ports must return an array
+    // with one signal per port.
+    [normalized * (hi - lo) + lo] // Map to [lo, hi]
 });
 
 
