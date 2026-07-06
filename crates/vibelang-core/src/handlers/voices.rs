@@ -529,7 +529,8 @@ impl<B: Backend> VoicesHandler<B> {
                 .get(&voice.config.group)
                 .ok_or(Error::GroupNotFound(voice.config.group))?;
 
-            let synthdef = voice.config.synthdef.clone();
+            let mut synthdef = voice.config.synthdef.clone();
+            let sfz_instrument = voice.config.sfz_instrument;
             let group_node_id = group.node_id;
 
             // Build routing params first so script/user params can override them.
@@ -589,6 +590,27 @@ impl<B: Backend> VoicesHandler<B> {
                             params.insert("endPos".to_string(), end_frame);
                         }
                     }
+                }
+            }
+
+            // SFZ voices: match the region for this note and apply its
+            // bufnum/rate/envelope/loop params; pick mono/stereo synthdef
+            // by the sample's channel count. Without this sfz_voice_*
+            // spawns with defaults (bufnum=0, rate=1, release=0.01):
+            // wrong sample, no repitching, click on note-off.
+            if let Some(sfz_id) = sfz_instrument {
+                let Some(spawn) = crate::handlers::sfz_note_spawn_params(
+                    &mut state, sfz_id, note, velocity,
+                ) else {
+                    return Ok(()); // no matching region — skip, don't play buffer 0
+                };
+                synthdef = spawn.synthdef.to_string();
+                for (k, v) in spawn.params {
+                    params.insert(k, v);
+                }
+                // Per-note extra params still override region defaults.
+                for (k, v) in extra_params {
+                    params.insert(k.clone(), *v);
                 }
             }
 
