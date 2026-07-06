@@ -62,29 +62,36 @@ impl<B: Backend> SamplesHandler<B> {
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
         Self { backend, state }
     }
-}
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<B: Backend> Samples for SamplesHandler<B> {
-    async fn load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo> {
-        let mut state = self.state.write().await;
+    /// Load a sample's buffer without publishing it to state.
+    ///
+    /// The state lock is held only for the synchronous buffer-ID
+    /// allocation, NOT across the backend round-trip. Holding it across
+    /// the await would serialize concurrent loads (making a surrounding
+    /// `join_all` a no-op) and stall every other state reader — including
+    /// the runtime tick task — for the duration of the file load.
+    ///
+    /// Pair with [`Self::commit`] to make the sample visible, or return
+    /// the buffer via `State::free_buffer_id` + `Backend::free_buffer` if
+    /// the staged sample is discarded.
+    pub async fn stage_load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo> {
+        // Allocate buffer ID (short lock, dropped before the await below)
+        let buffer_id = self.state.write().await.alloc_buffer_id()?;
 
-        // Allocate buffer ID
-        let buffer_id = state.alloc_buffer_id()?;
+        // Load buffer via backend — no state lock held here.
+        let buffer_info = match self.backend.load_buffer(buffer_id, &config.path).await {
+            Ok(info) => info,
+            Err(e) => {
+                // Nothing references the ID yet — return it to the pool.
+                self.state.write().await.free_buffer_id(buffer_id);
+                return Err(Error::SampleLoadFailed {
+                    path: config.path,
+                    reason: e.to_string(),
+                });
+            }
+        };
 
-        // Load buffer via backend
-        let buffer_info = self
-            .backend
-            .load_buffer(buffer_id, &config.path)
-            .await
-            .map_err(|e| Error::SampleLoadFailed {
-                path: config.path.clone(),
-                reason: e.to_string(),
-            })?;
-
-        // Create sample info
-        let info = SampleInfo {
+        Ok(SampleInfo {
             id,
             buffer_id,
             path: config.path,
@@ -92,19 +99,28 @@ impl<B: Backend> Samples for SamplesHandler<B> {
             sample_rate: buffer_info.sample_rate,
             channels: buffer_info.channels,
             detected_bpm: None, // TODO: Implement BPM detection
-        };
+        })
+    }
 
-        // Store in state
-        state.samples.insert(id, info.clone());
-
+    /// Publish a staged sample into state (synchronous mutation only).
+    pub async fn commit(&self, info: SampleInfo) {
         tracing::debug!(
             "Loaded sample {} from {:?} (buffer_id={}, duration={:.2}s)",
-            id.0,
+            info.id.0,
             info.path,
-            buffer_id.0,
+            info.buffer_id.0,
             info.duration_secs
         );
+        self.state.write().await.samples.insert(info.id, info);
+    }
+}
 
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<B: Backend> Samples for SamplesHandler<B> {
+    async fn load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo> {
+        let info = self.stage_load(id, config).await?;
+        self.commit(info.clone()).await;
         Ok(info)
     }
 

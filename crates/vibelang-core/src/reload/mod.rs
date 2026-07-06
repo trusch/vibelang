@@ -99,6 +99,33 @@ use crate::types::{
     TimeSignature, VoiceId,
 };
 
+/// Buffer-backed assets pre-loaded off the runtime task for a pending reload.
+///
+/// Sample and SFZ loads are the expensive part of a reload (file I/O plus
+/// backend `/b_allocRead` round-trips). The runtime stages them on a side
+/// task before the reload is applied, so `apply_reload` only performs cheap
+/// state mutation and OSC sends — the tick loop never stalls behind a load.
+///
+/// Entries are keyed by the script-assigned entity IDs. During apply, each
+/// entity the diff wants created (or, for SFZ, updated) consumes its staged
+/// asset with a plain state insert; anything the diff no longer needs (state
+/// drifted between staging and apply) is discarded and its buffers freed.
+#[derive(Clone, Debug, Default)]
+pub struct StagedReloadAssets {
+    /// Pre-loaded samples, ready to insert into `State::samples`.
+    pub samples: HashMap<SampleId, crate::traits::SampleInfo>,
+    /// Pre-loaded SFZ instruments (all region buffers loaded), ready to
+    /// insert into `State::sfz_instruments`.
+    pub sfz: HashMap<SfzId, crate::state::SfzInstrumentState>,
+}
+
+impl StagedReloadAssets {
+    /// True when no staged assets are held.
+    pub fn is_empty(&self) -> bool {
+        self.samples.is_empty() && self.sfz.is_empty()
+    }
+}
+
 /// Quantization mode for applying hot reload changes.
 ///
 /// Controls when content swaps take effect during playback. Using musical

@@ -343,6 +343,19 @@ pub enum ReloadMessage {
     /// The runtime will diff the new state against the current state and
     /// apply only the necessary changes (create, update, delete entities).
     Apply { state: crate::reload::ScriptState },
+
+    /// Internal: apply a reload whose expensive buffer loads (samples,
+    /// SFZ instruments) were already staged off the runtime task.
+    ///
+    /// Sent by the runtime's own staging task once all loads completed;
+    /// external callers should send [`ReloadMessage::Apply`], which stages
+    /// automatically when needed.
+    ApplyStaged {
+        /// The script state to apply.
+        state: crate::reload::ScriptState,
+        /// Pre-loaded buffer assets consumed during the apply.
+        assets: crate::reload::StagedReloadAssets,
+    },
 }
 
 // =============================================================================
@@ -670,6 +683,7 @@ impl Message {
             },
             Message::Reload(msg) => match msg.as_ref() {
                 ReloadMessage::Apply { .. } => "Reload::Apply",
+                ReloadMessage::ApplyStaged { .. } => "Reload::ApplyStaged",
             },
             Message::Sync(msg) => match msg {
                 SyncMessage::SyncAndNotify { .. } => "Sync::SyncAndNotify",

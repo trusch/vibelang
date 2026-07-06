@@ -90,10 +90,17 @@ impl<B: Backend> SfzHandler<B> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<B: Backend> Sfz for SfzHandler<B> {
-    async fn load(&self, id: SfzId, path: &Path) -> Result<()> {
+impl<B: Backend> SfzHandler<B> {
+    /// Parse an SFZ file and load its sample buffers without publishing
+    /// the instrument to state.
+    ///
+    /// This is the expensive half of [`Sfz::load`] (file I/O plus one
+    /// backend `/b_allocRead` round-trip per unique sample). It can run
+    /// off the runtime task; pair with [`Self::commit`] to make the
+    /// instrument visible atomically. If the staged instrument is
+    /// discarded instead, its region buffers must be freed via
+    /// `State::free_buffer_id` + `Backend::free_buffer`.
+    pub async fn stage_load(&self, id: SfzId, path: &Path) -> Result<SfzInstrumentState> {
         tracing::info!("Loading SFZ instrument {} from {}", id.0, path.display());
 
         // We need to load the SFZ file, then load each unique sample via backend
@@ -171,20 +178,6 @@ impl<B: Backend> Sfz for SfzHandler<B> {
             .map(|r| Self::build_region_state(r, &buffer_id_map))
             .collect();
 
-        // Store in state
-        {
-            let mut state = self.state.write().await;
-            state.sfz_instruments.insert(
-                id,
-                SfzInstrumentState {
-                    id,
-                    path: path.to_path_buf(),
-                    regions,
-                    round_robin_state: HashMap::new(),
-                },
-            );
-        }
-
         // Surface load diagnostics once per instrument: how many regions
         // made it, why any were dropped, and which opcodes were ignored.
         let diag = &sfz_instrument.diagnostics;
@@ -213,6 +206,30 @@ impl<B: Backend> Sfz for SfzHandler<B> {
             );
         }
 
+        Ok(SfzInstrumentState {
+            id,
+            path: path.to_path_buf(),
+            regions,
+            round_robin_state: HashMap::new(),
+        })
+    }
+
+    /// Publish a staged instrument into state (synchronous mutation only).
+    pub async fn commit(&self, instrument: SfzInstrumentState) {
+        self.state
+            .write()
+            .await
+            .sfz_instruments
+            .insert(instrument.id, instrument);
+    }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<B: Backend> Sfz for SfzHandler<B> {
+    async fn load(&self, id: SfzId, path: &Path) -> Result<()> {
+        let instrument = self.stage_load(id, path).await?;
+        self.commit(instrument).await;
         Ok(())
     }
 

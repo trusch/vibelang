@@ -119,6 +119,25 @@ pub struct Runtime<B: Backend> {
     #[cfg(feature = "midi")]
     clock_thread_started: bool,
 
+    /// True while a reload's expensive buffer loads (samples, SFZ) are
+    /// being staged on a side task. While set, incoming reloads queue in
+    /// [`Self::pending_reloads`] and `SyncAndNotify` barriers defer to
+    /// [`Self::deferred_sync_notifies`].
+    #[cfg(not(target_arch = "wasm32"))]
+    reload_staging_in_flight: bool,
+
+    /// Reload requests that arrived while a staging was in flight, in
+    /// arrival order. Applied strictly in order once staging completes.
+    #[cfg(not(target_arch = "wasm32"))]
+    pending_reloads: std::collections::VecDeque<reload::ScriptState>,
+
+    /// `SyncAndNotify` senders that arrived while a reload was staging.
+    /// Notified (after a backend sync) once all queued reloads applied, so
+    /// `RuntimeHandle::sync_and_wait` keeps its "everything sent before me
+    /// has been fully processed" barrier semantics.
+    #[cfg(not(target_arch = "wasm32"))]
+    deferred_sync_notifies: Vec<crate::compat::OneshotSender<()>>,
+
     // =========================================================================
     // Feature Handlers
     // =========================================================================
@@ -153,6 +172,25 @@ struct PendingVoicePortReconcile {
     voice_id: VoiceId,
     new_ports: Vec<OutputPort>,
     refreshed_ports: Vec<String>,
+}
+
+/// The buffer loads a reload needs before it can apply, in deterministic
+/// (raw-ID-sorted) order. Computed on the runtime task from cheap state
+/// reads; executed off-task by [`Runtime::spawn_reload_staging`].
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Default)]
+struct ReloadStagingPlan {
+    /// New samples to load (created entries only).
+    samples: Vec<(crate::types::SampleId, crate::traits::SampleConfig)>,
+    /// New or path-changed SFZ instruments to load.
+    sfz: Vec<(crate::types::SfzId, std::path::PathBuf)>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ReloadStagingPlan {
+    fn is_empty(&self) -> bool {
+        self.samples.is_empty() && self.sfz.is_empty()
+    }
 }
 
 /// Default value a group param falls back to when removed from the script.
@@ -252,6 +290,12 @@ impl<B: Backend> Runtime<B> {
             tick_count: 0,
             #[cfg(feature = "midi")]
             clock_thread_started: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            reload_staging_in_flight: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            pending_reloads: std::collections::VecDeque::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            deferred_sync_notifies: Vec::new(),
         }
     }
 
@@ -524,20 +568,76 @@ impl<B: Backend> Runtime<B> {
                 FadeMessage::Cancel { target, param } => self.fades.cancel(&target, &param).await,
             },
 
-            // Reload - apply new script state
+            // Reload - apply new script state. On native, expensive buffer
+            // loads (samples, SFZ) are staged on a side task first so the
+            // tick loop keeps running; the apply itself stays on this task.
             Message::Reload(reload_msg) => match *reload_msg {
-                ReloadMessage::Apply { state: new_state } => self.apply_reload(new_state).await,
+                ReloadMessage::Apply { state: new_state } => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        self.pending_reloads.push_back(new_state);
+                        self.advance_reload_queue().await;
+                        Ok(())
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        self.apply_reload(new_state).await
+                    }
+                }
+                ReloadMessage::ApplyStaged { state, assets } => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        self.reload_staging_in_flight = false;
+                        let result = self.apply_reload_with_assets(state, assets).await;
+                        self.advance_reload_queue().await;
+                        result
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        self.apply_reload_with_assets(state, assets).await
+                    }
+                }
             },
 
             // Sync - synchronize with backend and notify caller
             Message::Sync(sync_msg) => match sync_msg {
                 SyncMessage::SyncAndNotify { notify } => {
-                    tracing::info!("Processing sync request, syncing with backend...");
-                    let result = self.backend.sync().await;
-                    tracing::info!("Backend sync complete, notifying caller");
-                    // Send notification regardless of sync result
-                    let _ = notify.send(());
-                    result.map_err(Error::backend)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        if self.reload_staging_in_flight || !self.pending_reloads.is_empty() {
+                            // A reload sent before this sync is still staging
+                            // off-task. Defer the notification until it has
+                            // applied so the sync keeps its barrier meaning.
+                            tracing::debug!(
+                                "Sync request deferred until staged reload applies"
+                            );
+                            self.deferred_sync_notifies.push(notify);
+                            return Ok(());
+                        }
+                        // The backend /sync round-trip can block for up to
+                        // its internal timeout (~5s against a wedged
+                        // scsynth). Wait on a side task so ticks keep
+                        // running; the caller is notified when it completes.
+                        tracing::info!("Processing sync request, syncing with backend...");
+                        let backend = self.backend.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = backend.sync().await {
+                                tracing::warn!("Backend sync failed: {:?}", e);
+                            }
+                            tracing::info!("Backend sync complete, notifying caller");
+                            let _ = notify.send(());
+                        });
+                        Ok(())
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        tracing::info!("Processing sync request, syncing with backend...");
+                        let result = self.backend.sync().await;
+                        tracing::info!("Backend sync complete, notifying caller");
+                        // Send notification regardless of sync result
+                        let _ = notify.send(());
+                        result.map_err(Error::backend)
+                    }
                 }
             },
 
@@ -1082,7 +1182,206 @@ impl<B: Backend> Runtime<B> {
         }
     }
 
+    /// Processes queued reload requests in arrival order.
+    ///
+    /// For each queued script state: if its expensive buffer loads (new
+    /// samples, new/changed SFZ instruments) are already satisfied, the
+    /// reload applies immediately on this task; otherwise the loads are
+    /// staged on a side task and the loop stops — the staged apply arrives
+    /// later as [`ReloadMessage::ApplyStaged`], which re-enters this queue.
+    /// Once the queue drains with no staging in flight, deferred
+    /// `SyncAndNotify` barriers are released.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn advance_reload_queue(&mut self) {
+        while !self.reload_staging_in_flight {
+            let Some(next) = self.pending_reloads.pop_front() else {
+                break;
+            };
+            let plan = self.reload_staging_plan(&next).await;
+            if plan.is_empty() {
+                // Nothing expensive to load — apply directly (the path every
+                // sample-free reload takes, preserving single-tick applies).
+                if let Err(e) = self.apply_reload(next).await {
+                    tracing::warn!("Reload apply failed: {}", e);
+                }
+            } else {
+                self.spawn_reload_staging(next, plan);
+            }
+        }
+        if !self.reload_staging_in_flight {
+            self.drain_deferred_sync_notifies();
+        }
+    }
+
+    /// Computes which buffer-backed assets a reload would have to load.
+    ///
+    /// Mirrors the sample/SFZ portions of `reload::calculate_diff`:
+    /// samples are loaded only when created (an in-place path change is not
+    /// reloaded by the apply phases today), SFZ instruments when created or
+    /// when their path changed (the apply tears down and recreates those).
+    /// Entries are sorted by raw ID so staged buffer allocation stays
+    /// deterministic — cold boot must produce identical buffer IDs on
+    /// every run.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn reload_staging_plan(&self, new_state: &reload::ScriptState) -> ReloadStagingPlan {
+        let state = self.state.read().await;
+        let mut samples: Vec<_> = new_state
+            .samples
+            .iter()
+            .filter(|(id, _)| !state.samples.contains_key(id))
+            .map(|(id, config)| (*id, config.clone()))
+            .collect();
+        samples.sort_by_key(|(id, _)| id.raw());
+        let mut sfz: Vec<_> = new_state
+            .sfz_instruments
+            .iter()
+            .filter(|(id, config)| {
+                state
+                    .sfz_instruments
+                    .get(id)
+                    .map(|current| current.path != config.path)
+                    .unwrap_or(true)
+            })
+            .map(|(id, config)| (*id, config.path.clone()))
+            .collect();
+        sfz.sort_by_key(|(id, _)| id.raw());
+        ReloadStagingPlan { samples, sfz }
+    }
+
+    /// Stages a reload's buffer loads on a side task.
+    ///
+    /// The task performs the file I/O and backend round-trips, then sends
+    /// the script state back as [`ReloadMessage::ApplyStaged`] so the apply
+    /// itself (cheap state mutation + OSC sends) still runs on the runtime
+    /// task, atomically with respect to ticks.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn spawn_reload_staging(&mut self, new_state: reload::ScriptState, plan: ReloadStagingPlan) {
+        tracing::debug!(
+            "Reload: staging {} sample(s) and {} SFZ instrument(s) off-task",
+            plan.samples.len(),
+            plan.sfz.len()
+        );
+        self.reload_staging_in_flight = true;
+        let samples_handler = SamplesHandler::new(self.backend.clone(), self.state.clone());
+        let sfz_handler = SfzHandler::new(self.backend.clone(), self.state.clone());
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let mut assets = reload::StagedReloadAssets::default();
+
+            // Samples load concurrently: each future allocates its buffer
+            // ID on its first poll (in sorted dispatch order, so IDs stay
+            // deterministic) and the backend round-trips overlap.
+            let loads = plan.samples.into_iter().map(|(id, config)| {
+                let handler = &samples_handler;
+                async move {
+                    match handler.stage_load(id, config).await {
+                        Ok(info) => Some((id, info)),
+                        Err(e) => {
+                            tracing::error!("Reload: staging sample {:?} failed: {}", id, e);
+                            None
+                        }
+                    }
+                }
+            });
+            for (id, info) in futures::future::join_all(loads).await.into_iter().flatten() {
+                assets.samples.insert(id, info);
+            }
+
+            // SFZ instruments load sequentially: each allocates many buffer
+            // IDs internally, and keeping those allocations ordered keeps
+            // cold boot deterministic.
+            for (id, path) in plan.sfz {
+                match sfz_handler.stage_load(id, &path).await {
+                    Ok(instrument) => {
+                        assets.sfz.insert(id, instrument);
+                    }
+                    Err(e) => {
+                        tracing::error!("Reload: staging SFZ instrument {:?} failed: {}", id, e);
+                    }
+                }
+            }
+
+            let msg = Message::Reload(Box::new(ReloadMessage::ApplyStaged {
+                state: new_state,
+                assets,
+            }));
+            if tx.send_async(msg).await.is_err() {
+                tracing::warn!("Reload: runtime channel closed before staged reload could apply");
+            }
+        });
+    }
+
+    /// Releases deferred `SyncAndNotify` barriers on a side task.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn drain_deferred_sync_notifies(&mut self) {
+        if self.deferred_sync_notifies.is_empty() {
+            return;
+        }
+        let notifies = std::mem::take(&mut self.deferred_sync_notifies);
+        let backend = self.backend.clone();
+        tokio::spawn(async move {
+            if let Err(e) = backend.sync().await {
+                tracing::warn!("Backend sync failed: {:?}", e);
+            }
+            for notify in notifies {
+                let _ = notify.send(());
+            }
+        });
+    }
+
     async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
+        self.apply_reload_with_assets(new_state, reload::StagedReloadAssets::default())
+            .await
+    }
+
+    /// Applies a reload, consuming pre-staged buffer assets where the diff
+    /// wants them. Any staged asset the apply did not consume (state drifted
+    /// between staging and apply) has its buffers freed afterwards.
+    async fn apply_reload_with_assets(
+        &mut self,
+        new_state: reload::ScriptState,
+        mut staged: reload::StagedReloadAssets,
+    ) -> Result<()> {
+        let result = self.apply_reload_inner(new_state, &mut staged).await;
+        self.discard_staged_leftovers(staged).await;
+        result
+    }
+
+    /// Frees buffers held by staged assets that were not consumed by the
+    /// apply phases.
+    async fn discard_staged_leftovers(&mut self, staged: reload::StagedReloadAssets) {
+        if staged.is_empty() {
+            return;
+        }
+        let mut buffer_ids: Vec<crate::types::BufferId> =
+            staged.samples.values().map(|info| info.buffer_id).collect();
+        for instrument in staged.sfz.values() {
+            let unique: std::collections::HashSet<crate::types::BufferId> =
+                instrument.regions.iter().map(|r| r.buffer_id).collect();
+            buffer_ids.extend(unique);
+        }
+        tracing::debug!(
+            "Reload: freeing {} staged buffer(s) the apply did not consume",
+            buffer_ids.len()
+        );
+        {
+            let mut state = self.state.write().await;
+            for id in &buffer_ids {
+                state.free_buffer_id(*id);
+            }
+        }
+        for id in buffer_ids {
+            if let Err(e) = self.backend.free_buffer(id).await {
+                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
+            }
+        }
+    }
+
+    async fn apply_reload_inner(
+        &mut self,
+        new_state: reload::ScriptState,
+        staged: &mut reload::StagedReloadAssets,
+    ) -> Result<()> {
         let (diff, input_routes) = self.build_reload_diff(&new_state).await;
 
         // If no changes, return early - patterns continue playing seamlessly.
@@ -1105,7 +1404,7 @@ impl<B: Backend> Runtime<B> {
         if !self.phase_open_midi_devices(&new_state).await? {
             return Ok(());
         }
-        self.phase_create_entities(&diff, &new_state).await;
+        self.phase_create_entities(&diff, &new_state, staged).await;
         self.phase_update_entities(&diff, &new_state).await;
         self.phase_finalize_output_routes(&diff).await?;
         self.phase_finalize_input_routes(&input_routes).await?;
@@ -1628,29 +1927,49 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
+        staged: &mut reload::StagedReloadAssets,
     ) {
-        // Load new samples first (other entities may depend on them).
-        // Parallelize: scsynth /b_allocRead + /b_query round-trips can overlap,
-        // turning N×rtt sequential waits into a single batch.
+        // Publish new samples first (other entities may depend on them).
+        // On native these were already loaded off-task and arrive in
+        // `staged` — committing is a plain state insert. Anything the
+        // staging missed falls back to an inline load; those parallelize
+        // (scsynth /b_allocRead + /b_query round-trips overlap).
         //
-        // Story 4: stable iteration via sorted IDs. Sample loads themselves
-        // don't allocate buses (sample buffer IDs are pre-assigned), but the
-        // futures are dispatched in order, and any logging / error reporting
-        // surfaces deterministic per-reboot output. Cheap insurance.
+        // Story 4: stable iteration via sorted IDs, so logging / error
+        // reporting surfaces deterministic per-reboot output.
         if !diff.samples.created.is_empty() {
             let mut sample_ids: Vec<_> = diff.samples.created.keys().copied().collect();
             sample_ids.sort_by_key(|id| id.raw());
-            let loads = sample_ids.into_iter().map(|id| {
+            let mut to_load = Vec::new();
+            for id in sample_ids {
                 let config = diff
                     .samples
                     .created
                     .get(&id)
                     .expect("just collected")
                     .clone();
-                tracing::debug!("Reload: loading sample {:?}", id);
-                self.samples.load(id, config)
-            });
-            let _ = futures::future::join_all(loads).await;
+                match staged.samples.remove(&id) {
+                    Some(info) if info.path == config.path => {
+                        tracing::debug!("Reload: committing pre-staged sample {:?}", id);
+                        self.samples.commit(info).await;
+                    }
+                    Some(info) => {
+                        // Staged against a different path (state drifted
+                        // between staging and apply) — leave it for the
+                        // leftover cleanup and load inline instead.
+                        staged.samples.insert(id, info);
+                        to_load.push((id, config));
+                    }
+                    None => to_load.push((id, config)),
+                }
+            }
+            if !to_load.is_empty() {
+                let loads = to_load.into_iter().map(|(id, config)| {
+                    tracing::debug!("Reload: loading sample {:?}", id);
+                    self.samples.load(id, config)
+                });
+                let _ = futures::future::join_all(loads).await;
+            }
         }
 
         // Allocate new script buffers (and re-allocate updated ones at new
@@ -1690,7 +2009,8 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Load new SFZ instruments (and re-load updated ones)
+        // Publish new SFZ instruments (and re-load updated ones). Pre-staged
+        // instruments commit with a plain state insert; the rest load inline.
         let sfz_to_load: Vec<_> = diff
             .sfz
             .created
@@ -1698,13 +2018,26 @@ impl<B: Backend> Runtime<B> {
             .chain(diff.sfz.updated.iter())
             .collect();
         for (id, config) in sfz_to_load {
-            tracing::debug!(
-                "Reload: loading SFZ instrument {:?} from {:?}",
-                id,
-                config.path
-            );
-            if let Err(e) = self.sfz.load(*id, &config.path).await {
-                tracing::error!("Reload: failed to load SFZ instrument {:?}: {}", id, e);
+            match staged.sfz.remove(id) {
+                Some(instrument) if instrument.path == config.path => {
+                    tracing::debug!("Reload: committing pre-staged SFZ instrument {:?}", id);
+                    self.sfz.commit(instrument).await;
+                }
+                other => {
+                    if let Some(instrument) = other {
+                        // Staged against a different path — leave it for the
+                        // leftover cleanup and load inline instead.
+                        staged.sfz.insert(*id, instrument);
+                    }
+                    tracing::debug!(
+                        "Reload: loading SFZ instrument {:?} from {:?}",
+                        id,
+                        config.path
+                    );
+                    if let Err(e) = self.sfz.load(*id, &config.path).await {
+                        tracing::error!("Reload: failed to load SFZ instrument {:?}: {}", id, e);
+                    }
+                }
             }
         }
 
