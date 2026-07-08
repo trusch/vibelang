@@ -776,15 +776,27 @@ mod tests {
         engine
     }
 
-    fn reset_registries() {
+    // These tests mutate the process-global synthdef registries, so they must
+    // not run concurrently: one test's `reset_registries()` clear would wipe
+    // another's freshly-registered manifest between its populate and its
+    // assert (a real flaky-CI failure). `reset_registries()` acquires this
+    // lock and hands the guard back so the caller holds it for the whole test.
+    static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[must_use = "hold the returned guard for the whole test to serialize registry access"]
+    fn reset_registries() -> std::sync::MutexGuard<'static, ()> {
+        let guard = REGISTRY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_synthdef_registry();
         clear_synthdef_outputs_registry();
         clear_synthdef_inputs_registry();
         set_deploy_callback(|_| Ok(()));
+        guard
     }
 
     fn eval_err(script: &str) -> String {
-        reset_registries();
+        let _guard = reset_registries();
         test_engine()
             .eval::<Dynamic>(script)
             .expect_err("script should fail")
@@ -802,7 +814,7 @@ mod tests {
 
     #[test]
     fn rhai_synthdef_outputs_empty_registers_zero_output_manifest() {
-        reset_registries();
+        let _guard = reset_registries();
         let _ = test_engine()
             .eval::<Dynamic>(
                 r#"
@@ -821,7 +833,7 @@ mod tests {
 
     #[test]
     fn rhai_synthdef_input_mono_body_map_registers_input_manifest() {
-        reset_registries();
+        let _guard = reset_registries();
         let _ = test_engine()
             .eval::<Dynamic>(
                 r#"
@@ -855,7 +867,7 @@ mod tests {
 
     #[test]
     fn rhai_synthdef_input_stereo_body_map_access() {
-        reset_registries();
+        let _guard = reset_registries();
         let _ = test_engine()
             .eval::<Dynamic>(
                 r#"
