@@ -223,6 +223,12 @@ pub enum PatternMessage {
     /// Start a pattern.
     Start { id: PatternId },
 
+    /// Start a pattern phase-locked to the song grid (anchors beat 0 to the
+    /// most recent multiple of the pattern's own length). Used by the looper
+    /// so a captured loop drops in aligned to the transport bar grid instead
+    /// of at the arbitrary instant playback happened to be triggered.
+    StartOnGrid { id: PatternId },
+
     /// Stop a pattern.
     Stop { id: PatternId },
 
@@ -655,6 +661,7 @@ impl Message {
                 PatternMessage::Create { .. } => "Pattern::Create",
                 PatternMessage::Delete { .. } => "Pattern::Delete",
                 PatternMessage::Start { .. } => "Pattern::Start",
+                PatternMessage::StartOnGrid { .. } => "Pattern::StartOnGrid",
                 PatternMessage::Stop { .. } => "Pattern::Stop",
                 PatternMessage::SetParam { .. } => "Pattern::SetParam",
             },

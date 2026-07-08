@@ -1004,7 +1004,11 @@ impl<B: Backend> MidiHandler<B> {
                         "looper create_pattern",
                     );
                     self.send_runtime_from_tick(
-                        Message::Pattern(PatternMessage::Start { id: pattern_id }),
+                        // Grid-anchored, not "now"-anchored: the captured loop
+                        // drops in phase-locked to the transport bar grid so it
+                        // sits with the rest of the song instead of free-running
+                        // at whatever fractional beat the silence timer fired.
+                        Message::Pattern(PatternMessage::StartOnGrid { id: pattern_id }),
                         true,
                         "looper start_pattern",
                     );

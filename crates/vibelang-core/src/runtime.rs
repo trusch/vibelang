@@ -543,6 +543,7 @@ impl<B: Backend> Runtime<B> {
                 }
                 PatternMessage::Delete { id } => self.patterns.delete(id).await,
                 PatternMessage::Start { id } => self.patterns.start(id).await,
+                PatternMessage::StartOnGrid { id } => self.patterns.start_on_grid(id).await,
                 PatternMessage::Stop { id } => self.patterns.stop(id).await,
                 PatternMessage::SetParam { id, param, value } => {
                     self.patterns.set_param(id, &param, value).await

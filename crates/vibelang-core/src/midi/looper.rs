@@ -168,7 +168,7 @@ impl LooperManager {
         note: u8,
         velocity: u8,
         current_beat: f64,
-        _time_sig_numerator: u8,
+        time_sig_numerator: u8,
     ) -> Vec<LooperAction> {
         let Some(key) = self.key_for_event(device_id, channel) else {
             return Vec::new();
@@ -184,7 +184,8 @@ impl LooperManager {
         match inst.phase.clone() {
             LooperPhase::Idle => {
                 // Start a fresh recording.
-                let mut rec = MidiRecording::new(device_id, beat);
+                let mut rec =
+                    MidiRecording::new(device_id, bar_aligned_start(beat, time_sig_numerator));
                 if let Some(ch) = inst.config.channel {
                     rec = rec.with_channel_filter(ch);
                 }
@@ -212,7 +213,8 @@ impl LooperManager {
                 actions.push(LooperAction::StopPattern { pattern_id });
                 inst.loop_count += 1;
 
-                let mut rec = MidiRecording::new(device_id, beat);
+                let mut rec =
+                    MidiRecording::new(device_id, bar_aligned_start(beat, time_sig_numerator));
                 if let Some(ch) = inst.config.channel {
                     rec = rec.with_channel_filter(ch);
                 }
@@ -278,7 +280,18 @@ impl LooperManager {
             // closed underneath them. Require *all* notes off for the
             // full silence window before finalising.
             let finalize_at = if inst.recording.pending_count() > 0 {
-                let silence_anchor = last_note_off_beat.unwrap_or(inst.recording.start_beat);
+                // A note is still held with no note-off yet. Anchor the silence
+                // timer to the last key *press* (absolute beat), not the
+                // recording's start: with bar-aligned capture the start can sit
+                // up to a full bar before the first note (a pickup), and using
+                // it here would count that pre-note gap as silence and finalise
+                // the loop underneath a held note.
+                let last_press = inst.recording.last_note_on_beat().map(|rel| {
+                    Beat::from_f64(inst.recording.start_beat.to_f64() + rel.to_f64())
+                });
+                let silence_anchor = last_note_off_beat
+                    .or(last_press)
+                    .unwrap_or(inst.recording.start_beat);
                 let silence_beats = current_beat - silence_anchor.to_f64();
                 if silence_beats < threshold * 2.0 {
                     continue;
@@ -373,6 +386,16 @@ impl LooperManager {
 
         actions
     }
+}
+
+/// Bar line at or before `beat` for the given time signature — the anchor a
+/// fresh capture starts from. Recording relative to the bar line (rather than
+/// the first note-on) preserves each note's position *within the bar*, so the
+/// captured loop lines up with the transport grid on playback instead of
+/// forcing the first note onto a downbeat.
+fn bar_aligned_start(beat: Beat, time_sig_numerator: u8) -> Beat {
+    let bar_beats = (time_sig_numerator.max(1)) as f64;
+    Beat::from_f64((beat.to_f64() / bar_beats).floor() * bar_beats)
 }
 
 /// Derive a stable `PatternId` from a string name via the standard hasher.
