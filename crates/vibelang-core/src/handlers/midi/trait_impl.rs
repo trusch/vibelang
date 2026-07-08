@@ -78,6 +78,11 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn open_input(&self, id: MidiDeviceId) -> Result<()> {
+        // Record the intent up front so the hot-plug watcher keeps retrying
+        // this device even if the open below fails because it is not present
+        // yet (powered off / unplugged at request time).
+        self.note_requested_input(id);
+
         if is_pipewire_midi_input_id(id) {
             {
                 let inputs = self.pipewire_inputs.lock().map_err(|e| {

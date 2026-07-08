@@ -141,8 +141,8 @@ pub use parser::{parse_midi_bytes, MidiParser};
 
 pub use pipewire_input::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
-    parse_pipewire_midi_pod, pipewire_midi_input_id, PipeWireMidiInputConnection,
-    PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
+    parse_pipewire_midi_pod, pipewire_midi2_input_ids, pipewire_midi_input_id,
+    PipeWireMidiInputConnection, PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
 };
 
 // MIDI message encoding

@@ -73,14 +73,14 @@ use crate::reload::LooperConfig;
 use crate::state::{PatternOwner, State};
 #[cfg(feature = "midi")]
 use crate::traits::VoiceConfig;
-use crate::traits::{FadeTarget, MidiOutputCapability};
+use crate::traits::{FadeTarget, Midi, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -102,6 +102,66 @@ enum RuntimeTrySend {
     Sent,
     Full(Message),
     Closed,
+}
+
+/// An open/close decision produced by [`plan_input_reconcile`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputReconcileAction {
+    /// A requested device is present but not open — connect it.
+    Open(MidiDeviceId),
+    /// A device should be torn down: a requested device that has been absent
+    /// past the hysteresis threshold, or an open device no longer requested.
+    Close(MidiDeviceId),
+}
+
+/// Pure decision for MIDI input hot-plug reconciliation.
+///
+/// Given the desired (`requested`), currently-present (`present`) and
+/// currently-open (`open`) device sets — all PipeWire ids — decide which to
+/// open and which to close, updating the per-device consecutive-absent
+/// `counts` for hysteresis. Kept side-effect-free (no I/O, no locks) so the
+/// tricky appear/disappear/hysteresis logic is unit-testable.
+///
+/// - requested & present & !open            → Open (power-on / replug)
+/// - requested & !present & open            → bump absent; Close once it
+///                                            reaches `close_threshold`
+/// - open & !requested                      → Close (removed from script)
+/// - present resets a device's absent count
+fn plan_input_reconcile(
+    requested: &HashSet<MidiDeviceId>,
+    present: &HashSet<MidiDeviceId>,
+    open: &HashSet<MidiDeviceId>,
+    counts: &mut HashMap<MidiDeviceId, u8>,
+    close_threshold: u8,
+) -> Vec<InputReconcileAction> {
+    let mut actions = Vec::new();
+
+    for id in requested {
+        if present.contains(id) {
+            counts.remove(id);
+            if !open.contains(id) {
+                actions.push(InputReconcileAction::Open(*id));
+            }
+        } else if open.contains(id) {
+            let entry = counts.entry(*id).or_insert(0);
+            *entry = entry.saturating_add(1);
+            if *entry >= close_threshold {
+                counts.remove(id);
+                actions.push(InputReconcileAction::Close(*id));
+            }
+        }
+    }
+
+    // Open inputs the script no longer requests (disjoint from the loop above,
+    // which only visits requested ids) are torn down immediately.
+    for id in open {
+        if !requested.contains(id) {
+            counts.remove(id);
+            actions.push(InputReconcileAction::Close(*id));
+        }
+    }
+
+    actions
 }
 
 /// Try to send a runtime message without ever blocking.
@@ -281,6 +341,34 @@ pub struct MidiHandler<B: Backend> {
 
     /// Last script MIDI route snapshot that was applied through reload.
     last_script_routes: Mutex<MidiRouteSnapshot>,
+
+    /// PipeWire input devices the script/API has asked to keep open. The
+    /// hot-plug watcher reopens these when they (re)appear on the system and
+    /// closes them when they vanish, so inputs survive unplug/replug and
+    /// power-on-after-start. Populated by `open_input` and reset on reload.
+    requested_inputs: Arc<Mutex<HashSet<MidiDeviceId>>>,
+
+    /// Consecutive hot-plug polls each requested input has been absent, for
+    /// close hysteresis — a device must be missing for two scans before we
+    /// tear its connection down, so one transient empty enumeration can't
+    /// glitch a live input.
+    input_absent_polls: Mutex<HashMap<MidiDeviceId, u8>>,
+
+    /// Hot-plug watcher shutdown flag (thread stops when set true).
+    hotplug_stop: Arc<AtomicBool>,
+
+    /// Hot-plug watcher thread handle, joined on `stop_input_hotplug_watcher`.
+    #[cfg(not(target_arch = "wasm32"))]
+    hotplug_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl<B: Backend> Drop for MidiHandler<B> {
+    fn drop(&mut self) {
+        // Signal the hot-plug watcher to stop so it doesn't outlive the
+        // handler (its detached JoinHandle exits within one poll step). The
+        // clock/realtime threads are torn down via their own explicit stops.
+        self.hotplug_stop.store(true, Ordering::Relaxed);
+    }
 }
 
 impl<B: Backend> MidiHandler<B> {
@@ -336,6 +424,12 @@ impl<B: Backend> MidiHandler<B> {
 
             looper_manager: Mutex::new(LooperManager::new()),
             last_script_routes: Mutex::new(MidiRouteSnapshot::default()),
+
+            requested_inputs: Arc::new(Mutex::new(HashSet::new())),
+            input_absent_polls: Mutex::new(HashMap::new()),
+            hotplug_stop: Arc::new(AtomicBool::new(false)),
+            #[cfg(not(target_arch = "wasm32"))]
+            hotplug_handle: Mutex::new(None),
         }
     }
 
@@ -376,6 +470,156 @@ impl<B: Backend> MidiHandler<B> {
     /// Check if the MIDI realtime service is running.
     pub fn is_realtime_service_running(&self) -> bool {
         self.realtime_service.read().is_running()
+    }
+
+    /// Record the set of PipeWire MIDI inputs the current script wants open.
+    ///
+    /// Called on reload so the hot-plug watcher stops reopening devices that
+    /// were removed from the script and closes any still-open connection for
+    /// them on the next reconcile.
+    pub fn set_requested_inputs(&self, ids: &HashSet<MidiDeviceId>) {
+        if let Ok(mut requested) = self.requested_inputs.lock() {
+            *requested = ids
+                .iter()
+                .copied()
+                .filter(|id| crate::midi::is_pipewire_midi_input_id(*id))
+                .collect();
+        }
+    }
+
+    /// Note that a device has been requested as an input, so the hot-plug
+    /// watcher keeps (re)opening it even if the first open failed because it
+    /// was not present yet.
+    fn note_requested_input(&self, id: MidiDeviceId) {
+        if crate::midi::is_pipewire_midi_input_id(id) {
+            if let Ok(mut requested) = self.requested_inputs.lock() {
+                requested.insert(id);
+            }
+        }
+    }
+
+    /// How many consecutive reconciles a device must be absent before its
+    /// connection is torn down (hysteresis against a transient empty scan).
+    const HOTPLUG_ABSENT_CLOSE_THRESHOLD: u8 = 2;
+
+    /// Reconcile open PipeWire inputs against the devices currently present.
+    ///
+    /// Driven by [`Self::start_input_hotplug_watcher`]: reopens requested
+    /// devices that have (re)appeared (power-on after start, unplug/replug —
+    /// PipeWire ids are stable across replug because they hash the node name),
+    /// tears down requested devices that have vanished (after a short absence
+    /// hysteresis) so a replug reconnects cleanly, and closes open inputs the
+    /// script no longer requests. All device open/close runs here on the
+    /// runtime task, serialized with reload and tick.
+    pub async fn reconcile_pipewire_inputs(&self, present: HashSet<MidiDeviceId>) {
+        // Snapshot desired + open sets; never hold these locks across the
+        // open_input/close awaits below (those take the same locks).
+        let requested: HashSet<MidiDeviceId> = match self.requested_inputs.lock() {
+            Ok(r) => r.clone(),
+            Err(_) => return,
+        };
+        let open_ids: HashSet<MidiDeviceId> = match self.pipewire_inputs.lock() {
+            Ok(inputs) => inputs.keys().copied().collect(),
+            Err(_) => return,
+        };
+
+        // Decide open/close actions with the pure planner (holds the absent
+        // counter only briefly), then perform the I/O without any lock held.
+        let actions = {
+            let mut counts = match self.input_absent_polls.lock() {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            plan_input_reconcile(
+                &requested,
+                &present,
+                &open_ids,
+                &mut counts,
+                Self::HOTPLUG_ABSENT_CLOSE_THRESHOLD,
+            )
+        };
+
+        for action in actions {
+            match action {
+                InputReconcileAction::Open(id) => match self.open_input(id).await {
+                    Ok(()) => tracing::info!("MIDI input {:?} connected via hot-plug", id),
+                    Err(e) => tracing::debug!("MIDI input {:?} present but open failed: {}", id, e),
+                },
+                InputReconcileAction::Close(id) => {
+                    tracing::info!(
+                        "MIDI input {:?} disconnected/removed; closing (reconnects when it returns)",
+                        id
+                    );
+                    let _ = self.close(id).await;
+                }
+            }
+        }
+    }
+
+    /// Start the background MIDI input hot-plug watcher thread.
+    ///
+    /// Every couple of seconds it enumerates the PipeWire MIDI devices present
+    /// on the system (a blocking scan, hence its own thread) and sends the
+    /// snapshot to the runtime as [`crate::message::MidiMessage::ReconcileInputs`],
+    /// which reopens/closes devices via [`Self::reconcile_pipewire_inputs`].
+    /// Idempotent: a second call while the watcher is running is a no-op.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start_input_hotplug_watcher(&self) {
+        use std::time::Duration;
+
+        {
+            let handle = self.hotplug_handle.lock();
+            if matches!(handle, Ok(ref h) if h.is_some()) {
+                return;
+            }
+        }
+        self.hotplug_stop.store(false, Ordering::Relaxed);
+
+        let stop = Arc::clone(&self.hotplug_stop);
+        let tx = self.runtime_tx.clone();
+        const POLL_INTERVAL: Duration = Duration::from_secs(2);
+        const STEP: Duration = Duration::from_millis(200);
+
+        let handle = std::thread::Builder::new()
+            .name("vibelang-midi-hotplug".to_string())
+            .spawn(move || {
+                tracing::info!("[MIDI HOTPLUG] input watcher started");
+                while !stop.load(Ordering::Relaxed) {
+                    // Sleep the poll interval in small steps for responsive shutdown.
+                    let mut slept = Duration::ZERO;
+                    while slept < POLL_INTERVAL {
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        std::thread::sleep(STEP);
+                        slept += STEP;
+                    }
+                    let present = crate::midi::pipewire_midi2_input_ids();
+                    let _ = try_send_runtime(
+                        &tx,
+                        Message::Midi(crate::message::MidiMessage::ReconcileInputs { present }),
+                    );
+                }
+            });
+
+        match handle {
+            Ok(h) => {
+                if let Ok(mut slot) = self.hotplug_handle.lock() {
+                    *slot = Some(h);
+                }
+            }
+            Err(e) => tracing::warn!("Failed to spawn MIDI hot-plug watcher: {}", e),
+        }
+    }
+
+    /// Stop the MIDI input hot-plug watcher thread and join it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn stop_input_hotplug_watcher(&self) {
+        self.hotplug_stop.store(true, Ordering::Relaxed);
+        let handle = self.hotplug_handle.lock().ok().and_then(|mut h| h.take());
+        if let Some(handle) = handle {
+            let _ = handle.join();
+        }
     }
 
     /// Start the MIDI clock thread for low-latency clock output.
@@ -2292,6 +2536,47 @@ fn beat_at_event_arrival(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plan_input_reconcile_appear_disappear_hysteresis_and_deregister() {
+        let a = MidiDeviceId::new(1);
+        let empty = HashSet::new();
+        let req: HashSet<MidiDeviceId> = [a].into_iter().collect();
+        let present: HashSet<MidiDeviceId> = [a].into_iter().collect();
+        let open: HashSet<MidiDeviceId> = [a].into_iter().collect();
+        let mut counts = HashMap::new();
+
+        // Requested + present + not open -> Open (power-on / replug).
+        assert_eq!(
+            plan_input_reconcile(&req, &present, &empty, &mut counts, 2),
+            vec![InputReconcileAction::Open(a)]
+        );
+
+        // Requested + open + absent: first poll waits (hysteresis), second closes.
+        assert!(plan_input_reconcile(&req, &empty, &open, &mut counts, 2).is_empty());
+        assert_eq!(
+            plan_input_reconcile(&req, &empty, &open, &mut counts, 2),
+            vec![InputReconcileAction::Close(a)]
+        );
+
+        // Reappearing before the threshold resets the absent counter.
+        let mut counts = HashMap::new();
+        assert!(plan_input_reconcile(&req, &empty, &open, &mut counts, 2).is_empty()); // absent=1
+        assert!(plan_input_reconcile(&req, &present, &open, &mut counts, 2).is_empty()); // reset
+        assert!(plan_input_reconcile(&req, &empty, &open, &mut counts, 2).is_empty()); // absent=1 again, no close
+
+        // Open but no longer requested (removed from script) -> immediate close.
+        let mut counts = HashMap::new();
+        assert_eq!(
+            plan_input_reconcile(&empty, &empty, &open, &mut counts, 2),
+            vec![InputReconcileAction::Close(a)]
+        );
+
+        // Steady state (requested + present + open) -> no actions.
+        let mut counts = HashMap::new();
+        assert!(plan_input_reconcile(&req, &present, &open, &mut counts, 2).is_empty());
+    }
+
     use crate::backend::{AddAction, Backend, BufferInfo};
     use crate::compat::{channel, timeout, RwLock};
     use crate::handlers::VoicesHandler;

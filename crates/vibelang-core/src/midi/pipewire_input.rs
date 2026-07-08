@@ -189,6 +189,17 @@ pub fn list_pipewire_midi2_inputs() -> Vec<PipeWireMidiInputInfo> {
     Vec::new()
 }
 
+/// Snapshot of the `MidiDeviceId`s of every PipeWire MIDI2 input currently
+/// present on the system. Used by the hot-plug watcher to detect devices
+/// that (re)appear or vanish. Blocking (spins a throwaway PipeWire main
+/// loop), so call it off the runtime task.
+pub fn pipewire_midi2_input_ids() -> std::collections::HashSet<MidiDeviceId> {
+    list_pipewire_midi2_inputs()
+        .into_iter()
+        .map(|info| info.id)
+        .collect()
+}
+
 pub struct PipeWireMidiInputConnection {
     #[cfg(all(feature = "pipewire-midi2", unix, not(target_arch = "wasm32")))]
     running: Arc<std::sync::atomic::AtomicBool>,
