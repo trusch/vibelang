@@ -37,10 +37,15 @@ jobs:
         #   the pipewire-midi2 feature is part of vibelang-core's default
         #   "midi" feature, so it is built by default
         # - libjack-jackd2-dev: jack crate used by vibelang-keys
+        # - libx11/xi/xtst + libxcb*: the x11 crate (via rdev) and arboard,
+        #   pulled in by vibelang-cli for global hotkeys and clipboard; their
+        #   build scripts pkg-config these X11/XCB libs
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config
+            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config \
+            libx11-dev libxi-dev libxtst-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: Swatinem/rust-cache@v2
       - name: Run clippy
         run: cargo clippy --workspace --all-targets
@@ -52,11 +57,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install system dependencies
         # Same rationale as the clippy job: ALSA for midir, PipeWire headers
-        # for the default pipewire-midi2 feature, JACK for vibelang-keys.
+        # for the default pipewire-midi2 feature, JACK for vibelang-keys, and
+        # X11/XCB for the x11 crate (via rdev) + arboard pulled in by vibelang-cli.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config
+            libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev clang pkg-config \
+            libx11-dev libxi-dev libxtst-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: Swatinem/rust-cache@v2
       - name: Run unit tests
         # Unit tests only. The workspace test suites use mock backends and do
