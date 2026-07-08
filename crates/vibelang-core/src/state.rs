@@ -8,7 +8,7 @@
 //! - Active playback state (running synths, active fades)
 
 use crate::compat::Instant;
-use crate::reload::ChangeQuant;
+use crate::reload::{ChangeQuant, EffectConfig, GroupConfig};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingInfo;
 use crate::traits::{
@@ -76,6 +76,32 @@ pub struct GroupState {
     pub output_channels: Option<u32>,
 }
 
+impl GroupState {
+    /// True when this live group matches the proposed `config`, without cloning.
+    ///
+    /// The reload diff's in-place equality probe. `params` and `effects` are the
+    /// group's script-snapshot values (`State::script_group_params` /
+    /// `State::script_group_effects`, or the live fallbacks) so live `set_param`
+    /// tweaks do not dirty the diff. Mirrors `GroupConfig`'s derived `PartialEq`
+    /// field set exactly, but borrows the param map and effect list instead of
+    /// building a throwaway `GroupConfig`.
+    pub fn matches_config(
+        &self,
+        config: &GroupConfig,
+        params: &ParamMap,
+        effects: &[EffectId],
+    ) -> bool {
+        self.name == config.name
+            && self.parent == config.parent
+            && *params == config.params
+            && effects == config.effects.as_slice()
+            && self.muted == config.muted
+            && self.soloed == config.soloed
+            && self.output_bus == config.output_bus
+            && self.output_channels == config.output_channels
+    }
+}
+
 /// Runtime routing role for a voice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum VoiceRole {
@@ -134,6 +160,21 @@ pub struct VoiceState {
     /// debug-logs + no-ops for any route whose target has no matching entry.
     /// Tests populate this directly to exercise the dispatcher.
     pub input_buses: Vec<(String, BusId)>,
+}
+
+impl VoiceState {
+    /// True when this live voice's config equals `config`, without cloning.
+    ///
+    /// The reload diff's in-place equality probe. `script_params` is the voice's
+    /// script-snapshot param map (`State::script_voice_params`); when present it
+    /// is compared against `config.params` instead of the live `self.config.params`
+    /// (which absorbs HTTP/MIDI `set_param` drift), matching the old
+    /// clone-and-substitute behaviour without allocating a `VoiceConfig` or a
+    /// second `ParamMap`.
+    pub fn matches_config(&self, config: &VoiceConfig, script_params: Option<&ParamMap>) -> bool {
+        self.config
+            .matches_with_params(config, script_params.unwrap_or(&self.config.params))
+    }
 }
 
 /// Runtime owner for a pattern.
@@ -195,6 +236,29 @@ pub struct PatternState {
     /// Pending content swap for hot reload.
     /// When set, the new content will be applied at the specified quantization boundary.
     pub pending_content: Option<(Arc<PatternContent>, ChangeQuant)>,
+
+    /// Live fade overlay: `param -> value` stamped on top of every step at
+    /// trigger time while a [`crate::traits::FadeTarget::Pattern`] fade is in
+    /// flight.
+    ///
+    /// This deliberately lives OUTSIDE `content` so a fading pattern does not
+    /// rewrite its content on every fade tick (500 Hz). Keeping `content`
+    /// pristine mid-fade has two payoffs that mirror the old
+    /// rewrite-every-tick behaviour exactly:
+    ///
+    /// 1. A reload diff of an otherwise-unchanged pattern sees no content
+    ///    change — the overlay is transient runtime state, not authored data.
+    /// 2. The overlay survives a quantized content swap of the SAME pattern
+    ///    (see [`Self::apply_pending_swap`], which never touches this map), so
+    ///    the faded value keeps applying to the new content — precisely what
+    ///    the old code did by re-stamping the swapped-in steps on the next
+    ///    fade tick.
+    ///
+    /// On fade completion or cancellation the final value is flushed into
+    /// `content` once via [`Self::write_param_to_all_steps`] and the entry is
+    /// removed, so post-fade content is byte-identical to the old
+    /// implementation.
+    pub fade_overlay: ParamMap,
 }
 
 impl PatternState {
@@ -214,6 +278,7 @@ impl PatternState {
             start_beat: Beat::ZERO,
             scheduled_until: None,
             pending_content: None,
+            fade_overlay: ParamMap::new(),
         }
     }
 
@@ -227,6 +292,15 @@ impl PatternState {
             length: self.content.length,
             swing: self.content.swing,
         }
+    }
+
+    /// True when this live pattern's content equals `config`, without cloning.
+    ///
+    /// The reload diff's in-place equality probe: equivalent to
+    /// `self.config() == *config` but borrows the Arc'd content instead of
+    /// deep-copying every `Step` on each save.
+    pub fn matches_config(&self, config: &PatternConfig) -> bool {
+        config.matches_content(&self.content)
     }
 
     /// Queue a content swap to be applied at the specified quantization boundary.
@@ -270,6 +344,29 @@ impl PatternState {
         }
         self.content = new_content;
         true
+    }
+
+    /// Stamp `param = value` onto every step, rebuilding the Arc'd
+    /// [`PatternContent`] once (name/voice/length/swing preserved).
+    ///
+    /// This is the one-shot flush helper: it is what the old fade did on every
+    /// tick, but is now only called when a value must be baked into `content`
+    /// permanently — a fade completing/cancelling (see the fades handler) or a
+    /// direct [`crate::traits::Patterns::set_param`]. It clones all steps and
+    /// their param maps, so it is NOT for per-tick use; the live fade path
+    /// updates [`Self::fade_overlay`] instead.
+    pub fn write_param_to_all_steps(&mut self, param: &str, value: f32) {
+        let mut new_steps = self.content.steps.clone();
+        for step in &mut new_steps {
+            step.params.insert(param.to_string(), value);
+        }
+        self.content = Arc::new(PatternContent {
+            name: self.content.name.clone(),
+            voice: self.content.voice,
+            steps: new_steps,
+            length: self.content.length,
+            swing: self.content.swing,
+        });
     }
 }
 
@@ -326,6 +423,15 @@ impl MelodyState {
             length: self.content.length,
             swing: self.content.swing,
         }
+    }
+
+    /// True when this live melody's content equals `config`, without cloning.
+    ///
+    /// The reload diff's in-place equality probe: equivalent to
+    /// `self.config() == *config` but borrows the Arc'd content instead of
+    /// deep-copying every `NoteEvent` (and its per-note param map) on each save.
+    pub fn matches_config(&self, config: &MelodyConfig) -> bool {
+        config.matches_content(&self.content)
     }
 
     /// Queue a content swap to be applied at the specified quantization boundary.
@@ -408,6 +514,19 @@ pub struct EffectState {
 
     /// Current parameter values.
     pub params: ParamMap,
+}
+
+impl EffectState {
+    /// True when this live effect matches the proposed `config`, without cloning.
+    ///
+    /// The reload diff's in-place equality probe. `params` is the effect's
+    /// script-snapshot param map (`State::script_effect_params`, or the live
+    /// fallback) so runtime tweaks do not dirty the diff. Mirrors `EffectConfig`'s
+    /// derived `PartialEq` field set exactly, but borrows the param map instead of
+    /// building a throwaway `EffectConfig`.
+    pub fn matches_config(&self, config: &EffectConfig, params: &ParamMap) -> bool {
+        self.group == config.group && self.synthdef == config.synthdef && *params == config.params
+    }
 }
 
 /// A free-list allocator that reclaims IDs when entities are deleted.
@@ -622,6 +741,33 @@ pub struct SfzInstrumentState {
     /// Round-robin state for cycling through alternating samples.
     /// Key: (note, velocity_layer), Value: current position.
     pub round_robin_state: HashMap<(u8, u8), u32>,
+
+    /// Per-note acceleration index: `note_index[note]` lists the indices
+    /// (into [`Self::regions`]) of every region whose key range covers
+    /// `note`. Built once at load time so the note-on hot path scans only
+    /// the regions that can possibly match the struck note instead of the
+    /// whole region list. Velocity is still filtered per note-on (it is not
+    /// part of the key). When empty (index not built) the matcher falls back
+    /// to a full region scan, so correctness never depends on this table.
+    pub note_index: Vec<Vec<u32>>,
+}
+
+impl SfzInstrumentState {
+    /// Build the 128-slot note→region-index table (see [`Self::note_index`])
+    /// from a region list. A region is bucketed into every MIDI note its key
+    /// range covers; this mirrors the matcher's `key_range.0 <= note <=
+    /// key_range.1` test exactly.
+    pub fn build_note_index(regions: &[SfzRegionState]) -> Vec<Vec<u32>> {
+        let mut index: Vec<Vec<u32>> = vec![Vec::new(); 128];
+        for (idx, region) in regions.iter().enumerate() {
+            for note in region.key_range.0..=region.key_range.1 {
+                if let Some(bucket) = index.get_mut(note as usize) {
+                    bucket.push(idx as u32);
+                }
+            }
+        }
+        index
+    }
 }
 
 /// State for a single SFZ region (sample mapping).

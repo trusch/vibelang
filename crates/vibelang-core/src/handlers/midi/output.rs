@@ -3,7 +3,7 @@
 //! This module handles background threads for sending MIDI events
 //! with low latency and proper timing.
 
-use crate::compat::Instant;
+use crate::compat::{Duration, Instant};
 use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
 use crate::traits::MidiOutputCapability;
 use crate::types::ids::MidiDeviceId;
@@ -15,10 +15,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-/// How often the output thread checks for due events (microseconds).
-/// 100μs = 10kHz check rate, ~0.1ms precision.
+/// Fine-grained poll step (microseconds) used only inside the near-deadline
+/// spin window. 100μs = ~0.1ms send precision, matching the old poll loop.
 const MIDI_THREAD_POLL_INTERVAL_US: u64 = 100;
 const MIDI_CLOCK_CHANNEL_CAPACITY: usize = 128;
+
+/// Upper bound on any blocking wait. Caps how long the thread can sleep
+/// without observing the `running=false` shutdown flag when there is no
+/// channel activity and no scheduled event to wake it.
+const MIDI_THREAD_MAX_BLOCK: Duration = Duration::from_millis(50);
+
+/// When the next scheduled deadline is within this window, the loop stops
+/// blocking on the channels and switches to fine-grained polling so send
+/// timing stays sub-millisecond precise.
+const MIDI_THREAD_SPIN_WINDOW: Duration = Duration::from_millis(1);
 
 pub type ClockOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<QueuedMidiEvent>>>>;
 
@@ -259,7 +269,7 @@ fn run_output_thread(
 
     // Priority queue for scheduled events (min-heap by timestamp)
     let mut scheduled: BinaryHeap<ScheduledMidiEvent> = BinaryHeap::new();
-    let poll_duration = std::time::Duration::from_micros(MIDI_THREAD_POLL_INTERVAL_US);
+    let poll_duration = Duration::from_micros(MIDI_THREAD_POLL_INTERVAL_US);
 
     while running.load(Ordering::Relaxed) {
         // 1. Clock/control messages have priority and independent coalescing.
@@ -293,8 +303,52 @@ fn run_output_thread(
             send_clock_channel_events(&mut conn, &clock_rx, device_id, capability);
         }
 
-        // 4. Sleep briefly before next poll (100μs for ~0.1ms precision)
-        std::thread::sleep(poll_duration);
+        // 4. Wait for the next scheduled deadline or an incoming message
+        //    instead of busy-polling at 10kHz. The deadline is recomputed
+        //    every loop iteration, so a message that arrives during a block
+        //    (waking select! immediately) and schedules an earlier deadline
+        //    is picked up on the very next pass — nothing is cached across
+        //    the wait.
+        let wait = next_wait(scheduled.peek().map(|e| e.timestamp), Instant::now());
+
+        if wait <= MIDI_THREAD_SPIN_WINDOW {
+            // Near-deadline (or already due): switch to fine-grained polling
+            // for sub-millisecond send precision. Sleep at most one poll step
+            // then loop back to the top, which re-drains both channels via
+            // try_recv so a newly-arrived earlier event is never missed.
+            if !wait.is_zero() {
+                thread::sleep(poll_duration.min(wait));
+            }
+        } else {
+            // Far from the next deadline (or idle): block until a message
+            // arrives or the deadline is due, capped at MIDI_THREAD_MAX_BLOCK
+            // so a `running=false` shutdown is observed within ~50ms even
+            // with no channel activity. A channel disconnect wakes select!
+            // immediately, so shutdown via Drop is still prompt.
+            let block = wait.min(MIDI_THREAD_MAX_BLOCK);
+            crossbeam_channel::select! {
+                recv(rx) -> msg => match msg {
+                    Ok(event) => scheduled.push(event),
+                    Err(_) => {
+                        tracing::info!(
+                            "[MIDI_OUT_{}] Channel disconnected, exiting",
+                            device_id
+                        );
+                        return;
+                    }
+                },
+                recv(clock_rx) -> msg => {
+                    if let Ok(event) = msg {
+                        // Realtime clock/control: send immediately; the next
+                        // loop iteration drains and coalesces any remainder.
+                        send_event_to_connection(&mut conn, &event, device_id, capability);
+                    }
+                    // On clock disconnect we fall through: the running-flag
+                    // check at the top of the loop drives shutdown.
+                },
+                default(block) => {}
+            }
+        }
     }
 
     tracing::info!("[MIDI_OUT_{}] Background thread exiting", device_id);
@@ -364,6 +418,19 @@ fn coalesce_clock_events(events: Vec<QueuedMidiEvent>) -> (Vec<QueuedMidiEvent>,
     }
 
     (coalesced, dropped)
+}
+
+/// How long the output loop should wait before its next pass, given the
+/// timestamp of the earliest scheduled event (if any). When there is no
+/// scheduled event the loop idles for the bounded fallback so it still
+/// notices a shutdown flag; otherwise it waits exactly until the deadline.
+/// Callers spin (fine-grained) when the result is `<= MIDI_THREAD_SPIN_WINDOW`
+/// and block on the channels otherwise.
+fn next_wait(next_deadline: Option<Instant>, now: Instant) -> Duration {
+    match next_deadline {
+        Some(deadline) => deadline.saturating_duration_since(now),
+        None => MIDI_THREAD_MAX_BLOCK,
+    }
 }
 
 fn pop_due_event(
@@ -559,6 +626,101 @@ mod tests {
         // Same-deadline pair: NoteOn (enqueued first) before NoteOff.
         assert!(matches!(order[2].event, QueuedMidiEvent::NoteOn { note: 60, .. }));
         assert!(matches!(order[3].event, QueuedMidiEvent::NoteOff { note: 60, .. }));
+    }
+
+    #[test]
+    fn scheduling_loop_sends_out_of_order_events_in_timestamp_order() {
+        // Drive the real drain -> heap -> wait -> pop_due_event loop (the same
+        // primitives run_output_thread uses) against a fake sink, feeding two
+        // events out of timestamp order through the channel. Asserts they fire
+        // in timestamp order and each within a reasonable latency of its
+        // deadline, i.e. the new event-driven wait strategy still hits the
+        // sub-millisecond spin window rather than overshooting to MAX_BLOCK.
+        use crossbeam_channel::TryRecvError;
+
+        let (tx, rx) = crossbeam_channel::bounded::<ScheduledMidiEvent>(8);
+        let base = Instant::now();
+        let d_late = base + Duration::from_millis(8);
+        let d_early = base + Duration::from_millis(3);
+
+        // Enqueue later-deadline event first to force reordering.
+        tx.send(
+            QueuedMidiEvent::NoteOn {
+                channel: 0,
+                note: 64,
+                velocity: 100,
+            }
+            .at(d_late),
+        )
+        .unwrap();
+        tx.send(
+            QueuedMidiEvent::NoteOn {
+                channel: 0,
+                note: 60,
+                velocity: 100,
+            }
+            .at(d_early),
+        )
+        .unwrap();
+        drop(tx); // loop terminates on disconnect once the heap is drained
+
+        let poll_duration = Duration::from_micros(MIDI_THREAD_POLL_INTERVAL_US);
+        let mut scheduled: BinaryHeap<ScheduledMidiEvent> = BinaryHeap::new();
+        let mut sent: Vec<(u8, Instant)> = Vec::new();
+        let mut disconnected = false;
+
+        loop {
+            loop {
+                match rx.try_recv() {
+                    Ok(event) => scheduled.push(event),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+
+            let now = Instant::now();
+            while let Some((event, _)) = pop_due_event(&mut scheduled, now) {
+                if let QueuedMidiEvent::NoteOn { note, .. } = event.event {
+                    sent.push((note, Instant::now()));
+                }
+            }
+
+            if scheduled.is_empty() {
+                if disconnected {
+                    break;
+                }
+                continue;
+            }
+
+            // Same spin/block decision as run_output_thread's step 4.
+            let wait = next_wait(scheduled.peek().map(|e| e.timestamp), Instant::now());
+            if wait <= MIDI_THREAD_SPIN_WINDOW {
+                if !wait.is_zero() {
+                    thread::sleep(poll_duration.min(wait));
+                }
+            } else {
+                thread::sleep(wait.min(MIDI_THREAD_MAX_BLOCK));
+            }
+        }
+
+        assert_eq!(sent.len(), 2);
+        // Sent in timestamp order: the earlier-deadline note 60 goes first.
+        assert_eq!(sent[0].0, 60, "expected note 60 (earlier deadline) first");
+        assert_eq!(sent[1].0, 64, "expected note 64 (later deadline) second");
+
+        let lat_early = sent[0].1.saturating_duration_since(d_early);
+        let lat_late = sent[1].1.saturating_duration_since(d_late);
+        assert!(
+            lat_early < Duration::from_millis(15),
+            "note 60 fired {lat_early:?} after its deadline"
+        );
+        assert!(
+            lat_late < Duration::from_millis(15),
+            "note 64 fired {lat_late:?} after its deadline"
+        );
     }
 
     #[test]

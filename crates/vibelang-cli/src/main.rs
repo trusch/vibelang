@@ -610,7 +610,18 @@ async fn run_simple_mode(
                 if let Ok(event) = res {
                     if event.kind.is_modify() || event.kind.is_create() {
                         for path in event.paths {
-                            let _ = tx.blocking_send(path);
+                            // Only reload for vibe script files. Editor swap
+                            // files, git objects, and WAVs written by record(...)
+                            // land in the watched tree and must not trigger a
+                            // full ~600ms eval+reconcile.
+                            if path
+                                .extension()
+                                .and_then(|ext| ext.to_str())
+                                .map(|ext| ext.eq_ignore_ascii_case("vibe"))
+                                .unwrap_or(false)
+                            {
+                                let _ = tx.blocking_send(path);
+                            }
                         }
                     }
                 }
@@ -911,17 +922,30 @@ async fn run_tui_mode(
             move |res: notify::Result<notify::Event>| {
                 if let Ok(event) = res {
                     if event.kind.is_modify() || event.kind.is_create() {
-                        let _ = reload_tx_clone.blocking_send(file_clone.clone());
+                        // Only reload when a vibe script file changed. Editor
+                        // swap files, git objects, and WAVs written by
+                        // record(...) share the watched tree and must not
+                        // trigger a reload storm.
+                        let touched_script = event.paths.iter().any(|path| {
+                            path.extension()
+                                .and_then(|ext| ext.to_str())
+                                .map(|ext| ext.eq_ignore_ascii_case("vibe"))
+                                .unwrap_or(false)
+                        });
+                        if touched_script {
+                            let _ = reload_tx_clone.blocking_send(file_clone.clone());
+                        }
                     }
                 }
             },
             Config::default().with_poll_interval(Duration::from_millis(500)),
         )?;
 
-        // Watch the script file and its directory
+        // Watch the script file and its directory. Recursive so imports in
+        // subdirectories are picked up (matches the -w watcher above).
         let mut w = watcher;
         if let Some(parent) = file.parent() {
-            let _ = w.watch(parent, RecursiveMode::NonRecursive);
+            let _ = w.watch(parent, RecursiveMode::Recursive);
         }
         let _ = w.watch(&file, RecursiveMode::NonRecursive);
         log::info!("Watching for changes...");

@@ -133,6 +133,19 @@ impl PatternConfig {
         self.swing = swing;
         self
     }
+
+    /// Borrowing equality against live [`PatternContent`] — used by the reload
+    /// diff to compare a running pattern's `Arc<PatternContent>` against a
+    /// proposed config without materializing a `PatternConfig` clone (which
+    /// would deep-copy every `Step`). Mirrors [`PatternConfig`]'s `PartialEq`
+    /// exactly (name/voice/steps/length, swing within `FLOAT_TOLERANCE`).
+    pub fn matches_content(&self, content: &PatternContent) -> bool {
+        self.name == content.name
+            && self.voice == content.voice
+            && self.steps == content.steps
+            && self.length == content.length
+            && (self.swing - content.swing).abs() < FLOAT_TOLERANCE
+    }
 }
 
 /// The content of a pattern that can be swapped during hot reload.

@@ -37,6 +37,15 @@ static SYNTHDEF_INPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<InputPort>>>
 static SYNTHDEF_HASH_REGISTRY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 // Callback for deploying synthdef bytes to scsynth
 static DEPLOY_CALLBACK: OnceLock<Mutex<Option<DeployCallback>>> = OnceLock::new();
+// Per-synthdef memoized single-value param defaults (Fix B). Built lazily from
+// SYNTHDEF_REGISTRY on first request and shared as an `Arc` so the note-on hot
+// path (called several times per trigger under the global State lock) clones a
+// pointer instead of rebuilding a `HashMap`. Invalidated wherever the synthdef
+// IR registry is mutated (`deploy_synthdef_ir`, `register_synthdef_ir`,
+// `clear_synthdef_registry`) and dropped wholesale on scsynth (re)connect
+// (`clear_synthdef_hash_registry`) so a redefined def can't serve stale values.
+static SYNTHDEF_PARAM_DEFAULTS_MEMO: OnceLock<Mutex<HashMap<String, Arc<HashMap<String, f32>>>>> =
+    OnceLock::new();
 
 fn get_synthdef_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
     SYNTHDEF_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
@@ -146,8 +155,30 @@ pub fn get_synthdef_hash(name: &str) -> Option<u64> {
 }
 
 /// Clear the synthdef content-hash registry. Useful for tests.
+///
+/// Called on scsynth (re)connect to force a full re-send of every def. Also
+/// drops the param-defaults memo (Fix B) so a def redefined against a fresh
+/// server can never serve stale defaults out of the memo.
 pub fn clear_synthdef_hash_registry() {
     get_synthdef_hash_registry().lock().unwrap().clear();
+    clear_param_defaults_memo();
+}
+
+fn get_param_defaults_memo() -> &'static Mutex<HashMap<String, Arc<HashMap<String, f32>>>> {
+    SYNTHDEF_PARAM_DEFAULTS_MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Drop the memoized param defaults for a single synthdef.
+///
+/// Must be called whenever that synthdef's IR is (re)inserted so a redefined
+/// body with different params never serves stale defaults from the memo.
+fn invalidate_param_defaults_memo(name: &str) {
+    get_param_defaults_memo().lock().unwrap().remove(name);
+}
+
+/// Drop the entire param-defaults memo (registry clear / server reconnect).
+fn clear_param_defaults_memo() {
+    get_param_defaults_memo().lock().unwrap().clear();
 }
 
 fn get_deploy_callback() -> &'static Mutex<Option<DeployCallback>> {
@@ -182,11 +213,27 @@ fn synthdef_error_to_eval(err: SynthDefError) -> Box<EvalAltResult> {
     ))
 }
 
+/// Whether encoded defs are dumped to `/tmp/<name>.scsyndef` for debugging.
+///
+/// Gated behind a non-empty `VIBELANG_DUMP_SYNTHDEFS`, read once per process.
+#[cfg(not(feature = "wasm"))]
+fn dump_synthdefs_enabled() -> bool {
+    static DUMP: OnceLock<bool> = OnceLock::new();
+    *DUMP.get_or_init(|| {
+        std::env::var_os("VIBELANG_DUMP_SYNTHDEFS")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+    })
+}
+
 fn deploy_synthdef_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     {
         let mut registry = get_synthdef_registry().lock().unwrap();
         registry.insert(name.to_string(), ir.clone());
     }
+    // The IR just changed — drop any memoized param defaults for this name so a
+    // redefined body with different params can't serve stale values (Fix B).
+    invalidate_param_defaults_memo(name);
 
     log::debug!(
         "[SYNTHDEF] Building synthdef '{}' with {} nodes",
@@ -199,27 +246,35 @@ fn deploy_synthdef_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     );
 
     let bytes = encode_synthdef(&ir)?;
-    register_synthdef_hash(name.to_string(), hash_synthdef_bytes(&bytes));
+    let hash = hash_synthdef_bytes(&bytes);
+
+    // Skip re-sending a byte-identical body. The hash registry is process-global
+    // and cleared on scsynth (re)connect, so a fresh server always gets a full
+    // re-send; within a run this collapses redundant redeploys on reload.
+    if get_synthdef_hash(name) == Some(hash) {
+        log::debug!("[SYNTHDEF] '{}' unchanged (hash {:016x}) — skip redeploy", name, hash);
+        return Ok(());
+    }
+
     log::debug!(
         "[SYNTHDEF] Encoded synthdef '{}' ({} bytes)",
         name,
         bytes.len()
     );
 
-    // Skip file write in WASM - filesystem not available
+    // Debug dump, gated behind VIBELANG_DUMP_SYNTHDEFS. Skipped in WASM (no fs).
     #[cfg(not(feature = "wasm"))]
-    {
+    if dump_synthdefs_enabled() {
         let filename = format!("/tmp/{}.scsyndef", name);
         std::fs::write(&filename, &bytes).ok();
     }
 
     log::debug!("[SYNTHDEF] Sending '{}' to scsynth...", name);
     deploy_bytes(bytes)?;
+    // Register the hash only after a successful deploy so a failed send is
+    // retried (not hash-skipped) on the next eval.
+    register_synthdef_hash(name.to_string(), hash);
     log::debug!("[SYNTHDEF] ✓ SynthDef '{}' loaded successfully", name);
-
-    // Skip sleep in WASM - it's not supported and not needed
-    #[cfg(not(feature = "wasm"))]
-    std::thread::sleep(std::time::Duration::from_millis(50));
     Ok(())
 }
 
@@ -230,13 +285,14 @@ fn deploy_fx_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     }
 
     let bytes = encode_synthdef(&ir)?;
-    register_synthdef_hash(name.to_string(), hash_synthdef_bytes(&bytes));
+    let hash = hash_synthdef_bytes(&bytes);
+    if get_synthdef_hash(name) == Some(hash) {
+        log::debug!("[FX] '{}' unchanged (hash {:016x}) — skip redeploy", name, hash);
+        return Ok(());
+    }
     deploy_bytes(bytes)?;
+    register_synthdef_hash(name.to_string(), hash);
     log::debug!("[FX] ✓ Effect '{}' loaded successfully", name);
-
-    // Skip sleep in WASM - it's not supported and not needed
-    #[cfg(not(feature = "wasm"))]
-    std::thread::sleep(std::time::Duration::from_millis(50));
     Ok(())
 }
 
@@ -516,6 +572,7 @@ pub fn synthdef_or_effect_exists(name: &str) -> bool {
 
 /// Register a SynthDef IR in the registry (for auto-generated synthdefs).
 pub fn register_synthdef_ir(name: String, ir: GraphIR) {
+    invalidate_param_defaults_memo(&name);
     let mut registry = get_synthdef_registry().lock().unwrap();
     registry.insert(name, ir);
 }
@@ -531,19 +588,45 @@ pub fn register_effect_ir(name: String, ir: GraphIR) {
 }
 
 /// Get default parameter values for a synthdef.
+///
+/// Convenience wrapper over [`get_synthdef_param_defaults_arc`] that hands back
+/// an owned map (empty for unknown synthdefs), for callers that aren't on a hot
+/// path. Hot-path callers should prefer the `_arc` variant and clone the `Arc`.
 pub fn get_synthdef_param_defaults(name: &str) -> HashMap<String, f32> {
-    let registry = get_synthdef_registry().lock().unwrap();
-    if let Some(ir) = registry.get(name) {
+    get_synthdef_param_defaults_arc(name)
+        .map(|arc| (*arc).clone())
+        .unwrap_or_default()
+}
+
+/// Memoized single-value param defaults for a synthdef, shared as an `Arc`.
+///
+/// Built lazily from the synthdef IR registry on first request and cached until
+/// the synthdef is redeployed or the registries are cleared (see
+/// [`invalidate_param_defaults_memo`] / [`clear_param_defaults_memo`]). Returns
+/// `None` for unknown synthdefs. The note-on hot path clones the `Arc`
+/// (pointer bump) instead of rebuilding the map under the global State lock.
+pub fn get_synthdef_param_defaults_arc(name: &str) -> Option<Arc<HashMap<String, f32>>> {
+    if let Some(defaults) = get_param_defaults_memo().lock().unwrap().get(name).cloned() {
+        return Some(defaults);
+    }
+    // Build outside the memo lock; never hold the memo and IR-registry locks at
+    // the same time. A benign race can build twice — both maps are identical.
+    let arc = {
+        let registry = get_synthdef_registry().lock().unwrap();
+        let ir = registry.get(name)?;
         let mut defaults = HashMap::new();
         for param in &ir.params {
             if param.default.len() == 1 {
                 defaults.insert(param.name.clone(), param.default[0]);
             }
         }
-        defaults
-    } else {
-        HashMap::new()
-    }
+        Arc::new(defaults)
+    };
+    get_param_defaults_memo()
+        .lock()
+        .unwrap()
+        .insert(name.to_string(), arc.clone());
+    Some(arc)
 }
 
 /// Get default parameter values for an effect.
@@ -594,6 +677,7 @@ pub fn get_all_effects_encoded() -> Vec<(String, Vec<u8>)> {
 ///
 /// Useful for testing or when reloading scripts.
 pub fn clear_synthdef_registry() {
+    clear_param_defaults_memo();
     let mut registry = get_synthdef_registry().lock().unwrap();
     registry.clear();
 }

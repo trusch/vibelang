@@ -110,6 +110,55 @@ safety). Known limitations deliberately left open:
 - [ ] **AP-5** Rapid reloads queued during staging apply every intermediate
   state in order rather than latest-wins
 
+## Performance Sweep 2 (2026-07-08)
+
+Second perf/quality pass over the audio path, reload system, and startup.
+All ten landed; verified by `cargo test` (1027 core/dsp/sfz tests green) and
+the resynthesizer smoke (`examples/resynthesizer/smoke.sh` PASS).
+
+- [x] **PS2-1** 50 ms `thread::sleep` per synthdef deploy removed
+  (`vibelang-dsp/src/api.rs` `deploy_synthdef_ir`/`deploy_fx_ir`) — was
+  ~98% of script-eval time on every reload. Deploy ordering already
+  guaranteed by the backend's `/done d_recv` await + the CLI's post-eval
+  `sync_and_wait` barrier.
+- [x] **PS2-2** Byte-identical synthdefs are hash-skipped on reload (compare
+  `get_synthdef_hash` before send; register hash only after a successful
+  `deploy_bytes`). Hash registry is now cleared on scsynth (re)connect
+  (`backends/scsynth.rs::connect`) so a fresh server always gets a full
+  re-send — required for correctness once deploys are skipped.
+- [x] **PS2-3** Built-in synthdef load does ONE barrier `/sync` after the
+  batch instead of a per-def sync (`handlers/synthdefs.rs`) — each def's
+  load is already confirmed by its own `/done`. Cuts ~N startup round trips.
+  Also: `/tmp/<name>.scsyndef` debug dump gated behind `VIBELANG_DUMP_SYNTHDEFS`.
+- [x] **PS2-4** Per-synthdef param defaults memoized as `Arc<HashMap>` in
+  vibelang-dsp (`get_synthdef_param_defaults_arc`), invalidated at every
+  registry write + on reconnect — was rebuilt 3-5×/note under the State
+  write lock just to check for a `gate` param.
+- [x] **PS2-5** SFZ note-on region matching: per-note String/Vec allocation
+  churn eliminated (`&'static str` params, no per-RR `format!` key, trigger
+  info built only for the selected region), plus a 128-slot note→region
+  bucket index (`SfzInstrumentState::note_index`) so the note-on scan is
+  O(regions-covering-the-note) with a full-scan fallback.
+- [x] **PS2-6** MIDI output threads are event-driven (`crossbeam select!`
+  with a 1 ms spin window near the deadline + 50 ms shutdown cap) instead
+  of a 10 kHz poll — was 10k idle wakeups/sec per device.
+- [x] **PS2-7** Pattern-content fades ride a `PatternState::fade_overlay`
+  (one float write/tick, merged at trigger time) instead of cloning all
+  steps + rebuilding the `Arc<PatternContent>` every 2 ms tick; final value
+  flushed into content once on completion/cancel. `Patterns::set_param` and
+  the sequence fade-start share the one-shot `write_param_to_all_steps`.
+- [x] **PS2-8** File watchers filtered to `.vibe` scripts (both `-w` and TUI
+  watchers); TUI watcher flipped to Recursive so subdir imports are seen —
+  stops WAV renders / editor swaps / git ops from triggering full reloads.
+- [x] **PS2-9** Reload diff no longer deep-clones every entity config to test
+  equality (`reload/diff.rs` `diff_entities` takes an in-place
+  `matches_config` probe; state types compare against their `Arc<Content>`
+  without cloning). `snapshot_script_config` moves the script param maps out
+  of the owned `new_state` instead of cloning (incl. the no-change path).
+- [x] **PS2-10** SFZ sample buffers load concurrently (`buffer_unordered(8)`)
+  with buffer IDs pre-allocated in deterministic order, instead of one
+  serial `/b_allocRead` round trip per sample.
+
 ## Low (deferred)
 
 - [ ] **CR-16** Voice auto-syncs before configuration

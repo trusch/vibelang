@@ -1417,7 +1417,7 @@ impl<B: Backend> Runtime<B> {
             // live-map fallback for entities that predate snapshot tracking),
             // so recording the script maps here is a semantic no-op that
             // seeds removal tracking for subsequent reloads.
-            self.snapshot_script_config(&new_state).await;
+            self.snapshot_script_config(new_state).await;
             tracing::debug!("Reload: no changes detected, playback continues");
             return Ok(());
         }
@@ -1446,7 +1446,7 @@ impl<B: Backend> Runtime<B> {
         // Written only after every phase succeeded: an aborted reload (route
         // finalize error, MIDI open failure) keeps the previous snapshot,
         // matching how `current_routes` is only advanced on success.
-        self.snapshot_script_config(&new_state).await;
+        self.snapshot_script_config(new_state).await;
 
         tracing::info!("Reload: complete");
         Ok(())
@@ -1460,29 +1460,43 @@ impl<B: Backend> Runtime<B> {
     /// script-vs-script: live tweaks never dirty the diff and removed script
     /// params are detectable. Rebuilding wholesale from `new_state` also
     /// drops entries for deleted entities.
-    async fn snapshot_script_config(&mut self, new_state: &reload::ScriptState) {
+    ///
+    /// Consumes `new_state`: snapshotting is the caller's last use of it on
+    /// both the no-change and success paths, so the param maps / effect lists /
+    /// synthdef hashes are **moved** out of it rather than cloned. Every reload
+    /// (including no-op saves) formerly paid O(total params) allocations here;
+    /// moving makes the no-change path allocation-free apart from the two owned
+    /// group maps that must be split field-by-field.
+    async fn snapshot_script_config(&mut self, new_state: reload::ScriptState) {
+        let reload::ScriptState {
+            groups,
+            voices,
+            effects,
+            synthdef_hashes,
+            ..
+        } = new_state;
+
+        let mut script_group_params =
+            std::collections::HashMap::with_capacity(groups.len());
+        let mut script_group_effects =
+            std::collections::HashMap::with_capacity(groups.len());
+        for (id, config) in groups {
+            script_group_params.insert(id, config.params);
+            script_group_effects.insert(id, config.effects);
+        }
+
         let mut state = self.state.write().await;
-        state.script_group_params = new_state
-            .groups
-            .iter()
-            .map(|(id, config)| (*id, config.params.clone()))
+        state.script_group_params = script_group_params;
+        state.script_group_effects = script_group_effects;
+        state.script_voice_params = voices
+            .into_iter()
+            .map(|(id, config)| (id, config.params))
             .collect();
-        state.script_group_effects = new_state
-            .groups
-            .iter()
-            .map(|(id, config)| (*id, config.effects.clone()))
+        state.script_effect_params = effects
+            .into_iter()
+            .map(|(id, config)| (id, config.params))
             .collect();
-        state.script_voice_params = new_state
-            .voices
-            .iter()
-            .map(|(id, config)| (*id, config.params.clone()))
-            .collect();
-        state.script_effect_params = new_state
-            .effects
-            .iter()
-            .map(|(id, config)| (*id, config.params.clone()))
-            .collect();
-        state.script_synthdef_hashes = new_state.synthdef_hashes.clone();
+        state.script_synthdef_hashes = synthdef_hashes;
     }
 
     /// Builds the reload diff and derived route maps used by the apply phases.

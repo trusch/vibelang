@@ -4,7 +4,7 @@ use crate::backend::Backend;
 use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
 use crate::state::{PatternOwner, PatternState, State};
-use crate::traits::{PatternConfig, PatternContent, Patterns, Step, Voices};
+use crate::traits::{PatternConfig, Patterns, Step, Voices};
 use crate::types::{Beat, ParamMap, PatternId, VoiceId};
 use crate::validation::Validate;
 use crate::{Error, Result};
@@ -307,6 +307,15 @@ impl<B: Backend> PatternsHandler<B> {
                         None => continue, // Skip patterns without a voice
                     };
 
+                    // Snapshot the live fade overlay (usually empty, at most a
+                    // couple of entries) while we still hold `pattern`. This is
+                    // stamped on top of each step below, reproducing the old
+                    // per-tick "write the faded value onto every step" fade
+                    // without ever rewriting `content`. This is the last use of
+                    // `pattern`, so its borrow ends here and the voice lookup
+                    // below can re-borrow `state`.
+                    let fade_overlay = pattern.fade_overlay.clone();
+
                     // Get base params from voice config
                     let base_params = state
                         .voices
@@ -315,16 +324,34 @@ impl<B: Backend> PatternsHandler<B> {
                         .unwrap_or_default();
 
                     for (step, abs_beat) in scheduled {
+                        // Effective step params = the step's recorded params
+                        // with the pattern's live fade overlay stamped on top.
+                        // The overlay overrides per-step values for the fading
+                        // param, exactly as the old fade did by rewriting each
+                        // step in `content`. Everything downstream (amp/velocity
+                        // interaction, note, gate) then reads these effective
+                        // params, so the merge is byte-identical to the old
+                        // rewrite-every-tick path.
+                        let step_params = if fade_overlay.is_empty() {
+                            step.params.clone()
+                        } else {
+                            let mut sp = step.params.clone();
+                            for (k, v) in &fade_overlay {
+                                sp.insert(k.clone(), *v);
+                            }
+                            sp
+                        };
+
                         // Merge voice params with step params
                         let mut params = base_params.clone();
 
                         // Multiply voice amp by step velocity (don't overwrite voice's amp)
                         let voice_amp = base_params.get("amp").copied().unwrap_or(1.0);
-                        let step_velocity = step.params.get("amp").copied().unwrap_or(1.0);
+                        let step_velocity = step_params.get("amp").copied().unwrap_or(1.0);
                         let final_amp = voice_amp * step_velocity;
 
                         // Extend with step params but then set the correct amp
-                        params.extend(step.params.clone());
+                        params.extend(step_params.clone());
                         params.insert("amp".to_string(), final_amp);
 
                         // Wall-clock timestamp straight from the absolute beat
@@ -334,14 +361,14 @@ impl<B: Backend> PatternsHandler<B> {
                         let timestamp = now + Duration::from_secs_f64(offset_secs.max(0.0));
 
                         // Check for note parameter (for MIDI patterns)
-                        let note = step.params.get("note").map(|n| *n as u8);
+                        let note = step_params.get("note").map(|n| *n as u8);
 
                         // Translate the recorded `gate` (beats) into a
                         // wall-clock duration so the dispatch loop can
                         // schedule a matching note-off. Only meaningful for
                         // MIDI steps; ignored for audio-synth triggers.
                         let gate_dur = if note.is_some() {
-                            step.params.get("gate").and_then(|gate_beats| {
+                            step_params.get("gate").and_then(|gate_beats| {
                                 let secs = (*gate_beats as f64) * 60.0 / tempo;
                                 if secs.is_finite() && secs > 0.0 {
                                     Some(Duration::from_secs_f64(secs))
@@ -578,22 +605,7 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
             .get_mut(&id)
             .ok_or(Error::PatternNotFound(id))?;
 
-        // Clone current content, modify steps, and replace
-        let mut new_steps = pattern.content.steps.clone();
-        for step in &mut new_steps {
-            step.params.insert(param.to_string(), value);
-        }
-
-        // Create new content with modified steps
-        let new_content = Arc::new(PatternContent {
-            name: pattern.content.name.clone(),
-            voice: pattern.content.voice,
-            steps: new_steps,
-            length: pattern.content.length,
-            swing: pattern.content.swing,
-        });
-
-        pattern.content = new_content;
+        pattern.write_param_to_all_steps(param, value);
 
         Ok(())
     }

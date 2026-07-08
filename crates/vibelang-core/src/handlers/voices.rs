@@ -63,7 +63,9 @@ pub(crate) fn voice_is_gated(config: &VoiceConfig) -> bool {
     if config.synthdef.is_empty() {
         return false;
     }
-    vibelang_dsp::get_synthdef_param_defaults(&config.synthdef).contains_key("gate")
+    vibelang_dsp::get_synthdef_param_defaults_arc(&config.synthdef)
+        .map(|d| d.contains_key("gate"))
+        .unwrap_or(false)
 }
 
 /// Grace period to wait after `gate=0` before reclaiming a voice's deferred
@@ -78,9 +80,8 @@ pub(crate) fn voice_release_grace(config: &VoiceConfig) -> Duration {
             if config.synthdef.is_empty() {
                 None
             } else {
-                vibelang_dsp::get_synthdef_param_defaults(&config.synthdef)
-                    .get("release")
-                    .copied()
+                vibelang_dsp::get_synthdef_param_defaults_arc(&config.synthdef)
+                    .and_then(|d| d.get("release").copied())
             }
         })
         .unwrap_or(0.0);
@@ -833,7 +834,7 @@ impl<B: Backend> VoicesHandler<B> {
                 };
                 synthdef = spawn.synthdef.to_string();
                 for (k, v) in spawn.params {
-                    params.insert(k, v);
+                    params.insert(k.to_string(), v);
                 }
                 // Per-note extra params still override region defaults.
                 for (k, v) in extra_params {
@@ -2190,12 +2191,18 @@ fn reclaim_detached_now(state: &mut State, detached: &DetachedVoice) {
 }
 
 fn apply_owned_output_bus_params(voice: &VoiceState, params: &mut ParamMap) {
-    let synthdef_params = vibelang_dsp::get_synthdef_param_defaults(&voice.config.synthdef);
-    if synthdef_params.contains_key("out0") {
+    let synthdef_params = vibelang_dsp::get_synthdef_param_defaults_arc(&voice.config.synthdef);
+    let has = |k: &str| {
+        synthdef_params
+            .as_ref()
+            .map(|d| d.contains_key(k))
+            .unwrap_or(false)
+    };
+    if has("out0") {
         for (index, (_, bus)) in voice.output_buses.iter().enumerate() {
             params.insert(format!("out{}", index), bus.raw() as f32);
         }
-    } else if synthdef_params.contains_key("out") {
+    } else if has("out") {
         if let Some((_, bus)) = voice.output_buses.first() {
             params.insert("out".to_string(), bus.raw() as f32);
         }

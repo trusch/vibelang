@@ -51,6 +51,12 @@ impl<B: Backend> SynthDefsHandler<B> {
             });
         }
 
+        // Single barrier sync for the whole batch: each def's load was already
+        // confirmed by its own `/done`, so this only guarantees ordering before
+        // the rest of startup runs — replacing the ~N per-def syncs that used to
+        // dominate startup wall-clock (~85 ms each × dozens of builtins).
+        self.backend.sync().await.map_err(Error::backend)?;
+
         tracing::info!("Loaded {} built-in synthdefs from vibelang-dsp", count);
         Ok(())
     }
@@ -92,19 +98,18 @@ impl<B: Backend> SynthDefsHandler<B> {
             data.len()
         );
 
+        // `load_synthdef` already awaits the server's `/done d_recv` reply, so
+        // the def is fully loaded and usable once this returns — no per-def
+        // `/sync` round-trip is needed here. Bulk callers (`load_builtins`)
+        // issue a single barrier sync after the whole batch instead of paying
+        // one round-trip per def; the single-def message path (runtime
+        // `SynthDefMessage::Load`) relies on the same `/done` confirmation.
         self.backend
             .load_synthdef(name, data)
             .await
             .map_err(|err| Error::synthdef_load(name, &err))?;
 
-        tracing::debug!("SynthDefsHandler: sent d_recv for '{}', now syncing", name);
-
-        self.backend.sync().await.map_err(Error::backend)?;
-
-        tracing::debug!(
-            "SynthDefsHandler: sync completed for '{}', registered in state",
-            name
-        );
+        tracing::debug!("SynthDefsHandler: '{}' loaded, registering in state", name);
 
         let outputs = vibelang_dsp::get_synthdef_outputs(name);
         let inputs = vibelang_dsp::get_synthdef_inputs(name).unwrap_or_default();

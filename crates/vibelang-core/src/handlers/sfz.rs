@@ -229,28 +229,45 @@ impl<B: Backend> SfzHandler<B> {
                 reason: e.to_string(),
             })?;
 
-            // Now actually load the buffers via backend
-            for load in buffer_loads {
-                let our_buffer_id = {
-                    let mut state = self.state.write().await;
-                    state.alloc_buffer_id()?
-                };
+            // Allocate all buffer IDs up front in deterministic (load) order,
+            // then load the samples concurrently: scsynth allows concurrent
+            // /b_allocRead (per-bufnum done keys), so the round-trips overlap.
+            // A single failed sample aborts the whole batch, matching the
+            // previous serial loop's error semantics.
+            use futures::StreamExt;
+            let mut allocations: Vec<(i32, BufferId, std::path::PathBuf)> =
+                Vec::with_capacity(buffer_loads.len());
+            {
+                let mut state = self.state.write().await;
+                for load in &buffer_loads {
+                    let our_buffer_id = state.alloc_buffer_id()?;
+                    allocations.push((load.sfz_buffer_id, our_buffer_id, load.path.clone()));
+                }
+            }
 
-                self.backend
-                    .load_buffer(our_buffer_id, &load.path)
-                    .await
-                    .map_err(|e| Error::SfzLoadFailed {
-                        path: load.path.clone(),
-                        reason: e.to_string(),
-                    })?;
+            let backend = &self.backend;
+            let mut loads = futures::stream::iter(allocations.into_iter().map(
+                |(sfz_buffer_id, buffer_id, path)| async move {
+                    backend
+                        .load_buffer(buffer_id, &path)
+                        .await
+                        .map_err(|e| Error::SfzLoadFailed {
+                            path: path.clone(),
+                            reason: e.to_string(),
+                        })?;
+                    tracing::debug!(
+                        "Loaded SFZ sample {} -> buffer {}",
+                        path.display(),
+                        buffer_id.0
+                    );
+                    Ok::<(i32, BufferId), Error>((sfz_buffer_id, buffer_id))
+                },
+            ))
+            .buffer_unordered(8);
 
-                buffer_id_map.insert(load.sfz_buffer_id, our_buffer_id);
-
-                tracing::debug!(
-                    "Loaded SFZ sample {} -> buffer {}",
-                    load.path.display(),
-                    our_buffer_id.0
-                );
+            while let Some(result) = loads.next().await {
+                let (sfz_buffer_id, our_buffer_id) = result?;
+                buffer_id_map.insert(sfz_buffer_id, our_buffer_id);
             }
 
             instrument
@@ -291,11 +308,13 @@ impl<B: Backend> SfzHandler<B> {
             );
         }
 
+        let note_index = SfzInstrumentState::build_note_index(&regions);
         Ok(SfzInstrumentState {
             id,
             path: path.to_path_buf(),
             regions,
             round_robin_state: HashMap::new(),
+            note_index,
         })
     }
 
@@ -387,75 +406,89 @@ fn matching_regions_for_note(
     note: u8,
     velocity: u8,
 ) -> Vec<SfzTriggerInfo> {
-    let mut result = Vec::new();
+    let indices = matching_region_indices_for_note(instrument, note, velocity);
+    indices
+        .into_iter()
+        .map(|idx| build_trigger_info(&instrument.regions[idx], note))
+        .collect()
+}
 
-    // Group regions by round-robin key for proper RR handling
-    let mut rr_groups: HashMap<String, Vec<&SfzRegionState>> = HashMap::new();
-    let mut non_rr_regions: Vec<&SfzRegionState> = Vec::new();
+/// Select the region indices (into `instrument.regions`) that match
+/// `(note, velocity)` for an attack trigger, advancing the instrument's
+/// persistent round-robin state exactly once. Non-RR matches come first (in
+/// region order), then the single round-robin selection.
+///
+/// The round-robin key is `(note, group)` with `group` hardcoded to 0 and
+/// `note` fixed for the whole call, so every round-robin region collapses into
+/// one group — a plain `Vec` replaces the old per-note `String`-keyed map.
+/// Returning indices (not `SfzTriggerInfo`) lets the note-on hot path build the
+/// trigger info only for the region it actually spawns.
+/// Classify one key-matched region by velocity into either the direct-match
+/// set or the round-robin candidate set. Key range is assumed already checked
+/// by the caller (bucket index or explicit scan).
+fn classify_sfz_region(
+    region: &SfzRegionState,
+    idx: usize,
+    velocity: u8,
+    result: &mut Vec<usize>,
+    rr_indices: &mut Vec<usize>,
+) {
+    if velocity < region.vel_range.0 || velocity > region.vel_range.1 {
+        return;
+    }
+    if region.seq_length > 0 {
+        rr_indices.push(idx);
+    } else {
+        result.push(idx);
+    }
+}
 
-    for region in &instrument.regions {
-        // Check basic criteria
-        if note < region.key_range.0 || note > region.key_range.1 {
-            continue;
+fn matching_region_indices_for_note(
+    instrument: &mut crate::state::SfzInstrumentState,
+    note: u8,
+    velocity: u8,
+) -> Vec<usize> {
+    let mut result: Vec<usize> = Vec::new();
+    let mut rr_indices: Vec<usize> = Vec::new();
+
+    // Fast path: walk only the regions whose key range covers `note` via the
+    // precomputed bucket. If the index is absent (empty), fall back to a full
+    // region scan so correctness never depends on the accelerator. Both paths
+    // apply the same velocity + round-robin classification.
+    match instrument.note_index.get(note as usize) {
+        Some(bucket) => {
+            for &ridx in bucket {
+                let idx = ridx as usize;
+                classify_sfz_region(&instrument.regions[idx], idx, velocity, &mut result, &mut rr_indices);
+            }
         }
-        if velocity < region.vel_range.0 || velocity > region.vel_range.1 {
-            continue;
-        }
-
-        if region.seq_length > 0 {
-            // Round-robin region
-            let rr_key = format!("{}_{}", note, 0); // Using 0 for group since we don't track it
-            rr_groups.entry(rr_key).or_default().push(region);
-        } else {
-            non_rr_regions.push(region);
+        None => {
+            for (idx, region) in instrument.regions.iter().enumerate() {
+                if note < region.key_range.0 || note > region.key_range.1 {
+                    continue;
+                }
+                classify_sfz_region(region, idx, velocity, &mut result, &mut rr_indices);
+            }
         }
     }
 
-    // Process non-RR regions
-    for region in non_rr_regions {
-        result.push(build_trigger_info(region, note));
-    }
-
-    // Process RR groups: collect selections first (the RR-state update needs
-    // &mut instrument while region refs borrow it immutably).
-    let mut rr_selected: Vec<SfzTriggerInfo> = Vec::new();
-    let mut rr_updates: Vec<(u8, u32)> = Vec::new();
-    for (rr_key, regions) in rr_groups {
-        if regions.is_empty() {
-            continue;
-        }
-
-        let seq_len = regions[0].seq_length;
-        let current_pos = {
-            let current = instrument
-                .round_robin_state
-                .get(&(note, 0))
-                .copied()
-                .unwrap_or(1);
-            let next = if current >= seq_len { 1 } else { current + 1 };
-            rr_updates.push((note, next));
-            current
-        };
-
-        // Find region matching this position
-        for region in regions {
-            if region.seq_position == current_pos {
-                rr_selected.push(build_trigger_info(region, note));
+    if !rr_indices.is_empty() {
+        let seq_len = instrument.regions[rr_indices[0]].seq_length;
+        let current = instrument
+            .round_robin_state
+            .get(&(note, 0))
+            .copied()
+            .unwrap_or(1);
+        let next = if current >= seq_len { 1 } else { current + 1 };
+        instrument.round_robin_state.insert((note, 0), next);
+        for &idx in &rr_indices {
+            if instrument.regions[idx].seq_position == current {
+                result.push(idx);
                 break;
             }
         }
-
-        tracing::trace!(
-            "RR key {}: selected position {} of {}",
-            rr_key,
-            current_pos,
-            seq_len
-        );
+        tracing::trace!("RR note {}: selected position {} of {}", note, current, seq_len);
     }
-    for (note, next) in rr_updates {
-        instrument.round_robin_state.insert((note, 0), next);
-    }
-    result.extend(rr_selected);
 
     result
 }
@@ -504,8 +537,9 @@ pub struct SfzNoteSpawn {
     /// (`sfz_voice_mono` / `sfz_voice_stereo`).
     pub synthdef: &'static str,
     /// Params to merge into the note's synth-creation params. Includes the
-    /// final `amp` (note velocity x region volume).
-    pub params: Vec<(String, f32)>,
+    /// final `amp` (note velocity x region volume). Names are `&'static str`
+    /// literals; the note-on path allocates the owned `String` keys on insert.
+    pub params: Vec<(&'static str, f32)>,
 }
 
 /// Select the SFZ region for `(note, velocity)` and compute the synth
@@ -528,8 +562,8 @@ pub fn sfz_note_spawn_params(
     let instrument = state.sfz_instruments.get_mut(&sfz_id)?;
     let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0).round() as u8;
 
-    let infos = matching_regions_for_note(instrument, note, midi_velocity);
-    if infos.is_empty() {
+    let indices = matching_region_indices_for_note(instrument, note, midi_velocity);
+    if indices.is_empty() {
         tracing::warn!(
             "SFZ {}: no region matches note {} velocity {} — note skipped",
             sfz_id.0,
@@ -538,15 +572,17 @@ pub fn sfz_note_spawn_params(
         );
         return None;
     }
-    if infos.len() > 1 {
+    if indices.len() > 1 {
         tracing::debug!(
             "SFZ {}: {} regions match note {} — playing the first (layering unsupported)",
             sfz_id.0,
-            infos.len(),
+            indices.len(),
             note
         );
     }
-    let info = &infos[0];
+    // Build trigger info only for the region actually spawned (indices[0]);
+    // the extra matches are diagnostic (layering unsupported).
+    let info = build_trigger_info(&instrument.regions[indices[0]], note);
 
     let synthdef = if info.num_channels == 1 {
         "sfz_voice_mono"
@@ -554,22 +590,19 @@ pub fn sfz_note_spawn_params(
         "sfz_voice_stereo"
     };
 
-    let mut params = vec![
-        ("bufnum".to_string(), info.buffer_id.0 as f32),
-        ("rate".to_string(), info.rate),
-        ("amp".to_string(), velocity.clamp(0.0, 1.0) * info.amp),
-        ("attack".to_string(), info.ampeg_attack),
-        ("decay".to_string(), info.ampeg_decay),
-        ("sustain".to_string(), info.ampeg_sustain),
-        ("release".to_string(), info.ampeg_release),
-        ("pan".to_string(), info.pan),
-        (
-            "loop".to_string(),
-            if info.loop_enabled { 1.0 } else { 0.0 },
-        ),
+    let mut params: Vec<(&'static str, f32)> = vec![
+        ("bufnum", info.buffer_id.0 as f32),
+        ("rate", info.rate),
+        ("amp", velocity.clamp(0.0, 1.0) * info.amp),
+        ("attack", info.ampeg_attack),
+        ("decay", info.ampeg_decay),
+        ("sustain", info.ampeg_sustain),
+        ("release", info.ampeg_release),
+        ("pan", info.pan),
+        ("loop", if info.loop_enabled { 1.0 } else { 0.0 }),
     ];
     if info.offset > 0 {
-        params.push(("startPos".to_string(), info.offset as f32));
+        params.push(("startPos", info.offset as f32));
     }
 
     Some(SfzNoteSpawn { synthdef, params })
@@ -599,13 +632,16 @@ mod tests {
             ampeg_release: 0.15,
             ..Default::default()
         };
+        let regions = vec![low, high];
+        let note_index = SfzInstrumentState::build_note_index(&regions);
         state.sfz_instruments.insert(
             sfz_id,
             SfzInstrumentState {
                 id: sfz_id,
                 path: std::path::PathBuf::from("pluck.sfz"),
-                regions: vec![low, high],
+                regions,
                 round_robin_state: HashMap::new(),
+                note_index,
             },
         );
         state
@@ -628,7 +664,7 @@ mod tests {
             spawn
                 .params
                 .iter()
-                .find(|(n, _)| n == name)
+                .find(|(n, _)| *n == name)
                 .map(|(_, v)| *v)
                 .unwrap_or_else(|| panic!("param {} missing", name))
         };
@@ -660,6 +696,11 @@ mod tests {
                     ..Default::default()
                 }],
                 round_robin_state: HashMap::new(),
+                note_index: SfzInstrumentState::build_note_index(&[SfzRegionState {
+                    key_range: (60, 72),
+                    vel_range: (64, 127),
+                    ..Default::default()
+                }]),
             },
         );
 
@@ -687,6 +728,10 @@ mod tests {
                     ..Default::default()
                 }],
                 round_robin_state: HashMap::new(),
+                note_index: SfzInstrumentState::build_note_index(&[SfzRegionState {
+                    loop_enabled: true,
+                    ..Default::default()
+                }]),
             },
         );
 
@@ -694,7 +739,7 @@ mod tests {
         let loop_param = spawn
             .params
             .iter()
-            .find(|(n, _)| n == "loop")
+            .find(|(n, _)| *n == "loop")
             .map(|(_, v)| *v);
         assert_eq!(loop_param, Some(1.0));
     }

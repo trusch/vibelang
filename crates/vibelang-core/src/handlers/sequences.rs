@@ -164,20 +164,12 @@ impl<B: Backend> SequencesHandler<B> {
                             }
                         }
                         FadeTarget::Pattern(id) => {
+                            // One-shot at fade start (not per-tick): bake the
+                            // start value into content once. The 500 Hz fade
+                            // ticks then ride on the cheap `fade_overlay` path
+                            // (see FadesHandler::tick / PatternState).
                             if let Some(pattern) = state.patterns.get_mut(id) {
-                                // Clone content, modify steps, and replace
-                                let mut new_steps = pattern.content.steps.clone();
-                                for step in &mut new_steps {
-                                    step.params.insert(config.param.clone(), start_value);
-                                }
-                                pattern.content =
-                                    std::sync::Arc::new(crate::traits::PatternContent {
-                                        name: pattern.content.name.clone(),
-                                        voice: pattern.content.voice,
-                                        steps: new_steps,
-                                        length: pattern.content.length,
-                                        swing: pattern.content.swing,
-                                    });
+                                pattern.write_param_to_all_steps(&config.param, start_value);
                             }
                         }
                         FadeTarget::Melody(_) => {}

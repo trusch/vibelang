@@ -285,6 +285,15 @@ impl ScsynthBackend {
         backend.send_msg("/clearSched", vec![])?;
         backend.sync().await?;
 
+        // The synthdef-body hash registry lets `deploy_synthdef_ir` skip
+        // re-sending byte-identical defs across reloads. That cache mirrors
+        // what *this* client believes the server already holds, so on a
+        // (re)connect to a fresh server it must be dropped — otherwise a
+        // within-process reconnect to a rebooted scsynth would hash-skip
+        // every deploy and leave the new server with no synthdefs. Empty on
+        // first connect (no-op); forces a full re-send on reconnect.
+        vibelang_dsp::clear_synthdef_hash_registry();
+
         tracing::info!("Connected to scsynth at {}", addr);
         Ok(backend)
     }

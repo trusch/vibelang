@@ -126,11 +126,28 @@ pub struct VoiceConfig {
 
 impl PartialEq for VoiceConfig {
     fn eq(&self, other: &Self) -> bool {
+        self.matches_with_params(other, &self.params)
+    }
+}
+
+impl Eq for VoiceConfig {}
+
+impl VoiceConfig {
+    /// Field-by-field equality against `other`, comparing `params` (rather than
+    /// `self.params`) against `other.params`.
+    ///
+    /// This is the single source of truth for [`VoiceConfig`]'s `PartialEq`
+    /// (which calls it with `&self.params`). The reload diff uses it to compare
+    /// a live voice's config against a proposed script config while
+    /// substituting the script-snapshot param map — without cloning the
+    /// `VoiceConfig` or either `ParamMap`. Params are compared with
+    /// [`params_equal`] (float tolerance); every other field with `==`.
+    pub fn matches_with_params(&self, other: &VoiceConfig, params: &ParamMap) -> bool {
         self.name == other.name
             && self.synthdef == other.synthdef
             && self.group == other.group
             && self.polyphony == other.polyphony
-            && params_equal(&self.params, &other.params)
+            && params_equal(params, &other.params)
             && self.muted == other.muted
             && self.soloed == other.soloed
             && self.sfz_instrument == other.sfz_instrument
@@ -151,11 +168,7 @@ impl PartialEq for VoiceConfig {
                 true
             }
     }
-}
 
-impl Eq for VoiceConfig {}
-
-impl VoiceConfig {
     /// Create a new voice configuration.
     pub fn new(name: impl Into<String>, synthdef: impl Into<String>, group: GroupId) -> Self {
         Self {

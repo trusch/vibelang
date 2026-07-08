@@ -95,7 +95,6 @@ use vibelang_dsp::{OutputPort, PortRate};
 
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
-use crate::traits::SampleConfig;
 use crate::types::{
     Beat, BufferId, EffectId, FadeId, MelodyId, PatternId, SampleId, SequenceId, SfzId,
     TimeSignature, VoiceId,
@@ -460,24 +459,13 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     // `Vec::new()` placeholder every effect-bearing group diffed as
     // "updated" on every reload.
     let current_group_ids: HashSet<GroupId> = current.groups.keys().copied().collect();
-    diff.groups = diff_entities(&current_group_ids, &new.groups, |id| {
-        current.groups.get(id).map(|g| GroupConfig {
-            name: g.name.clone(),
-            parent: g.parent,
-            params: current
-                .script_group_params
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| g.params.clone()),
-            effects: current
-                .script_group_effects
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| current.effect_ids_in_group(*id)),
-            muted: g.muted,
-            soloed: g.soloed,
-            output_bus: g.output_bus,
-            output_channels: g.output_channels,
+    diff.groups = diff_entities(&current_group_ids, &new.groups, |id, new_config| {
+        current.groups.get(id).map(|g| {
+            let params = current.script_group_params.get(id).unwrap_or(&g.params);
+            match current.script_group_effects.get(id) {
+                Some(effects) => g.matches_config(new_config, params, effects),
+                None => g.matches_config(new_config, params, &current.effect_ids_in_group(*id)),
+            }
         })
     });
 
@@ -487,14 +475,11 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     // the live state absorbs HTTP/MIDI `set_param` writes and runtime-set
     // values, which must not count as config drift.
     let current_voice_ids: HashSet<VoiceId> = current.voices.keys().copied().collect();
-    diff.voices = diff_entities(&current_voice_ids, &new.voices, |id| {
-        current.voices.get(id).map(|v| {
-            let mut config = v.config.clone();
-            if let Some(script_params) = current.script_voice_params.get(id) {
-                config.params = script_params.clone();
-            }
-            config
-        })
+    diff.voices = diff_entities(&current_voice_ids, &new.voices, |id, new_config| {
+        current
+            .voices
+            .get(id)
+            .map(|v| v.matches_config(new_config, current.script_voice_params.get(id)))
     });
 
     // Synthdef body edits (same name, possibly identical params) leave the
@@ -527,8 +512,8 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
             (pattern.owner == crate::state::PatternOwner::Script).then_some(*id)
         })
         .collect();
-    diff.patterns = diff_entities(&current_pattern_ids, &new.patterns, |id| {
-        current.patterns.get(id).map(|p| p.config())
+    diff.patterns = diff_entities(&current_pattern_ids, &new.patterns, |id, new_config| {
+        current.patterns.get(id).map(|p| p.matches_config(new_config))
     });
 
     // Melodies
@@ -548,8 +533,8 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
             config.length.to_f64()
         );
     }
-    diff.melodies = diff_entities(&current_melody_ids, &new.melodies, |id| {
-        current.melodies.get(id).map(|m| m.config())
+    diff.melodies = diff_entities(&current_melody_ids, &new.melodies, |id, new_config| {
+        current.melodies.get(id).map(|m| m.matches_config(new_config))
     });
     tracing::debug!(
         "calculate_diff: melody diff - created={}, updated={}, deleted={}",
@@ -560,21 +545,16 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
 
     // Sequences
     let current_sequence_ids: HashSet<SequenceId> = current.sequences.keys().copied().collect();
-    diff.sequences = diff_entities(&current_sequence_ids, &new.sequences, |id| {
-        current.sequences.get(id).map(|s| s.config.clone())
+    diff.sequences = diff_entities(&current_sequence_ids, &new.sequences, |id, new_config| {
+        current.sequences.get(id).map(|s| s.config == *new_config)
     });
 
     // Effects — script-snapshot params, same reasoning as groups/voices.
     let current_effect_ids: HashSet<EffectId> = current.effects.keys().copied().collect();
-    diff.effects = diff_entities(&current_effect_ids, &new.effects, |id| {
-        current.effects.get(id).map(|e| EffectConfig {
-            group: e.group,
-            synthdef: e.synthdef.clone(),
-            params: current
-                .script_effect_params
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| e.params.clone()),
+    diff.effects = diff_entities(&current_effect_ids, &new.effects, |id, new_config| {
+        current.effects.get(id).map(|e| {
+            let params = current.script_effect_params.get(id).unwrap_or(&e.params);
+            e.matches_config(new_config, params)
         })
     });
 
@@ -608,40 +588,34 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
     // new config with path/mtime substituted from the live `SampleInfo`:
     // an `updated` entry therefore always means "reload this buffer"
     // (in-place path change, or same path overwritten with a newer mtime).
-    diff.samples = diff_entities(&current_sample_ids, &new.samples, |id| {
-        current.samples.get(id).map(|s| {
-            let mut config = new
-                .samples
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| SampleConfig::new(s.path.clone()));
-            config.path = s.path.clone();
-            config.mtime = s.source_mtime;
-            config
-        })
+    diff.samples = diff_entities(&current_sample_ids, &new.samples, |id, new_config| {
+        current
+            .samples
+            .get(id)
+            .map(|s| s.path == new_config.path && s.source_mtime == new_config.mtime)
     });
 
     // Script-allocated buffers
     let current_buffer_ids: HashSet<BufferId> = current.buffers.keys().copied().collect();
-    diff.buffers = diff_entities(&current_buffer_ids, &new.buffers, |id| {
-        current.buffers.get(id).cloned()
+    diff.buffers = diff_entities(&current_buffer_ids, &new.buffers, |id, new_config| {
+        current.buffers.get(id).map(|b| b == new_config)
     });
 
     // SFZ instruments
     let current_sfz_ids: HashSet<SfzId> = current.sfz_instruments.keys().copied().collect();
-    diff.sfz = diff_entities(&current_sfz_ids, &new.sfz_instruments, |id| {
+    diff.sfz = diff_entities(&current_sfz_ids, &new.sfz_instruments, |id, new_config| {
         current
             .sfz_instruments
             .get(id)
-            .map(|s| crate::traits::SfzConfig::new(s.path.clone()))
+            .map(|s| s.path == new_config.path)
     });
 
     // Fades
     // We diff against the runtime's tracked fade configs (stored in state.fade_configs).
     // Active fades in state.active_fades are the runtime execution state, not the config.
     let current_fade_ids: HashSet<FadeId> = current.fade_configs.keys().copied().collect();
-    diff.fades = diff_entities(&current_fade_ids, &new.fades, |id| {
-        current.fade_configs.get(id).cloned()
+    diff.fades = diff_entities(&current_fade_ids, &new.fades, |id, new_config| {
+        current.fade_configs.get(id).map(|f| f == new_config)
     });
 
     // Force-restart fades should be treated as updated even if config is unchanged
@@ -994,6 +968,62 @@ mod tests {
         assert_eq!(diff.patterns.deleted, vec![script_pattern]);
         assert!(current.patterns[&looper_a].playing);
         assert!(current.patterns[&looper_b].playing);
+    }
+
+    /// A no-op reload of a large melody (identical config) must diff to an empty
+    /// melody change set — every note is `unchanged`, none `created`/`updated`/
+    /// `deleted`. The in-place equality probe borrows the live
+    /// `Arc<MelodyContent>` rather than cloning every `NoteEvent` (and its
+    /// per-note param map) to compare, so this is the structural guard that the
+    /// perf fix did not alter diff semantics.
+    #[test]
+    fn noop_reload_of_large_melody_diffs_empty() {
+        use crate::state::MelodyState;
+        use crate::traits::{MelodyConfig, NoteEvent};
+        use crate::types::MelodyId;
+
+        let mel_id = MelodyId::new(7);
+        let mut config = MelodyConfig::with_length("big_melody", VoiceId::new(1), 64.0);
+        for i in 0..512 {
+            let mut params = std::collections::HashMap::new();
+            params.insert("cutoff".to_string(), 1000.0 + i as f32);
+            params.insert("pan".to_string(), (i as f32 % 7.0) / 7.0 - 0.5);
+            config.notes.push(NoteEvent::new_with_params(
+                i as f64 * 0.125,
+                (36 + (i % 48)) as u8,
+                0.8,
+                0.125,
+                params,
+            ));
+        }
+
+        let mut current = State::default();
+        current
+            .melodies
+            .insert(mel_id, MelodyState::new(mel_id, config.clone()));
+
+        let mut new = ScriptState::new();
+        new.add_melody(mel_id, config);
+
+        let diff = calculate_diff(&current, &new, &RouteMap::new());
+
+        // Every note identical: exactly one unchanged melody, no create/update/delete.
+        assert!(diff.melodies.created.is_empty());
+        assert!(diff.melodies.updated.is_empty());
+        assert!(diff.melodies.deleted.is_empty());
+        assert_eq!(diff.melodies.unchanged.len(), 1);
+        assert!(diff.melodies.unchanged.contains(&mel_id));
+        assert!(!diff.melodies.has_changes());
+
+        // Flipping a single note's param must surface the melody as updated,
+        // proving the probe still detects real content changes.
+        let mut changed = new.melodies.get(&mel_id).unwrap().clone();
+        changed.notes[256].params.insert("cutoff".to_string(), 42.0);
+        let mut new2 = ScriptState::new();
+        new2.add_melody(mel_id, changed);
+        let diff2 = calculate_diff(&current, &new2, &RouteMap::new());
+        assert_eq!(diff2.melodies.updated.len(), 1);
+        assert!(diff2.melodies.unchanged.is_empty());
     }
 
     #[test]

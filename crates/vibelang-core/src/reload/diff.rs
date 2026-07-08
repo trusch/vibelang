@@ -57,35 +57,45 @@ impl<Id: Clone + Eq + Hash, Config: PartialEq + Clone> EntityDiff<Id, Config> {
 /// # Arguments
 /// * `current_ids` - Set of IDs currently in the runtime
 /// * `new_configs` - Map of ID -> Config from the new script state
-/// * `get_current_config` - Function to get current config for comparison
+/// * `probe_current` - In-place equality probe against the current runtime
+///   entity. Given `(id, new_config)`, returns `Some(true)` when an existing
+///   current entity **equals** the proposed config, `Some(false)` when it
+///   exists but **differs**, and `None` when it does not exist (treated as a
+///   create). Unlike a clone-and-compare, this must decide equality by
+///   *borrowing* current state — no owned `Config` is materialized just to be
+///   thrown away, which on a hot-reload save avoids deep-cloning every
+///   pattern/melody/voice config that did not change.
 ///
 /// # Returns
 /// An EntityDiff with created, deleted, updated, and unchanged entities.
 pub fn diff_entities<Id, Config, F>(
     current_ids: &HashSet<Id>,
     new_configs: &HashMap<Id, Config>,
-    get_current_config: F,
+    probe_current: F,
 ) -> EntityDiff<Id, Config>
 where
     Id: Clone + Eq + Hash,
     Config: PartialEq + Clone,
-    F: Fn(&Id) -> Option<Config>,
+    F: Fn(&Id, &Config) -> Option<bool>,
 {
     let mut diff = EntityDiff::new();
 
     // Check each new entity
     for (id, new_config) in new_configs {
         if current_ids.contains(id) {
-            // Entity exists - check if config changed
-            if let Some(current_config) = get_current_config(id) {
-                if current_config == *new_config {
+            // Entity exists - probe whether its live config matches in place.
+            match probe_current(id, new_config) {
+                Some(true) => {
                     diff.unchanged.insert(id.clone());
-                } else {
+                }
+                Some(false) => {
                     diff.updated.insert(id.clone(), new_config.clone());
                 }
-            } else {
-                // Shouldn't happen, but treat as create
-                diff.created.insert(id.clone(), new_config.clone());
+                None => {
+                    // Shouldn't happen (id in current_ids but no entity), but
+                    // treat as create to match the previous behaviour.
+                    diff.created.insert(id.clone(), new_config.clone());
+                }
             }
         } else {
             // New entity
@@ -633,7 +643,7 @@ mod tests {
         let mut new_configs = HashMap::new();
         new_configs.insert(1u32, "config1".to_string());
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| None::<String>);
+        let diff = diff_entities(&current_ids, &new_configs, |_, _: &String| None);
 
         assert_eq!(diff.created.len(), 1);
         assert!(diff.deleted.is_empty());
@@ -647,7 +657,9 @@ mod tests {
 
         let new_configs: HashMap<u32, String> = HashMap::new();
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| Some("old".to_string()));
+        // New map is empty, so the probe is never invoked; deletion is decided
+        // purely from `current_ids`.
+        let diff = diff_entities(&current_ids, &new_configs, |_, _: &String| Some(true));
 
         assert!(diff.created.is_empty());
         assert_eq!(diff.deleted.len(), 1);
@@ -662,8 +674,9 @@ mod tests {
         let mut new_configs = HashMap::new();
         new_configs.insert(1u32, "new_config".to_string());
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| {
-            Some("old_config".to_string())
+        // Current "old_config" differs from new "new_config": probe reports false.
+        let diff = diff_entities(&current_ids, &new_configs, |_, new: &String| {
+            Some(*new == "old_config")
         });
 
         assert!(diff.created.is_empty());
@@ -679,8 +692,9 @@ mod tests {
         let mut new_configs = HashMap::new();
         new_configs.insert(1u32, "same_config".to_string());
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| {
-            Some("same_config".to_string())
+        // Current equals new "same_config": probe reports true (unchanged).
+        let diff = diff_entities(&current_ids, &new_configs, |_, new: &String| {
+            Some(*new == "same_config")
         });
 
         assert!(diff.created.is_empty());

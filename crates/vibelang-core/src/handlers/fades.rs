@@ -143,24 +143,28 @@ impl<B: Backend> FadesHandler<B> {
                         }
                     }
                     FadeTarget::Pattern(id) => {
-                        // TODO: pattern-content fades clone the entire
-                        // pattern content on every tick — expensive and
-                        // tracked separately. Intentionally left out of the
-                        // emission rate limit below (no backend sends here);
-                        // do not redesign as part of the de-click work.
+                        // Pattern fades affect FUTURE triggers, not live nodes,
+                        // so there is nothing to /n_set here (hence the empty
+                        // node list and no emission rate-limiting below).
+                        //
+                        // The per-tick update is a single float insert into the
+                        // pattern's `fade_overlay`; `content` is left pristine.
+                        // The pattern trigger path merges this overlay on top of
+                        // each step at trigger time, reproducing the old
+                        // "value stamped on every step" behaviour without the
+                        // ~30k allocations/sec of rebuilding the whole content
+                        // Arc every 2 ms. On completion the final value is
+                        // flushed into `content` exactly once so post-fade
+                        // content is byte-identical to the old implementation
+                        // and a subsequent reload diff sees the correct
+                        // end-state.
                         if let Some(pattern) = state.patterns.get_mut(id) {
-                            // Clone content, modify steps, and replace
-                            let mut new_steps = pattern.content.steps.clone();
-                            for step in &mut new_steps {
-                                step.params.insert(data.param.clone(), data.value);
+                            if data.is_complete {
+                                pattern.write_param_to_all_steps(&data.param, data.value);
+                                pattern.fade_overlay.remove(&data.param);
+                            } else {
+                                pattern.fade_overlay.insert(data.param.clone(), data.value);
                             }
-                            pattern.content = std::sync::Arc::new(crate::traits::PatternContent {
-                                name: pattern.content.name.clone(),
-                                voice: pattern.content.voice,
-                                steps: new_steps,
-                                length: pattern.content.length,
-                                swing: pattern.content.swing,
-                            });
                         }
                         vec![] // No live nodes to update
                     }
@@ -236,10 +240,18 @@ impl<B: Backend> Fades for FadesHandler<B> {
                     .patterns
                     .get(id)
                     .and_then(|p| {
-                        p.content
-                            .steps
-                            .first()
-                            .and_then(|s| s.params.get(&config.param).copied())
+                        // An in-flight fade keeps the live value in the overlay
+                        // (content stays pristine), so a fade restarted
+                        // mid-flight captures the current interpolated value as
+                        // its start — matching the old code where `content`
+                        // held that value. With no active overlay, fall back to
+                        // the pristine first-step param.
+                        p.fade_overlay.get(&config.param).copied().or_else(|| {
+                            p.content
+                                .steps
+                                .first()
+                                .and_then(|s| s.params.get(&config.param).copied())
+                        })
                     })
                     .unwrap_or(0.0),
                 FadeTarget::Melody(_) => 0.0, // Melodies don't have persistent params
@@ -279,6 +291,19 @@ impl<B: Backend> Fades for FadesHandler<B> {
         state
             .active_fades
             .retain(|f| &f.config.target != target || f.config.param != param);
+
+        // Freeze a cancelled pattern fade at its last overlaid value by baking
+        // it into `content` once, then drop the transient overlay entry. This
+        // matches the old code, where `content` retained whatever the last
+        // fade tick stamped at cancel time; without the flush the value would
+        // vanish and future triggers would revert to the pre-fade content.
+        if let FadeTarget::Pattern(id) = target {
+            if let Some(pattern) = state.patterns.get_mut(id) {
+                if let Some(value) = pattern.fade_overlay.remove(param) {
+                    pattern.write_param_to_all_steps(param, value);
+                }
+            }
+        }
 
         self.last_emit
             .lock()

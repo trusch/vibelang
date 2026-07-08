@@ -163,6 +163,20 @@ impl MelodyConfig {
         self.swing = swing;
         self
     }
+
+    /// Borrowing equality against live [`MelodyContent`] — used by the reload
+    /// diff to compare a running melody's `Arc<MelodyContent>` against a
+    /// proposed config without materializing a `MelodyConfig` clone (which
+    /// would deep-copy every `NoteEvent` and its per-note param map). Mirrors
+    /// [`MelodyConfig`]'s `PartialEq` exactly (name/voice/notes/length, swing
+    /// within `FLOAT_TOLERANCE`).
+    pub fn matches_content(&self, content: &MelodyContent) -> bool {
+        self.name == content.name
+            && self.voice == content.voice
+            && self.notes == content.notes
+            && self.length == content.length
+            && (self.swing - content.swing).abs() < FLOAT_TOLERANCE
+    }
 }
 
 /// The content of a melody that can be swapped during hot reload.
