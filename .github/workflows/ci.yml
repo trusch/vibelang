@@ -37,9 +37,10 @@ jobs:
         #   the pipewire-midi2 feature is part of vibelang-core's default
         #   "midi" feature, so it is built by default
         # - libjack-jackd2-dev: jack crate used by vibelang-keys
-        # - libx11/xi/xtst + libxcb*: the x11 crate (via rdev) and arboard,
-        #   pulled in by vibelang-cli for global hotkeys and clipboard; their
-        #   build scripts pkg-config these X11/XCB libs
+        # - libx11/xi/xtst + libxcb*: the x11 crate (via rdev) pulled in by the
+        #   standalone vibe-keys terminal-MIDI-keyboard binary (vibelang-keys),
+        #   which `cargo test --workspace` builds. The main `vibe` CLI no longer
+        #   needs X11 since its TUI mode was removed.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -57,8 +58,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install system dependencies
         # Same rationale as the clippy job: ALSA for midir, PipeWire headers
-        # for the default pipewire-midi2 feature, JACK for vibelang-keys, and
-        # X11/XCB for the x11 crate (via rdev) + arboard pulled in by vibelang-cli.
+        # for the default pipewire-midi2 feature, JACK + X11/XCB for the
+        # standalone vibe-keys binary (vibelang-keys) built by --workspace.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \

@@ -64,17 +64,6 @@ rosc = "0.11"
 # Signal handling
 ctrlc = "3.4"
 
-# TUI
-ratatui = "0.30"
-crossterm = "0.29"
-chrono = "0.4"
-
-# Clipboard (for MIDI recording export)
-arboard = "3.4"
-
-# OS-level keyboard input (for virtual keyboard key release detection)
-rdev = "0.5"
-
 # Render command
 tempfile = "3.10"
 which = "8"
