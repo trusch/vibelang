@@ -835,8 +835,7 @@ impl<B: Backend> MidiHandler<B> {
             msg
         };
 
-        let protected =
-            from_looper || matches!(msg, Message::Voice(VoiceMessage::NoteOff { .. }));
+        let protected = from_looper || matches!(msg, Message::Voice(VoiceMessage::NoteOff { .. }));
         pending.push_back(PendingRuntimeMessage { msg, protected });
 
         if pending.len() > PENDING_RUNTIME_CAP {

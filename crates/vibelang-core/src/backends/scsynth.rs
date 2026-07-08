@@ -1270,7 +1270,10 @@ impl Backend for ScsynthBackend {
             params
         );
 
-        self.send_msg("/s_new", Self::s_new_args(def, node, target, action, params))?;
+        self.send_msg(
+            "/s_new",
+            Self::s_new_args(def, node, target, action, params),
+        )?;
         Ok(())
     }
 
@@ -1293,7 +1296,10 @@ impl Backend for ScsynthBackend {
             params
         );
 
-        let mut msgs = vec![("/s_new", Self::s_new_args(def, node, target, action, params))];
+        let mut msgs = vec![(
+            "/s_new",
+            Self::s_new_args(def, node, target, action, params),
+        )];
         for (param, bus) in param_buses {
             msgs.push((
                 "/n_map",

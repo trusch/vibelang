@@ -613,8 +613,7 @@ mod tests {
             .at(ms(20)),
         );
 
-        let order: Vec<ScheduledMidiEvent> =
-            std::iter::from_fn(|| scheduled.pop()).collect();
+        let order: Vec<ScheduledMidiEvent> = std::iter::from_fn(|| scheduled.pop()).collect();
 
         assert_eq!(order.len(), 4);
         assert!(
@@ -624,8 +623,14 @@ mod tests {
         assert_eq!(order[0].timestamp, ms(10));
         assert_eq!(order[1].timestamp, ms(20));
         // Same-deadline pair: NoteOn (enqueued first) before NoteOff.
-        assert!(matches!(order[2].event, QueuedMidiEvent::NoteOn { note: 60, .. }));
-        assert!(matches!(order[3].event, QueuedMidiEvent::NoteOff { note: 60, .. }));
+        assert!(matches!(
+            order[2].event,
+            QueuedMidiEvent::NoteOn { note: 60, .. }
+        ));
+        assert!(matches!(
+            order[3].event,
+            QueuedMidiEvent::NoteOff { note: 60, .. }
+        ));
     }
 
     #[test]

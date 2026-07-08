@@ -252,7 +252,11 @@ fn deploy_synthdef_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     // and cleared on scsynth (re)connect, so a fresh server always gets a full
     // re-send; within a run this collapses redundant redeploys on reload.
     if get_synthdef_hash(name) == Some(hash) {
-        log::debug!("[SYNTHDEF] '{}' unchanged (hash {:016x}) — skip redeploy", name, hash);
+        log::debug!(
+            "[SYNTHDEF] '{}' unchanged (hash {:016x}) — skip redeploy",
+            name,
+            hash
+        );
         return Ok(());
     }
 
@@ -287,7 +291,11 @@ fn deploy_fx_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     let bytes = encode_synthdef(&ir)?;
     let hash = hash_synthdef_bytes(&bytes);
     if get_synthdef_hash(name) == Some(hash) {
-        log::debug!("[FX] '{}' unchanged (hash {:016x}) — skip redeploy", name, hash);
+        log::debug!(
+            "[FX] '{}' unchanged (hash {:016x}) — skip redeploy",
+            name,
+            hash
+        );
         return Ok(());
     }
     deploy_bytes(bytes)?;

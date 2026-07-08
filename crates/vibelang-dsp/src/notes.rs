@@ -101,7 +101,7 @@ mod tests {
         // Unicode symbols
         assert_eq!(parse_note_name("C\u{266f}4"), Some(61)); // C♯4
         assert_eq!(parse_note_name("D\u{266d}4"), Some(61)); // D♭4
-        // Accidentals crossing octave boundaries
+                                                             // Accidentals crossing octave boundaries
         assert_eq!(parse_note_name("Cb4"), Some(59)); // == B3
         assert_eq!(parse_note_name("B#4"), Some(72)); // == C5
     }

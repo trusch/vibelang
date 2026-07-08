@@ -41,9 +41,9 @@ pub use api::{
     get_all_effects_encoded, get_all_synthdefs_encoded, get_effect_param_defaults,
     get_synthdef_hash, get_synthdef_inputs, get_synthdef_outputs, get_synthdef_param_defaults,
     get_synthdef_param_defaults_arc, register_effect_ir, register_synthdef_api,
-    register_synthdef_hash, register_synthdef_inputs,
-    register_synthdef_ir, register_synthdef_outputs, set_deploy_callback, synthdef_exists,
-    synthdef_or_effect_exists, FxBuilderHandle, SynthDefBuilderHandle,
+    register_synthdef_hash, register_synthdef_inputs, register_synthdef_ir,
+    register_synthdef_outputs, set_deploy_callback, synthdef_exists, synthdef_or_effect_exists,
+    FxBuilderHandle, SynthDefBuilderHandle,
 };
 pub use builder::{InputPort, OutputPort, PortRate, SynthDef};
 pub use encoder::encode_synthdef;

@@ -1477,10 +1477,8 @@ impl<B: Backend> Runtime<B> {
             ..
         } = new_state;
 
-        let mut script_group_params =
-            std::collections::HashMap::with_capacity(groups.len());
-        let mut script_group_effects =
-            std::collections::HashMap::with_capacity(groups.len());
+        let mut script_group_params = std::collections::HashMap::with_capacity(groups.len());
+        let mut script_group_effects = std::collections::HashMap::with_capacity(groups.len());
         for (id, config) in groups {
             script_group_params.insert(id, config.params);
             script_group_effects.insert(id, config.effects);

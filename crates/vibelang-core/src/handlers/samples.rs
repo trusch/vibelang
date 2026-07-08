@@ -130,7 +130,10 @@ impl<B: Backend> SamplesHandler<B> {
         };
 
         for buffer_id in buffers_to_free {
-            tracing::debug!("Buffer grace period elapsed, freeing buffer {}", buffer_id.0);
+            tracing::debug!(
+                "Buffer grace period elapsed, freeing buffer {}",
+                buffer_id.0
+            );
             if let Err(e) = self.backend.free_buffer(buffer_id).await {
                 tracing::warn!("free_buffer({}) failed: {}", buffer_id.0, e);
             }

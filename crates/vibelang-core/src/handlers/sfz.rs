@@ -248,13 +248,12 @@ impl<B: Backend> SfzHandler<B> {
             let backend = &self.backend;
             let mut loads = futures::stream::iter(allocations.into_iter().map(
                 |(sfz_buffer_id, buffer_id, path)| async move {
-                    backend
-                        .load_buffer(buffer_id, &path)
-                        .await
-                        .map_err(|e| Error::SfzLoadFailed {
+                    backend.load_buffer(buffer_id, &path).await.map_err(|e| {
+                        Error::SfzLoadFailed {
                             path: path.clone(),
                             reason: e.to_string(),
-                        })?;
+                        }
+                    })?;
                     tracing::debug!(
                         "Loaded SFZ sample {} -> buffer {}",
                         path.display(),
@@ -459,7 +458,13 @@ fn matching_region_indices_for_note(
         Some(bucket) => {
             for &ridx in bucket {
                 let idx = ridx as usize;
-                classify_sfz_region(&instrument.regions[idx], idx, velocity, &mut result, &mut rr_indices);
+                classify_sfz_region(
+                    &instrument.regions[idx],
+                    idx,
+                    velocity,
+                    &mut result,
+                    &mut rr_indices,
+                );
             }
         }
         None => {
@@ -487,7 +492,12 @@ fn matching_region_indices_for_note(
                 break;
             }
         }
-        tracing::trace!("RR note {}: selected position {} of {}", note, current, seq_len);
+        tracing::trace!(
+            "RR note {}: selected position {} of {}",
+            note,
+            current,
+            seq_len
+        );
     }
 
     result

@@ -227,12 +227,12 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAl
         "m" | "min" | "minor" | "-" => vec![0, 3, 7],
 
         // Seventh chords
-        "7" => vec![0, 4, 7, 10], // Dominant 7th
-        "maj7" => vec![0, 4, 7, 11], // Major 7th
+        "7" => vec![0, 4, 7, 10],                     // Dominant 7th
+        "maj7" => vec![0, 4, 7, 11],                  // Major 7th
         "m7" if quality == "M7" => vec![0, 4, 7, 11], // Major 7th ("M7")
-        "m7" | "min7" | "-7" => vec![0, 3, 7, 10], // Minor 7th
-        "dim7" | "°7" => vec![0, 3, 6, 9],         // Diminished 7th
-        "m7b5" | "ø7" | "ø" => vec![0, 3, 6, 10],  // Half-diminished
+        "m7" | "min7" | "-7" => vec![0, 3, 7, 10],    // Minor 7th
+        "dim7" | "°7" => vec![0, 3, 6, 9],            // Diminished 7th
+        "m7b5" | "ø7" | "ø" => vec![0, 3, 6, 10],     // Half-diminished
 
         // Suspended
         "sus2" => vec![0, 2, 7],
@@ -294,9 +294,8 @@ pub fn scale_with_octave(
     scale_type: &str,
     octave: i64,
 ) -> Result<Array, Box<EvalAltResult>> {
-    let root_note = parse_note_name(&format!("{}{}", root, octave)).ok_or_else(|| {
-        invalid_scale_root_error("scale()", root)
-    })?;
+    let root_note = parse_note_name(&format!("{}{}", root, octave))
+        .ok_or_else(|| invalid_scale_root_error("scale()", root))?;
 
     let intervals = get_scale_intervals(scale_type)
         .ok_or_else(|| unknown_scale_error("scale()", scale_type))?;
@@ -1022,7 +1021,10 @@ mod tests {
         assert_eq!(intervals, vec![0, 2, 4, 5, 7, 9, 11]);
 
         // Alternative name
-        assert_eq!(get_scale_intervals("ionian").unwrap(), vec![0, 2, 4, 5, 7, 9, 11]);
+        assert_eq!(
+            get_scale_intervals("ionian").unwrap(),
+            vec![0, 2, 4, 5, 7, 9, 11]
+        );
     }
 
     #[test]
@@ -1035,20 +1037,35 @@ mod tests {
             get_scale_intervals("natural_minor").unwrap(),
             vec![0, 2, 3, 5, 7, 8, 10]
         );
-        assert_eq!(get_scale_intervals("aeolian").unwrap(), vec![0, 2, 3, 5, 7, 8, 10]);
+        assert_eq!(
+            get_scale_intervals("aeolian").unwrap(),
+            vec![0, 2, 3, 5, 7, 8, 10]
+        );
     }
 
     #[test]
     fn test_get_scale_intervals_modes() {
         // All 7 church modes
-        assert_eq!(get_scale_intervals("dorian").unwrap(), vec![0, 2, 3, 5, 7, 9, 10]);
-        assert_eq!(get_scale_intervals("phrygian").unwrap(), vec![0, 1, 3, 5, 7, 8, 10]);
-        assert_eq!(get_scale_intervals("lydian").unwrap(), vec![0, 2, 4, 6, 7, 9, 11]);
+        assert_eq!(
+            get_scale_intervals("dorian").unwrap(),
+            vec![0, 2, 3, 5, 7, 9, 10]
+        );
+        assert_eq!(
+            get_scale_intervals("phrygian").unwrap(),
+            vec![0, 1, 3, 5, 7, 8, 10]
+        );
+        assert_eq!(
+            get_scale_intervals("lydian").unwrap(),
+            vec![0, 2, 4, 6, 7, 9, 11]
+        );
         assert_eq!(
             get_scale_intervals("mixolydian").unwrap(),
             vec![0, 2, 4, 5, 7, 9, 10]
         );
-        assert_eq!(get_scale_intervals("locrian").unwrap(), vec![0, 1, 3, 5, 6, 8, 10]);
+        assert_eq!(
+            get_scale_intervals("locrian").unwrap(),
+            vec![0, 1, 3, 5, 6, 8, 10]
+        );
     }
 
     #[test]
@@ -1069,8 +1086,14 @@ mod tests {
     #[test]
     fn test_get_scale_intervals_pentatonic() {
         // Major pentatonic: 1 2 3 5 6
-        assert_eq!(get_scale_intervals("pentatonic").unwrap(), vec![0, 2, 4, 7, 9]);
-        assert_eq!(get_scale_intervals("major_pentatonic").unwrap(), vec![0, 2, 4, 7, 9]);
+        assert_eq!(
+            get_scale_intervals("pentatonic").unwrap(),
+            vec![0, 2, 4, 7, 9]
+        );
+        assert_eq!(
+            get_scale_intervals("major_pentatonic").unwrap(),
+            vec![0, 2, 4, 7, 9]
+        );
 
         // Minor pentatonic: 1 b3 4 5 b7
         assert_eq!(
@@ -1082,7 +1105,10 @@ mod tests {
     #[test]
     fn test_get_scale_intervals_blues() {
         // Blues scale: 1 b3 4 b5 5 b7
-        assert_eq!(get_scale_intervals("blues").unwrap(), vec![0, 3, 5, 6, 7, 10]);
+        assert_eq!(
+            get_scale_intervals("blues").unwrap(),
+            vec![0, 3, 5, 6, 7, 10]
+        );
     }
 
     #[test]
@@ -1097,7 +1123,10 @@ mod tests {
     #[test]
     fn test_get_scale_intervals_whole_tone() {
         // 6 whole tones
-        assert_eq!(get_scale_intervals("whole_tone").unwrap(), vec![0, 2, 4, 6, 8, 10]);
+        assert_eq!(
+            get_scale_intervals("whole_tone").unwrap(),
+            vec![0, 2, 4, 6, 8, 10]
+        );
     }
 
     #[test]
@@ -1109,7 +1138,11 @@ mod tests {
     #[test]
     fn test_scale_unknown_name_errors() {
         let msg = scale("C", "unknown_scale").unwrap_err().to_string();
-        assert!(msg.contains("unknown scale 'unknown_scale'"), "msg = {}", msg);
+        assert!(
+            msg.contains("unknown scale 'unknown_scale'"),
+            "msg = {}",
+            msg
+        );
         // Lists valid scale names
         assert!(msg.contains("'major'"), "msg = {}", msg);
         assert!(msg.contains("'whole_tone'"), "msg = {}", msg);
@@ -1136,9 +1169,18 @@ mod tests {
 
     #[test]
     fn test_get_scale_intervals_case_insensitive() {
-        assert_eq!(get_scale_intervals("MAJOR").unwrap(), vec![0, 2, 4, 5, 7, 9, 11]);
-        assert_eq!(get_scale_intervals("Minor").unwrap(), vec![0, 2, 3, 5, 7, 8, 10]);
-        assert_eq!(get_scale_intervals("DoRiAn").unwrap(), vec![0, 2, 3, 5, 7, 9, 10]);
+        assert_eq!(
+            get_scale_intervals("MAJOR").unwrap(),
+            vec![0, 2, 4, 5, 7, 9, 11]
+        );
+        assert_eq!(
+            get_scale_intervals("Minor").unwrap(),
+            vec![0, 2, 3, 5, 7, 8, 10]
+        );
+        assert_eq!(
+            get_scale_intervals("DoRiAn").unwrap(),
+            vec![0, 2, 3, 5, 7, 9, 10]
+        );
     }
 
     #[test]
@@ -1314,9 +1356,18 @@ mod tests {
     fn test_chord_and_scale_consistency() {
         // The notes in a C major chord should be scale degrees 1, 3, 5
         let c_major_chord = parse_chord("C", 4).unwrap();
-        assert_eq!(c_major_chord[0], scale_degree("C", "major", 1).unwrap() as u8); // Root
-        assert_eq!(c_major_chord[1], scale_degree("C", "major", 3).unwrap() as u8); // 3rd
-        assert_eq!(c_major_chord[2], scale_degree("C", "major", 5).unwrap() as u8); // 5th
+        assert_eq!(
+            c_major_chord[0],
+            scale_degree("C", "major", 1).unwrap() as u8
+        ); // Root
+        assert_eq!(
+            c_major_chord[1],
+            scale_degree("C", "major", 3).unwrap() as u8
+        ); // 3rd
+        assert_eq!(
+            c_major_chord[2],
+            scale_degree("C", "major", 5).unwrap() as u8
+        ); // 5th
     }
 
     #[test]

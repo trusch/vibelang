@@ -361,8 +361,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             let mut grace = Duration::ZERO;
             let mut nodes = Vec::new();
             for voice in state.voices.values().filter(|v| v.config.group == id) {
-                let sounding =
-                    !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
+                let sounding = !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
                 if sounding && voice_is_gated(&voice.config) {
                     grace = grace.max(voice_release_grace(&voice.config));
                     nodes.extend(voice.active_nodes.iter().copied());
@@ -1007,11 +1006,7 @@ mod tests {
 
         let result = handler.solo(group_id, true).await;
         assert!(result.is_ok(), "Soloing group should succeed");
-        assert_eq!(
-            backend.run_node_calls(),
-            0,
-            "solo must not use /n_run"
-        );
+        assert_eq!(backend.run_node_calls(), 0, "solo must not use /n_run");
         assert_eq!(
             backend.mute_calls(),
             vec![(link, 0.0)],

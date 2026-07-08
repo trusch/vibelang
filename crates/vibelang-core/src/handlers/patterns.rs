@@ -65,7 +65,11 @@ pub(crate) fn occurrences_in_window<T: Clone>(
         // First iteration k >= 0 with anchor + k*len + beat >= from.
         let base = anchor.raw() + beat_of(item).raw();
         let diff = from.raw() - base;
-        let k = if diff <= 0 { 0 } else { diff.div_euclid(len) + i64::from(diff.rem_euclid(len) != 0) };
+        let k = if diff <= 0 {
+            0
+        } else {
+            diff.div_euclid(len) + i64::from(diff.rem_euclid(len) != 0)
+        };
         let mut abs = base + k * len;
         while abs < to.raw() {
             out.push((item.clone(), Beat::from_raw(abs)));

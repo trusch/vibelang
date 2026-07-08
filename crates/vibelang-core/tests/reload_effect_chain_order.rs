@@ -48,10 +48,20 @@ impl std::error::Error for MockError {}
 /// Ordered log of every tree-affecting backend call.
 #[derive(Clone, Debug, PartialEq)]
 enum Op {
-    Create { def: String, node: NodeId },
+    Create {
+        def: String,
+        node: NodeId,
+    },
     Free(NodeId),
-    MoveBefore { node: NodeId, before: NodeId },
-    Set { node: NodeId, param: String, value: f32 },
+    MoveBefore {
+        node: NodeId,
+        before: NodeId,
+    },
+    Set {
+        node: NodeId,
+        param: String,
+        value: f32,
+    },
 }
 
 /// Minimal scsynth tree: ordered children per group, honouring AddActions
@@ -85,7 +95,11 @@ impl Tree {
                     .iter()
                     .position(|n| *n == target)
                     .ok_or_else(|| MockError(format!("{:?} not among siblings", target)))?;
-                let idx = if action == AddAction::After { idx + 1 } else { idx };
+                let idx = if action == AddAction::After {
+                    idx + 1
+                } else {
+                    idx
+                };
                 siblings.insert(idx, node);
                 self.parent.insert(node, parent);
             }
@@ -203,7 +217,11 @@ impl MockBackend {
         self.ops()
             .into_iter()
             .filter_map(|op| match op {
-                Op::Set { node, param: p, value } if p == param => Some((node, value)),
+                Op::Set {
+                    node,
+                    param: p,
+                    value,
+                } if p == param => Some((node, value)),
                 _ => None,
             })
             .collect()
@@ -498,7 +516,10 @@ async fn reorder_uses_n_before_and_matches_cold_boot() {
 #[tokio::test(flavor = "current_thread")]
 async fn three_effect_rotation_lands_in_script_order() {
     let (mut runtime, backend) = boot(&[FX_A, FX_B, FX_C]).await;
-    assert_eq!(backend.tree_order_of(ALL_DEFS), vec![DEF_A, DEF_B, DEF_C, LINK]);
+    assert_eq!(
+        backend.tree_order_of(ALL_DEFS),
+        vec![DEF_A, DEF_B, DEF_C, LINK]
+    );
 
     apply(&mut runtime, chain_script(&[FX_C, FX_A, FX_B])).await;
 
@@ -509,11 +530,7 @@ async fn three_effect_rotation_lands_in_script_order() {
         "rotated chain must land in script order with the link synth last"
     );
     assert_eq!(
-        runtime
-            .state()
-            .read()
-            .await
-            .effect_ids_in_group(GROUP),
+        runtime.state().read().await.effect_ids_in_group(GROUP),
         vec![FX_C, FX_A, FX_B]
     );
 }
@@ -562,11 +579,7 @@ async fn mid_chain_removal_fades_defers_free_and_keeps_order() {
         cold_backend.tree_order_of(ALL_DEFS)
     );
     assert_eq!(
-        runtime
-            .state()
-            .read()
-            .await
-            .effect_ids_in_group(GROUP),
+        runtime.state().read().await.effect_ids_in_group(GROUP),
         vec![FX_A, FX_C]
     );
     assert!(

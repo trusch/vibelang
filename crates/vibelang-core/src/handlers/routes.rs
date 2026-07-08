@@ -1910,15 +1910,14 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 .groups
                 .get(&voice_group_id)
                 .ok_or(Error::GroupNotFound(voice_group_id))?;
-            let (add_target, add_action) = if let Some(first_fx_node) =
-                state.first_effect_node_in_group(voice_group_id)
-            {
-                (first_fx_node, AddAction::Before)
-            } else if let Some(link_node) = voice_group.link_synth_node_id {
-                (link_node, AddAction::Before)
-            } else {
-                (voice_group.node_id, AddAction::Tail)
-            };
+            let (add_target, add_action) =
+                if let Some(first_fx_node) = state.first_effect_node_in_group(voice_group_id) {
+                    (first_fx_node, AddAction::Before)
+                } else if let Some(link_node) = voice_group.link_synth_node_id {
+                    (link_node, AddAction::Before)
+                } else {
+                    (voice_group.node_id, AddAction::Tail)
+                };
 
             let out_bus = match dest {
                 RouteDest::Group(g) => {

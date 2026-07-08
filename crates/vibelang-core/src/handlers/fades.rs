@@ -57,7 +57,13 @@ impl<B: Backend> FadesHandler<B> {
     /// Completed fades always emit (the fade must land exactly on its target
     /// value); in-flight fades emit at most once per [`MIN_EMIT_INTERVAL`].
     /// Records `now` as the last emission time when emitting.
-    fn should_emit(&self, target: &FadeTarget, param: &str, now: Instant, is_complete: bool) -> bool {
+    fn should_emit(
+        &self,
+        target: &FadeTarget,
+        param: &str,
+        now: Instant,
+        is_complete: bool,
+    ) -> bool {
         let mut last_emit = self.last_emit.lock().unwrap();
         let key = (target.clone(), param.to_string());
         if is_complete {

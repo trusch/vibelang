@@ -1221,11 +1221,7 @@ mod tests {
             assert!(warnings[0].contains("Voice 'acid'"), "{}", warnings[0]);
             assert!(warnings[0].contains("param 'cutof'"), "{}", warnings[0]);
             assert!(warnings[0].contains(synth), "{}", warnings[0]);
-            assert!(
-                warnings[0].contains("'cutoff', 'res'"),
-                "{}",
-                warnings[0]
-            );
+            assert!(warnings[0].contains("'cutoff', 'res'"), "{}", warnings[0]);
         });
     }
 

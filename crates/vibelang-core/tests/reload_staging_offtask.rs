@@ -264,7 +264,9 @@ async fn reload_with_samples_keeps_ticking_and_loads_concurrently() {
     // While the loads hang, the runtime task must keep processing
     // unrelated messages — this is the "music never skips a beat" bit.
     runtime
-        .send(Message::Transport(TransportMessage::SetTempo { bpm: 133.0 }))
+        .send(Message::Transport(TransportMessage::SetTempo {
+            bpm: 133.0,
+        }))
         .await
         .unwrap();
     runtime.tick().await;
@@ -341,7 +343,9 @@ async fn sync_after_reload_defers_until_staged_reload_applies() {
 
     let (notify_tx, mut notify_rx) = tokio::sync::oneshot::channel();
     runtime
-        .send(Message::Sync(SyncMessage::SyncAndNotify { notify: notify_tx }))
+        .send(Message::Sync(SyncMessage::SyncAndNotify {
+            notify: notify_tx,
+        }))
         .await
         .unwrap();
 
@@ -366,7 +370,10 @@ async fn sync_after_reload_defers_until_staged_reload_applies() {
         }
         tokio::time::sleep(Duration::from_millis(2)).await;
     }
-    assert!(notified, "sync barrier must resolve once the reload applied");
+    assert!(
+        notified,
+        "sync barrier must resolve once the reload applied"
+    );
 
     // At notification time the reload state is fully visible.
     let state = state.read().await;

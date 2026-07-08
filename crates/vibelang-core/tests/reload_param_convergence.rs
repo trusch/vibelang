@@ -465,12 +465,7 @@ async fn removed_effect_param_resets_to_registered_default() {
     );
     let state = runtime.state().read().await;
     assert!(
-        !state
-            .effects
-            .get(&FX)
-            .unwrap()
-            .params
-            .contains_key("room"),
+        !state.effects.get(&FX).unwrap().params.contains_key("room"),
         "removed param must not linger in the stored effect params"
     );
     drop(state);
@@ -578,7 +573,11 @@ async fn live_tweaked_named_group_param_survives_unrelated_reload_but_script_edi
         .params
         .get("amp")
         .copied();
-    assert_eq!(live_amp, Some(0.9), "live tweak survives the unrelated save");
+    assert_eq!(
+        live_amp,
+        Some(0.9),
+        "live tweak survives the unrelated save"
+    );
 
     // But an actual script edit to that param wins over the live tweak.
     apply(&mut runtime, group_script(&[("amp", 0.5)])).await;
@@ -701,7 +700,14 @@ async fn changed_effect_bearing_group_config_still_applies() {
 
     apply(&mut runtime, effect_script(FX_SYNTH, &[("room", 0.7)])).await;
     let link = link_node(&runtime).await;
-    let fx_node = runtime.state().read().await.effects.get(&FX).unwrap().node_id;
+    let fx_node = runtime
+        .state()
+        .read()
+        .await
+        .effects
+        .get(&FX)
+        .unwrap()
+        .node_id;
 
     // Change the group amp and the effect room in one save.
     let mut changed = effect_script(FX_SYNTH, &[("room", 0.2)]);

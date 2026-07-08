@@ -513,7 +513,10 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
         })
         .collect();
     diff.patterns = diff_entities(&current_pattern_ids, &new.patterns, |id, new_config| {
-        current.patterns.get(id).map(|p| p.matches_config(new_config))
+        current
+            .patterns
+            .get(id)
+            .map(|p| p.matches_config(new_config))
     });
 
     // Melodies
@@ -534,7 +537,10 @@ pub fn calculate_diff(current: &State, new: &ScriptState, current_routes: &Route
         );
     }
     diff.melodies = diff_entities(&current_melody_ids, &new.melodies, |id, new_config| {
-        current.melodies.get(id).map(|m| m.matches_config(new_config))
+        current
+            .melodies
+            .get(id)
+            .map(|m| m.matches_config(new_config))
     });
     tracing::debug!(
         "calculate_diff: melody diff - created={}, updated={}, deleted={}",

@@ -13,11 +13,8 @@ use vibelang_sfz::{
 
 /// Create a unique temp directory for one test.
 fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "vibelang_sfz_test_{}_{}",
-        tag,
-        std::process::id()
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("vibelang_sfz_test_{}_{}", tag, std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
@@ -122,7 +119,11 @@ fn include_missing_file_errors() {
 #[test]
 fn include_in_string_context_errors() {
     let err = parse_sfz_str("#include \"other.sfz\"\n<region>\n").unwrap_err();
-    assert!(err.to_string().contains("no base directory"), "got: {}", err);
+    assert!(
+        err.to_string().contains("no base directory"),
+        "got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -163,10 +164,7 @@ fn define_from_include_is_visible_in_parent() {
     .unwrap();
 
     let sfz = parse_sfz_file(dir.join("main.sfz")).unwrap();
-    assert_eq!(
-        sfz.regions[0].get_opcode_str("pitch_keycenter"),
-        Some("57")
-    );
+    assert_eq!(sfz.regions[0].get_opcode_str("pitch_keycenter"), Some("57"));
 }
 
 #[test]
@@ -219,10 +217,8 @@ fn numbered_cc_opcodes_are_recognized() {
 
 #[test]
 fn curve_and_effect_sections_are_exempt_from_unknown_tracking() {
-    let sfz = parse_sfz_str(
-        "<curve>\ncurve_index=1\nv000=0\nv127=1\n<effect>\nvendor_param=3\n",
-    )
-    .unwrap();
+    let sfz = parse_sfz_str("<curve>\ncurve_index=1\nv000=0\nv127=1\n<effect>\nvendor_param=3\n")
+        .unwrap();
     assert!(
         sfz.unknown_opcodes.is_empty(),
         "curve/effect opcodes flagged: {:?}",

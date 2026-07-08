@@ -235,8 +235,7 @@ impl<B: Backend> VoicesHandler<B> {
         let old_gated_sounding = {
             let state = self.state.read().await;
             state.voices.get(&id).map(|v| {
-                voice_is_gated(&v.config)
-                    && !(v.active_nodes.is_empty() && v.note_nodes.is_empty())
+                voice_is_gated(&v.config) && !(v.active_nodes.is_empty() && v.note_nodes.is_empty())
             })
         };
         match old_gated_sounding {
@@ -827,9 +826,9 @@ impl<B: Backend> VoicesHandler<B> {
             // spawns with defaults (bufnum=0, rate=1, release=0.01):
             // wrong sample, no repitching, click on note-off.
             if let Some(sfz_id) = sfz_instrument {
-                let Some(spawn) = crate::handlers::sfz_note_spawn_params(
-                    &mut state, sfz_id, note, velocity,
-                ) else {
+                let Some(spawn) =
+                    crate::handlers::sfz_note_spawn_params(&mut state, sfz_id, note, velocity)
+                else {
                     return Ok(()); // no matching region — skip, don't play buffer 0
                 };
                 synthdef = spawn.synthdef.to_string();
@@ -1286,12 +1285,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         self.trigger_at(id, params, None).await
     }
 
-    async fn trigger_at(
-        &self,
-        id: VoiceId,
-        params: &ParamMap,
-        at: Option<Instant>,
-    ) -> Result<()> {
+    async fn trigger_at(&self, id: VoiceId, params: &ParamMap, at: Option<Instant>) -> Result<()> {
         // Gather info and allocate node while holding lock
         let (
             node_id,
@@ -1415,8 +1409,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                             continue;
                         }
                         if voice_is_gated(&other_voice.config) {
-                            choke_release
-                                .push((voice_release_grace(&other_voice.config), nodes));
+                            choke_release.push((voice_release_grace(&other_voice.config), nodes));
                         } else {
                             choke_free.extend(nodes);
                         }
@@ -2079,10 +2072,7 @@ fn midi_pool_resize(state: &mut State, id: VoiceId, channel: u8, n: usize) -> Ve
 /// deferred reclaim deadline — reload tears voices down before changing
 /// synthdef metadata, so the descriptor is stable now but may have been
 /// redeclared by the time the grace period elapses.
-fn voice_bus_reclaims(
-    state: &State,
-    voice: &VoiceState,
-) -> (Vec<(BusId, u8)>, Vec<ControlBusId>) {
+fn voice_bus_reclaims(state: &State, voice: &VoiceState) -> (Vec<(BusId, u8)>, Vec<ControlBusId>) {
     let mut audio = Vec::new();
     let mut control = Vec::new();
     if !voice.output_buses.is_empty() {
@@ -3440,8 +3430,14 @@ mod tests {
             let v = make_midi_voice(&handler, &state, 1, false).await;
             let deadline = Instant::now() + Duration::from_millis(30);
 
-            handler.note_on_at(v, 60, 1.0, Some(deadline)).await.unwrap();
-            handler.note_on_at(v, 64, 0.5, Some(deadline)).await.unwrap(); // steals 60
+            handler
+                .note_on_at(v, 60, 1.0, Some(deadline))
+                .await
+                .unwrap();
+            handler
+                .note_on_at(v, 64, 0.5, Some(deadline))
+                .await
+                .unwrap(); // steals 60
 
             // Replay the enqueued events through the same structure the
             // output thread uses.

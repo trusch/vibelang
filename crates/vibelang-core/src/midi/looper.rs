@@ -286,9 +286,10 @@ impl LooperManager {
                 // up to a full bar before the first note (a pickup), and using
                 // it here would count that pre-note gap as silence and finalise
                 // the loop underneath a held note.
-                let last_press = inst.recording.last_note_on_beat().map(|rel| {
-                    Beat::from_f64(inst.recording.start_beat.to_f64() + rel.to_f64())
-                });
+                let last_press = inst
+                    .recording
+                    .last_note_on_beat()
+                    .map(|rel| Beat::from_f64(inst.recording.start_beat.to_f64() + rel.to_f64()));
                 let silence_anchor = last_note_off_beat
                     .or(last_press)
                     .unwrap_or(inst.recording.start_beat);

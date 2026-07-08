@@ -181,7 +181,10 @@ impl Melody {
     /// Unknown scale names are an error (no silent fallback to major).
     pub fn scale(mut self, scale: String) -> Result<Self, Box<EvalAltResult>> {
         if super::helpers::get_scale_intervals(&scale).is_none() {
-            return Err(super::helpers::unknown_scale_error("melody.scale()", &scale));
+            return Err(super::helpers::unknown_scale_error(
+                "melody.scale()",
+                &scale,
+            ));
         }
         self.scale = Some(scale);
         Ok(self)
@@ -969,8 +972,7 @@ fn expand_chord(root: u8, suffix: &str) -> Vec<u8> {
 /// back to major here only because [`Melody::scale`] already rejects them
 /// with an error before they can reach this point.
 fn get_scale_intervals(scale_name: &str) -> Vec<u8> {
-    super::helpers::get_scale_intervals(scale_name)
-        .unwrap_or_else(|| vec![0, 2, 4, 5, 7, 9, 11])
+    super::helpers::get_scale_intervals(scale_name).unwrap_or_else(|| vec![0, 2, 4, 5, 7, 9, 11])
 }
 
 /// Resolve a scale degree to a MIDI note number.

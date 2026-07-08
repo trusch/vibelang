@@ -51,7 +51,10 @@ impl SfzLoadDiagnostics {
     pub fn dropped_summary(&self) -> String {
         let mut by_reason: Vec<(&str, usize)> = Vec::new();
         for dropped in &self.dropped_regions {
-            match by_reason.iter_mut().find(|(r, _)| *r == dropped.reason.category()) {
+            match by_reason
+                .iter_mut()
+                .find(|(r, _)| *r == dropped.reason.category())
+            {
                 Some((_, n)) => *n += 1,
                 None => by_reason.push((dropped.reason.category(), 1)),
             }

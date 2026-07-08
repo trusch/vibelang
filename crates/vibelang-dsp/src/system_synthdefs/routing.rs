@@ -1768,8 +1768,7 @@ mod tests {
                 u.class == "BinaryOpUGen"
                     && u.rate == KR
                     && u.special == OP_SUB
-                    && u.inputs
-                        == vec![DecodedInput::Const(1.0), DecodedInput::Node(lag_mute, 0)]
+                    && u.inputs == vec![DecodedInput::Const(1.0), DecodedInput::Node(lag_mute, 0)]
             })
             .expect("mute gate (1 - Lag(mute)) missing");
         let gated = audio_muls_by(gate_idx);
