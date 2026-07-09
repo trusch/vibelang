@@ -453,8 +453,6 @@ impl<B: Backend> PatternsHandler<B> {
                 // pattern was deleted).
                 if let (Some(gate), Some(note_generation)) = (trigger.gate_dur, note_generation) {
                     let voices = self.voices.clone();
-                    let state = self.state.clone();
-                    let pattern_id = trigger.pattern_id;
                     let voice_id = trigger.voice_id;
                     // Anchor the release to the note-on's scheduled start,
                     // not to dispatch time: audio-voice note-ons are now
@@ -465,18 +463,21 @@ impl<B: Backend> PatternsHandler<B> {
                     tokio::spawn(async move {
                         tokio::time::sleep_until(tokio::time::Instant::from_std(off_deadline))
                             .await;
-                        let still_playing = state
-                            .read()
-                            .await
-                            .patterns
-                            .get(&pattern_id)
-                            .map(|p| p.playing)
-                            .unwrap_or(false);
-                        if still_playing {
-                            let _ = voices
-                                .note_off_at_if_generation(voice_id, note, note_generation, None)
-                                .await;
-                        }
+                        // Always release at the gate deadline, guarded ONLY by
+                        // note generation — NOT by "is the pattern still
+                        // playing". A loop note-on dispatched via lookahead can
+                        // physically fire *after* a stop()/replace (e.g. the
+                        // looper re-records on a key press): stop()'s immediate
+                        // sweep note-off then precedes the still-scheduled
+                        // note-on and no-ops, so skipping this release left the
+                        // note stuck — an intermittent hang at re-record/stop.
+                        // The generation guard still prevents cutting a note the
+                        // same (voice, note) was legitimately retriggered into
+                        // (a newer note-on bumps the generation, so this stale
+                        // release is skipped by `note_off_at_if_generation`).
+                        let _ = voices
+                            .note_off_at_if_generation(voice_id, note, note_generation, None)
+                            .await;
                     });
                 }
             } else {
