@@ -48,7 +48,9 @@ use crate::message::{
     VoiceMessage,
 };
 #[cfg(feature = "midi")]
-use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+use crate::midi::{
+    resolve_midi_output_endpoint, MidiOutputEndpoint, QueuedMidiEvent, ScheduledMidiEvent,
+};
 use crate::reload;
 #[cfg(feature = "midi")]
 use crate::reload::MidiOutputMessage;
@@ -118,6 +120,10 @@ pub struct Runtime<B: Backend> {
     /// Whether the MIDI clock thread has been started (for tick() users).
     #[cfg(feature = "midi")]
     clock_thread_started: bool,
+
+    /// Apply-time exact-name output mappings used by MIDI clock and transport.
+    #[cfg(feature = "midi")]
+    midi_output_endpoints: std::collections::HashMap<String, MidiOutputEndpoint>,
 
     /// True while a reload's expensive buffer loads (samples, SFZ) are
     /// being staged on a side task. While set, incoming reloads queue in
@@ -293,6 +299,8 @@ impl<B: Backend> Runtime<B> {
             synthdefs: SynthDefsHandler::new(backend.clone(), state.clone()),
             #[cfg(feature = "midi")]
             midi,
+            #[cfg(feature = "midi")]
+            midi_output_endpoints: std::collections::HashMap::new(),
             #[cfg(feature = "midi")]
             tick_count: 0,
             #[cfg(feature = "midi")]
@@ -1842,13 +1850,51 @@ impl<B: Backend> Runtime<B> {
                 }
             }
 
-            // Open MIDI outputs (sorted, see Story 4 note above)
+            // Open numeric MIDI outputs used by voices and direct note/CC
+            // methods (sorted, see Story 4 note above).
             let mut midi_output_ids: Vec<_> = new_state.midi_outputs.iter().copied().collect();
             midi_output_ids.sort_by_key(|id| id.raw());
             for device_id in &midi_output_ids {
                 tracing::debug!("Reload: opening MIDI output {:?}", device_id);
                 if let Err(e) = self.midi.open_output(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI output {:?}: {}", device_id, e);
+                }
+            }
+
+            // Clock and realtime transport retain exact output names. Resolve
+            // them again at apply time so enumeration reorder between script
+            // evaluation and reload cannot redirect a send.
+            self.midi_output_endpoints.clear();
+            let mut stable_endpoints = new_state
+                .midi_output_endpoints
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            stable_endpoints.sort_by(|left, right| left.stable_name.cmp(&right.stable_name));
+            for requested in stable_endpoints {
+                match resolve_midi_output_endpoint(&requested.stable_name) {
+                    Ok(resolved) => match self.midi.open_output(resolved.id).await {
+                        Ok(()) => {
+                            tracing::info!(
+                                "MIDI readiness: output endpoint {:?} -> {} (ONLINE)",
+                                requested.stable_name,
+                                resolved
+                            );
+                            self.midi_output_endpoints
+                                .insert(requested.stable_name, resolved);
+                        }
+                        Err(error) => tracing::error!(
+                            "MIDI readiness: output endpoint {:?} -> output[{}] (FAILED: {}); no clock or transport message will be sent",
+                            requested.stable_name,
+                            resolved.id.raw(),
+                            error
+                        ),
+                    },
+                    Err(error) => tracing::error!(
+                        "MIDI readiness: output endpoint {:?} is UNRESOLVED: {}; no clock or transport message will be sent",
+                        requested.stable_name,
+                        error
+                    ),
                 }
             }
 
@@ -1861,7 +1907,18 @@ impl<B: Backend> Runtime<B> {
                 // Track per-device transport state to avoid re-sending on reload.
                 for msg in &new_state.midi_output_messages {
                     match msg {
-                        MidiOutputMessage::Start { device_id } => {
+                        MidiOutputMessage::Start { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Start output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             let transport_playing = self.state.read().await.playing;
                             if transport_playing {
                                 tracing::trace!(
@@ -1870,7 +1927,7 @@ impl<B: Backend> Runtime<B> {
                                 );
                             } else {
                                 tracing::debug!("Reload: sending MIDI Start to {:?}", device_id);
-                                if let Err(e) = self.midi.send_start(*device_id).await {
+                                if let Err(e) = self.midi.send_start(device_id).await {
                                     tracing::warn!(
                                         "Reload: failed to send MIDI Start to {:?}: {}",
                                         device_id,
@@ -1879,7 +1936,18 @@ impl<B: Backend> Runtime<B> {
                                 }
                             }
                         }
-                        MidiOutputMessage::Stop { device_id } => {
+                        MidiOutputMessage::Stop { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Stop output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             let transport_playing = self.state.read().await.playing;
                             if !transport_playing {
                                 tracing::trace!(
@@ -1888,7 +1956,7 @@ impl<B: Backend> Runtime<B> {
                                 );
                             } else {
                                 tracing::debug!("Reload: sending MIDI Stop to {:?}", device_id);
-                                if let Err(e) = self.midi.send_stop(*device_id).await {
+                                if let Err(e) = self.midi.send_stop(device_id).await {
                                     tracing::warn!(
                                         "Reload: failed to send MIDI Stop to {:?}: {}",
                                         device_id,
@@ -1897,9 +1965,20 @@ impl<B: Backend> Runtime<B> {
                                 }
                             }
                         }
-                        MidiOutputMessage::Continue { device_id } => {
+                        MidiOutputMessage::Continue { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Continue output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             tracing::debug!("Reload: sending MIDI Continue to {:?}", device_id);
-                            if let Err(e) = self.midi.send_continue(*device_id).await {
+                            if let Err(e) = self.midi.send_continue(device_id).await {
                                 tracing::warn!(
                                     "Reload: failed to send MIDI Continue to {:?}: {}",
                                     device_id,
@@ -3473,27 +3552,38 @@ impl<B: Backend> Runtime<B> {
 
             // Apply MIDI clock output requests
             for clock_req in &new_state.midi_clock_outputs {
+                let Some(device_id) = self
+                    .midi_output_endpoints
+                    .get(&clock_req.endpoint.stable_name)
+                    .map(|resolved| resolved.id)
+                else {
+                    tracing::error!(
+                        "Reload: clock output endpoint {:?} is not ONLINE; sending nothing",
+                        clock_req.endpoint.stable_name
+                    );
+                    continue;
+                };
                 tracing::debug!(
-                    "Reload: {} MIDI clock output for device {:?}",
+                    "Reload: {} MIDI clock output for {}",
                     if clock_req.enabled {
                         "enabling"
                     } else {
                         "disabling"
                     },
-                    clock_req.device_id
+                    clock_req.endpoint
                 );
                 if clock_req.enabled {
-                    if let Err(e) = self.midi.enable_clock_output(clock_req.device_id).await {
+                    if let Err(e) = self.midi.enable_clock_output(device_id).await {
                         tracing::error!(
-                            "Reload: failed to enable clock output for device {:?}: {}",
-                            clock_req.device_id,
+                            "Reload: failed to enable clock output for {}: {}",
+                            clock_req.endpoint,
                             e
                         );
                     }
-                } else if let Err(e) = self.midi.disable_clock_output(clock_req.device_id).await {
+                } else if let Err(e) = self.midi.disable_clock_output(device_id).await {
                     tracing::error!(
-                        "Reload: failed to disable clock output for device {:?}: {}",
-                        clock_req.device_id,
+                        "Reload: failed to disable clock output for {}: {}",
+                        clock_req.endpoint,
                         e
                     );
                 }
