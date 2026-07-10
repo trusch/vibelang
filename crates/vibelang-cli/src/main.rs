@@ -5,6 +5,7 @@
 #[cfg(feature = "midi")]
 mod midi_dispatcher;
 mod render;
+mod startup_profile;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -105,12 +106,16 @@ enum Commands {
         sample_rate: u32,
 
         /// Number of input channels (default: 2)
-        #[arg(long, default_value = "2")]
-        input_channels: u32,
+        #[arg(long)]
+        input_channels: Option<u32>,
 
         /// Number of output channels (default: 2)
-        #[arg(long, default_value = "2")]
-        output_channels: u32,
+        #[arg(long)]
+        output_channels: Option<u32>,
+
+        /// Startup profile with explicit audio links and readiness requirements
+        #[arg(long, value_name = "FILE")]
+        profile: Option<PathBuf>,
 
         /// Disable all script extensions (filesystem, exec, networking)
         #[arg(long)]
@@ -189,8 +194,9 @@ async fn main() -> Result<()> {
             no_boot: false,
             device: None,
             sample_rate: 0,
-            input_channels: 2,
-            output_channels: 2,
+            input_channels: None,
+            output_channels: None,
+            profile: None,
             no_extensions: false,
             no_fs: false,
             no_exec: false,
@@ -223,6 +229,7 @@ async fn main() -> Result<()> {
             sample_rate,
             input_channels,
             output_channels,
+            profile,
             no_extensions,
             no_fs,
             no_exec,
@@ -252,6 +259,7 @@ async fn main() -> Result<()> {
                 sample_rate,
                 input_channels,
                 output_channels,
+                profile,
                 ext_config,
             )
             .await
@@ -296,8 +304,9 @@ async fn run_simple_mode(
     jack_connect_from: Option<String>,
     device: Option<String>,
     sample_rate: u32,
-    input_channels: u32,
-    output_channels: u32,
+    requested_input_channels: Option<u32>,
+    requested_output_channels: Option<u32>,
+    profile_path: Option<PathBuf>,
     ext_config: ExtensionSettings,
 ) -> Result<()> {
     // Initialize logging - uses RUST_LOG env var.
@@ -311,6 +320,67 @@ async fn run_simple_mode(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
         )
         .init();
+
+    let profile_path =
+        match startup_profile::StartupProfile::resolve_path(&file, profile_path.as_deref()) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("FAILED {error:#}");
+                return Err(error);
+            }
+        };
+    let startup_profile = match profile_path.as_deref() {
+        Some(path) => match startup_profile::StartupProfile::load(path) {
+            Ok(profile) => Some(profile),
+            Err(error) => {
+                eprintln!("FAILED {error:#}");
+                return Err(error);
+            }
+        },
+        None => None,
+    };
+    let (input_channels, output_channels) = if let Some(profile) = &startup_profile {
+        match profile.resolve_channel_counts(requested_input_channels, requested_output_channels) {
+            Ok(counts) => counts,
+            Err(error) => {
+                eprintln!("{error}");
+                return Err(error);
+            }
+        }
+    } else {
+        (
+            requested_input_channels.unwrap_or(2),
+            requested_output_channels.unwrap_or(2),
+        )
+    };
+    let device = if let Some(profile) = &startup_profile {
+        match profile.resolve_device(device) {
+            Ok(device) => device,
+            Err(error) => {
+                eprintln!("{error}");
+                return Err(error);
+            }
+        }
+    } else {
+        device
+    };
+    if startup_profile.is_some() && (jack_connect_to.is_some() || jack_connect_from.is_some()) {
+        let error = anyhow::anyhow!(
+            "FAILED --profile cannot be combined with --jack-connect-to or --jack-connect-from"
+        );
+        eprintln!("{error}");
+        return Err(error);
+    }
+    if let Some(profile) = &startup_profile {
+        let missing = profile.inactive_required_services();
+        if !missing.is_empty() {
+            eprintln!("WAITING profile '{}'", profile.name);
+            for cause in missing {
+                eprintln!("  required: {cause}");
+            }
+            anyhow::bail!("required startup services are unavailable; Transport Start withheld");
+        }
+    }
 
     // Setup shutdown signal
     let running = Arc::new(AtomicBool::new(true));
@@ -326,8 +396,16 @@ async fn run_simple_mode(
         None
     } else {
         info!("Starting scsynth...");
+        let profile_output_destinations = startup_profile
+            .as_ref()
+            .filter(|profile| profile.manages_links())
+            .map(startup_profile::StartupProfile::output_destinations);
+        let profile_input_sources = startup_profile
+            .as_ref()
+            .filter(|profile| profile.manages_links())
+            .map(startup_profile::StartupProfile::input_sources);
         let mut config = ScsynthConfig::default()
-            .auto_connect_jack(!no_jack_connect)
+            .auto_connect_jack(!no_jack_connect && startup_profile.is_none())
             .sample_rate(sample_rate)
             .input_channels(input_channels)
             .output_channels(output_channels)
@@ -336,7 +414,9 @@ async fn run_simple_mode(
             config = config.device(dev);
         }
         // Parse manual JACK output connection targets if specified
-        if let Some(ref targets) = jack_connect_to {
+        if let Some(ref targets) = profile_output_destinations {
+            config = config.jack_connect_outputs(targets.clone());
+        } else if let Some(ref targets) = jack_connect_to {
             let ports: Vec<String> = targets.split(',').map(|s| s.trim().to_string()).collect();
             if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
                 anyhow::bail!(
@@ -347,7 +427,9 @@ async fn run_simple_mode(
             config = config.jack_connect_outputs(ports);
         }
         // Parse manual JACK input connection sources if specified
-        if let Some(ref sources) = jack_connect_from {
+        if let Some(ref sources) = profile_input_sources {
+            config = config.jack_connect_inputs(sources.clone());
+        } else if let Some(ref sources) = jack_connect_from {
             let ports: Vec<String> = sources.split(',').map(|s| s.trim().to_string()).collect();
             if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
                 anyhow::bail!(
@@ -362,16 +444,43 @@ async fn run_simple_mode(
         info!("scsynth started");
 
         // Handle JACK port connections
-        if no_jack_connect && jack_connect_to.is_none() && jack_connect_from.is_none() {
-            // Disconnect all ports that scsynth's JACK driver may have auto-connected
-            process.disconnect_all_jack_ports();
-        } else {
-            // Auto-connect or use manual targets
-            process.auto_connect_jack_ports();
+        let externally_managed_links = startup_profile
+            .as_ref()
+            .is_some_and(|profile| !profile.manages_links());
+        if !externally_managed_links {
+            if no_jack_connect
+                && startup_profile.is_none()
+                && jack_connect_to.is_none()
+                && jack_connect_from.is_none()
+            {
+                // Disconnect all ports that scsynth's JACK driver may have auto-connected
+                process.disconnect_all_jack_ports();
+            } else {
+                // Auto-connect or use manual targets
+                process.auto_connect_jack_ports();
+            }
         }
 
         Some(process)
     };
+
+    if let Some(profile) = &startup_profile {
+        let report = match profile.wait_for_readiness() {
+            Ok(report) => report,
+            Err(error) => {
+                eprintln!("WAITING profile '{}': {error:#}", profile.name);
+                anyhow::bail!("startup readiness probe failed; Transport Start withheld");
+            }
+        };
+        if !report.allow_transport_start {
+            eprintln!("{}", report.format_status(&profile.name));
+            anyhow::bail!("startup readiness gate blocked Transport Start");
+        }
+        println!("{}", profile.format_mapping(report.state));
+        if !report.optional_missing.is_empty() {
+            eprintln!("{}", report.format_status(&profile.name));
+        }
+    }
 
     // Connect to scsynth
     let backend = ScsynthBackend::connect(&scsynth_addr)

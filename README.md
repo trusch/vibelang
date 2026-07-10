@@ -94,6 +94,30 @@ vibe hello.vibe
 
 Edit the pattern. Save. Hear it change. **That's the vibe.**
 
+### Live Hardware Profiles
+
+Use `--profile` when a rig must not fall back to the CLI's default two inputs
+and two outputs:
+
+```bash
+vibe run --profile rig.toml set.vibe
+```
+
+A script can make that profile mandatory for every invocation by declaring it
+within its first 32 lines. Relative paths resolve beside the script:
+
+```rhai
+// vibe-profile: rig.toml
+```
+
+Profiles declare channel counts, logical input/output names, PipeWire port
+patterns, required or optional user services, PipeWire or MIDI endpoints, and
+whether an optional loss may start in `DEGRADED`. Invalid or conflicting
+configuration is `FAILED`; a missing required dependency/link is `WAITING`.
+Both states exit before script evaluation or Transport Start. `READY`, or
+explicitly permitted `DEGRADED`, prints the verified logical I/O map once before
+the script runs.
+
 <br>
 
 ## 📖 Language Overview
