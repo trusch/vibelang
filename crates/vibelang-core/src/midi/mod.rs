@@ -133,7 +133,9 @@ pub use events::{
 
 // Device management with separate input/output namespaces
 pub use devices::{
-    MidiDeviceInfo, MidiDeviceManager, MidiInputId, MidiInputInfo, MidiOutputId, MidiOutputInfo,
+    resolve_midi_output_endpoint, resolve_midi_output_endpoint_from, MidiDeviceInfo,
+    MidiDeviceManager, MidiInputId, MidiInputInfo, MidiOutputEndpoint, MidiOutputId,
+    MidiOutputInfo, MidiOutputResolutionError,
 };
 
 // Event queue for lock-free MIDI processing

@@ -260,8 +260,10 @@ pub fn midi_input(role: String, exact_client: String) -> MidiDevice {
 /// presents a bidirectional ALSA port) is returned with the *input* port index
 /// — which is meaningless for output and, once the input list grows (another
 /// keyboard plugged in), no longer coincides with the output index. Anything
-/// that uses a `MidiDevice` for output (`.on(...)`, MIDI clock out, ...) must
-/// re-resolve against the output list; this is that lookup.
+/// that uses a `MidiDevice` for voice output via `.on(...)` must re-resolve
+/// against the output list; this is the compatibility lookup for that path.
+/// Clock and transport use the stricter exact-name endpoint resolver so an
+/// ambiguous partial match can never send a realtime message.
 pub fn resolve_output_device_id(name: &str) -> Option<MidiDeviceId> {
     use midir::MidiOutput;
     let midi_out = MidiOutput::new("vibelang-rhai-out-resolve").ok()?;
@@ -511,4 +513,44 @@ fn register_midi2(engine: &mut Engine) {
     engine.register_fn("curve", Cc32Route::curve);
     engine.register_fn("to", Cc32Route::to);
     engine.register_fn("to", Cc32Route::to_name);
+}
+
+#[cfg(test)]
+mod tests {
+    use vibelang_core::midi::resolve_midi_output_endpoint_from;
+    use vibelang_core::reload::MidiOutputMessage;
+    use vibelang_core::types::MidiDeviceId;
+
+    #[test]
+    fn transport_endpoint_retains_output_namespace_identity() {
+        // The selected device is input[0], while output[0] is deliberately a
+        // different device and the matching stable output is output[1].
+        let outputs = vec![
+            (MidiDeviceId::new(0), "MPD232".to_string()),
+            (MidiDeviceId::new(1), "EP-133".to_string()),
+        ];
+        let endpoint = resolve_midi_output_endpoint_from("EP-133", &outputs).unwrap();
+        let message = MidiOutputMessage::Start {
+            endpoint: endpoint.clone(),
+        };
+
+        assert_eq!(endpoint.id, MidiDeviceId::new(1));
+        assert!(matches!(
+            message,
+            MidiOutputMessage::Start { endpoint: retained }
+                if retained.stable_name == "EP-133" && retained.id == MidiDeviceId::new(1)
+        ));
+    }
+
+    #[test]
+    fn missing_or_ambiguous_transport_output_cannot_form_a_binding() {
+        let missing = vec![(MidiDeviceId::new(0), "MPD232".to_string())];
+        assert!(resolve_midi_output_endpoint_from("EP-133", &missing).is_err());
+
+        let duplicate = vec![
+            (MidiDeviceId::new(0), "EP-133".to_string()),
+            (MidiDeviceId::new(2), "EP-133".to_string()),
+        ];
+        assert!(resolve_midi_output_endpoint_from("EP-133", &duplicate).is_err());
+    }
 }
