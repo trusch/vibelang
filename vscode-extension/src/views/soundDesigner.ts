@@ -12,6 +12,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { StateStore } from '../state/stateStore';
+import { isRuntimeCallableUGen } from '../utils/dataLoader';
 
 interface UGenManifest {
     name: string;
@@ -133,7 +134,8 @@ export class SoundDesignerPanel {
                 const categoryName = path.basename(file, '.json');
                 const filePath = path.join(manifestDir, file);
                 const content = fs.readFileSync(filePath, 'utf8');
-                const ugens: UGenManifest[] = JSON.parse(content);
+                const ugens: UGenManifest[] = (JSON.parse(content) as UGenManifest[])
+                    .filter(isRuntimeCallableUGen);
 
                 const config = categoryConfig[categoryName] || { icon: '?', color: '#858585' };
 

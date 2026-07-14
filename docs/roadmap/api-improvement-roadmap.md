@@ -14,8 +14,8 @@ runtime changes; this document itself changes no behavior.
 | Similar units/indexing disagree | Voice MIDI channel is internal 0..15; MidiDevice/builders use 1..16; bars sometimes read signature and sometimes mean ×4 | Off-by-one and timing errors |
 | Error policies are mixed | Rhai errors, clamping, warnings/fallback, panicking unwraps, and silent no-ops coexist | Tooling cannot predict or explain failures |
 | Hand-maintained metadata forks | Website API cards contain fictional calls; VS Code/LSP static data omits most registrations and contains nonexistent names | Completion/docs can actively mislead |
-| Demand-rate registrations are wrong | All 25 `*_demand` names fall through to `Rate::Audio`; graph IR has no demand variant | A callable name can build a graph with the wrong calculation rate |
-| Generated catalogues lack enforceable contracts | 1,199 registered UGen names come from 827 callable manifest classes; stdlib has 890 DSP definition occurrences/887 names plus 595 intended-supported and 112 underscore import-callable functions, but no enforced export metadata | Users cannot distinguish supported public API from callable convention |
+| Demand-rate support is quarantined | All 25 `*_demand` source identities are preserved but absent from runtime, manifest-callable, LSP, and VS Code surfaces until rate and input lowering are complete | Scripts fail immediately instead of building an audio-rate graph under a demand-rate name |
+| Generated catalogues lack complete boundary contracts | 1,174 registered UGen names come from 802 callable manifest classes, with 25 demand-rate records explicitly quarantined; stdlib has 890 DSP definition occurrences/887 names plus 595 intended-supported and 112 underscore import-callable functions, but no enforced export metadata | Users cannot yet predict all accepted types, coercions, and errors |
 | API artifacts are not clean-tree reproducible | `--runtime-metrics` exists only in the pre-existing dirty CLI tree, not clean revision `98bed24`; handwritten WASM/Clap/editor artifacts can drift | A docs commit can advertise a contract its source revision does not ship |
 | Runtime observation has no ownership/version contract | Evaluation creates isolated desired `ScriptState`; reconciliation and live runtime state occur afterward | `status(ref)` cannot truthfully promise a consistent live snapshot yet |
 | Wire schemas over-promise | HTTP deserializes many ignored fields; mutations often return stale snapshots; REST and WS shapes differ without a published contract | External clients report success without effect |
@@ -159,7 +159,7 @@ same manifest.
 | ID / deliverable | Concrete outcome | Functional owner | Impact | Dependency / rollback |
 |---|---|---|---|---|
 | P0.1 Registration manifest v1 | Extract every current registered name/overload/property/cfg/lifecycle without changing behavior | Rhai API + tooling | Eliminates fictional/missing docs and completion entries | Snapshot quirks first; rollback keeps generated artifacts advisory |
-| P0.2 Demand-rate correctness | Either implement a real demand `Rate` and scsyndef encoding with golden tests, or unregister/quarantine all 25 `*_demand` functions | DSP/encoder | Prevents wrong-rate graphs | Depends on P0.1 inventory; safe rollback is quarantine, never audio-rate fallback |
+| P0.2 Demand-rate quarantine | Completed: unregister all 25 `*_demand` identities, preserve their canonical source records, and publish explicit quarantine availability | DSP + API manifest + editors | Prevents wrong-rate graphs and misleading tooling | Lossless source records support later re-enable only after real rate, lowering, and golden tests |
 | P0.3 Clean-tree artifact reproducibility | In a clean checkout, regenerate Clap help, wasm-bindgen types, core/UGen/stdlib manifests, and editor tables with zero diff | Release engineering + docs/tooling | Makes a docs/source revision self-contained | `--runtime-metrics` cannot publish before its source; rollback removes worktree-only entries |
 | P0.4 Boundary/export manifests | Record every overload's accepted types/casts/clamps/fallback/error/panic and classify all 707 stdlib functions with explicit export/support metadata | Rhai/DSP + stdlib | Turns name coverage into semantic coverage | Requires parser/registration schema; rollback preserves the explicit 112-helper appendix |
 | [P0.5 State ownership/version/lifetime ADR](../architecture/builder-ref-revision-resource-lifetime.md) | Accepted: pure Builder vs typed/versioned Ref, atomic apply, truthful observation revisions, explicit duplicate/contribution ownership, and generation-managed Sample/Buffer/SFZ lifetime | Runtime + Rhai API | Makes v2 implementable without false live-state claims | Architecture gate for P1 lifecycle and wire revisions; the decision itself rolls out no runtime behavior |
@@ -175,6 +175,11 @@ generated artifacts from a clean checkout, 25/25 demand names either correctly
 encoded or absent/quarantined, 707/707 stdlib declarations classified, and an
 overload fixture for every manifest signature. Route/schema/availability drift
 and fictional example calls are build failures.
+
+P0.2 uses the quarantine branch of that gate: external scripts that previously
+constructed incorrect audio-rate nodes now receive function-not-found errors.
+Repository stdlib, examples, and tests had no demand-callable consumers, so
+non-demand graph generation and registration remain unchanged.
 
 ## P1 — introduce the unified versioned surface
 

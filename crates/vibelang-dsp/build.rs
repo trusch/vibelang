@@ -394,29 +394,29 @@ fn main() {
     writeln!(f, "use crate::graph::*;").unwrap();
     writeln!(f, "use crate::helpers;").unwrap();
     writeln!(f, "use rhai::Dynamic;\n").unwrap();
-
     // Generate one function per UGen rate (snake_case_ar, snake_case_kr, etc.)
     for ugen in &manifest {
         let name = &ugen.name;
         let rates = &ugen.rates;
-
         // Skip documentation-only entries (like fluent builder API docs)
         let has_only_builder_rate = rates.iter().all(|r| r == "builder");
         if has_only_builder_rate {
             continue;
         }
-
         let description = ugen.description.as_str();
         let inputs = &ugen.inputs;
         let outputs = ugen.outputs as i64;
         let category = ugen.category.as_str();
         let channel_count_input = ugen.channel_count_input.as_deref();
-
         let snake_name = to_snake_case(name);
 
         // Generate one function for each rate
         for rate_str in rates {
-            let rate_enum = runtime_rate_rust(rate_str);
+            if build_support::is_quarantined_rate(rate_str) || rate_str == "builder" {
+                continue;
+            }
+            let rate_enum = runtime_rate_rust(rate_str)
+                .unwrap_or_else(|| panic!("validated runtime rate has no encoding: {rate_str}"));
 
             let func_name = format!("{}_{}", snake_name, rate_str);
 
@@ -657,6 +657,9 @@ fn main() {
         let snake_name = to_snake_case(name);
 
         for rate_str in rates {
+            if build_support::is_quarantined_rate(rate_str) || rate_str == "builder" {
+                continue;
+            }
             let func_name = format!("{}_{}", snake_name, rate_str);
 
             // Register per-arity overloads so default arguments work for

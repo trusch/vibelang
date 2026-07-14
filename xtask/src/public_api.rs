@@ -64,6 +64,7 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
     let type_entries = rhai_type_entries(&metadata, &source_index);
     validate_type_declaration_coverage(&type_entries, &source_index)?;
     entries.extend(type_entries);
+    entries.extend(ugen_catalog.quarantined_entries());
     entries.extend(ugen_catalog.builder_entries(root));
 
     let stdlib = scan_stdlib(root)?;
@@ -121,6 +122,10 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
     );
     stats.insert("ugen_demand_names".into(), ugen_catalog.demand_names);
     stats.insert(
+        "ugen_quarantined_names".into(),
+        ugen_catalog.quarantined_names(),
+    );
+    stats.insert(
         "ugen_generated_names".into(),
         ugen_catalog.generated_names(),
     );
@@ -145,15 +150,16 @@ fn validate_baseline(stats: &BTreeMap<String, u64>) -> Result<(), String> {
     let expected = [
         ("registration_declarations", 638),
         ("registered_type_declarations", 34),
-        ("manifest_ugen_callable_entries", 1_199),
-        ("manifest_ugen_callable_overloads", 6_059),
+        ("manifest_ugen_callable_entries", 1_174),
+        ("manifest_ugen_callable_overloads", 5_962),
         ("stdlib_definition_occurrences", 890),
         ("stdlib_files", 829),
         ("stdlib_function_declarations", 707),
-        ("ugen_callable_records", 827),
+        ("ugen_callable_records", 802),
         ("ugen_demand_names", 25),
-        ("ugen_generated_names", 1_199),
-        ("ugen_generated_overloads", 6_059),
+        ("ugen_quarantined_names", 25),
+        ("ugen_generated_names", 1_174),
+        ("ugen_generated_overloads", 5_962),
         ("ugen_records", 875),
     ];
     for (name, expected_value) in expected {
@@ -1345,11 +1351,21 @@ impl GeneratedUgen {
     }
 
     fn details(&self, callable: bool) -> EntryDetails {
+        let quarantined = dsp_build_support::is_quarantined_rate(&self.rate);
+        let runtime_rate = if quarantined {
+            "unavailable"
+        } else if self.rate == "builder" {
+            // Preserve the v1 documentation-only snapshot until its schema is revised.
+            "audio"
+        } else {
+            dsp_build_support::runtime_rate_manifest(&self.rate)
+                .expect("generated UGen rate must have a runtime encoding")
+        };
         EntryDetails::Ugen {
             class: self.manifest.name.clone(),
             description: self.manifest.description.clone(),
             rate: self.rate.clone(),
-            runtime_rate: dsp_build_support::runtime_rate_manifest(&self.rate).into(),
+            runtime_rate: runtime_rate.into(),
             category: self.manifest.category.clone(),
             inputs: self
                 .manifest
@@ -1372,7 +1388,11 @@ impl GeneratedUgen {
             pseudo: self.manifest.pseudo,
             callable,
             requires_plugin: self.manifest.requires_plugin.clone(),
-            unavailable_reason: self.manifest.unavailable_reason.clone(),
+            unavailable_reason: if quarantined {
+                Some(dsp_build_support::DEMAND_QUARANTINE_REASON.into())
+            } else {
+                self.manifest.unavailable_reason.clone()
+            },
         }
     }
 }
@@ -1405,6 +1425,7 @@ fn metadata_matches_generated_ugen(input_count: usize, function: &RhaiFunction) 
 struct UgenCatalog {
     records: Vec<(UGenManifest, Anchor)>,
     generated: BTreeMap<String, GeneratedUgen>,
+    quarantined: BTreeMap<String, GeneratedUgen>,
     callable_records: u64,
     demand_names: u64,
 }
@@ -1422,6 +1443,7 @@ impl UgenCatalog {
 
         let mut records = Vec::new();
         let mut generated = BTreeMap::new();
+        let mut quarantined = BTreeMap::new();
         let mut callable_records = 0;
         let mut demand_names = BTreeSet::new();
         for path in paths {
@@ -1439,7 +1461,10 @@ impl UgenCatalog {
                     symbol: manifest.name.clone(),
                     line,
                 };
-                let callable = !manifest.rates.iter().all(|rate| rate == "builder");
+                let callable = manifest
+                    .rates
+                    .iter()
+                    .any(|rate| dsp_build_support::runtime_rate_manifest(rate).is_some());
                 if callable {
                     callable_records += 1;
                 }
@@ -1456,15 +1481,23 @@ impl UgenCatalog {
                     if rate == "demand" {
                         demand_names.insert(registered_name.clone());
                     }
-                    if generated
-                        .insert(
-                            registered_name.clone(),
-                            GeneratedUgen {
-                                manifest: manifest.clone(),
-                                rate: rate.clone(),
-                                anchor: anchor.clone(),
-                            },
-                        )
+                    let generated_ugen = GeneratedUgen {
+                        manifest: manifest.clone(),
+                        rate: rate.clone(),
+                        anchor: anchor.clone(),
+                    };
+                    let destination = if dsp_build_support::is_quarantined_rate(rate) {
+                        &mut quarantined
+                    } else if dsp_build_support::runtime_rate_manifest(rate).is_some() {
+                        &mut generated
+                    } else {
+                        return Err(format!(
+                            "UGen {} has unsupported runtime rate {rate}",
+                            manifest.name
+                        ));
+                    };
+                    if destination
+                        .insert(registered_name.clone(), generated_ugen)
                         .is_some()
                     {
                         return Err(format!("duplicate generated UGen name {registered_name}"));
@@ -1477,6 +1510,7 @@ impl UgenCatalog {
         Ok(Self {
             records,
             generated,
+            quarantined,
             callable_records,
             demand_names: demand_names.len() as u64,
         })
@@ -1495,6 +1529,48 @@ impl UgenCatalog {
                 positional as u64 + u64::from(dsp_build_support::has_array_overload(input_count))
             })
             .sum()
+    }
+
+    fn quarantined_names(&self) -> u64 {
+        self.quarantined.len() as u64
+    }
+
+    fn quarantined_entries(&self) -> Vec<ApiEntry> {
+        self.quarantined
+            .iter()
+            .map(|(registered_name, ugen)| {
+                let canonical = format!("dsp_ugen|ugen_quarantined|{registered_name}|");
+                let availability = Availability {
+                    status: "quarantined".into(),
+                    cfg: Vec::new(),
+                    targets: Vec::new(),
+                    features: Vec::new(),
+                    plugins: ugen.manifest.requires_plugin.clone().into_iter().collect(),
+                    runtime_conditions: vec![dsp_build_support::DEMAND_QUARANTINE_REASON.into()],
+                };
+                ApiEntry {
+                    id: stable_id("entry", &canonical),
+                    surface: "dsp_ugen".into(),
+                    kind: "ugen_quarantined".into(),
+                    registered_name: registered_name.clone(),
+                    aliases: Vec::new(),
+                    receiver: None,
+                    overloads: Vec::new(),
+                    availability,
+                    lifecycle: Lifecycle::default(),
+                    source_anchors: vec![
+                        Anchor {
+                            path: "crates/vibelang-dsp/build_support.rs".into(),
+                            symbol: "DEMAND_QUARANTINE_REASON".into(),
+                            line: None,
+                        },
+                        ugen.anchor.clone(),
+                    ],
+                    test_anchors: test_anchors("dsp_ugen"),
+                    details: ugen.details(false),
+                }
+            })
+            .collect()
     }
 
     fn builder_entries(&self, _root: &Path) -> Vec<ApiEntry> {
@@ -2067,6 +2143,34 @@ fn validate_anchor(anchor: &Anchor) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    const QUARANTINED_DEMAND_FUNCTIONS: &[&str] = &[
+        "d_noise_ring_demand",
+        "dbrown2_demand",
+        "dbrown_demand",
+        "dbufrd_demand",
+        "dbufwr_demand",
+        "dconst_demand",
+        "ddup_demand",
+        "deta_blocker_buf_demand",
+        "dgauss_demand",
+        "dgeom_demand",
+        "dibrown_demand",
+        "diwhite_demand",
+        "dpoll_demand",
+        "drand_demand",
+        "dreset_demand",
+        "dseq_demand",
+        "dser_demand",
+        "dseries_demand",
+        "dshuf_demand",
+        "dstutter_demand",
+        "dswitch1_demand",
+        "dswitch_demand",
+        "dwhite_demand",
+        "dwrand_demand",
+        "dxrand_demand",
+    ];
+
     fn root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -2119,18 +2223,36 @@ mod tests {
     }
 
     #[test]
-    fn current_demand_registration_semantics_are_preserved() {
+    fn demand_registrations_are_quarantined() {
         let catalog = UgenCatalog::load(&root()).unwrap();
+        let demand_entries = catalog.quarantined_entries();
+
         assert_eq!(catalog.demand_names, 25);
-        assert!(catalog.generated.values().any(|ugen| ugen.rate == "demand"));
-        assert!(catalog
-            .generated
-            .values()
-            .filter(|ugen| ugen.rate == "demand")
-            .all(|ugen| matches!(
-                ugen.details(true),
-                EntryDetails::Ugen { runtime_rate, callable: true, .. } if runtime_rate == "audio"
-            )));
+        assert_eq!(catalog.quarantined_names(), 25);
+        assert!(catalog.generated.values().all(|ugen| ugen.rate != "demand"));
+        assert_eq!(demand_entries.len(), 25);
+        assert_eq!(
+            demand_entries
+                .iter()
+                .map(|entry| entry.registered_name.as_str())
+                .collect::<Vec<_>>(),
+            QUARANTINED_DEMAND_FUNCTIONS
+        );
+        assert!(demand_entries.iter().all(|entry| {
+            entry.kind == "ugen_quarantined"
+                && entry.overloads.is_empty()
+                && entry.availability.status == "quarantined"
+                && matches!(
+                    &entry.details,
+                    EntryDetails::Ugen {
+                        runtime_rate,
+                        callable: false,
+                        unavailable_reason: Some(reason),
+                        ..
+                    } if runtime_rate == "unavailable"
+                        && reason == dsp_build_support::DEMAND_QUARANTINE_REASON
+                )
+        }));
     }
 
     #[test]

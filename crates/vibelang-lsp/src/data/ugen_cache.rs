@@ -84,8 +84,10 @@ fn load_embedded_manifests() -> HashMap<String, UGenDefinition> {
     for (_category, content) in EMBEDDED_MANIFESTS {
         if let Ok(defs) = serde_json::from_str::<Vec<UGenDefinition>>(content) {
             for def in defs {
-                // Skip documentation-only entries (builder rate)
-                if def.rates.iter().all(|r| r == "builder") {
+                // Skip documentation-only and quarantined demand-rate entries.
+                if def.rates.iter().all(|r| r == "builder")
+                    || def.rates.iter().any(|r| r == "demand")
+                {
                     continue;
                 }
 
@@ -371,12 +373,54 @@ pub fn format_ugen_hover(name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    const QUARANTINED_DEMAND_FUNCTIONS: &[&str] = &[
+        "d_noise_ring_demand",
+        "dbrown2_demand",
+        "dbrown_demand",
+        "dbufrd_demand",
+        "dbufwr_demand",
+        "dconst_demand",
+        "ddup_demand",
+        "deta_blocker_buf_demand",
+        "dgauss_demand",
+        "dgeom_demand",
+        "dibrown_demand",
+        "diwhite_demand",
+        "dpoll_demand",
+        "drand_demand",
+        "dreset_demand",
+        "dseq_demand",
+        "dser_demand",
+        "dseries_demand",
+        "dshuf_demand",
+        "dstutter_demand",
+        "dswitch1_demand",
+        "dswitch_demand",
+        "dwhite_demand",
+        "dwrand_demand",
+        "dxrand_demand",
+    ];
+
     #[test]
     fn test_ugen_cache_loads() {
         let cache = get_ugen_cache();
         assert!(!cache.is_empty(), "UGen cache should not be empty");
         assert!(cache.contains_key("sin_osc_ar"), "Should have sin_osc_ar");
         assert!(cache.contains_key("SinOsc"), "Should have SinOsc");
+    }
+
+    #[test]
+    fn demand_only_ugens_are_not_exposed() {
+        let cache = get_ugen_cache();
+        assert_eq!(QUARANTINED_DEMAND_FUNCTIONS.len(), 25);
+        for function in QUARANTINED_DEMAND_FUNCTIONS {
+            assert!(!cache.contains_key(*function), "{function} leaked into LSP");
+        }
+        assert!(cache.contains_key("demand_ar"));
+        assert!(cache.contains_key("Demand"));
+        assert!(cache
+            .values()
+            .all(|ugen| !ugen.rates.iter().any(|rate| rate == "demand")));
     }
 
     #[test]

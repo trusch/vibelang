@@ -3,6 +3,9 @@
 use serde::Deserialize;
 
 pub const MAX_POSITIONAL_ARITY: usize = 20;
+#[allow(dead_code)]
+pub const DEMAND_QUARANTINE_REASON: &str =
+    "demand-rate graph encoding and UGen-specific input lowering are not implemented";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UGenManifest {
@@ -55,23 +58,30 @@ pub fn has_array_overload(input_count: usize) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn runtime_rate_rust(rate: &str) -> &'static str {
+pub fn runtime_rate_rust(rate: &str) -> Option<&'static str> {
     match rate {
-        "ar" => "Rate::Audio",
-        "kr" => "Rate::Control",
-        "ir" => "Rate::Scalar",
-        _ => "Rate::Audio",
+        "ar" => Some("Rate::Audio"),
+        "kr" => Some("Rate::Control"),
+        "ir" => Some("Rate::Scalar"),
+        "demand" | "builder" => None,
+        _ => None,
     }
 }
 
 #[allow(dead_code)]
-pub fn runtime_rate_manifest(rate: &str) -> &'static str {
+pub fn runtime_rate_manifest(rate: &str) -> Option<&'static str> {
     match rate {
-        "ar" => "audio",
-        "kr" => "control",
-        "ir" => "scalar",
-        _ => "audio",
+        "ar" => Some("audio"),
+        "kr" => Some("control"),
+        "ir" => Some("scalar"),
+        "demand" | "builder" => None,
+        _ => None,
     }
+}
+
+#[allow(dead_code)]
+pub fn is_quarantined_rate(rate: &str) -> bool {
+    rate == "demand"
 }
 
 pub fn to_snake_case(value: &str) -> String {
@@ -106,9 +116,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn current_demand_fallback_remains_audio() {
-        assert_eq!(runtime_rate_rust("demand"), "Rate::Audio");
-        assert_eq!(runtime_rate_manifest("demand"), "audio");
+    fn demand_has_no_runtime_rate_fallback() {
+        assert_eq!(runtime_rate_rust("demand"), None);
+        assert_eq!(runtime_rate_manifest("demand"), None);
+        assert_eq!(runtime_rate_rust("unknown"), None);
+        assert_eq!(runtime_rate_manifest("unknown"), None);
+        assert!(is_quarantined_rate("demand"));
+        assert!(!is_quarantined_rate("ar"));
     }
 
     #[test]
