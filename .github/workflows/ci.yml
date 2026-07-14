@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
 
 jobs:
   fmt:
@@ -67,6 +68,8 @@ jobs:
             libx11-dev libxi-dev libxtst-dev \
             libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: Swatinem/rust-cache@v2
+      - name: Check public artifact drift
+        run: scripts/public-artifacts.sh check
       - name: Run unit tests
         # Unit tests only. The workspace test suites use mock backends and do
         # not require a running scsynth or JACK/PipeWire server, so nothing

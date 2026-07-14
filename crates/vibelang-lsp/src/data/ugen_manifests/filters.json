@@ -1051,8 +1051,7 @@
     "name": "BLowPass4",
     "description": "Fourth order Butterworth low pass filter. 24dB/octave rolloff for steep filtering.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -1079,14 +1078,15 @@
     "functions": [
       "b_low_pass4_ar",
       "b_low_pass4_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "BHiPass4",
     "description": "Fourth order Butterworth high pass filter. 24dB/octave rolloff for steep filtering.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -1113,6 +1113,394 @@
     "functions": [
       "b_hi_pass4_ar",
       "b_hi_pass4_kr"
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
+  },
+  {
+    "name": "BAllPass",
+    "description": "Butterworth all-pass filter (BEQSuite biquad). Passes all frequencies with unity gain but alters their phase relationships around the center frequency.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be processed"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Center frequency in Hertz. Values close to 0 may cause artifacts"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q (bandwidth / cutoff frequency)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "b_all_pass_ar",
+      "b_all_pass_kr"
+    ]
+  },
+  {
+    "name": "BPZ2",
+    "description": "Two zero fixed midpass filter. Implements out(i) = 0.5 * (in(i) - in(i-2)), cutting out 0 Hz and the Nyquist frequency.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "bpz2_ar",
+      "bpz2_kr"
+    ]
+  },
+  {
+    "name": "BRZ2",
+    "description": "Two zero fixed midcut filter. Implements out(i) = 0.5 * (in(i) + in(i-2)), cutting out frequencies around half the Nyquist frequency.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "brz2_ar",
+      "brz2_kr"
+    ]
+  },
+  {
+    "name": "HPZ1",
+    "description": "Two point difference filter. Implements out(i) = 0.5 * (in(i) - in(i-1)), a simple two-point differentiator useful for detecting changes in a signal.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "hpz1_ar",
+      "hpz1_kr"
+    ]
+  },
+  {
+    "name": "HPZ2",
+    "description": "Two zero fixed midcut filter. Implements out(i) = 0.25 * (in(i) - 2*in(i-1) + in(i-2)). Useful for detecting changes in a signal.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "hpz2_ar",
+      "hpz2_kr"
+    ]
+  },
+  {
+    "name": "LPZ1",
+    "description": "Two point average filter. Implements out(i) = 0.5 * (in(i) + in(i-1)), a simple two-point averager.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "lpz1_ar",
+      "lpz1_kr"
+    ]
+  },
+  {
+    "name": "LPZ2",
+    "description": "Two zero fixed lowpass filter. Implements out(i) = 0.25 * (in(i) + 2*in(i-1) + in(i-2)).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "lpz2_ar",
+      "lpz2_kr"
+    ]
+  },
+  {
+    "name": "DetectSilence",
+    "description": "Detect when input falls below an amplitude threshold. Outputs 1 when the absolute value of the input remains below the threshold for the given time window, otherwise 0. Triggers doneAction on the 0->1 transition.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "amp",
+        "type": "float",
+        "default": 0.0001,
+        "description": "Amplitude threshold. Triggers doneAction when input stays below this for time seconds"
+      },
+      {
+        "name": "time",
+        "type": "float",
+        "default": 0.1,
+        "description": "Minimum duration in seconds for which input must remain below amp before triggering"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action to perform when silence is detected (see Done UGen)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "detect_silence_ar",
+      "detect_silence_kr"
+    ]
+  },
+  {
+    "name": "Flip",
+    "description": "Sign-flips alternating samples, multiplying the signal by [-1, +1, -1, +1, ...]. This effectively shifts the spectrum by half the sample rate.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "flip_ar"
+    ]
+  },
+  {
+    "name": "FreqShift",
+    "description": "Single-sideband frequency shifter. Moves all components of a signal by a fixed amount in Hertz, breaking original harmonic relationships. Not the same as pitch shifting.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 0,
+        "description": "Amount of shift in cycles per second"
+      },
+      {
+        "name": "phase",
+        "type": "float",
+        "default": 0,
+        "description": "Phase of the frequency shift (0 to 2pi)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "freq_shift_ar"
+    ]
+  },
+  {
+    "name": "Hilbert",
+    "description": "Hilbert transform. Returns two channels: the original signal and a copy phase-shifted by 90 degrees (pi/2 radians). Distortion occurs in the upper octave; see HilbertFIR for an FFT-based alternative.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to transform"
+      }
+    ],
+    "outputs": 2,
+    "category": "Filters",
+    "functions": [
+      "hilbert_ar"
+    ]
+  },
+  {
+    "name": "Lag2UD",
+    "description": "Second order asymmetric exponential lag with separate up and down times. Equivalent to LagUD.kr(LagUD.kr(in, lagTimeU, lagTimeD), lagTimeU, lagTimeD), giving a smoother transition than LagUD.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTimeU",
+        "type": "float",
+        "default": 0.1,
+        "description": "60 dB lag time in seconds for the upgoing signal"
+      },
+      {
+        "name": "lagTimeD",
+        "type": "float",
+        "default": 0.1,
+        "description": "60 dB lag time in seconds for the downgoing signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "lag2_ud_ar",
+      "lag2_ud_kr"
+    ]
+  },
+  {
+    "name": "Lag3UD",
+    "description": "Third order asymmetric exponential lag with separate up and down times. Equivalent to three cascaded LagUDs, giving a very smooth transition.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTimeU",
+        "type": "float",
+        "default": 0.1,
+        "description": "60 dB lag time in seconds for the upgoing signal"
+      },
+      {
+        "name": "lagTimeD",
+        "type": "float",
+        "default": 0.1,
+        "description": "60 dB lag time in seconds for the downgoing signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "lag3_ud_ar",
+      "lag3_ud_kr"
+    ]
+  },
+  {
+    "name": "MidEQ",
+    "description": "Parametric mid-band EQ. Attenuates or boosts a frequency band centered at freq with bandwidth controlled by rq.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency of the band in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q (bandwidth / cutoff frequency)"
+      },
+      {
+        "name": "db",
+        "type": "float",
+        "default": 0,
+        "description": "Boost (db > 0) or attenuation (db < 0) of the frequency band in decibels"
+      }
+    ],
+    "outputs": 1,
+    "category": "Filters",
+    "functions": [
+      "mid_eq_ar",
+      "mid_eq_kr"
     ]
   }
 ]

@@ -520,7 +520,8 @@
     "functions": [
       "changed_ar",
       "changed_kr"
-    ]
+    ],
+    "pseudo": true
   },
   {
     "name": "Done",
@@ -540,6 +541,336 @@
     "category": "Triggers",
     "functions": [
       "done_kr"
+    ]
+  },
+  {
+    "name": "Free",
+    "description": "When triggered, frees a node by id. Used for managing synth lifecycles in patterns.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input. Free fires when the signal crosses from non-positive to positive"
+      },
+      {
+        "name": "id",
+        "type": "float",
+        "default": 0,
+        "description": "Node id to be freed"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "free_kr"
+    ]
+  },
+  {
+    "name": "FreeSelf",
+    "description": "Free the enclosing synth when input crosses from non-positive to positive.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input trigger signal. Synth is freed on a non-positive to positive transition"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "free_self_kr"
+    ]
+  },
+  {
+    "name": "FreeSelfWhenDone",
+    "description": "Free the enclosing synth when the source UGen sets its 'done' flag (e.g. Line, EnvGen).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "src",
+        "type": "signal",
+        "default": 0,
+        "description": "UGen with a done flag to monitor (Line, EnvGen, PlayBuf, etc.)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "free_self_when_done_kr"
+    ]
+  },
+  {
+    "name": "Pause",
+    "description": "Pause/resume a node by id. When gate is 0 the node is paused; when 1 it runs.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate signal: 0 pauses the node, 1 resumes it"
+      },
+      {
+        "name": "id",
+        "type": "float",
+        "default": 0,
+        "description": "Node id to be paused/resumed"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "pause_kr"
+    ]
+  },
+  {
+    "name": "PauseSelf",
+    "description": "Pause the enclosing synth when input crosses from non-positive to positive.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input trigger signal. Synth is paused on a non-positive to positive transition"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "pause_self_kr"
+    ]
+  },
+  {
+    "name": "PauseSelfWhenDone",
+    "description": "Pause the enclosing synth when the source UGen sets its 'done' flag.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "src",
+        "type": "signal",
+        "default": 0,
+        "description": "UGen with a done flag to monitor"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "pause_self_when_done_kr"
+    ]
+  },
+  {
+    "name": "LeastChange",
+    "description": "Output whichever of two inputs has changed least since the previous sample.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal A"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal B"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "least_change_ar",
+      "least_change_kr"
+    ]
+  },
+  {
+    "name": "MostChange",
+    "description": "Output whichever of two inputs has changed most since the previous sample.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal A"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal B"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "most_change_ar",
+      "most_change_kr"
+    ]
+  },
+  {
+    "name": "LastValue",
+    "description": "Output the last value before the input changed by more than diff.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "diff",
+        "type": "float",
+        "default": 0.01,
+        "description": "Difference threshold for considering the input as changed"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "last_value_ar",
+      "last_value_kr"
+    ]
+  },
+  {
+    "name": "TDelay",
+    "description": "Trigger delay. Delays a trigger by dur seconds; triggers arriving during the delay window are ignored.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input trigger signal"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 0.1,
+        "description": "Delay time in seconds"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "t_delay_ar",
+      "t_delay_kr"
+    ]
+  },
+  {
+    "name": "SendPeakRMS",
+    "description": "Send peak and RMS values back to the client at a regular reply rate. Produces no audio output.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "sig",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to analyze"
+      },
+      {
+        "name": "replyRate",
+        "type": "float",
+        "default": 20,
+        "description": "Number of replies sent to the client per second"
+      },
+      {
+        "name": "peakLag",
+        "type": "float",
+        "default": 3,
+        "description": "Lag time applied to the peak value (useful for VU meters)"
+      },
+      {
+        "name": "cmdName",
+        "type": "float",
+        "default": 0,
+        "description": "OSC address pattern for the reply message"
+      },
+      {
+        "name": "replyID",
+        "type": "float",
+        "default": -1,
+        "description": "Integer reply ID, similar to SendTrig"
+      }
+    ],
+    "outputs": 0,
+    "category": "Triggers",
+    "functions": [
+      "send_peak_rms_ar",
+      "send_peak_rms_kr"
+    ]
+  },
+  {
+    "name": "Poll",
+    "description": "Print or send the current value of a UGen on each trigger. Transparently passes its input through.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input; a non-positive to positive transition causes Poll to emit a value"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose current value will be polled"
+      },
+      {
+        "name": "label",
+        "type": "float",
+        "default": 0,
+        "description": "Label string/symbol printed alongside the polled value"
+      },
+      {
+        "name": "trigid",
+        "type": "float",
+        "default": -1,
+        "description": "If greater than 0, a /tr OSC message is sent back to the client"
+      }
+    ],
+    "outputs": 1,
+    "category": "Triggers",
+    "functions": [
+      "poll_ar",
+      "poll_kr"
     ]
   }
 ]

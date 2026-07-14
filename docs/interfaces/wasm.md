@@ -58,9 +58,10 @@ Failure counts are zero and tempo is 120.
 load or state application fails; those failures only warn. It clears user
 registries on every execution.
 
-The checked-in declarations are currently handwritten. Generating them from
-the Rust wasm-bindgen surface and failing CI on drift is a P0 roadmap item; the
-Rust implementation controls when the two disagree.
+The checked-in declarations are generated from the Rust `#[wasm_bindgen]`
+surface and result structs by `scripts/public-artifacts.sh`; CI fails when they
+drift. Private wasm-bindgen ABI fields and binary/JavaScript glue remain
+tool-version-specific build outputs and are intentionally excluded.
 
 ## Legacy VibelangEngine
 

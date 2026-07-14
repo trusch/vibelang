@@ -112,28 +112,6 @@
     ]
   },
   {
-    "name": "Slope",
-    "description": "Measures the rate of change (slope/derivative) of a signal per sample.",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "inputs": [
-      {
-        "name": "in",
-        "type": "signal",
-        "default": 0,
-        "description": "Input signal"
-      }
-    ],
-    "outputs": 1,
-    "category": "Analysis",
-    "functions": [
-      "slope_ar",
-      "slope_kr"
-    ]
-  },
-  {
     "name": "ZeroCrossing",
     "description": "Zero crossing frequency. Estimates frequency by counting zero crossings.",
     "rates": [
@@ -227,6 +205,418 @@
     "category": "Analysis",
     "functions": [
       "pitch_kr"
+    ]
+  },
+  {
+    "name": "BeatTrack",
+    "description": "Autocorrelation-based beat tracker. Outputs ticks at quarter, eighth, sixteenth note level plus current detected tempo. Expects FFT size 1024 at 44.1/48kHz or 2048 at 88.2/96kHz; uses a ~6 second analysis window biased toward 100-120 bpm.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (e.g. from FFT UGen). Required FFT size: 1024 for 44.1/48kHz, 2048 for 88.2/96kHz"
+      },
+      {
+        "name": "lock",
+        "type": "float",
+        "default": 0,
+        "description": "If > 0.5, lock the tracker to current periodicity and phase. Set back to 0 to resume tracking"
+      }
+    ],
+    "outputs": 4,
+    "category": "Analysis",
+    "functions": [
+      "beat_track_kr"
+    ]
+  },
+  {
+    "name": "BeatTrack2",
+    "description": "Template-matching beat tracker. Cross-correlates feature streams from a control bus against straight and swung 16th-note templates over tempi 60-180 bpm. Outputs beat tick, eighth tick, groove tick, tempo, phase, and groove. ~2.5-2.8s latency.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "busindex",
+        "type": "float",
+        "default": 0,
+        "description": "Control bus index from which to read consecutive feature streams"
+      },
+      {
+        "name": "numfeatures",
+        "type": "float",
+        "default": 1,
+        "description": "Number of features (consecutive control buses) to read"
+      },
+      {
+        "name": "windowsize",
+        "type": "float",
+        "default": 2.0,
+        "description": "Temporal window in seconds (2.0-3.0 models human window). Larger = more stable but less reactive"
+      },
+      {
+        "name": "phaseaccuracy",
+        "type": "float",
+        "default": 0.02,
+        "description": "Phase test spacing in seconds. Smaller = more phase tests = higher CPU"
+      },
+      {
+        "name": "lock",
+        "type": "float",
+        "default": 0,
+        "description": "If > 0.5, lock to current periodicity/phase. Set back to 0 to resume tracking"
+      },
+      {
+        "name": "weightingscheme",
+        "type": "float",
+        "default": -2.1,
+        "description": "Tempo weighting: -2.5 = flat, -1.5 = event-count compensation, or buffer number with 120 weights (60-179 bpm)"
+      }
+    ],
+    "outputs": 6,
+    "category": "Analysis",
+    "functions": [
+      "beat_track2_kr"
+    ]
+  },
+  {
+    "name": "KeyTrack",
+    "description": "12TET major/minor key tracker. Builds a pitch class profile from FFT bins and matches against major/minor scale templates in all transpositions (440Hz reference). Output 0-11 = C-B major, 12-23 = C-B minor. Requires 4096 FFT (44.1/48kHz) or 8192 (88.2/96kHz).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain. Required FFT size: 4096 for 44.1/48kHz, 8192 for 88.2/96kHz"
+      },
+      {
+        "name": "keydecay",
+        "type": "float",
+        "default": 2.0,
+        "description": "Seconds for a window's influence on the final key decision to decay by 40dB"
+      },
+      {
+        "name": "chromaleak",
+        "type": "float",
+        "default": 0.5,
+        "description": "Per-frame chroma multiplier (0.0 = no memory between frames)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "key_track_kr"
+    ]
+  },
+  {
+    "name": "MFCC",
+    "description": "Mel-frequency cepstral coefficients. Computes Mel-scale band energies (42 bands, triangular crossfade), then a DCT to produce a small set of timbral descriptors. Output values approximately in 0.0-1.0 range; first coefficient is typically highest.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain. Typical FFT size: 1024 (44.1/48kHz) or 2048 (88.2/96kHz)"
+      },
+      {
+        "name": "numcoeff",
+        "type": "int",
+        "default": 13,
+        "description": "Number of coefficients to output (max 42). The 0th is omitted; use as few as practical"
+      }
+    ],
+    "outputs": 13,
+    "category": "Analysis",
+    "functions": [
+      "mfcc_kr"
+    ]
+  },
+  {
+    "name": "Loudness",
+    "description": "Perceptual loudness in sones. Sums excitation in ERB bands with simple spectral and temporal masking, applies equal-loudness contour correction (phons), then phon-to-sone transform. Typical output range 0-64 sones.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain. Typical FFT size: 1024 (44.1/48kHz) or 2048 (88.2/96kHz)"
+      },
+      {
+        "name": "smask",
+        "type": "float",
+        "default": 0.25,
+        "description": "Spectral masking: per-bin power falloff multiplier for lower bins masking higher bins within ERB bands"
+      },
+      {
+        "name": "tmask",
+        "type": "float",
+        "default": 1,
+        "description": "Temporal masking in phons: previous-frame phon level minus tmask competes against new measurement (max wins)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "loudness_kr"
+    ]
+  },
+  {
+    "name": "Onsets",
+    "description": "Onset detector for musical audio (note/drumbeat starts). Outputs a control-rate trigger (1 on detection, 0 otherwise). Multiple ODF (onset detection function) types available; default rcomplex performs well across material.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain. Typical FFT size: 512 or 1024 at 44.1kHz (10-20ms span)"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.5,
+        "description": "Detection threshold, typically 0-1 (occasionally outside this range)"
+      },
+      {
+        "name": "odftype",
+        "type": "int",
+        "default": 3,
+        "description": "Onset detection function: 0=power, 1=magsum, 2=complex, 3=rcomplex (default), 4=phase, 5=wphase, 6=mkl"
+      },
+      {
+        "name": "relaxtime",
+        "type": "float",
+        "default": 1,
+        "description": "Whitening relaxation time in seconds — how long until the normalisation 'forgets' a recent onset (unused for mkl)"
+      },
+      {
+        "name": "floor",
+        "type": "float",
+        "default": 0.1,
+        "description": "Whitening lower limit. Lower (e.g. 1e-6) for clean classical material with wide dynamics (unused for mkl)"
+      },
+      {
+        "name": "mingap",
+        "type": "int",
+        "default": 10,
+        "description": "Minimum gap in FFT frames between detections (brute-force double-trigger guard)"
+      },
+      {
+        "name": "medianspan",
+        "type": "int",
+        "default": 11,
+        "description": "Median window size in FFT frames for smoothing the detection function"
+      },
+      {
+        "name": "whtype",
+        "type": "int",
+        "default": 1,
+        "description": "Whitening type"
+      },
+      {
+        "name": "rawodf",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, output the raw onset detection function value instead of a trigger"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "onsets_kr"
+    ]
+  },
+  {
+    "name": "SpecCentroid",
+    "description": "Spectral centroid (weighted mean frequency / 'centre of mass' of the spectrum, ignoring DC). Useful indicator of perceptual brightness.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "spec_centroid_kr"
+    ]
+  },
+  {
+    "name": "SpecFlatness",
+    "description": "Spectral flatness measure: power spectrum geometric mean divided by arithmetic mean. Approximately 0 for a pure sinusoid, approximately 1 for white noise. Linear scale.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "spec_flatness_kr"
+    ]
+  },
+  {
+    "name": "SpecPcile",
+    "description": "Frequency value at a given percentile of the cumulative magnitude spectrum. The 90th or 95th percentile is commonly used as a spectral roll-off measure.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain"
+      },
+      {
+        "name": "fraction",
+        "type": "float",
+        "default": 0.5,
+        "description": "Percentile fraction (0-1). 0.9 returns the frequency below which 90% of spectral energy lies"
+      },
+      {
+        "name": "interpolate",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, linearly interpolate the bin number for a more accurate estimate (slightly higher CPU)"
+      },
+      {
+        "name": "binout",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, output the bin number instead of the frequency"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "spec_pcile_kr"
+    ]
+  },
+  {
+    "name": "PV_HainsworthFoote",
+    "description": "FFT onset detector combining the Hainsworth metric (KL-distance-based) and the Foote metric. Spots spectral change so may also catch chord transitions, with risk of FM-induced false positives.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain"
+      },
+      {
+        "name": "proph",
+        "type": "float",
+        "default": 0,
+        "description": "Strength of the Hainsworth metric component"
+      },
+      {
+        "name": "propf",
+        "type": "float",
+        "default": 0,
+        "description": "Strength of the Foote metric component (Foote is normalised to 0-1)"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 1.0,
+        "description": "Detection threshold"
+      },
+      {
+        "name": "waittime",
+        "type": "float",
+        "default": 0.04,
+        "description": "Minimum wait in seconds before another detection can fire"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "pv_hainsworth_foote_ar"
+    ]
+  },
+  {
+    "name": "PV_JensenAndersen",
+    "description": "FFT feature-based onset detector using first-order derivatives of spectral centroid, high-frequency energy, high-frequency content, and spectral flux features. Threshold may need to be set low to catch changes.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain"
+      },
+      {
+        "name": "propsc",
+        "type": "float",
+        "default": 0.25,
+        "description": "Proportion of the spectral centroid feature"
+      },
+      {
+        "name": "prophfe",
+        "type": "float",
+        "default": 0.25,
+        "description": "Proportion of the high-frequency energy feature"
+      },
+      {
+        "name": "prophfc",
+        "type": "float",
+        "default": 0.25,
+        "description": "Proportion of the high-frequency content feature"
+      },
+      {
+        "name": "propsf",
+        "type": "float",
+        "default": 0.25,
+        "description": "Proportion of the spectral flux feature"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 1.0,
+        "description": "Detection threshold"
+      },
+      {
+        "name": "waittime",
+        "type": "float",
+        "default": 0.04,
+        "description": "Minimum wait in seconds before another detection can fire"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "pv_jensen_andersen_ar"
     ]
   }
 ]

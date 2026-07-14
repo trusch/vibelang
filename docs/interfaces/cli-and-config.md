@@ -39,7 +39,6 @@ No command/file prints usage and exits 1.
 | `--input-channels COUNT` | u32, default 2 without profile | Hardware inputs |
 | `--output-channels COUNT` | u32, default 2 without profile | Hardware outputs |
 | `--profile FILE` | optional | Strict hardware startup profile below |
-| `--runtime-metrics` **(worktree-only)** | false | Record bounded runtime metrics and print snapshot at shutdown; absent from clean revision `98bed24` |
 | `--no-extensions` | false | Disable all compiled script extensions |
 | `--no-fs`; `--no-exec`; `--no-net` | false | Disable one compiled extension |
 | `--fs-sandbox PATH` | optional | Filesystem extension base; see security limits in [Extensions](../reference/extensions.md) |
@@ -49,15 +48,15 @@ debounces about 100 ms and reacts only to `.vibe` changes. Initial errors abort;
 reload errors retain current runtime. Transport starts after the initial state
 is submitted. `RUST_LOG` controls tracing.
 
-The worktree-only metrics row describes the pre-existing dirty
-`crates/vibelang-cli/src/main.rs`, not the clean source revision underlying this
-documentation. Do not treat this docs commit by itself as shipping that option.
-
 There is no `-w`, `--watch`, `--api`, `--midi-input`, or `--record` option.
 Watch/API are enabled by default. Some older README/editor/render messages still
 refer to these nonexistent spellings.
 
 ### `vibe render`
+
+The exact default-feature Clap output for every command is checked in at
+[`generated/cli-help.txt`](../reference/generated/cli-help.txt) and regenerated
+by `scripts/public-artifacts.sh`.
 
 ```text
 vibe render SCORE_FILE OUTPUT [-f|--format FORMAT]

@@ -1,4 +1,39 @@
-# Public API manifest
+# Reproducible public artifacts
+
+The repository-owned entry point for every checked-in public artifact is:
+
+```bash
+scripts/public-artifacts.sh generate
+```
+
+Its non-mutating CI form is:
+
+```bash
+scripts/public-artifacts.sh check
+```
+
+The command serializes Cargo with `CARGO_BUILD_JOBS=1`, renders the default
+Clap command/subcommand help from the just-built `vibe` binary, then regenerates
+or checks the manifest-backed core/UGen/stdlib reference, WASM TypeScript
+surface, HTTP route/schema snapshot, VS Code core/stdlib tables, and the
+canonical UGen subsets bundled by the LSP and VS Code extension. A dirty CLI
+option therefore changes the help snapshot and fails `check`; it cannot be
+published as a clean-revision artifact by accident.
+
+The editor UGen bundles intentionally remain the existing 24-category package
+subset. The entry point refreshes every bundled file byte-for-byte from
+`crates/vibelang-dsp/ugen_manifests` and rejects a bundled filename without a
+canonical source; adding previously unbundled plugin/experimental categories is
+an editor availability decision, not an artifact-regeneration side effect.
+
+`crates/vibelang-wasm/types/index.d.ts` is generated from the Rust
+`#[wasm_bindgen]` export annotations and serialized result structs. Private
+`InitOutput` ABI fields, generated JavaScript, and the `.wasm` binary are
+intentionally excluded because they are tool-version-specific build outputs;
+the declarations retain only a stable opaque module-initializer compatibility
+shim. The source-backed class/function surface remains drift-gated.
+
+## Public API manifest
 
 `public-api-manifest-v1.json` is the deterministic, versioned inventory of the
 VibeLang API exposed to `.vibe` programs. It is generated from the effective
@@ -14,7 +49,7 @@ schema migrations but fails generation. Stdlib functions require an adjacent
 all 707 declarations, import paths, exact signatures, source anchors, and
 duplicate-name behavior.
 
-Regenerate it from the repository root with:
+Regenerate only the registration manifest and its stdlib reference adapter with:
 
 ```bash
 CARGO_BUILD_JOBS=1 cargo run -p xtask -- public-api generate

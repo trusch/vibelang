@@ -2,28 +2,83 @@
   {
     "name": "FFT",
     "description": "Fast Fourier Transform. Converts time domain signal to frequency domain for spectral processing.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "float", "default": 0.0, "description": "Buffer number for FFT data"},
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to transform"},
-      {"name": "hop", "type": "float", "default": 0.5, "description": "Hop size as fraction of FFT size (0.25, 0.5, or 1.0)"},
-      {"name": "wintype", "type": "float", "default": 0.0, "description": "Window type (0=Sine, 1=Hann, -1=Rect)"},
-      {"name": "active", "type": "float", "default": 1.0, "description": "Whether FFT is active (1=on, 0=off)"},
-      {"name": "winsize", "type": "float", "default": 0.0, "description": "Window size override (0=use buffer size)"}
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number for FFT data"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to transform"
+      },
+      {
+        "name": "hop",
+        "type": "float",
+        "default": 0.5,
+        "description": "Hop size as fraction of FFT size (0.25, 0.5, or 1.0)"
+      },
+      {
+        "name": "wintype",
+        "type": "float",
+        "default": 0,
+        "description": "Window type (0=Sine, 1=Hann, -1=Rect)"
+      },
+      {
+        "name": "active",
+        "type": "float",
+        "default": 1,
+        "description": "Whether FFT is active (1=on, 0=off)"
+      },
+      {
+        "name": "winsize",
+        "type": "float",
+        "default": 0,
+        "description": "Window size override (0=use buffer size)"
+      }
     ],
     "outputs": 1,
-    "category": "FFT"
+    "category": "FFT",
+    "functions": [
+      "fft_kr"
+    ]
   },
   {
     "name": "IFFT",
     "description": "Inverse Fast Fourier Transform. Converts frequency domain back to time domain audio.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0.0, "description": "Buffer containing FFT data"},
-      {"name": "wintype", "type": "float", "default": 0.0, "description": "Window type (0=Sine, 1=Hann, -1=Rect)"},
-      {"name": "winsize", "type": "float", "default": 0.0, "description": "Window size override"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer containing FFT data"
+      },
+      {
+        "name": "wintype",
+        "type": "float",
+        "default": 0,
+        "description": "Window type (0=Sine, 1=Hann, -1=Rect)"
+      },
+      {
+        "name": "winsize",
+        "type": "float",
+        "default": 0,
+        "description": "Window size override"
+      }
     ],
     "outputs": 1,
-    "category": "FFT"
+    "category": "FFT",
+    "functions": [
+      "ifft_ar"
+    ]
   }
 ]

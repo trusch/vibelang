@@ -1,0 +1,3225 @@
+{
+  "schema": "https://vibelang.org/schemas/http-source-snapshot/v1",
+  "schema_version": 1,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/effects",
+      "handler": "routes::effects::list_effects",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/effects/{id}",
+      "handler": "routes::effects::delete_effect",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/effects/{id}",
+      "handler": "routes::effects::get_effect",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/effects/{id}",
+      "handler": "routes::effects::update_effect",
+      "availability": []
+    },
+    {
+      "method": "PUT",
+      "path": "/effects/{id}/params/{param}",
+      "handler": "routes::effects::set_effect_param",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/eval",
+      "handler": "routes::eval::eval_code",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/fades",
+      "handler": "routes::fades::cancel_fade",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/fades",
+      "handler": "routes::live::get_active_fades",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades",
+      "handler": "routes::fades::start_fade",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades/effect/{id}",
+      "handler": "routes::fades::fade_effect",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades/group/{path}",
+      "handler": "routes::fades::fade_group",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades/melody/{name}",
+      "handler": "routes::fades::fade_melody",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades/pattern/{name}",
+      "handler": "routes::fades::fade_pattern",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/fades/voice/{name}",
+      "handler": "routes::fades::fade_voice",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/groups",
+      "handler": "routes::groups::list_groups",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/groups/{id}",
+      "handler": "routes::groups::get_group",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/groups/{id}",
+      "handler": "routes::groups::update_group",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/groups/{id}/mute",
+      "handler": "routes::groups::mute_group",
+      "availability": []
+    },
+    {
+      "method": "PUT",
+      "path": "/groups/{id}/params/{param}",
+      "handler": "routes::groups::set_group_param",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/groups/{id}/solo",
+      "handler": "routes::groups::solo_group",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/groups/{id}/unmute",
+      "handler": "routes::groups::unmute_group",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/groups/{id}/unsolo",
+      "handler": "routes::groups::unsolo_group",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/live",
+      "handler": "routes::live::get_live_state",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/live/fades",
+      "handler": "routes::live::get_active_fades",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/live/meters",
+      "handler": "routes::live::get_meters",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/live/transport",
+      "handler": "routes::live::get_transport_state",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/melodies",
+      "handler": "routes::melodies::list_melodies",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/melodies",
+      "handler": "routes::melodies::create_melody",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/melodies/{id}",
+      "handler": "routes::melodies::delete_melody",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/melodies/{id}",
+      "handler": "routes::melodies::get_melody",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/melodies/{id}",
+      "handler": "routes::melodies::update_melody",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/melodies/{id}/start",
+      "handler": "routes::melodies::start_melody",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/melodies/{id}/stop",
+      "handler": "routes::melodies::stop_melody",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/midi/cc",
+      "handler": "routes::midi::send_cc",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/clock/disable",
+      "handler": "routes::midi::disable_clock_output",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/clock/enable",
+      "handler": "routes::midi::enable_clock_output",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/close",
+      "handler": "routes::midi::close_device",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/midi/devices",
+      "handler": "routes::midi::list_devices",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/input/open",
+      "handler": "routes::midi::open_input",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/note/off",
+      "handler": "routes::midi::send_note_off",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/note/on",
+      "handler": "routes::midi::send_note_on",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/output/open",
+      "handler": "routes::midi::open_output",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/record/start",
+      "handler": "routes::midi::start_recording",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/record/stop",
+      "handler": "routes::midi::stop_recording",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/route/keyboard",
+      "handler": "routes::midi::add_keyboard_route",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/midi/route/{index}",
+      "handler": "routes::midi::remove_keyboard_route",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/midi/routes",
+      "handler": "routes::midi::clear_routes",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/midi/routes",
+      "handler": "routes::midi::list_routes",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/transport/continue",
+      "handler": "routes::midi::send_midi_continue",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/transport/start",
+      "handler": "routes::midi::send_midi_start",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/midi/transport/stop",
+      "handler": "routes::midi::send_midi_stop",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/patterns",
+      "handler": "routes::patterns::list_patterns",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/patterns",
+      "handler": "routes::patterns::create_pattern",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/patterns/{id}",
+      "handler": "routes::patterns::delete_pattern",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/patterns/{id}",
+      "handler": "routes::patterns::get_pattern",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/patterns/{id}",
+      "handler": "routes::patterns::update_pattern",
+      "availability": []
+    },
+    {
+      "method": "PUT",
+      "path": "/patterns/{id}/params/{param}",
+      "handler": "routes::patterns::set_pattern_param",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/patterns/{id}/start",
+      "handler": "routes::patterns::start_pattern",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/patterns/{id}/stop",
+      "handler": "routes::patterns::stop_pattern",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/recordings",
+      "handler": "routes::recordings::list_recordings",
+      "availability": [
+        "not(target_arch = \"wasm32\")"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/recordings/{id}",
+      "handler": "routes::recordings::get_recording",
+      "availability": [
+        "not(target_arch = \"wasm32\")"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/{id}/cancel",
+      "handler": "routes::recordings::cancel_recording",
+      "availability": [
+        "not(target_arch = \"wasm32\")"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/{id}/stop",
+      "handler": "routes::recordings::stop_recording",
+      "availability": [
+        "not(target_arch = \"wasm32\")"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/samples",
+      "handler": "routes::samples::list_samples",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/samples",
+      "handler": "routes::samples::load_sample",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/samples/{id}",
+      "handler": "routes::samples::delete_sample",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/samples/{id}",
+      "handler": "routes::samples::get_sample",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/sequences",
+      "handler": "routes::sequences::list_sequences",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/sequences",
+      "handler": "routes::sequences::create_sequence",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/sequences/{id}",
+      "handler": "routes::sequences::delete_sequence",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/sequences/{id}",
+      "handler": "routes::sequences::get_sequence",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/sequences/{id}",
+      "handler": "routes::sequences::update_sequence",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/sequences/{id}/pause",
+      "handler": "routes::sequences::pause_sequence",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/sequences/{id}/resume",
+      "handler": "routes::sequences::resume_sequence",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/sequences/{id}/start",
+      "handler": "routes::sequences::start_sequence",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/sequences/{id}/stop",
+      "handler": "routes::sequences::stop_sequence",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/synthdefs",
+      "handler": "routes::synthdefs::list_synthdefs",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/synthdefs/{name}",
+      "handler": "routes::synthdefs::get_synthdef",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/transport",
+      "handler": "routes::transport::get_transport",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/transport",
+      "handler": "routes::transport::update_transport",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/transport/seek",
+      "handler": "routes::transport::seek_transport",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/transport/start",
+      "handler": "routes::transport::start_transport",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/transport/stop",
+      "handler": "routes::transport::stop_transport",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/voices",
+      "handler": "routes::voices::list_voices",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices",
+      "handler": "routes::voices::create_voice",
+      "availability": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/voices/{id}",
+      "handler": "routes::voices::delete_voice",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/voices/{id}",
+      "handler": "routes::voices::get_voice",
+      "availability": []
+    },
+    {
+      "method": "PATCH",
+      "path": "/voices/{id}",
+      "handler": "routes::voices::update_voice",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/mute",
+      "handler": "routes::voices::mute_voice",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/note-off",
+      "handler": "routes::voices::note_off",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/note-on",
+      "handler": "routes::voices::note_on",
+      "availability": []
+    },
+    {
+      "method": "PUT",
+      "path": "/voices/{id}/params/{param}",
+      "handler": "routes::voices::set_voice_param",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/stop",
+      "handler": "routes::voices::stop_voice",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/trigger",
+      "handler": "routes::voices::trigger_voice",
+      "availability": []
+    },
+    {
+      "method": "POST",
+      "path": "/voices/{id}/unmute",
+      "handler": "routes::voices::unmute_voice",
+      "availability": []
+    },
+    {
+      "method": "GET",
+      "path": "/ws",
+      "handler": "websocket::ws_handler",
+      "availability": []
+    }
+  ],
+  "types": [
+    {
+      "name": "ActiveFade",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "name",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "target_type",
+          "rust_type": "FadeTargetType",
+          "serde": []
+        },
+        {
+          "name": "target_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "param_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "start_value",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "target_value",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "current_value",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "start_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "progress",
+          "rust_type": "f64",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ActiveSequence",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "start_beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "current_position",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "iteration",
+          "rust_type": "Option < u32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "play_once",
+          "rust_type": "Option < bool >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ActiveSynth",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "node_id",
+          "rust_type": "i32",
+          "serde": []
+        },
+        {
+          "name": "synthdef_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "voice_name",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "group_path",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "created_at_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Effect",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "synthdef_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "node_id",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "bus_in",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "bus_out",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": []
+        },
+        {
+          "name": "position",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "vst_plugin",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "EffectCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "synthdef_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "position",
+          "rust_type": "Option < i32 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "EffectUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ErrorResponse",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "error",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "message",
+          "rust_type": "String",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "FadeCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "target_type",
+          "rust_type": "FadeTargetType",
+          "serde": []
+        },
+        {
+          "name": "target_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "param_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "start_value",
+          "rust_type": "Option < f32 >",
+          "serde": []
+        },
+        {
+          "name": "target_value",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "FadeTargetType",
+      "kind": "enum",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [],
+      "variants": [
+        "Group",
+        "Voice",
+        "Effect"
+      ]
+    },
+    {
+      "name": "Group",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "parent_path",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "children",
+          "rust_type": "Vec < String >",
+          "serde": []
+        },
+        {
+          "name": "node_id",
+          "rust_type": "i32",
+          "serde": []
+        },
+        {
+          "name": "audio_bus",
+          "rust_type": "i32",
+          "serde": []
+        },
+        {
+          "name": "link_synth_node_id",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "muted",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "soloed",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": []
+        },
+        {
+          "name": "synth_node_ids",
+          "rust_type": "Option < Vec < i32 > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "GroupCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "parent_path",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "GroupUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "LiveState",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "transport",
+          "rust_type": "TransportState",
+          "serde": []
+        },
+        {
+          "name": "active_synths",
+          "rust_type": "Vec < ActiveSynth >",
+          "serde": []
+        },
+        {
+          "name": "active_sequences",
+          "rust_type": "Vec < ActiveSequence >",
+          "serde": []
+        },
+        {
+          "name": "active_fades",
+          "rust_type": "Vec < ActiveFade >",
+          "serde": []
+        },
+        {
+          "name": "active_notes",
+          "rust_type": "Option < HashMap < String , Vec < u8 > > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "patterns_status",
+          "rust_type": "Option < HashMap < String , LoopStatus > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "melodies_status",
+          "rust_type": "Option < HashMap < String , LoopStatus > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "LoopState",
+      "kind": "enum",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [],
+      "variants": [
+        "Stopped",
+        "Queued",
+        "Playing",
+        "QueuedStop"
+      ]
+    },
+    {
+      "name": "LoopStatus",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "state",
+          "rust_type": "LoopState",
+          "serde": []
+        },
+        {
+          "name": "start_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "stop_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Melody",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "voice_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "events",
+          "rust_type": "Vec < MelodyEvent >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "Option < HashMap < String , f32 > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "status",
+          "rust_type": "LoopStatus",
+          "serde": []
+        },
+        {
+          "name": "is_looping",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "notes_patterns",
+          "rust_type": "Option < Vec < String > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MelodyCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "voice_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": [
+            "serde (default = \"default_loop_beats\")"
+          ]
+        },
+        {
+          "name": "events",
+          "rust_type": "Vec < MelodyEvent >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "melody_string",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MelodyEvent",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "note",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "frequency",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "duration",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "velocity",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "params",
+          "rust_type": "Option < HashMap < String , f32 > >",
+          "serde": [
+            "serde (default , skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MelodyUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "events",
+          "rust_type": "Option < Vec < MelodyEvent > >",
+          "serde": []
+        },
+        {
+          "name": "melody_string",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "lanes",
+          "rust_type": "Option < Vec < String > >",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MeterLevel",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "peak_left",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "peak_right",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "rms_left",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "rms_right",
+          "rust_type": "f32",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "NoteOffRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "note",
+          "rust_type": "u8",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "NoteOnRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "note",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "velocity",
+          "rust_type": "f32",
+          "serde": [
+            "serde (default = \"default_velocity\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ParamSet",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "value",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "fade_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Pattern",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "voice_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "events",
+          "rust_type": "Vec < PatternEvent >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "Option < HashMap < String , f32 > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "status",
+          "rust_type": "LoopStatus",
+          "serde": []
+        },
+        {
+          "name": "is_looping",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "step_pattern",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "PatternCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "voice_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": [
+            "serde (default = \"default_loop_beats\")"
+          ]
+        },
+        {
+          "name": "events",
+          "rust_type": "Vec < PatternEvent >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "pattern_string",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "swing",
+          "rust_type": "f32",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "PatternEvent",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "Option < HashMap < String , f32 > >",
+          "serde": [
+            "serde (default , skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "PatternUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "events",
+          "rust_type": "Option < Vec < PatternEvent > >",
+          "serde": []
+        },
+        {
+          "name": "pattern_string",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Recording",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "status",
+          "rust_type": "RecordingStatus",
+          "serde": []
+        },
+        {
+          "name": "duration_secs",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "path",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "RecordingStatus",
+      "kind": "enum",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [],
+      "variants": [
+        "Pending",
+        "CountingIn",
+        "Recording",
+        "Completed",
+        "Cancelled"
+      ]
+    },
+    {
+      "name": "Sample",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "buffer_id",
+          "rust_type": "i32",
+          "serde": []
+        },
+        {
+          "name": "num_channels",
+          "rust_type": "i32",
+          "serde": []
+        },
+        {
+          "name": "num_frames",
+          "rust_type": "i64",
+          "serde": []
+        },
+        {
+          "name": "sample_rate",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "synthdef_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "slices",
+          "rust_type": "Option < Vec < SampleSlice > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SampleLoad",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "id",
+          "rust_type": "Option < String >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SampleSlice",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "start_frame",
+          "rust_type": "i64",
+          "serde": []
+        },
+        {
+          "name": "end_frame",
+          "rust_type": "i64",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SeekRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "beat",
+          "rust_type": "f64",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Sequence",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "clips",
+          "rust_type": "Vec < SequenceClip >",
+          "serde": []
+        },
+        {
+          "name": "play_once",
+          "rust_type": "Option < bool >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "active",
+          "rust_type": "Option < bool >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SequenceClip",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "clip_type",
+          "rust_type": "String",
+          "serde": [
+            "serde (rename = \"type\")"
+          ]
+        },
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "start_beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "end_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "once",
+          "rust_type": "Option < bool >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SequenceCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "f64",
+          "serde": [
+            "serde (default = \"default_sequence_length\")"
+          ]
+        },
+        {
+          "name": "clips",
+          "rust_type": "Vec < SequenceClip >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SequenceStartRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "play_once",
+          "rust_type": "bool",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SequenceUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "loop_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        },
+        {
+          "name": "clips",
+          "rust_type": "Option < Vec < SequenceClip > >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SourceLocation",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "file",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "line",
+          "rust_type": "Option < u32 >",
+          "serde": []
+        },
+        {
+          "name": "column",
+          "rust_type": "Option < u32 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "StartRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "quantize_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "StopRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "quantize_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SynthDefInfo",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "Vec < SynthDefParam >",
+          "serde": []
+        },
+        {
+          "name": "source",
+          "rust_type": "Option < SynthDefSource >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SynthDefParam",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "default_value",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "min_value",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "max_value",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SynthDefSource",
+      "kind": "enum",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [],
+      "variants": [
+        "Builtin",
+        "User",
+        "Stdlib"
+      ]
+    },
+    {
+      "name": "TimeSignature",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize",
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "numerator",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "denominator",
+          "rust_type": "u8",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "TransportState",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "bpm",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "time_signature",
+          "rust_type": "TimeSignature",
+          "serde": []
+        },
+        {
+          "name": "running",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "current_beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "quantization_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "loop_beats",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "loop_beat",
+          "rust_type": "Option < f64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "server_time_ms",
+          "rust_type": "Option < u64 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "TransportUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "bpm",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        },
+        {
+          "name": "time_signature",
+          "rust_type": "Option < TimeSignature >",
+          "serde": []
+        },
+        {
+          "name": "quantization_beats",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "TriggerRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "Voice",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "synth_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "polyphony",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "gain",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "group_name",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "output_bus",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "muted",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "soloed",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": []
+        },
+        {
+          "name": "sfz_instrument",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "vst_instrument",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "active_notes",
+          "rust_type": "Option < Vec < u8 > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "sustained_notes",
+          "rust_type": "Option < Vec < u8 > >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "running",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "running_node_id",
+          "rust_type": "Option < i32 >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "source_location",
+          "rust_type": "Option < SourceLocation >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "VoiceCreate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "name",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "synth_name",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (alias = \"synthdef\")"
+          ]
+        },
+        {
+          "name": "polyphony",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        },
+        {
+          "name": "gain",
+          "rust_type": "Option < f32 >",
+          "serde": []
+        },
+        {
+          "name": "group_path",
+          "rust_type": "Option < String >",
+          "serde": [
+            "serde (alias = \"group_id\")"
+          ]
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "sample",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "sfz",
+          "rust_type": "Option < String >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "VoiceUpdate",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/models.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "synth_name",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "polyphony",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        },
+        {
+          "name": "gain",
+          "rust_type": "Option < f32 >",
+          "serde": []
+        },
+        {
+          "name": "params",
+          "rust_type": "HashMap < String , f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "EvalRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/eval.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "code",
+          "rust_type": "String",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "EvalResponse",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/eval.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "success",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "result",
+          "rust_type": "Option < String >",
+          "serde": []
+        },
+        {
+          "name": "error",
+          "rust_type": "Option < String >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "CancelFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "target_type",
+          "rust_type": "FadeTargetType",
+          "serde": []
+        },
+        {
+          "name": "target_name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "CurveSpec",
+      "kind": "enum",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [],
+      "variants": [
+        "Name",
+        "Exponential",
+        "Spline"
+      ]
+    },
+    {
+      "name": "EffectFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "to",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "from",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "curve",
+          "rust_type": "CurveSpec",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "GroupFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "to",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "from",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "curve",
+          "rust_type": "CurveSpec",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MelodyFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "to",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "from",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "curve",
+          "rust_type": "CurveSpec",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "PatternFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "to",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "from",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "curve",
+          "rust_type": "CurveSpec",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "VoiceFadeRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/fades.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "param",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "to",
+          "rust_type": "f32",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "from",
+          "rust_type": "Option < f32 >",
+          "serde": [
+            "serde (default)"
+          ]
+        },
+        {
+          "name": "curve",
+          "rust_type": "CurveSpec",
+          "serde": [
+            "serde (default)"
+          ]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "AddKeyboardRouteRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "voice_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "channel",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        },
+        {
+          "name": "note_min",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        },
+        {
+          "name": "note_max",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        },
+        {
+          "name": "transpose",
+          "rust_type": "Option < i8 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "AddKeyboardRouteResponse",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "message",
+          "rust_type": "String",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ClockOutputRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "enabled",
+          "rust_type": "bool",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ClockStatusDto",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "enabled",
+          "rust_type": "bool",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "ErrorResponse",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "error",
+          "rust_type": "String",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "MidiDeviceDto",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "name",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "has_input",
+          "rust_type": "bool",
+          "serde": []
+        },
+        {
+          "name": "has_output",
+          "rust_type": "bool",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "OpenDeviceRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "RecordedNoteDto",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "beat",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "note",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "velocity",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "duration",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "RecordingResultDto",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "note_count",
+          "rust_type": "usize",
+          "serde": []
+        },
+        {
+          "name": "cc_count",
+          "rust_type": "usize",
+          "serde": []
+        },
+        {
+          "name": "duration_beats",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "notes",
+          "rust_type": "Vec < RecordedNoteDto >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "RouteInfoDto",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "message",
+          "rust_type": "String",
+          "serde": []
+        },
+        {
+          "name": "keyboard_route_count",
+          "rust_type": "usize",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SendCcRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "channel",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "cc",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "value",
+          "rust_type": "u8",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "SendNoteRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "channel",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "note",
+          "rust_type": "u8",
+          "serde": []
+        },
+        {
+          "name": "velocity",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "StartRecordingRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "channel",
+          "rust_type": "Option < u8 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "StopRecordingRequest",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/routes/midi.rs",
+      "derives": [
+        "Deserialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "device_id",
+          "rust_type": "u32",
+          "serde": []
+        },
+        {
+          "name": "quantize",
+          "rust_type": "Option < f64 >",
+          "serde": []
+        }
+      ],
+      "variants": []
+    },
+    {
+      "name": "WebSocketEvent",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/websocket.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "event_type",
+          "rust_type": "String",
+          "serde": [
+            "serde (rename = \"type\")"
+          ]
+        },
+        {
+          "name": "timestamp",
+          "rust_type": "f64",
+          "serde": []
+        },
+        {
+          "name": "data",
+          "rust_type": "Option < serde_json :: Value >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    }
+  ]
+}

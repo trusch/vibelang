@@ -122,6 +122,12 @@
         "type": "float",
         "default": 1,
         "description": "Number of channels"
+      },
+      {
+        "name": "default",
+        "type": "signal",
+        "default": 0,
+        "description": "Initial local bus value, repeated or wrapped to numChannels"
       }
     ],
     "outputs": 1,
@@ -233,6 +239,8 @@
       "sound_in_ar",
       "sound_in_channel",
       "sound_in"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Sclang input helper; VibeLang provides manual lowering through sound_in_ar/sound_in_channel."
   }
 ]

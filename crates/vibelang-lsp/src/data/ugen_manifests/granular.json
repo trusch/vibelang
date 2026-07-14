@@ -62,6 +62,7 @@
       }
     ],
     "outputs": 2,
+    "channel_count_input": "numChannels",
     "category": "Granular",
     "functions": [
       "t_grains_ar"
@@ -136,6 +137,7 @@
       }
     ],
     "outputs": 2,
+    "channel_count_input": "numChannels",
     "category": "Granular",
     "functions": [
       "grain_buf_ar"
@@ -192,6 +194,7 @@
       }
     ],
     "outputs": 2,
+    "channel_count_input": "numChannels",
     "category": "Granular",
     "functions": [
       "grain_sin_ar"
@@ -260,6 +263,7 @@
       }
     ],
     "outputs": 2,
+    "channel_count_input": "numChannels",
     "category": "Granular",
     "functions": [
       "grain_fm_ar"
@@ -316,6 +320,7 @@
       }
     ],
     "outputs": 2,
+    "channel_count_input": "numChannels",
     "category": "Granular",
     "functions": [
       "grain_in_ar"

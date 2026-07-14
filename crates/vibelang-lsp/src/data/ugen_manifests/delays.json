@@ -384,5 +384,123 @@
       "allpass_c_ar",
       "allpass_c_kr"
     ]
+  },
+  {
+    "name": "DelTapWr",
+    "description": "Write to a buffer for use with DelTapRd. Returns the current write phase as its output, which is then passed to DelTapRd as the read reference.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to write signal into. Max delay time is based on buffer size"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to write into the buffer"
+      }
+    ],
+    "outputs": 1,
+    "category": "Delays",
+    "functions": [
+      "del_tap_wr_ar",
+      "del_tap_wr_kr"
+    ]
+  },
+  {
+    "name": "DelTapRd",
+    "description": "Tap a delay line written by DelTapWr. Multiple DelTapRd UGens can read from the same DelTapWr at independent delay times.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer where DelTapWr has written signal. Max delay time is based on buffer size"
+      },
+      {
+        "name": "phase",
+        "type": "signal",
+        "default": 0,
+        "description": "Current phase of the DelTapWr UGen (its output)"
+      },
+      {
+        "name": "delTime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "interp",
+        "type": "float",
+        "default": 1,
+        "description": "Interpolation type (1=none, 2=linear, 4=cubic)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Delays",
+    "functions": [
+      "del_tap_rd_ar",
+      "del_tap_rd_kr"
+    ]
+  },
+  {
+    "name": "GrainTap",
+    "description": "Granular delay tap. Reads grains from a buffer with independent control of grain duration, pitch ratio, dispersion, and overlap. Buffer size must be a power of two.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to read grains from (size must be a power of two)"
+      },
+      {
+        "name": "grainDur",
+        "type": "float",
+        "default": 0.2,
+        "description": "Grain duration in seconds"
+      },
+      {
+        "name": "pchRatio",
+        "type": "float",
+        "default": 1,
+        "description": "Pitch ratio (1.0 = original pitch)"
+      },
+      {
+        "name": "pchDispersion",
+        "type": "float",
+        "default": 0,
+        "description": "Random pitch dispersion around pchRatio"
+      },
+      {
+        "name": "timeDispersion",
+        "type": "float",
+        "default": 0,
+        "description": "Random time dispersion in seconds"
+      },
+      {
+        "name": "overlap",
+        "type": "float",
+        "default": 2,
+        "description": "Average grain overlap (density)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Delays",
+    "functions": [
+      "grain_tap_ar"
+    ]
   }
 ]

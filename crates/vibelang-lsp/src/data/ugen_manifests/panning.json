@@ -375,6 +375,167 @@
     "functions": [
       "splay_az_ar",
       "splay_az_kr"
+    ],
+    "pseudo": true
+  },
+  {
+    "name": "PanB",
+    "description": "Ambisonic B-format panner. Encodes a mono signal to 1st-order B-format. Output channels are in order W, X, Y, Z.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Azimuth in radians, -pi to +pi"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians, -0.5pi to +0.5pi"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Control rate level input"
+      }
+    ],
+    "outputs": 4,
+    "category": "Panning",
+    "functions": [
+      "pan_b_ar",
+      "pan_b_kr"
+    ]
+  },
+  {
+    "name": "PanB2",
+    "description": "2D Ambisonic B-format panner. Encodes a mono signal to 2-dimensional B-format. Outputs W, X, Y.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Position around the circle from -1 to +1 (-1=behind, -0.5=left, 0=forward, +0.5=right, +1=behind)"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Amplitude control"
+      }
+    ],
+    "outputs": 3,
+    "category": "Panning",
+    "functions": [
+      "pan_b2_ar",
+      "pan_b2_kr"
+    ]
+  },
+  {
+    "name": "BiPanB2",
+    "description": "2D Ambisonic B-format bi-directional panner. Encodes a two-channel signal to 2D B-format, placing channels at opposite poles of the soundfield. Outputs W, X, Y.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "inA",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal A"
+      },
+      {
+        "name": "inB",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal B"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Position around the circle from -1 to +1 (-1=behind, -0.5=left, 0=forward, +0.5=right, +1=behind)"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Amplitude control"
+      }
+    ],
+    "outputs": 3,
+    "category": "Panning",
+    "functions": [
+      "bi_pan_b2_ar",
+      "bi_pan_b2_kr"
+    ]
+  },
+  {
+    "name": "DecodeB2",
+    "description": "2D Ambisonic B-format decoder. Decodes a 2D B-format signal (W, X, Y) to N speakers arranged in a regular polygon. Outputs are in clockwise order.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "numChans",
+        "type": "float",
+        "default": 4,
+        "description": "Number of output speakers (typically 4 to 8). Fixed at SynthDef compile time."
+      },
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W signal"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X signal"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y signal"
+      },
+      {
+        "name": "orientation",
+        "type": "float",
+        "default": 0.5,
+        "description": "Speaker arrangement orientation (0=front is vertex of polygon, 0.5=front bisects a side)"
+      }
+    ],
+    "outputs": 2,
+    "category": "Panning",
+    "functions": [
+      "decode_b2_ar",
+      "decode_b2_kr"
     ]
   }
 ]

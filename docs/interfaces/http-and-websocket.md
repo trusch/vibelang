@@ -8,6 +8,8 @@ external security boundary.
 
 REST source: [`build_router`](../../crates/vibelang-http/src/lib.rs#L132-L300).
 WebSocket source: [`websocket.rs`](../../crates/vibelang-http/src/websocket.rs).
+The mechanically extracted method/path registrations and public Serde DTO
+inventory live in the [generated route/schema index](../reference/generated/http-routes.md).
 
 ## REST endpoint map
 
