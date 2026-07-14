@@ -36,6 +36,11 @@ pub mod extensions;
 pub use engine::ScriptEngine;
 pub use error::{Error, Result};
 
+#[cfg(feature = "api-manifest")]
+pub fn public_api_metadata_json() -> std::result::Result<String, String> {
+    ScriptEngine::public_api_metadata_json()
+}
+
 // Exit code handling for integration tests
 pub use api::assert::{get_exit_code, reset_exit_code};
 

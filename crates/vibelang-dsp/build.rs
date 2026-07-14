@@ -2,60 +2,16 @@
 //!
 //! Generates UGen wrapper functions from JSON manifests.
 
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize)]
-struct UGenManifest {
-    name: String,
-    description: String,
-    rates: Vec<String>,
-    inputs: Vec<UGenInput>,
-    outputs: u32,
-    category: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    functions: Option<Vec<String>>,
-    /// Server-side UGen class to emit, defaults to `name`. Used to expose
-    /// BinaryOpUGen / UnaryOpUGen variants under friendlier names (e.g. an
-    /// entry named "Hypot" emits `BinaryOpUGen` with `special_index = 23`).
-    #[serde(default)]
-    ugen_class: Option<String>,
-    /// Special index passed to the server (operator selector for
-    /// BinaryOpUGen / UnaryOpUGen). Defaults to 0.
-    #[serde(default)]
-    special_index: Option<i16>,
-    /// Public argument whose value is UGen shape metadata rather than a
-    /// runtime server input. The generated wrapper keeps this argument in the
-    /// Rhai signature, removes it from the encoded input list, and uses it for
-    /// both `num_outputs` and `special_index`.
-    #[serde(default)]
-    channel_count_input: Option<String>,
-    /// True when the manifest name is an sclang-side helper, alias, or wrapper
-    /// that must not be emitted as a literal server UGen name.
-    #[serde(default)]
-    pseudo: bool,
-    /// SuperCollider plugin package required for this literal server UGen.
-    #[serde(default)]
-    requires_plugin: Option<String>,
-    /// Rationale for entries kept as documentation/unavailable stubs.
-    #[serde(default)]
-    unavailable_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UGenInput {
-    name: String,
-    #[serde(rename = "type")]
-    ty: String,
-    #[serde(default)]
-    default: Option<serde_json::Value>,
-    description: String,
-}
+mod build_support;
+use build_support::{
+    has_array_overload, positional_arity_max, runtime_rate_rust, to_snake_case, UGenManifest,
+};
 
 // `demand` is the SuperCollider demand-rate (used by Dseq, Dser, Dwhite, …).
 // `builder` flags documentation-only fluent-API entries (e.g. `envelope`).
@@ -460,12 +416,7 @@ fn main() {
 
         // Generate one function for each rate
         for rate_str in rates {
-            let rate_enum = match rate_str.as_str() {
-                "ar" => "Rate::Audio",
-                "kr" => "Rate::Control",
-                "ir" => "Rate::Scalar",
-                _ => "Rate::Audio",
-            };
+            let rate_enum = runtime_rate_rust(rate_str);
 
             let func_name = format!("{}_{}", snake_name, rate_str);
 
@@ -717,7 +668,7 @@ fn main() {
             // falls back to a single `rhai::Array` parameter, validated and
             // unpacked inside the closure. See `kb/synthdef-arity-limits-plan.md`
             // §3.1.
-            let positional_max = inputs.len().min(20);
+            let positional_max = positional_arity_max(inputs.len());
             for arity in 0..=positional_max {
                 let mut closure_params = Vec::new();
                 let mut call_args = Vec::new();
@@ -770,7 +721,7 @@ fn main() {
                 }
             }
 
-            if inputs.len() > 20 {
+            if has_array_overload(inputs.len()) {
                 let arity = inputs.len();
                 writeln!(f, "    engine.register_raw_fn(").unwrap();
                 writeln!(f, "        \"{}\",", func_name).unwrap();
@@ -804,30 +755,6 @@ fn main() {
     }
 
     writeln!(f, "}}").unwrap();
-}
-
-fn to_snake_case(s: &str) -> String {
-    if s == "DC" {
-        return "dc".to_string();
-    }
-    let mut result = String::new();
-    let chars: Vec<char> = s.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                let prev = chars[i - 1];
-                let prev_lower = prev.is_lowercase();
-                let next_lower = chars.get(i + 1).map(|c| c.is_lowercase()).unwrap_or(false);
-                if (prev_lower || next_lower) && prev != '_' {
-                    result.push('_');
-                }
-            }
-            result.push(c.to_lowercase().next().unwrap());
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }
 
 fn pseudo_lowering_expr(func_name: &str, rate_str: &str) -> Option<&'static str> {

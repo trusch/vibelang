@@ -204,6 +204,17 @@ impl ScriptEngine {
         }
     }
 
+    /// Serialize the effective native registrations for the versioned public API manifest.
+    #[cfg(feature = "api-manifest")]
+    pub fn public_api_metadata_json() -> std::result::Result<String, String> {
+        let mut script_engine = Self::new();
+        script_engine.register_all_extensions();
+        script_engine
+            .engine
+            .gen_fn_metadata_to_json(false)
+            .map_err(|error| error.to_string())
+    }
+
     /// Add import paths for module resolution (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn add_import_path(&mut self, path: impl Into<PathBuf>) {
