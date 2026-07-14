@@ -1,9 +1,33 @@
 # VibeLang documentation
 
 This is the source-backed reference for the user-facing VibeLang language and
-tools. It describes what the current registration, dispatch, and protocol code
-actually exposes, including known no-ops and feature gates. VibeLang is alpha;
-when prose and source disagree, follow the source pointers on each page.
+tools. It describes what the registration, dispatch, and protocol code exposes,
+including known no-ops and feature gates. VibeLang is alpha; when prose and
+source disagree, follow the source pointers on each page.
+
+## Revision and verification scope
+
+The reference was authored and independently audited on 2026-07-14 against the
+clean source revision `98bed24`. Source links resolve in the checked-out tree.
+Unless an entry is explicitly marked **worktree-only**, its contract is the
+clean `98bed24` contract. The `--runtime-metrics` CLI option is the one documented
+worktree-only exception: it exists in a pre-existing uncommitted CLI change and
+is not implemented by `98bed24` or by this documentation update.
+
+The audited surface is the user-callable Rhai/DSP API, shipped standard library,
+CLI and startup profile, HTTP/WebSocket, WASM, LSP, VS Code, and Emacs. Rust
+embedding APIs are out of scope except for source pointers. The audit was
+static: it checked registration names, source signatures, generated inventories,
+local links, and source-line anchors, but did not compile feature combinations,
+regenerate wasm-bindgen/Clap artifacts, execute `.vibe` scripts, or probe an
+audio/MIDI backend.
+
+All 357 unique literal Rhai registration/property names found by the audit are
+represented. That is name-level coverage, not a generated proof of every
+overload's coercion, fallback, error, or panic behavior. Known boundaries are
+called out where verified; the [roadmap](roadmap/api-improvement-roadmap.md)
+makes a generated overload-boundary matrix a P0 requirement before the
+reference can claim semantic exhaustiveness.
 
 ## Choose the right surface
 

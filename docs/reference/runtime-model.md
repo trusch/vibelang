@@ -79,7 +79,7 @@ in the [roadmap](../roadmap/api-improvement-roadmap.md).
 
 ## Error and permissiveness model
 
-VibeLang currently mixes four failure styles:
+VibeLang currently mixes five failure styles:
 
 1. Rhai errors for invalid roots/scales, routing ports/rates/conflicts, builder
    port validation, alias conflicts, and deploy failures.
@@ -87,10 +87,27 @@ VibeLang currently mixes four failure styles:
 3. Warnings plus fallback for missing voices, unknown fade curves, malformed
    melody tokens, and incomplete voices.
 4. Silent no-op or ignored input for accepted but unimplemented fields.
+5. Panics where registered Rust wrappers unwrap conversion or graph errors.
 
-Each reference entry calls out the current choice. Do not assume a method that
+The hand-written entries call out verified high-impact choices, but they are not
+yet a generated per-overload boundary matrix. Do not assume a method that
 returns its receiver succeeded; Group output validation, for example, logs and
 returns the unchanged handle.
+
+Selected searchable boundary cases:
+
+| Call family | Current boundary behavior |
+|---|---|
+| `Melody.notes(Array)` | Integer notes cast to `u8` and wrap; unsupported values drop. `add_note` and `add_chord` instead clamp to 0..127. |
+| `Pattern.len` with `step`/`euclid` | Step text wins and recomputes loop length from four-beat bars, regardless of call order. |
+| `Fade.on(Dynamic)` / `curve(String)` | Unsupported targets silently preserve the Fade; unknown curves silently become linear; accepted aliases are listed on the runtime-object page. |
+| DSP counts | `detune_spread(1, ...)` produces NaN; nonpositive `dup` returns an empty Array; `in_ar`/`sound_in` cast counts before validation. |
+| Group stereo output | Only the left bus is range-checked, so `[15,16]` is accepted. |
+| Record group selection | `from_group` resolves immediately and silently retains the input path on resolution failure. |
+
+P0 requires generated fixtures for every overload recording accepted Dynamic
+types, casts, clamps, fallback/no-op/warning behavior, Rhai errors, and panic
+boundaries.
 
 ## Hot-reload relationships
 

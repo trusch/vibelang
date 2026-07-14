@@ -14,7 +14,10 @@ runtime changes; this document itself changes no behavior.
 | Similar units/indexing disagree | Voice MIDI channel is internal 0..15; MidiDevice/builders use 1..16; bars sometimes read signature and sometimes mean ×4 | Off-by-one and timing errors |
 | Error policies are mixed | Rhai errors, clamping, warnings/fallback, panicking unwraps, and silent no-ops coexist | Tooling cannot predict or explain failures |
 | Hand-maintained metadata forks | Website API cards contain fictional calls; VS Code/LSP static data omits most registrations and contains nonexistent names | Completion/docs can actively mislead |
-| Generated catalogues are incomplete | 1,199 registered UGen names come from 827 callable manifest classes; stdlib source has 890 DSP definition occurrences/887 names and 595 intended public imported functions, while shipped prose/web counts disagree | Users cannot reliably discover available sounds/functions |
+| Demand-rate registrations are wrong | All 25 `*_demand` names fall through to `Rate::Audio`; graph IR has no demand variant | A callable name can build a graph with the wrong calculation rate |
+| Generated catalogues lack enforceable contracts | 1,199 registered UGen names come from 827 callable manifest classes; stdlib has 890 DSP definition occurrences/887 names plus 595 intended-supported and 112 underscore import-callable functions, but no enforced export metadata | Users cannot distinguish supported public API from callable convention |
+| API artifacts are not clean-tree reproducible | `--runtime-metrics` exists only in the pre-existing dirty CLI tree, not clean revision `98bed24`; handwritten WASM/Clap/editor artifacts can drift | A docs commit can advertise a contract its source revision does not ship |
+| Runtime observation has no ownership/version contract | Evaluation creates isolated desired `ScriptState`; reconciliation and live runtime state occur afterward | `status(ref)` cannot truthfully promise a consistent live snapshot yet |
 | Wire schemas over-promise | HTTP deserializes many ignored fields; mutations often return stale snapshots; REST and WS shapes differ without a published contract | External clients report success without effect |
 | Protocol/security gaps are implicit | Open CORS/no auth/limits/origin check; fs sandbox traversal for nonexistent destinations; semantic-token legend mismatch | Unsafe exposure and broken highlighting |
 
@@ -28,9 +31,10 @@ Related sources: [Rhai registration root](../../crates/vibelang-rhai/src/api/mod
 
 ### 1. One declaration lifecycle
 
-All authoring factories should return a declaration builder. Builder methods
-are pure configuration and always return the builder. Exactly these terminals
-write desired state:
+All authoring factories should return a declaration builder owned by one
+evaluation. Builder methods are pure configuration and always return the
+builder. A Ref is a stable identity in desired state, not a borrowed live
+runtime object. Exactly these terminals write desired state:
 
 | Terminal | Unified meaning | Return |
 |---|---|---|
@@ -41,8 +45,10 @@ write desired state:
 | `.remove()` / `.stop()` | Explicit desired removal/playback stop on a Ref | Same Ref or Unit by one documented rule |
 
 Factories should not insert state. This includes Group, Voice, Sample, Buffer,
-and SFZ in the versioned target surface. `define_group(name, fn)` can remain
-sugar for `group(name).body(fn).apply()`.
+and SFZ in the versioned target surface. Avoid overloading current lookup-only
+`group(path)` with declaration behavior: use explicit `group_builder(name)` and
+`group_ref(path)` factories. `define_group(name, fn)` can remain versioned sugar
+for `group_builder(name).body(fn).apply()`.
 
 Snapshot references and live control should be separate names/types:
 
@@ -54,12 +60,30 @@ let lead = voice("lead")
 
 pattern("line").on(lead).step("x...x...").start();
 voice_ref("lead").mute();       // explicit lookup/live desired control
-status(lead).running             // explicit runtime observation
+let observed = status(lead);    // RuntimeObservation, never a builder property
+observed.reconciled_revision;
+observed.running;
 ```
 
-Builder properties report builder configuration only. `status(ref)` reports a
-versioned runtime snapshot and never reuses the same property name for both.
-No terminal may be an inert compatibility stub.
+Builder properties report builder configuration only. `status(ref)` reads an
+injected observation channel and returns at least `{identity,
+evaluation_revision, reconciled_revision, observed_at, stale, running, error}`.
+The engine must define whether a caller requests the latest available snapshot
+or waits for a minimum accepted revision; absence/staleness is explicit rather
+than silently falling back to desired state. No terminal may be an inert
+compatibility stub.
+
+Before implementation, the runtime/API owners must publish these state rules:
+
+- duplicate declarations in one evaluation either merge by a documented rule
+  or fail atomically; validation failure cannot partially mutate the snapshot;
+- `*Ref` values are invalid across engine instances and carry language/API
+  version plus stable identity, not a pointer to an audio object;
+- Sample/Buffer/SFZ resources define allocation owner, reuse key, reload
+  identity, replacement behavior, failed-load rollback, and release point;
+- Group/body contributions define source-order ownership and removal on reload;
+- reconciliation reports accepted/applied/failed revisions so observation and
+  wire clients share one consistency model.
 
 ### 2. Strict, named conversion and validation
 
@@ -107,7 +131,8 @@ since/deprecated/replacement, source/test anchors
 
 UGen entries extend this with class/rate/input/default/output/plugin data;
 stdlib entries with import path, definition kind, parameters, ports, duplicate
-name, and public function signatures. The Markdown reference, website,
+name, explicit export/support status, and both supported-public and
+import-callable function signatures. The Markdown reference, website,
 completion, LSP hover/signature help, VS Code data, and `llms.txt` consume the
 same manifest.
 
@@ -121,63 +146,104 @@ same manifest.
   200. Do not return a pre-reconciliation snapshot as if confirmed.
 - Publish `/v1` routes and negotiate WS `protocol_version`. REST DTO and WS
   snapshot differences remain explicit schemas, not accidental reuse.
+- Run old and new REST paths/WS protocol majors as a documented dual stack
+  during migration. Hello advertises a supported-major range and capabilities;
+  clients choose the highest overlap and fall back to the older supported major.
+  Refusal happens only when no major overlaps, never merely because versions
+  differ.
 - Add configurable auth, origin/CORS allowlists, body/rate limits, and secure
   loopback defaults before advertising remote control.
 
 ## P0 — make the current contract truthful and safe
 
-| Deliverable | Concrete outcome | Impact | Risk / dependency |
-|---|---|---|---|
-| Registration manifest v1 | Extract every current registered name/overload/property/cfg/lifecycle without changing behavior | Eliminates fictional/missing docs and completion entries | Requires registration macro/schema design; must snapshot current quirks |
-| Generated reference pipeline | Reproduce the 1,199 UGen names, 890 stdlib definitions, and 595 public imported functions; website/LSP/VS Code consume artifacts | Exhaustive discovery from one source | Rhai-aware stdlib parser or explicit metadata needed; regex is insufficient |
-| Mark or eliminate inert authoring calls | `Fade.apply`, Pattern `set_param`, Record `immediate`/stop/cancel/sample insertion either work or return explicit unsupported error | Ends false success in scripts | Runtime reconciliation/recording ownership decisions |
-| Reject inert HTTP fields | Handlers implement every accepted field or respond 422; publish current schemas/statuses | Reliable editor/external control | Client updates and compatibility warnings |
-| Protocol correctness | Align semantic-token legend; make push/pull diagnostics equivalent; fix stale CLI/editor invocations | Correct highlighting/diagnostics/startup | Coordinated LSP/VS Code/Emacs releases |
-| Security baseline | Fix fs sandbox creation traversal; API auth option, body/rate limits, configurable CORS/origin checks; warn on non-loopback | Safe-by-default exposure | Threat model, credential/config design, reverse-proxy compatibility |
-| Lifecycle warnings | In v1, emit once-per-source-location warnings for deferred terminals, no-ops, permissive fallback, and deprecated aliases | Immediate clarity without breakage | Needs source positions and warning deduplication |
+| ID / deliverable | Concrete outcome | Functional owner | Impact | Dependency / rollback |
+|---|---|---|---|---|
+| P0.1 Registration manifest v1 | Extract every current registered name/overload/property/cfg/lifecycle without changing behavior | Rhai API + tooling | Eliminates fictional/missing docs and completion entries | Snapshot quirks first; rollback keeps generated artifacts advisory |
+| P0.2 Demand-rate correctness | Either implement a real demand `Rate` and scsyndef encoding with golden tests, or unregister/quarantine all 25 `*_demand` functions | DSP/encoder | Prevents wrong-rate graphs | Depends on P0.1 inventory; safe rollback is quarantine, never audio-rate fallback |
+| P0.3 Clean-tree artifact reproducibility | In a clean checkout, regenerate Clap help, wasm-bindgen types, core/UGen/stdlib manifests, and editor tables with zero diff | Release engineering + docs/tooling | Makes a docs/source revision self-contained | `--runtime-metrics` cannot publish before its source; rollback removes worktree-only entries |
+| P0.4 Boundary/export manifests | Record every overload's accepted types/casts/clamps/fallback/error/panic and classify all 707 stdlib functions with explicit export/support metadata | Rhai/DSP + stdlib | Turns name coverage into semantic coverage | Requires parser/registration schema; rollback preserves the explicit 112-helper appendix |
+| P0.5 State ownership/version/lifetime ADR | Specify Builder vs Ref, atomic apply, observation revisions, duplicate declarations, Group contributions, and Sample/Buffer/SFZ allocation/release/reload rules | Runtime + Rhai API | Makes v2 implementable without false live-state claims | Architecture gate for P1 lifecycle and wire revisions; no runtime rollout before approval |
+| P0.6 Backend capability contract | Native/browser backends report available plugins, rates, channel limits, protocol majors, and feature flags with a versioned schema | Backend + WASM | Enables truthful availability before P1 tooling | Depends on manifest identifiers; rollback labels availability unknown rather than guessing |
+| P0.7 Mark or eliminate inert authoring calls | `Fade.apply`, Pattern `set_param`, Record `immediate`/stop/cancel/sample insertion either work or return explicit unsupported error | Rhai/runtime | Ends false success in scripts | Depends on P0.5 ownership decisions; retain effective v1 behavior only behind warnings |
+| P0.8 Reject inert HTTP fields | Handlers implement every accepted field or respond 422; publish current schemas/statuses | HTTP API | Reliable editor/external control | Client warnings and dual-stack plan required |
+| P0.9 Protocol correctness | Align semantic-token legend; make push/pull diagnostics equivalent; fix stale CLI/editor invocations | LSP + VS Code + Emacs | Correct highlighting/diagnostics/startup | Coordinated editor release; can disable faulty feature during rollback |
+| P0.10 Security baseline | Fix fs sandbox creation traversal; API auth option, body/rate limits, configurable CORS/origin checks; warn on non-loopback | HTTP/security | Safe-by-default exposure | Threat model, credential/config design, reverse-proxy compatibility |
+| P0.11 Lifecycle warnings | In v1, emit once-per-source-location warnings for deferred terminals, no-ops, permissive fallback, and deprecated aliases | Rhai/diagnostics | Immediate clarity without breakage | Needs source positions and warning deduplication |
 
-P0 acceptance should include CI snapshot tests that fail on an undocumented
-registration, stale generated file, fictional example call, route/schema drift,
-or availability mismatch.
+P0 exits only when CI reports zero undocumented registrations, zero stale
+generated artifacts from a clean checkout, 25/25 demand names either correctly
+encoded or absent/quarantined, 707/707 stdlib declarations classified, and an
+overload fixture for every manifest signature. Route/schema/availability drift
+and fictional example calls are build failures.
 
 ## P1 — introduce the unified versioned surface
 
-| Deliverable | Concrete outcome | Impact | Risk / dependency |
-|---|---|---|---|
-| Language API v2 lifecycle | Pure builders, typed `*Ref`, uniform apply/start/start_now/run/status contracts | Predictable composition and reload | Broad runtime/API changes; depends on P0 manifest and snapshot tests |
-| Strict validation/error catalogue | Stable error codes and consistent rejection at every Rhai/DSP boundary | Better diagnostics and tooling | Compatibility with permissive songs; remove boundary unwraps |
-| Time/channel/unit normalization | 1..16 MIDI, time-signature bars, unit-suffixed APIs | Removes off-by-one/timing bugs | Migration tooling required |
-| Routing v2 verbs | Explicit add/replace and SET/BEND names with declared rates/fan-in/out | Makes complex routing readable | Must preserve current graph/reconciliation capabilities |
-| Wire API v1 | Versioned OpenAPI, typed WS messages, revisions/operation IDs | Trustworthy external integrations | REST/WS/editor synchronized rollout |
-| Availability-aware tooling | Completion/docs hide or label target/feature/plugin-unavailable calls | Fewer runtime surprises | Build feature metadata and backend capability discovery |
+| ID / deliverable | Concrete outcome | Functional owner | Impact | Required gate |
+|---|---|---|---|---|
+| P1.1 Language API v2 lifecycle | Pure builders, typed/versioned `*Ref`, uniform apply/start/start_now/run/status contracts | Rhai + runtime | Predictable composition and reload | P0.1, P0.4, and approved P0.5 ADR |
+| P1.2 Strict validation/error catalogue | Stable error codes and consistent rejection at every Rhai/DSP boundary | Rhai + DSP | Better diagnostics and tooling | P0.4 fixtures; compatibility warnings for permissive songs |
+| P1.3 Time/channel/unit normalization | 1..16 MIDI, time-signature bars, unit-suffixed APIs | Rhai + MIDI/transport | Removes off-by-one/timing bugs | AST migration and versioned import semantics ready |
+| P1.4 Routing v2 verbs | Explicit add/replace and SET/BEND names with declared rates/fan-in/out | Routing/runtime | Makes complex routing readable | P0 manifest plus reconciliation golden tests |
+| P1.5 Wire API v1 | Versioned OpenAPI, typed WS messages, revisions/operation IDs, dual-stack negotiation | HTTP + editors | Trustworthy external integrations | P0.5 revision model and published transition/fallback tests |
+| P1.6 Availability-aware tooling | Completion/docs hide or label target/feature/plugin-unavailable calls | LSP/docs/editors | Fewer runtime surprises | P0.1 manifest and P0.6 capability negotiation |
 
 ## P2 — remove legacy forks and finish ecosystem convergence
 
-| Deliverable | Concrete outcome | Impact | Risk / dependency |
-|---|---|---|---|
-| Legacy removal | Remove v1 aliases/no-ops after the stated support window | Smaller, coherent API | Requires adoption telemetry/release discipline |
-| Namespace/import cleanup | Generated import maps, collision/duplicate diagnostics, explicit stdlib exports | Scalable stdlib growth | Module-system and duplicate-name policy |
-| Rich schema-driven tooling | Shared examples, diagnostics fixes, code actions, API explorer, offline searchable indexes | Documentation and editor parity | Depends on manifest stability |
-| Backend capability negotiation | Runtime/browser report plugins, rates, channels, and wire features | Portable scripts and actionable fallback | Backend protocol work |
-| Stable Rust embedding separation | Developer reference generated separately from `.vibe`/wire contracts | Stops docs.rs/source confusion | Crate API versioning and docs deployment |
+| ID / deliverable | Concrete outcome | Functional owner | Impact | Required gate |
+|---|---|---|---|---|
+| P2.1 Legacy removal | Remove v1 aliases/no-ops only after the stated time, cadence, and semver window | Release + API owners | Smaller, coherent API | Adoption telemetry, migration success metrics, rollback release retained |
+| P2.2 Namespace/import cleanup | Generated import maps, collision/duplicate diagnostics, explicit stdlib exports | Stdlib + language | Scalable stdlib growth | Versioned import semantics and export manifest |
+| P2.3 Rich schema-driven tooling | Shared examples, diagnostics fixes, code actions, API explorer, offline searchable indexes | Tooling/editors | Documentation and editor parity | Stable core/wire manifests |
+| P2.4 Stable Rust embedding separation | Developer reference generated separately from `.vibe`/wire contracts | Crate maintainers + docs | Stops docs.rs/source confusion | Crate API versioning and docs deployment |
+
+## Dependency graph and release gates
+
+```text
+P0.1 manifest ─┬─> P0.2 demand correctness
+               ├─> P0.3 clean artifacts
+               ├─> P0.4 boundary/export data ─> P1.1/P1.2
+               └─> P0.6 capabilities ─────────> P1.6
+P0.5 state/version/lifetime ADR ───────────────> P1.1/P1.5
+language-version + versioned imports ──────────> AST migration ─> P1.3
+wire schemas + dual-stack fallback ────────────> editor rollout ─> P2.1
+```
+
+| Gate | Acceptance metric | Rollback point |
+|---|---|---|
+| P0 contract freeze | Clean generation is deterministic; counts and every overload fixture match source; no known wrong-rate callable remains advertised as supported | Keep current v1 runtime, quarantine defective names, and publish generated artifacts as non-normative |
+| P1 opt-in pilot | Representative v1/v2 golden suites match intended ScriptState, messages, routes, resource lifetime, and timing; REST/WS clients pass old/new/fallback matrices | Leave v1 default, disable v2 directive/endpoint, retain old editor protocol |
+| v2 default | Migration check has no unclassified rewrite, capability fallback is observable, and release telemetry shows agreed error/regression thresholds | Flip default back to v1 without changing file meaning; keep v2 explicit |
+| P2 removal | Support window elapsed, next semver-major release approved, migration adoption target met, and previous dual-stack release remains supported | Withdraw removal release or restore forwarding aliases from the last supported branch |
 
 ## Compatibility and migration strategy
 
 1. Freeze the current behavior as language API v1 and protocol v1 fixtures,
    including documented quirks. Do not silently reinterpret old scripts.
-2. Add a pre-evaluation script directive such as `// vibe-api: 2` within the
-   same early-header scan used by `vibe-profile`, plus CLI
-   `--language-version 2`. Absence means v1 during the transition.
+2. Make language version an explicit `ScriptEngine` compile/evaluate input, for
+   example `EvaluationOptions { language_version }`. A `// vibe-api: 2`
+   directive and CLI `--language-version 2` are adapters to that input, not a
+   CLI-only semantic switch. CLI run/render, HTTP `/eval`, WASM `execute`, LSP
+   validation, imports, caches, and editor eval must pass the same version;
+   absence means v1 during transition.
 3. Generate a deprecation/alias table from the manifest. Warnings include the
    replacement and exact source span and are deduplicated per reload.
-4. Ship `vibe migrate --check FILE` and `vibe migrate FILE` using manifest
-   rewrites for renamed methods, channel conversion, time-unit names, and
-   terminal insertion. Never rewrite ambiguous lifecycle cases automatically.
-5. Keep effective v1 aliases for at least two minor release trains after v2 is
-   default. An alias must forward to working behavior; no silent stubs.
-6. Version REST paths and WS hello/capabilities. Editors negotiate and refuse a
-   server whose major protocol they cannot handle.
-7. Publish a generated compatibility report per release: added, deprecated,
+4. Define versioned import semantics before migration tooling: modules either
+   declare a version or inherit the importer, cross-version imports have an
+   explicit allow/error/adapter rule, and AST/module caches key on language
+   version. The same module cannot silently mean different things by embedding.
+5. Ship `vibe migrate --check FILE` and `vibe migrate FILE` on a Rhai-aware AST,
+   not manifest string replacement. It may rewrite declared-safe method names,
+   channel/unit conversions, imports, and terminals while preserving formatting;
+   ambiguous lifecycle/resource cases are diagnostics requiring manual action.
+6. Keep effective v1 aliases for at least six months **and** two published minor
+   releases after v2 becomes default, whichever is later. Removal occurs only
+   in the next semver-major release. An alias must forward to working behavior;
+   no silent stubs.
+7. Version REST paths and WS hello/capabilities. During the same support window,
+   servers expose old and new REST paths and WS majors; editors select the
+   highest mutually supported major and fall back to the old one. Refuse only
+   when there is no overlap, with an actionable upgrade/downgrade message.
+8. Publish a generated compatibility report per release: added, deprecated,
    removed, behavior-changed, availability-changed, and schema-changed entries.
 
 Main migration risk is timing/audio behavior, not syntax. Golden tests must
@@ -187,19 +253,32 @@ event timing for representative v1/v2 scripts.
 ## Publication and generation order
 
 1. Publish this lifecycle/availability model and the generated current indexes.
-2. Emit and validate the core Rhai registration manifest; switch Markdown,
-   website, LSP, and VS Code core metadata to it.
-3. Add routing/state-sync matrices and runtime object pages from that manifest.
-4. Generate DSP builder reference and UGen catalogue from the same build rules
+2. Fix or quarantine demand-rate registrations and establish clean-checkout
+   artifact generation as a release gate.
+3. Emit and validate the core Rhai registration and overload-boundary manifest;
+   switch Markdown, website, LSP, and VS Code core metadata to it.
+4. Approve the Builder/Ref, observation revision, resource lifetime, duplicate,
+   and atomic-apply architecture contract.
+5. Add routing/state-sync matrices and runtime object pages from that manifest.
+6. Generate DSP builder reference and UGen catalogue from the same build rules
    as [`build.rs`](../../crates/vibelang-dsp/build.rs#L432-L806).
-5. Generate REST OpenAPI and typed WS reference from router/DTO/event types.
-6. Generate the stdlib definition/function catalogue with a real Rhai parser or
-   explicit export metadata, preserving module paths and duplicate names.
-7. Generate CLI pages from Clap help snapshots, WASM types from wasm-bindgen,
+7. Generate the stdlib definition/function catalogue with a real Rhai parser or
+   explicit export metadata, preserving module paths, callable internals, and
+   duplicate names.
+8. Publish backend capability schemas, then make completion/reference output
+   availability-aware.
+9. Generate REST OpenAPI and typed WS reference from router/DTO/event types;
+   publish and test the dual-stack transition.
+10. Generate CLI pages from Clap help snapshots, WASM types from wasm-bindgen,
    and editor command/setting/key tables from package/Elisp declarations.
-8. Only then make API v2 default and begin the legacy-removal clock.
+11. Thread language version through every embedding, define versioned imports,
+    and ship AST-aware migration before enabling the v2 opt-in pilot.
+12. Only after pilot exit metrics pass make API v2 default and begin the
+    time/cadence/semver legacy-removal clock.
 
 The checked-in [UGen](../reference/generated/ugens.md) and
-[stdlib](../reference/generated/stdlib.md) indexes provide exhaustive discovery
-today. Until the shared manifest exists, their counts and source linkage should
-be verified in CI whenever manifests or stdlib `.vibe` files change.
+[stdlib](../reference/generated/stdlib.md) indexes provide exhaustive
+source-level name discovery today, including the demand quarantine and callable
+underscore appendix. Until the shared manifest exists, their counts, support
+classification, and source linkage should be verified in CI whenever manifests
+or stdlib `.vibe` files change.

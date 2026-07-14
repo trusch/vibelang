@@ -112,46 +112,115 @@ the package [`README`](../../emacs/README.md).
 
 ### User options
 
-| Area | Exact option/default |
-|---|---|
-| Connection/runtime | `vibelang-ws-host="127.0.0.1"`; `vibelang-ws-port=1606`; `vibelang-auto-connect='if-running`; `vibelang-executable="vibe"`; `vibelang-runtime-args='("run")`; `vibelang-auto-reload-on-save=nil` |
-| UI | `vibelang-visualization-enabled=t`; `vibelang-enable-lsp=t`; `vibelang-enable-header-line=t`; `vibelang-sidebar-on-connect=nil`; `vibelang-eval-flash-duration=0.15`; `vibelang-indent-offset=2` |
-| HTTP/WS | `vibelang-api-host=nil`; `vibelang-api-port=nil`; `vibelang-http-timeout=2.0`; `vibelang-eval-save-before-run=t`; `vibelang-ws-stale-threshold=2.5`; monitor 0.5; reconnect delay 1.0; max reconnect attempts 10; resync throttle 1.5 |
-| Logs | `vibelang-cockpit-log-limit=20`; `vibelang-command-preview-limit=240` |
-| Sidebar | width 40; position `left`; meter width 10; show meters true; auto-inspect point true |
-| LSP | `vibelang-lsp-server-command='("vibelang" "lsp")`; `vibelang-lsp-use-eglot=t` |
+Static extraction finds 31 `defcustom` declarations. Every exact option and
+literal default is listed here; `nil` API host/port inherit the WebSocket value.
+
+| Area | Exact option | Default |
+|---|---|---|
+| Connection | `vibelang-ws-host` | `"127.0.0.1"` |
+| Connection | `vibelang-ws-port` | `1606` |
+| Connection | `vibelang-auto-connect` | `'if-running` |
+| Runtime | `vibelang-executable` | `"vibe"` |
+| Runtime | `vibelang-runtime-args` | `'("run")` |
+| Runtime | `vibelang-auto-reload-on-save` | `nil` |
+| Runtime | `vibelang-tap-tempo-timeout` | `3.0` seconds |
+| UI | `vibelang-visualization-enabled` | `t` |
+| UI | `vibelang-enable-lsp` | `t` |
+| UI | `vibelang-enable-header-line` | `t` |
+| UI | `vibelang-sidebar-on-connect` | `nil` |
+| UI | `vibelang-eval-flash-duration` | `0.15` seconds |
+| UI | `vibelang-indent-offset` | `2` |
+| HTTP | `vibelang-api-host` | `nil` |
+| HTTP | `vibelang-api-port` | `nil` |
+| HTTP | `vibelang-http-timeout` | `2.0` seconds |
+| HTTP | `vibelang-eval-save-before-run` | `t` |
+| WebSocket | `vibelang-ws-stale-threshold` | `2.5` seconds |
+| WebSocket | `vibelang-ws-monitor-interval` | `0.5` seconds |
+| WebSocket | `vibelang-ws-reconnect-delay` | `1.0` second |
+| WebSocket | `vibelang-ws-max-reconnect-attempts` | `10` |
+| WebSocket | `vibelang-ws-resync-throttle` | `1.5` seconds |
+| Logs | `vibelang-cockpit-log-limit` | `20` |
+| Logs | `vibelang-command-preview-limit` | `240` |
+| Sidebar | `vibelang-sidebar-width` | `40` |
+| Sidebar | `vibelang-sidebar-position` | `'left` |
+| Sidebar | `vibelang-sidebar-meter-width` | `10` |
+| Sidebar | `vibelang-sidebar-show-meters` | `t` |
+| Sidebar | `vibelang-sidebar-auto-inspect-point` | `t` |
+| LSP | `vibelang-lsp-server-command` | `'("vibelang" "lsp")` |
+| LSP | `vibelang-lsp-use-eglot` | `t` |
 
 The default LSP executable is wrong: the actual command is `vibe lsp`, not
 `vibelang lsp`.
 
-### `vibelang-mode` keymap
+### Interactive commands and default keys
 
-| Keys | Command |
+Static extraction finds 56 public `vibelang-*` defuns containing an interactive
+form. “Unbound” means no key in the checked-in VibeLang, cockpit, or sidebar
+maps; the command remains available through `M-x`.
+
+| Exact command | Default key(s) / map |
 |---|---|
-| `C-c C-c`, `C-c C-d` | `vibelang-connect`, `vibelang-disconnect` |
-| `C-c r s`, `C-c r k`, `C-c r r`; `C-c C-k` | start, stop, restart runtime; stop alias binding |
-| `C-c C-s`, `C-c C-x` | transport start/stop |
-| `C-c C-t`, `C-c +`, `C-c -`, `C-c C-q` | tap, nudge up/down, set BPM |
-| `C-c C-v`, `C-c C-r` | toggle visualization, reload script |
-| `C-c C-e`, `C-c e b`, `C-c e r`, `C-c e l`, `C-c e p` | eval DWIM, buffer, region, line, prompt |
-| `C-c .`, `C-c C-.` | cockpit, transient menu |
-| `C-c C-b`, `C-c b o`, `C-c b i`, `C-c b r` | sidebar toggle/open/focus/resync |
-| `M-n`, `M-p`, `C-M-h` | next/previous/mark entity |
-| `C-c n r`, `C-c n c`, `C-c n .` | rename, clone, current entity |
-| `C-c C-h`, `C-c h t` | help, toggle header |
-| `C-c m`, `C-c s`, `C-c C-i` | mute, solo, describe entity |
-| `C-c C-p`, `C-c P` | edit/tweak parameter |
-| `C-c C-l`, `C-c l r` | enable/restart LSP |
-| `C-c C-?` | WebSocket diagnose |
+| `vibelang-indent-line` | Mode indentation command; no explicit key |
+| `vibelang-lsp-enable` | `C-c C-l` |
+| `vibelang-lsp-disable` | Unbound |
+| `vibelang-lsp-restart` | `C-c l r` |
+| `vibelang-current-entity` | `C-c n .` |
+| `vibelang-beginning-of-entity` | Unbound |
+| `vibelang-end-of-entity` | Unbound |
+| `vibelang-forward-entity` | `M-n` |
+| `vibelang-backward-entity` | `M-p` |
+| `vibelang-mark-entity` | `C-M-h` |
+| `vibelang-rename-entity-definition` | `C-c n r` |
+| `vibelang-clone-entity` | `C-c n c` |
+| `vibelang-connect` | `C-c C-c`; cockpit `c` |
+| `vibelang-disconnect` | `C-c C-d`; cockpit `d` |
+| `vibelang-start-runtime` | `C-c r s`; cockpit `s` |
+| `vibelang-stop-runtime` | `C-c C-k`, `C-c r k`; cockpit `k` |
+| `vibelang-restart-runtime` | `C-c r r`; cockpit `R` |
+| `vibelang-eval-dwim` | `C-c C-e`; cockpit `e` |
+| `vibelang-eval-region` | `C-c e r` |
+| `vibelang-eval-buffer` | `C-c e b` |
+| `vibelang-eval-line` | `C-c e l` |
+| `vibelang-eval-prompt` | `C-c e p` |
+| `vibelang-transport-start` | `C-c C-s`; cockpit `p` |
+| `vibelang-transport-stop` | `C-c C-x`; cockpit `x` |
+| `vibelang-bpm-nudge-up` | `C-c +` |
+| `vibelang-bpm-nudge-down` | `C-c -` |
+| `vibelang-set-bpm` | `C-c C-q` |
+| `vibelang-tap-tempo` | `C-c C-t` |
+| `vibelang-toggle-visualization` | `C-c C-v` |
+| `vibelang-reload-script` | `C-c C-r`; cockpit `r` |
+| `vibelang-toggle-header-line` | `C-c h t` |
+| `vibelang-cockpit-open` | `C-c .` |
+| `vibelang-cockpit-refresh` | Cockpit `g` |
+| `vibelang-tweak-param-at-point` | `C-c P` |
+| `vibelang-edit-param-at-point` | `C-c C-p` |
+| `vibelang-mute-at-point` | `C-c m` |
+| `vibelang-solo-at-point` | `C-c s` |
+| `vibelang-describe-entity` | `C-c C-i` |
+| `vibelang-help` | `C-c C-h` |
+| `vibelang-toggle-auto-reload` | Unbound |
+| `vibelang-sidebar-open` | `C-c b o` |
+| `vibelang-sidebar-close` | Unbound |
+| `vibelang-sidebar-toggle` | `C-c C-b`; cockpit `b` |
+| `vibelang-sidebar-quit` | Sidebar `q` |
+| `vibelang-sidebar-refresh` | Sidebar `g` |
+| `vibelang-sidebar-focus-current-entity` | `C-c b i`; sidebar `i` |
+| `vibelang-sidebar-request-resync` | `C-c b r`; sidebar `r` |
+| `vibelang-sidebar-transport-toggle` | Sidebar `SPC` |
+| `vibelang-sidebar-toggle-expand` | Sidebar `TAB` |
+| `vibelang-sidebar-action` | Sidebar `RET` |
+| `vibelang-sidebar-toggle-mute` | Sidebar `m` |
+| `vibelang-sidebar-toggle-solo` | Sidebar `s` |
+| `vibelang-sidebar-play-stop` | Sidebar `p` |
+| `vibelang-ws-disconnect` | Unbound |
+| `vibelang-ws-request-resync` | Unbound |
+| `vibelang-ws-diagnose` | `C-c C-?`; cockpit `?` |
 
-The interactive surface also includes LSP disable, auto-reload toggle,
-cockpit refresh, sidebar close/toggle, runtime-running query, and entity
-beginning/end commands even where no primary key is assigned.
-
-### Sidebar keymap
-
-`RET` action, `TAB` expand, `g` refresh, `i` focus current entity, `r` resync,
-`q` quit, `m` mute, `s` solo, `p` play/stop entity, and `SPC` transport toggle.
+`C-c C-.` invokes the separately macro-defined transient command
+`vibelang-menu`. The four interactive mode commands are `vibelang-mode`,
+`vibelang-cockpit-mode`, `vibelang-sidebar-mode`, and
+`vibelang-visualization-mode`; they are not part of the 56 `defun` count.
 
 Emacs uses the REST API for commands/eval and the WebSocket snapshot/events for
 visualization, staleness detection, and resynchronization. `/eval` inherits the

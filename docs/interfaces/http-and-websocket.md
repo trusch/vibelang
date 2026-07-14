@@ -21,7 +21,7 @@ WebSocket source: [`websocket.rs`](../../crates/vibelang-http/src/websocket.rs).
 | Sequences | `GET/POST /sequences`; `GET/PATCH/DELETE /sequences/{id}`; `POST /sequences/{id}/start`; `/stop`; `/pause`; `/resume` |
 | Effects | `GET /effects`; `GET/PATCH/DELETE /effects/{id}`; `PUT /effects/{id}/params/{param}` |
 | Samples | `GET/POST /samples`; `GET/DELETE /samples/{id}` |
-| Synthdefs | `GET /synthdefs`; `GET /synthdefs/{id}` |
+| Synthdefs | `GET /synthdefs`; `GET /synthdefs/{name}` |
 | Evaluation | `POST /eval` |
 | Live | `GET /live`; `/live/transport`; `/live/fades`; `/live/meters`; `GET /fades` aliases live fades |
 | Fades | `POST/DELETE /fades`; `POST /fades/voice/{name}`; `/group/{path}`; `/effect/{id}`; `/pattern/{name}`; `/melody/{name}` |

@@ -28,7 +28,7 @@ A lookup miss does not error: it returns a warning sentinel with ID
 | `route_to(voice: Voice)`; `route_to(name: String)` | MidiDevice; stores simple route |
 | `route_to_channel(channel: Int, voice: Voice)` | MidiDevice; channel route |
 | `route_cc(cc: Int, voice: Voice, param: String, min: Float, max: Float)` | MidiDevice; deprecated |
-| `route_cc_to_group(cc: Int, group: GroupHandle, param: String, min: Float, max: Float)` | MidiDevice; deprecated |
+| `route_cc_to_group(cc: Int, group_path: String, param: String, min: Float, max: Float)` | MidiDevice; deprecated; the String is converted directly to a group ID |
 | `open_input()`; `open_output()` | MidiDevice; deprecated, only mark desired state |
 
 Voice also has feature-gated `on(device)`, `channel(Int)`, and

@@ -1,8 +1,8 @@
 # Generated standard-library index
 
-> Generated mechanically from literal DSP definitions and Rhai function declarations under `crates/vibelang-std/stdlib`. Do not hand-edit individual entries.
+> Inventory generated mechanically from literal DSP definitions and Rhai function declarations under `crates/vibelang-std/stdlib`. The supported-public distinction is a documented convention until explicit export metadata exists.
 
-The shipped tree contains **829 `.vibe` files**, **890 DSP definition occurrences / 887 unique names**, and **595 intended public function declarations / 594 unique names**. Functions beginning `_` are treated as module implementation details and excluded.
+The shipped tree contains **829 `.vibe` files**, **890 DSP definition occurrences / 887 unique names**, and **707 function declarations**. Of those functions, **595 declarations / 594 unique names** are intended-supported public API and **112 underscore-prefixed declarations** are implementation-convention helpers. Rhai does not enforce that convention: the source contains no `private fn`, so an underscore helper remains callable after importing its module. Both sets are indexed below.
 
 ## Import and contract model
 
@@ -1748,10 +1748,47 @@ DSP duplicates: `lfo_random` (2 definitions), `lfo_saw` (2 definitions), `lfo_si
 | `voice_lead_progression(progression)` | [theory/voice_leading.vibe:76](../../../crates/vibelang-std/stdlib/theory/voice_leading.vibe#L76) |
 | `voice_lead_with_common_tones(chord1, chord2)` | [theory/voice_leading.vibe:133](../../../crates/vibelang-std/stdlib/theory/voice_leading.vibe#L133) |
 
-## What is not public
+## Import-callable implementation helpers
 
-The additional function declarations beginning `_` are module helpers, and import-only index files do not create DSP names themselves. Rust library exports in `vibelang-std` are embedding/extraction infrastructure, not Rhai globals. The source contains three duplicate DSP names and one duplicate public function name; consumers should not infer global uniqueness across independently imported modules.
+The following 112 declarations are unsupported implementation details by naming
+convention, not by language enforcement. Importing the containing module makes
+them callable today. They may change without the compatibility guarantees of
+the intended-supported table above; do not treat the leading underscore as an
+access-control boundary.
+
+| Import module | Exact import-callable signatures |
+|---|---|
+| [`stdlib/instruments/eurorack/erica_black_vco2.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/erica_black_vco2.vibe) | `_erica_black_vco2_fold(x)` |
+| [`stdlib/instruments/eurorack/erica_vc_eg.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/erica_vc_eg.vibe) | `_erica_vc_eg_gate(x)`<br>`_erica_vc_eg_stage(base, cv, amt)`<br>`_erica_vc_eg_level(base, cv, amt)`<br>`_erica_vc_eg_rise(pos)` |
+| [`stdlib/instruments/eurorack/erica_wavetable_vco.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/erica_wavetable_vco.vibe) | `_erica_wt_sub_shape(freq, shape)`<br>`_erica_wt_bank_cell(freq, bank, wave)` |
+| [`stdlib/instruments/eurorack/frames.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/frames.vibe) | `_frames_mask(value, target)`<br>`_frames_select8(index, kf1, kf2, kf3, kf4, kf5, kf6, kf7, kf8)`<br>`_frames_ease(frac, easing)`<br>`_frames_interp(pos, easing, kf1, kf2, kf3, kf4, kf5, kf6, kf7, kf8)` |
+| [`stdlib/instruments/eurorack/quadrax.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/quadrax.vibe) | `_quadrax_gate(x)`<br>`_quadrax_mode_weight(mode, target)`<br>`_quadrax_shape(pos, curve_exp)`<br>`_quadrax_ad_shape(phase, rise_frac, curve_exp)`<br>`_quadrax_channel(trig_param, rise_param, fall_param, shape_param, mode_param, level_param)` |
+| [`stdlib/instruments/eurorack/stages.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/stages.vibe) | `_stages_gate(x)`<br>`_stages_mask(value, target)`<br>`_stages_curve(phase, shape)`<br>`_stages_segment_value(kind_raw, loop_raw, primary_raw, secondary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig, scale_raw)`<br>`_stages_segment_eor(kind_raw, loop_raw, primary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig)` |
+| [`stdlib/instruments/eurorack/tetrapad.vibe`](../../../crates/vibelang-std/stdlib/instruments/eurorack/tetrapad.vibe) | `_tetrapad_mask(value, target)`<br>`_tetrapad_gate(x, threshold)`<br>`_tetrapad_scale_bit(scale, degree)`<br>`_tetrapad_quantize(semitone, scale)`<br>`_tetrapad_chord_interval(chord_mode, pad_index, voicing)`<br>`_tetrapad_pad(pressure_raw, position_raw, encoder_raw, mode_raw, slew_raw, voltage_raw, threshold_raw, pad_index, chord_mode_raw, keyboard_scale_raw)` |
+| [`stdlib/instruments/spectral/spectraphon.vibe`](../../../crates/vibelang-std/stdlib/instruments/spectral/spectraphon.vibe) | `_spectraphon_write_mag(k, chain, f0_analyze, focus, mag_buf, active)`<br>`_spectraphon_mag_norm(mag_buf)` |
+| [`stdlib/processors/delays/dld.vibe`](../../../crates/vibelang-std/stdlib/processors/delays/dld.vibe) | `_dld_gate(x)`<br>`_dld_time_multiplier(index)`<br>`_dld_feedback_path(tap, feedback)` |
+| [`stdlib/processors/delays/rainmaker.vibe`](../../../crates/vibelang-std/stdlib/processors/delays/rainmaker.vibe) | `_rainmaker_filter(sig, cutoff, q, filter_type)`<br>`_rainmaker_tap(src, base_time, grid, tap_index, level, pan, cutoff, q, filter_type, pitch, detune, mute, reverse)`<br>`_rainmaker_comb_weight(taps, threshold)` |
+| [`stdlib/processors/distortion/ufold.vibe`](../../../crates/vibelang-std/stdlib/processors/distortion/ufold.vibe) | `_ufold_stage(x)` |
+| [`stdlib/processors/filters/smr8.vibe`](../../../crates/vibelang-std/stdlib/processors/filters/smr8.vibe) | `_smr8_wrap_index(idx, len)`<br>`_smr8_degree(idx, scale)`<br>`_smr8_freq(root, scale, rotate, spread, band_index, lock, transpose, fine, lag_t)`<br>`_smr8_band(src, freq, q, two_pass, level)` |
+| [`stdlib/processors/fx/erica_black_hole_dsp.vibe`](../../../crates/vibelang-std/stdlib/processors/fx/erica_black_hole_dsp.vibe) | `_erica_bh_cv_weight(assign, target)`<br>`_erica_bh_soft(sig, drive)` |
+| [`stdlib/processors/mixers/erica_black_output.vibe`](../../../crates/vibelang-std/stdlib/processors/mixers/erica_black_output.vibe) | `_erica_black_output_soft(sig, limit_on)` |
+| [`stdlib/processors/mixers/erica_quad_vca2.vibe`](../../../crates/vibelang-std/stdlib/processors/mixers/erica_quad_vca2.vibe) | `_erica_quad_vca2_gain(cv, bias, level, curve)` |
+| [`stdlib/theory/chords.vibe`](../../../crates/vibelang-std/stdlib/theory/chords.vibe) | `_major_triad_intervals()`<br>`_minor_triad_intervals()`<br>`_diminished_triad_intervals()`<br>`_augmented_triad_intervals()`<br>`_sus2_intervals()`<br>`_sus4_intervals()`<br>`_major7_intervals()`<br>`_minor7_intervals()`<br>`_dominant7_intervals()`<br>`_half_diminished7_intervals()`<br>`_diminished7_intervals()`<br>`_minor_major7_intervals()`<br>`_augmented_major7_intervals()`<br>`_major9_intervals()`<br>`_minor9_intervals()`<br>`_dominant9_intervals()`<br>`_major11_intervals()`<br>`_minor11_intervals()`<br>`_dominant11_intervals()`<br>`_major13_intervals()`<br>`_minor13_intervals()`<br>`_dominant13_intervals()`<br>`_dom7b9_intervals()`<br>`_dom7sharp9_intervals()`<br>`_dom7b5_intervals()`<br>`_dom7sharp5_intervals()`<br>`_power_chord_intervals()`<br>`_power_chord_octave_intervals()`<br>`_generate_chord(root, intervals)`<br>`_generate_chord_ex(root, intervals, octave)`<br>`_sort_notes_by_pitch(notes)` |
+| [`stdlib/theory/harmony.vibe`](../../../crates/vibelang-std/stdlib/theory/harmony.vibe) | `_sort_intervals(intervals)`<br>`_intervals_to_string(intervals)` |
+| [`stdlib/theory/rhythm.vibe`](../../../crates/vibelang-std/stdlib/theory/rhythm.vibe) | `_lcm(a, b)`<br>`_gcd(a, b)` |
+| [`stdlib/theory/scales.vibe`](../../../crates/vibelang-std/stdlib/theory/scales.vibe) | `_major_intervals()`<br>`_dorian_intervals()`<br>`_phrygian_intervals()`<br>`_lydian_intervals()`<br>`_mixolydian_intervals()`<br>`_aeolian_intervals()`<br>`_locrian_intervals()`<br>`_harmonic_minor_intervals()`<br>`_melodic_minor_intervals()`<br>`_major_pentatonic_intervals()`<br>`_minor_pentatonic_intervals()`<br>`_blues_major_intervals()`<br>`_blues_minor_intervals()`<br>`_whole_tone_intervals()`<br>`_diminished_intervals()`<br>`_diminished_whole_half_intervals()`<br>`_chromatic_intervals()`<br>`_harmonic_major_intervals()`<br>`_double_harmonic_intervals()`<br>`_phrygian_dominant_intervals()`<br>`_hungarian_minor_intervals()`<br>`_neapolitan_major_intervals()`<br>`_neapolitan_minor_intervals()`<br>`_japanese_intervals()`<br>`_hirajoshi_intervals()`<br>`_pelog_intervals()`<br>`_arabic_intervals()`<br>`_generate_scale(root, intervals)`<br>`_generate_scale_ex(root, intervals, num_notes, start_octave)` |
+| [`stdlib/theory/voice_leading.vibe`](../../../crates/vibelang-std/stdlib/theory/voice_leading.vibe) | `_total_voice_distance(chord1, chord2)`<br>`_contains_pitch_class(notes, pitch_class)`<br>`_find_closest_unused(target, chord, used)`<br>`_fix_range_violations(chord, ranges)` |
+
+Import-only index files do not create DSP names themselves. Rust library
+exports in `vibelang-std` are embedding/extraction infrastructure, not Rhai
+globals. The source contains three duplicate DSP names and one duplicate
+intended-supported function name; consumers should not infer global uniqueness
+across independently imported modules.
 
 ## Regeneration strategy
 
-The checked-in tables provide exhaustive name/signature discovery today. The target pipeline should parse Rhai syntax (or require explicit export metadata), preserve module path and duplicate definitions, extract typed DSP builder metadata, and fail CI when the 829/890/595 inventories or this artifact drift. See the [API roadmap](../../roadmap/api-improvement-roadmap.md#publication-and-generation-order).
+The checked-in tables provide exhaustive source-level name/signature discovery
+today, while supported-public status remains a convention. The target pipeline
+should parse Rhai syntax (or require explicit export metadata), preserve module
+path and duplicate definitions, extract typed DSP builder metadata, and fail CI
+when the 829/890/707 inventories or this artifact drift. See the [API roadmap](../../roadmap/api-improvement-roadmap.md#publication-and-generation-order).

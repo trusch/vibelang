@@ -1,8 +1,10 @@
 # Runtime objects and routing
 
-This page lists every registered non-DSP core type, constructor, method,
-overload, alias, and property. “Chain” means the receiver type is returned.
-Review [state lifecycle](runtime-model.md) before relying on fluent syntax.
+This page catalogues the registered non-DSP core types, constructors, methods,
+overloads, aliases, and properties. The static audit established name-level
+coverage; it did not dynamically prove every Dynamic coercion or wrapper error
+path. “Chain” means the receiver type is returned. Review
+[state lifecycle](runtime-model.md) before relying on fluent syntax.
 
 ## GroupHandle
 
@@ -34,13 +36,15 @@ Closure errors from `define_group` are logged but do not fail the call.
 | `body(body: FnPtr)` | GroupHandle | Evaluates an additional ordered body contribution; closure errors only log |
 | `alias(name: String)` | GroupHandle or error | Adds alias; duplicate/conflicting aliases error |
 | `output(bus: Int)` | Chain | Mono hardware bus 0..15 |
-| `output(buses: Array<Int>)` | Chain | One mono bus, or two consecutive stereo buses, all 0..15 |
+| `output(buses: Array<Int>)` | Chain | One mono bus 0..15, or two consecutive nonnegative stereo buses whose **left** bus is 0..15; the right bus is not separately bounded, so `[15,16]` is accepted |
 | `remove_effect(id: String)` | Chain | Removes from group order and global effect map |
 | `clear_effects()` | Chain | Removes every ordered effect and its global map entry |
 
-Invalid output arrays, nonconsecutive stereo pairs, or out-of-range buses log
-and return the unchanged handle rather than raising. Calling mutators through a
-`group(path)` handle before that group exists can be a no-op. There is no
+Invalid output arrays, nonconsecutive stereo pairs, a mono bus outside 0..15,
+or a stereo left bus outside 0..15 log and return the unchanged handle rather
+than raising. The accepted `[15,16]` stereo edge may exceed the configured
+hardware output count. Calling mutators through a `group(path)` handle before
+that group exists can be a no-op. There is no
 registered `get_group`, `effect`, or `add_effect`; use `fx(id)...apply()` while
 the intended group is current.
 
@@ -194,7 +198,7 @@ Availability: all targets. Source:
 | `on(voice: String)`; `on(voice: Voice)` | Chain | Target voice; missing name warns at sync |
 | `step(text: String)` | Chain | Parses step notation |
 | `euclid(hits: Int, steps: Int)`; `euclid(hits,steps,rotation: Int)` | Chain | Generates step string |
-| `len(beats: Float)` | Chain | Loop length |
+| `len(beats: Float)` | Chain | Loop length only when no `step`/`euclid` text is set; step text recomputes and overrides it at synchronization |
 | `swing(amount: Float)` | Chain | Clamps 0..1 and delays odd events |
 | `set_param(name: String, value: Float)` | Chain, current no-op | Accepted builder map is not read during synchronization |
 | `apply()` | Pattern or error | Stores snapshot |
@@ -208,7 +212,9 @@ non-whitespace characters divide that bar. `x` velocity is 0.7, `X` is 1,
 `o`/`O` is 0.3, digits 1..9 map `digit/9`, and `.`, `_`, `0`, `-` are rests.
 Invalid tokens error with position. Euclidean zero steps yields empty, hits at
 least steps yields all hits, and rotation normalizes. Negative Rhai counts cast
-to `usize` without validation.
+to `usize` without validation. When step text exists, its nonempty `|`-separated
+bar count determines the loop length at four beats per bar regardless of call
+order, so `.step("x...").len(16)` still synchronizes as four beats.
 
 ## Melody
 
@@ -221,7 +227,7 @@ Availability: all targets. Source:
 | `on(voice: String)`; `on(voice: Voice)` | Chain | Target voice |
 | `root(note: String)` | Chain | Root used by scale-degree notation |
 | `scale(name: String)` | Melody or error | Validates scale name |
-| `notes(text: String)`; `notes(values: Array)` | Chain | Parses notation or note values |
+| `notes(text: String)`; `notes(values: Array)` | Chain | Parses notation; Array integers and chord integers cast directly to `u8` (wrap modulo 256), while unsupported values are silently dropped |
 | `add_note(beat: Float, note: Int, velocity: Float, duration: Float)` | Chain | MIDI note and velocity clamp |
 | `add_chord(beat: Float, notes: Array, velocity: Float, duration: Float)` | Chain | Ignores non-Int entries and empty chords |
 | `len(beats: Float)`; `gate(value: Float)`; `swing(value: Float)` | Chain | Gate/swing clamp 0..1 |
@@ -236,7 +242,9 @@ Text notation uses four-beat `|` bars and supports absolute notes, scale degrees
 1..7, apostrophe/comma octave shifts, `-` ties, `.`/`_` rests, bracket chords,
 suffix chords, and per-note option brackets. Invalid scale names error, but many
 malformed tokens/notes are silently ignored; an invalid degree root falls back
-to C4 and an unknown chord suffix to a major triad.
+to C4 and an unknown chord suffix to a major triad. Array input does not share
+the clamping used by `add_note`/`add_chord`: for example, `-1` becomes 255 and
+`256` becomes 0 before any later transposition clamp.
 
 ## Sequence
 
@@ -278,11 +286,11 @@ Availability: all targets. Source:
 | `on_group(name: String)` | Chain | Group target |
 | `on_voice(name: String)`; `on_voice(voice: Voice)` | Chain | Voice target |
 | `on_effect(name: String)`; `on_effect(effect: Fx)` | Chain | Effect target |
-| `on(target: Dynamic)` | Chain | Voice, Fx, or String; String means group; unsupported value warns |
+| `on(target: Dynamic)` | Chain | Voice, Fx, or String; String means group; an unsupported value silently returns the unchanged Fade |
 | `param(name: String)`; `from(value: Float)`; `to(value: Float)` | Chain | Builder values |
 | `over(beats: Float)` | Chain | Minimum 0.0625 beats |
 | `over_bars(bars: Int)` | Chain | Hard-coded bars × 4, then same minimum |
-| `curve(name: String)` | Chain | Linear/easing curve; unknown silently becomes linear |
+| `curve(name: String)` | Chain | Exact aliases below; unknown silently becomes linear |
 | `exp(exponent: Float)` | Chain | Exponential curve; exponent unvalidated |
 | `spline(points: Array)` | Chain | Flat `[time,value,...]`; invalid/unpaired entries ignored |
 | `point(time: Float, value: Float)` | Chain | Appends spline point; unvalidated |
@@ -291,7 +299,16 @@ Availability: all targets. Source:
 | `restart()` | Fade | Same plus force-restart |
 
 There is no registered Fade stop/cancel method. Anonymous names are derived
-from target and parameter at synchronization.
+from target and parameter at synchronization. Curve aliases are:
+
+- `linear`;
+- `ease_in`, `easein`, `ease-in`; `ease_out`, `easeout`, `ease-out`;
+  `ease_in_out`, `easeinout`, `ease-in-out`, `ease`;
+- `sine_in`, `sinein`, `sine-in`; `sine_out`, `sineout`, `sine-out`;
+  `sine`, `sine_in_out`, `sineinout`, `sin`, `smooth`;
+- `cubic_in`, `cubicin`, `cubic-in`; `cubic_out`, `cubicout`, `cubic-out`;
+  `cubic_in_out`, `cubicinout`, `cubic-in-out`, `cubic`;
+- `exponential`, `exp`; `log`, `logarithmic`; and `step`, `instant`.
 
 ## Fx
 
@@ -372,7 +389,7 @@ Native only. Source:
 | `record(id: String)` | RecordHandle | Defaults current group, no length, count-in 0, metronome false, no path, non-immediate, 2 channels |
 | `id()` / `.id`; `group_path()` / `.group_path` | String | Builder fields |
 | `bars(value: Float or Int)`; `beats(value: Float or Int)`; `seconds(value: Float or Int)` | Chain | Mutually replace length mode; values unvalidated; bars reads current signature at apply |
-| `from_group(path: String)` | Chain | Resolves group at apply |
+| `from_group(path: String)` | Chain | Resolves immediately in the builder; resolution failure is silent and preserves the input path |
 | `count_in(bars: Float)`; `metronome(enabled: Bool)` | Chain | Values unvalidated |
 | `to_file(path: String)` | Chain | Relative paths become script-relative |
 | `immediate()` | Chain, current no-op | Builder flag is not copied into core config |

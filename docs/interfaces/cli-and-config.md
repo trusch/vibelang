@@ -39,7 +39,7 @@ No command/file prints usage and exits 1.
 | `--input-channels COUNT` | u32, default 2 without profile | Hardware inputs |
 | `--output-channels COUNT` | u32, default 2 without profile | Hardware outputs |
 | `--profile FILE` | optional | Strict hardware startup profile below |
-| `--runtime-metrics` | false | Record bounded runtime metrics and print snapshot at shutdown |
+| `--runtime-metrics` **(worktree-only)** | false | Record bounded runtime metrics and print snapshot at shutdown; absent from clean revision `98bed24` |
 | `--no-extensions` | false | Disable all compiled script extensions |
 | `--no-fs`; `--no-exec`; `--no-net` | false | Disable one compiled extension |
 | `--fs-sandbox PATH` | optional | Filesystem extension base; see security limits in [Extensions](../reference/extensions.md) |
@@ -48,6 +48,10 @@ Feature-disabled API/extension arguments are hidden in help. The watcher
 debounces about 100 ms and reacts only to `.vibe` changes. Initial errors abort;
 reload errors retain current runtime. Transport starts after the initial state
 is submitted. `RUST_LOG` controls tracing.
+
+The worktree-only metrics row describes the pre-existing dirty
+`crates/vibelang-cli/src/main.rs`, not the clean source revision underlying this
+documentation. Do not treat this docs commit by itself as shipping that option.
 
 There is no `-w`, `--watch`, `--api`, `--midi-input`, or `--record` option.
 Watch/API are enabled by default. Some older README/editor/render messages still
@@ -84,9 +88,11 @@ lines may contain `// vibe-profile: PATH`, resolved beside the script.
 | `[[endpoint]]` | unique nonempty `name`, nonempty `pattern`; `backend = "pipewire"` or `"midi"` (default pipewire); direction is `"source"`, `"sink"`, or `"any"` (default any); `required = true` |
 | `[policy]` | `allow_degraded_start = false`; `readiness_timeout_ms = 2000`, valid 1..60000 |
 
-Exactly one input/output link per declared channel is required. Channel range,
-uniqueness, names, and strings are validated. CLI channel/device values must
-equal the profile; manual `--jack-connect-to/from` cannot accompany a profile.
+Exactly one input/output link per declared channel is required. Link channel
+numbers are one-based and must cover `1..=input_channels` or
+`1..=output_channels` exactly once. Channel range, uniqueness, names, and
+strings are validated. CLI channel/device values must equal the profile; manual
+`--jack-connect-to/from` cannot accompany a profile.
 Missing required services block before scsynth. Probes run about every 100 ms
 until timeout. Optional losses also wait unless degraded start is allowed.
 `manage_links=true` makes the CLI establish named links; false still verifies
@@ -103,14 +109,24 @@ output_channels = 2
 manage_links = true
 
 [[audio.input]]
-channel = 0
+channel = 1
 name = "mic-left"
 external_port = "alsa_input.*:capture_FL"
 
+[[audio.input]]
+channel = 2
+name = "mic-right"
+external_port = "alsa_input.*:capture_FR"
+
 [[audio.output]]
-channel = 0
+channel = 1
 name = "main-left"
 external_port = "alsa_output.*:playback_FL"
+
+[[audio.output]]
+channel = 2
+name = "main-right"
+external_port = "alsa_output.*:playback_FR"
 
 [policy]
 allow_degraded_start = false

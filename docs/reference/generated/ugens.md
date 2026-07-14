@@ -1,6 +1,6 @@
 # Generated UGen function index
 
-> Generated mechanically from `crates/vibelang-dsp/ugen_manifests/*.json` using the exact `build.rs` snake-case and rate rules. Do not hand-edit individual entries.
+> Inventory generated mechanically from `crates/vibelang-dsp/ugen_manifests/*.json` using the exact `build.rs` snake-case and rate rules. Availability cells include the independently audited demand-rate quarantine.
 
 This page exhaustively indexes **1199 registered functions** from **827 callable manifest classes**. The remaining **48 builder-only records** are listed separately and are not registered by the generator. The 1,199 callable names are unique.
 
@@ -11,6 +11,14 @@ For a manifest class with ordered inputs `p1..pN`, every listed rate-suffixed fu
 A shape input must be finite, integral, and 1..32767. Invalid Dynamic conversion or graph construction often reaches `unwrap()` and can panic. Output is NodeRef unless a documented pseudo-lowering returns a Dynamic multichannel shape. Plugin availability depends on the connected scsynth/browser backend even when the Rhai name exists.
 
 The generator ignores the manifest's historical `functions` field and derives names from class + rate; this matters for acronyms such as `K2A` (`k2a_ar`). Source: [`build.rs`](../../../crates/vibelang-dsp/build.rs#L432-L806).
+
+> **Demand-rate quarantine:** the 25 registered names ending in `_demand` are
+> discoverable but not semantically correct demand-rate callables. `build.rs`
+> maps every unrecognized manifest rate to `Rate::Audio`, and the graph IR has
+> only scalar, control, and audio variants. These functions therefore encode
+> audio-rate nodes despite their suffix. Do not rely on them for demand-rate
+> behavior. P0 must either add a real demand rate/encoder path with golden tests
+> or remove/quarantine these registrations; each affected row is marked below.
 
 ## Callable functions
 
@@ -212,27 +220,27 @@ Manifest: [`demand.json`](../../../crates/vibelang-dsp/ugen_manifests/demand.jso
 |---|---|---|---|---|---|
 | `Demand` | `demand_ar`<br>`demand_kr` | 0..3 positional | `trig` (signal; default `0`)<br>`reset` (signal; default `0`)<br>`demandUGens` (signal; default `0`) | 1 channel | backend UGen must be installed |
 | `TDuty` | `t_duty_ar`<br>`t_duty_kr` | 0..5 positional | `dur` (signal; default `1`)<br>`reset` (signal; default `0`)<br>`doneAction` (float; default `0`)<br>`level` (signal; default `1`)<br>`gapFirst` (float; default `0`) | 1 channel | backend UGen must be installed |
-| `Dseq` | `dseq_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dser` | `dser_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Drand` | `drand_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dxrand` | `dxrand_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dseries` | `dseries_demand` | 0..3 positional | `start` (float; default `1`)<br>`step` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Dgeom` | `dgeom_demand` | 0..3 positional | `start` (float; default `1`)<br>`grow` (float; default `2`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Dbrown` | `dbrown_demand` | 0..4 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`step` (float; default `0.01`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Dwhite` | `dwhite_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Dibrown` | `dibrown_demand` | 0..4 positional | `lo` (float; default `0`)<br>`hi` (float; default `12`)<br>`step` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Diwhite` | `diwhite_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | backend UGen must be installed |
-| `Dbufrd` | `dbufrd_demand` | 0..3 positional | `bufnum` (signal; default `0`)<br>`phase` (signal; default `0`)<br>`loop` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dbufwr` | `dbufwr_demand` | 0..4 positional | `input` (signal; default `0`)<br>`bufnum` (signal; default `0`)<br>`phase` (signal; default `0`)<br>`loop` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dconst` | `dconst_demand` | 0..3 positional | `sum` (signal; default `0`)<br>`in` (signal; default `0`)<br>`tolerance` (float; default `0.001`) | 1 channel | backend UGen must be installed |
-| `Ddup` | `ddup_demand` | 0..2 positional | `n` (signal; default `2`)<br>`in` (signal; default `0`) | 1 channel | backend UGen must be installed |
-| `Dstutter` | `dstutter_demand` | 0..2 positional | `n` (signal; default `2`)<br>`in` (signal; default `0`) | 1 channel | backend UGen must be installed |
-| `Dshuf` | `dshuf_demand` | 0..2 positional | `list` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dwrand` | `dwrand_demand` | 0..3 positional | `list` (signal; default `0`)<br>`weights` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | backend UGen must be installed |
-| `Dswitch` | `dswitch_demand` | 0..2 positional | `list` (signal; default `0`)<br>`index` (signal; default `0`) | 1 channel | backend UGen must be installed |
-| `Dswitch1` | `dswitch1_demand` | 0..2 positional | `list` (signal; default `0`)<br>`index` (signal; default `0`) | 1 channel | backend UGen must be installed |
-| `Dreset` | `dreset_demand` | 0..2 positional | `in` (signal; default `0`)<br>`reset` (signal; default `0`) | 1 channel | backend UGen must be installed |
-| `Dpoll` | `dpoll_demand` | 0..4 positional | `in` (signal; default `0`)<br>`label` (signal; default `0`)<br>`run` (signal; default `1`)<br>`trigid` (float; default `-1`) | 1 channel | backend UGen must be installed |
+| `Dseq` | `dseq_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dser` | `dser_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Drand` | `drand_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dxrand` | `dxrand_demand` | 0..2 positional | `array` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dseries` | `dseries_demand` | 0..3 positional | `start` (float; default `1`)<br>`step` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dgeom` | `dgeom_demand` | 0..3 positional | `start` (float; default `1`)<br>`grow` (float; default `2`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dbrown` | `dbrown_demand` | 0..4 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`step` (float; default `0.01`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dwhite` | `dwhite_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dibrown` | `dibrown_demand` | 0..4 positional | `lo` (float; default `0`)<br>`hi` (float; default `12`)<br>`step` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Diwhite` | `diwhite_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `100000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dbufrd` | `dbufrd_demand` | 0..3 positional | `bufnum` (signal; default `0`)<br>`phase` (signal; default `0`)<br>`loop` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dbufwr` | `dbufwr_demand` | 0..4 positional | `input` (signal; default `0`)<br>`bufnum` (signal; default `0`)<br>`phase` (signal; default `0`)<br>`loop` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dconst` | `dconst_demand` | 0..3 positional | `sum` (signal; default `0`)<br>`in` (signal; default `0`)<br>`tolerance` (float; default `0.001`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Ddup` | `ddup_demand` | 0..2 positional | `n` (signal; default `2`)<br>`in` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dstutter` | `dstutter_demand` | 0..2 positional | `n` (signal; default `2`)<br>`in` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dshuf` | `dshuf_demand` | 0..2 positional | `list` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dwrand` | `dwrand_demand` | 0..3 positional | `list` (signal; default `0`)<br>`weights` (signal; default `0`)<br>`repeats` (float; default `1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dswitch` | `dswitch_demand` | 0..2 positional | `list` (signal; default `0`)<br>`index` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dswitch1` | `dswitch1_demand` | 0..2 positional | `list` (signal; default `0`)<br>`index` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dreset` | `dreset_demand` | 0..2 positional | `in` (signal; default `0`)<br>`reset` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dpoll` | `dpoll_demand` | 0..4 positional | `in` (signal; default `0`)<br>`label` (signal; default `0`)<br>`run` (signal; default `1`)<br>`trigid` (float; default `-1`) | 1 channel | **Unsupported:** currently encoded as audio rate |
 | `Duty` | `duty_ar`<br>`duty_kr` | 0..4 positional | `dur` (signal; default `1`)<br>`reset` (signal; default `0`)<br>`doneAction` (float; default `0`)<br>`level` (signal; default `1`) | 1 channel | backend UGen must be installed |
 | `DemandEnvGen` | `demand_env_gen_ar`<br>`demand_env_gen_kr` | 0..10 positional | `level` (signal; default `0`)<br>`dur` (signal; default `1`)<br>`shape` (signal; default `1`)<br>`curve` (signal; default `0`)<br>`gate` (signal; default `1`)<br>`reset` (signal; default `1`)<br>`levelScale` (signal; default `1`)<br>`levelBias` (signal; default `0`)<br>`timeScale` (signal; default `1`)<br>`doneAction` (float; default `0`) | 1 channel | backend UGen must be installed |
 
@@ -713,7 +721,7 @@ Manifest: [`sc3_betablocker.json`](../../../crates/vibelang-dsp/ugen_manifests/s
 | Class | Registered callable name(s) | Exact arities | Ordered inputs and omission defaults | Output / lowering | Availability |
 |---|---|---|---|---|---|
 | `BBlockerBuf` | `b_blocker_buf_ar` | 0..3 positional | `freq` (signal; default `440`)<br>`bufnum` (signal; default `0`)<br>`startpoint` (signal; default `0`) | 9 channels | backend UGen must be installed |
-| `DetaBlockerBuf` | `deta_blocker_buf_demand` | 0..2 positional | `bufnum` (signal; default `0`)<br>`startpoint` (signal; default `0`) | 1 channel | backend UGen must be installed |
+| `DetaBlockerBuf` | `deta_blocker_buf_demand` | 0..2 positional | `bufnum` (signal; default `0`)<br>`startpoint` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
 
 ### sc3_bhob.json
 
@@ -729,8 +737,8 @@ Manifest: [`sc3_bhob.json`](../../../crates/vibelang-dsp/ugen_manifests/sc3_bhob
 | `NLFiltC` | `nl_filt_c_ar`<br>`nl_filt_c_kr` | 0..6 positional | `input` (signal; default `0`)<br>`a` (float; default `0`)<br>`b` (float; default `0`)<br>`d` (float; default `0`)<br>`c` (float; default `0`)<br>`l` (float; default `0`) | 1 channel | backend UGen must be installed |
 | `TGrains2` | `t_grains2_ar` | 0..11 positional | `numChannels` (float; default `2`)<br>`trigger` (signal; default `0`)<br>`bufnum` (float; default `0`)<br>`rate` (float; default `1`)<br>`centerPos` (float; default `0`)<br>`dur` (float; default `0.1`)<br>`pan` (float; default `0`)<br>`amp` (float; default `0.1`)<br>`att` (float; default `0.5`)<br>`dec` (float; default `0.5`)<br>`interp` (float; default `4`) | 1 channel | backend UGen must be installed |
 | `TGrains3` | `t_grains3_ar` | 0..12 positional | `numChannels` (float; default `2`)<br>`trigger` (signal; default `0`)<br>`bufnum` (float; default `0`)<br>`rate` (float; default `1`)<br>`centerPos` (float; default `0`)<br>`dur` (float; default `0.1`)<br>`pan` (float; default `0`)<br>`amp` (float; default `0.1`)<br>`att` (float; default `0.5`)<br>`dec` (float; default `0.5`)<br>`window` (float; default `1`)<br>`interp` (float; default `4`) | 1 channel | backend UGen must be installed |
-| `Dbrown2` | `dbrown2_demand` | 0..5 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`step` (float; default `0.01`)<br>`dist` (float; default `0`)<br>`length` (float; default `1000000000`) | 1 channel | backend UGen must be installed |
-| `Dgauss` | `dgauss_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `1000000000`) | 1 channel | backend UGen must be installed |
+| `Dbrown2` | `dbrown2_demand` | 0..5 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`step` (float; default `0.01`)<br>`dist` (float; default `0`)<br>`length` (float; default `1000000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
+| `Dgauss` | `dgauss_demand` | 0..3 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`length` (float; default `1000000000`) | 1 channel | **Unsupported:** currently encoded as audio rate |
 | `GaussTrig` | `gauss_trig_ar`<br>`gauss_trig_kr` | 0..2 positional | `freq` (float; default `440`)<br>`dev` (float; default `0.3`) | 1 channel | backend UGen must be installed |
 | `TBetaRand` | `t_beta_rand_ar`<br>`t_beta_rand_kr` | 0..5 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`prob1` (float; default `1`)<br>`prob2` (float; default `1`)<br>`trig` (signal; default `0`) | 1 channel | backend UGen must be installed |
 | `TBrownRand` | `t_brown_rand_ar`<br>`t_brown_rand_kr` | 0..5 positional | `lo` (float; default `0`)<br>`hi` (float; default `1`)<br>`dev` (float; default `1`)<br>`dist` (float; default `0`)<br>`trig` (signal; default `0`) | 1 channel | backend UGen must be installed |
@@ -800,7 +808,7 @@ Manifest: [`sc3_chaos.json`](../../../crates/vibelang-dsp/ugen_manifests/sc3_cha
 |---|---|---|---|---|---|
 | `LotkaVolterra` | `lotka_volterra_ar` | 0..8 positional | `freq` (float; default `22050`)<br>`a` (float; default `1.5`)<br>`b` (float; default `1.5`)<br>`c` (float; default `0.5`)<br>`d` (float; default `1.5`)<br>`h` (float; default `0.05`)<br>`xi` (float; default `1`)<br>`yi` (float; default `0.2`) | 2 channels | backend UGen must be installed |
 | `ArneodoCoulletTresser` | `arneodo_coullet_tresser_ar` | 0..6 positional | `freq` (float; default `22050`)<br>`alpha` (float; default `1.5`)<br>`h` (float; default `0.05`)<br>`xi` (float; default `0.5`)<br>`yi` (float; default `0.5`)<br>`zi` (float; default `0.5`) | 3 channels | backend UGen must be installed |
-| `DNoiseRing` | `d_noise_ring_demand` | 0..5 positional | `change` (signal; default `0.5`)<br>`chance` (signal; default `0.5`)<br>`shift` (signal; default `1`)<br>`numBits` (signal; default `8`)<br>`resetval` (signal; default `0`) | 1 channel | backend UGen must be installed |
+| `DNoiseRing` | `d_noise_ring_demand` | 0..5 positional | `change` (signal; default `0.5`)<br>`chance` (signal; default `0.5`)<br>`shift` (signal; default `1`)<br>`numBits` (signal; default `8`)<br>`resetval` (signal; default `0`) | 1 channel | **Unsupported:** currently encoded as audio rate |
 
 ### sc3_concat.json
 

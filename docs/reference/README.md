@@ -5,6 +5,12 @@ The VibeLang authoring surface is the union of functions registered by
 by explicitly imported standard-library modules. Rust `pub` visibility alone
 does not make an item callable from `.vibe`.
 
+The 2026-07-14 static audit found every unique literal registration name in
+these pages. It did not prove every overload boundary dynamically. In
+particular, casts, clamps, fallbacks, no-ops, wrapper panics, and feature/backend
+availability still need the generated boundary fixtures specified in the
+[roadmap](../roadmap/api-improvement-roadmap.md#p0--make-the-current-contract-truthful-and-safe).
+
 Registration roots:
 
 - [`ScriptEngine::new`](../../crates/vibelang-rhai/src/engine.rs#L164-L191)
@@ -19,7 +25,7 @@ Registration roots:
 | Group, Voice, routing, Pattern, Melody, Sequence, Fade, Fx, Sample, Buffer, SFZ, Record | [Runtime objects](runtime-objects.md) |
 | `NodeRef`, envelopes, `define_synthdef`, `define_fx`, DSP helpers | [DSP](dsp.md) |
 | Every generated rate-suffixed UGen function | [UGen index](generated/ugens.md) |
-| Every shipped synthdef/effect and intended public imported function | [Standard-library index](generated/stdlib.md) |
+| Every shipped synthdef/effect, intended-supported imported function, and underscore-prefixed import-callable helper | [Standard-library index](generated/stdlib.md) |
 | MIDI devices, mappings, routes, output, callbacks, clock, looper | [MIDI](midi.md) |
 | Optional fs, exec, environment, HTTP, URL, and JSON functions | [Extensions](extensions.md) |
 

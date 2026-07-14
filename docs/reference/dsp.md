@@ -33,6 +33,11 @@ graph builder error can panic rather than become a recoverable Rhai error.
 
 ### Envelopes and EnvGen
 
+The exact registered Rhai type names are `Env`, `EnvGenBuilder`, and
+`EnvelopeBuilder`. `NewEnvGenBuilder(...)` is the legacy factory name; it does
+not rename the returned `EnvGenBuilder` type. `envelope()` returns the preferred
+`EnvelopeBuilder`.
+
 | Exact signature | Return / defaults |
 |---|---|
 | `Env(levels: Array, times: Array, curve: Float)` | Env; level values that cannot convert become 0; times accept numeric/NodeRef, but empty or mismatched arrays and negative duration are not validated up front |
@@ -75,9 +80,9 @@ only during build. Source:
 
 | Exact signature | Return |
 |---|---|
-| `in_ar(bus: Float or Int or NodeRef, channels: Float or Int)` | NodeRef with the requested output shape |
+| `in_ar(bus: Float or Int or NodeRef, channels: Float or Int)` | `Array<NodeRef>` with the requested output count |
 | `replace_out_ar(bus: Float or NodeRef, channels: Array)` | NodeRef side-effect graph |
-| `sound_in(channels: Float or Int)` | Hardware input signal(s) |
+| `sound_in(channels: Float or Int)` | `Array<NodeRef>` of hardware input signals |
 | `sound_in_channel(channel: Float or Int or NodeRef)` | One hardware input channel |
 | `sound_in_ar()`; `sound_in_ar(channel: Float or Int or NodeRef)` | Alias for channel input; no-arg uses channel 0 |
 | `mix(array: Array)`; `sum(array: Array)` | NodeRef; exact aliases |
@@ -86,8 +91,15 @@ only during build. Source:
 | `detune_spread(voices: Int, amount: Float)` | Array of Float detune offsets |
 | `zip(a: Array, b: Array)` | DSP-local registration of the same visible name as the core array helper |
 
-Counts are cast with limited validation and wrapper errors often unwrap. Prefer
-small positive integral counts.
+`channels(signal,count)` rejects nonpositive counts, but `dup(signal,count)`
+returns an empty Array for zero or negative counts. `detune_spread(1, amount)`
+divides by zero and returns one NaN value; zero or negative voices return an
+empty Array. `in_ar` and `sound_in` cast channel counts to `u32` before any
+validation: fractional values truncate, nonpositive/NaN values become zero,
+and very large values can saturate to an impractical output count. Their
+registered wrappers, like several other DSP boundaries, unwrap builder errors
+and can panic. Prefer small positive integral counts until P0 boundary
+validation is implemented.
 
 ### Numeric DSP globals
 

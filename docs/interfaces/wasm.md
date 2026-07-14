@@ -30,7 +30,7 @@ interface VibelangResult {
 
 interface VibelangCompiledSynthdef {
   name: string;
-  data: Uint8Array;
+  data: Uint8Array | number[];
 }
 ```
 
@@ -44,8 +44,9 @@ Failure counts are zero and tempo is 120.
 | `new VibelangRuntime()` | Clears process-global user synthdef/effect registries |
 | `async init(): Promise<void>` | Idempotently initializes WebScsynthBackend and loads builtins |
 | `async execute(script: string): Promise<VibelangResult>` | Clears registries, executes Rhai, loads user synthdefs/effects through bridge when initialized, queues reload |
-| `tick(): void` | Drives one runtime tick; embedder must call regularly |
-| `async start(): Promise<void>`; `async stop()` | Queue transport without requiring initialization |
+| `async tick(): Promise<void>` | Drives one runtime tick; embedder must await/call regularly; resolves without effect before initialization |
+| `async start(): Promise<void>` | Queues transport only after initialization; before initialization it warns and resolves without queuing |
+| `async stop(): Promise<void>` | Queues transport only after initialization; before initialization it silently resolves without queuing |
 | `async stopAll(): Promise<void>` | Currently only calls stop; it does not free all synth nodes despite declaration comments |
 | `isInitialized(): boolean` | Backend initialization flag |
 | `static getSystemSynthdefs(): VibelangCompiledSynthdef[]` | System synthdefs including `system_link_audio` |
@@ -56,6 +57,10 @@ Failure counts are zero and tempo is 120.
 `execute` returns a successful result even if an individual synthdef bridge
 load or state application fails; those failures only warn. It clears user
 registries on every execution.
+
+The checked-in declarations are currently handwritten. Generating them from
+the Rust wasm-bindgen surface and failing CI on drift is a P0 roadmap item; the
+Rust implementation controls when the two disagree.
 
 ## Legacy VibelangEngine
 
