@@ -11,9 +11,12 @@ the checked-in [`types/index.d.ts`](../../crates/vibelang-wasm/types/index.d.ts)
 |---|---|
 | default async initializer | Load/instantiate wasm-bindgen module |
 | `initSync(...)` | Synchronous initializer |
-| `init_panic_hook()` | Start hook installing browser panic diagnostics |
 | `log(message: string)` | Browser console log |
 | `version()` | Package version String |
+
+Rust's `init_panic_hook` is marked `#[wasm_bindgen(start)]`: wasm-bindgen runs it
+during module initialization to install browser panic diagnostics, but it is not
+a callable JavaScript export and therefore is not projected into `index.d.ts`.
 
 ## Result types
 
@@ -60,8 +63,10 @@ registries on every execution.
 
 The checked-in declarations are generated from the Rust `#[wasm_bindgen]`
 surface and result structs by `scripts/public-artifacts.sh`; CI fails when they
-drift. Private wasm-bindgen ABI fields and binary/JavaScript glue remain
-tool-version-specific build outputs and are intentionally excluded.
+drift. Module start hooks, private wasm-bindgen ABI fields, and
+binary/JavaScript glue remain intentionally excluded: the hook is lifecycle
+behavior rather than a callable export, while the remaining files are
+tool-version-specific build outputs.
 
 ## Legacy VibelangEngine
 

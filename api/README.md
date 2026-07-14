@@ -29,9 +29,11 @@ an editor availability decision, not an artifact-regeneration side effect.
 `crates/vibelang-wasm/types/index.d.ts` is generated from the Rust
 `#[wasm_bindgen]` export annotations and serialized result structs. Private
 `InitOutput` ABI fields, generated JavaScript, and the `.wasm` binary are
-intentionally excluded because they are tool-version-specific build outputs;
-the declarations retain only a stable opaque module-initializer compatibility
-shim. The source-backed class/function surface remains drift-gated.
+intentionally excluded because they are tool-version-specific build outputs.
+Functions marked `#[wasm_bindgen(start)]` are also excluded because they run as
+module lifecycle hooks rather than callable JavaScript exports. The declarations
+retain only a stable opaque module-initializer compatibility shim; the
+source-backed callable class/function surface remains drift-gated.
 
 ## Public API manifest
 
