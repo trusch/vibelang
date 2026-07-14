@@ -16,10 +16,12 @@ import "stdlib/theory/chords.vibe" as chords;
 // key: root note (e.g., "C")
 // mode: "major" or "minor"
 // chord_type: "triad", "7th", or custom qualities array
+/// @vibelang-api export=public support=supported
 fn chord_progression(key, mode, degrees) {
     chord_progression_ex(key, mode, degrees, 3, "triad")
 }
 
+/// @vibelang-api export=public support=supported
 fn chord_progression_ex(key, mode, degrees, octave, chord_type) {
     
     let scale_intervals = if mode.to_lower() == "major" {
@@ -61,55 +63,67 @@ fn chord_progression_ex(key, mode, degrees, octave, chord_type) {
 // ============================================================================
 
 // I-V-vi-IV (very common in pop: C-G-Am-F in C major)
+/// @vibelang-api export=public support=supported
 fn pop_progression_1(key) {
     pop_progression_1_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn pop_progression_1_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 5, 6, 4], octave, "triad");
 }
 
 // I-IV-V-IV (classic rock)
+/// @vibelang-api export=public support=supported
 fn rock_progression_1(key) {
     rock_progression_1_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn rock_progression_1_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 5, 4], octave, "triad");
 }
 
 // vi-IV-I-V (sensitive pop progression: Am-F-C-G)
+/// @vibelang-api export=public support=supported
 fn pop_progression_2(key) {
     pop_progression_2_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn pop_progression_2_ex(key, octave) {
     return chord_progression_ex(key, "major", [6, 4, 1, 5], octave, "triad");
 }
 
 // I-vi-IV-V (50s progression, "Stand By Me")
+/// @vibelang-api export=public support=supported
 fn fifties_progression(key) {
     fifties_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn fifties_progression_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 6, 4, 5], octave, "triad");
 }
 
 // I-IV-vi-V (Axis progression, "Don't Stop Believin'")
+/// @vibelang-api export=public support=supported
 fn axis_progression(key) {
     axis_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn axis_progression_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 6, 5], octave, "triad");
 }
 
 // I-V-vi-iii-IV-I-IV-V (Pachelbel's Canon)
+/// @vibelang-api export=public support=supported
 fn canon_progression(key) {
     canon_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn canon_progression_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 5, 6, 3, 4, 1, 4, 5], octave, "triad");
 }
@@ -119,46 +133,56 @@ fn canon_progression_ex(key, octave) {
 // ============================================================================
 
 // ii-V-I (fundamental jazz progression)
+/// @vibelang-api export=public support=supported
 fn jazz_ii_v_i(key) {
     jazz_ii_v_i_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn jazz_ii_v_i_ex(key, octave) {
     return chord_progression_ex(key, "major", [2, 5, 1], octave, "7th");
 }
 
 // I-vi-ii-V (turnaround)
+/// @vibelang-api export=public support=supported
 fn jazz_turnaround(key) {
     jazz_turnaround_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn jazz_turnaround_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 6, 2, 5], octave, "7th");
 }
 
 // iii-vi-ii-V (Coltrane changes subset)
+/// @vibelang-api export=public support=supported
 fn jazz_iii_vi_ii_v(key) {
     jazz_iii_vi_ii_v_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn jazz_iii_vi_ii_v_ex(key, octave) {
     return chord_progression_ex(key, "major", [3, 6, 2, 5], octave, "7th");
 }
 
 // I-IV-iii-vi (jazz ballad)
+/// @vibelang-api export=public support=supported
 fn jazz_ballad(key) {
     jazz_ballad_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn jazz_ballad_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 3, 6], octave, "7th");
 }
 
 // Rhythm changes (A section: I-VI-ii-V)
+/// @vibelang-api export=public support=supported
 fn rhythm_changes_a(key) {
     rhythm_changes_a_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn rhythm_changes_a_ex(key, octave) {
     
     // Need VI as dominant 7th (A7 in C major)
@@ -171,10 +195,12 @@ fn rhythm_changes_a_ex(key, octave) {
 }
 
 // Minor ii-V-i
+/// @vibelang-api export=public support=supported
 fn jazz_minor_ii_v_i(key) {
     jazz_minor_ii_v_i_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn jazz_minor_ii_v_i_ex(key, octave) {
     return chord_progression_ex(key, "minor", [2, 5, 1], octave, "7th");
 }
@@ -184,10 +210,12 @@ fn jazz_minor_ii_v_i_ex(key, octave) {
 // ============================================================================
 
 // 12-bar blues (simplified to 3 chords)
+/// @vibelang-api export=public support=supported
 fn blues_12bar(key) {
     blues_12bar_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_12bar_ex(key, octave) {
     
     let i7 = chords::dominant7_chord_ex(key, octave);
@@ -199,19 +227,23 @@ fn blues_12bar_ex(key, octave) {
 }
 
 // Quick change blues (IV in bar 2)
+/// @vibelang-api export=public support=supported
 fn blues_quick_change(key) {
     blues_quick_change_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_quick_change_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 1, 1, 4, 4, 1, 1, 5, 4, 1, 5], octave, "triad");
 }
 
 // Minor blues
+/// @vibelang-api export=public support=supported
 fn blues_minor(key) {
     blues_minor_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_minor_ex(key, octave) {
     return chord_progression_ex(key, "minor", [1, 1, 1, 1, 4, 4, 1, 1, 5, 4, 1, 5], octave, "triad");
 }
@@ -221,10 +253,12 @@ fn blues_minor_ex(key, octave) {
 // ============================================================================
 
 // Dorian vamp (i-IV)
+/// @vibelang-api export=public support=supported
 fn dorian_vamp(key) {
     dorian_vamp_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn dorian_vamp_ex(key, octave) {
     
     let i_minor = chords::minor_triad_ex(key, octave);
@@ -234,10 +268,12 @@ fn dorian_vamp_ex(key, octave) {
 }
 
 // Lydian progression (I-II)
+/// @vibelang-api export=public support=supported
 fn lydian_progression(key) {
     lydian_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn lydian_progression_ex(key, octave) {
     
     let i_major = chords::major_triad_ex(key, octave);
@@ -247,10 +283,12 @@ fn lydian_progression_ex(key, octave) {
 }
 
 // Mixolydian groove (I-bVII)
+/// @vibelang-api export=public support=supported
 fn mixolydian_groove(key) {
     mixolydian_groove_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn mixolydian_groove_ex(key, octave) {
     
     let i_major = chords::major_triad_ex(key, octave);
@@ -260,10 +298,12 @@ fn mixolydian_groove_ex(key, octave) {
 }
 
 // Phrygian progression (i-bII)
+/// @vibelang-api export=public support=supported
 fn phrygian_progression(key) {
     phrygian_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn phrygian_progression_ex(key, octave) {
     
     let i_minor = chords::minor_triad_ex(key, octave);
@@ -277,46 +317,56 @@ fn phrygian_progression_ex(key, octave) {
 // ============================================================================
 
 // Perfect cadence (V-I)
+/// @vibelang-api export=public support=supported
 fn perfect_cadence(key) {
     perfect_cadence_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn perfect_cadence_ex(key, octave) {
     return chord_progression_ex(key, "major", [5, 1], octave, "triad");
 }
 
 // Plagal cadence (IV-I, "Amen cadence")
+/// @vibelang-api export=public support=supported
 fn plagal_cadence(key) {
     plagal_cadence_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn plagal_cadence_ex(key, octave) {
     return chord_progression_ex(key, "major", [4, 1], octave, "triad");
 }
 
 // Deceptive cadence (V-vi)
+/// @vibelang-api export=public support=supported
 fn deceptive_cadence(key) {
     deceptive_cadence_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn deceptive_cadence_ex(key, octave) {
     return chord_progression_ex(key, "major", [5, 6], octave, "triad");
 }
 
 // Half cadence (any-V)
+/// @vibelang-api export=public support=supported
 fn half_cadence(key) {
     half_cadence_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn half_cadence_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 5], octave, "triad");
 }
 
 // Andalusian cadence (i-bVII-bVI-V, flamenco)
+/// @vibelang-api export=public support=supported
 fn andalusian_cadence(key) {
     andalusian_cadence_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn andalusian_cadence_ex(key, octave) {
     
     let i_minor = chords::minor_triad_ex(key, octave);
@@ -332,28 +382,34 @@ fn andalusian_cadence_ex(key, octave) {
 // ============================================================================
 
 // Four on the floor house progression (vi-IV-I-V)
+/// @vibelang-api export=public support=supported
 fn house_progression(key) {
     house_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn house_progression_ex(key, octave) {
     return chord_progression_ex(key, "major", [6, 4, 1, 5], octave, "triad");
 }
 
 // Trance progression (i-VI-III-VII in minor)
+/// @vibelang-api export=public support=supported
 fn trance_progression(key) {
     trance_progression_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn trance_progression_ex(key, octave) {
     return chord_progression_ex(key, "minor", [1, 6, 3, 7], octave, "triad");
 }
 
 // Two-chord techno vamp (i-v)
+/// @vibelang-api export=public support=supported
 fn techno_vamp(key) {
     techno_vamp_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn techno_vamp_ex(key, octave) {
     return chord_progression_ex(key, "minor", [1, 5], octave, "triad");
 }
@@ -363,19 +419,23 @@ fn techno_vamp_ex(key, octave) {
 // ============================================================================
 
 // Bossa nova (I-VI-ii-V or variations)
+/// @vibelang-api export=public support=supported
 fn bossa_nova(key) {
     bossa_nova_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn bossa_nova_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 6, 2, 5], octave, "7th");
 }
 
 // Montuno (I-IV-V or I-IV-I-V)
+/// @vibelang-api export=public support=supported
 fn montuno(key) {
     montuno_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn montuno_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 1, 5], octave, "triad");
 }
@@ -385,10 +445,12 @@ fn montuno_ex(key, octave) {
 // ============================================================================
 
 // Chromatic descent (I-I/VII-I/VI-I/V...)
+/// @vibelang-api export=public support=supported
 fn chromatic_descent(key) {
     chromatic_descent_ex(key, 3, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn chromatic_descent_ex(key, octave, steps) {
     
     let result = [];
@@ -405,10 +467,12 @@ fn chromatic_descent_ex(key, octave, steps) {
 }
 
 // Circle of fifths (I-IV-vii°-iii-vi-ii-V-I)
+/// @vibelang-api export=public support=supported
 fn circle_of_fifths(key) {
     circle_of_fifths_ex(key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn circle_of_fifths_ex(key, octave) {
     return chord_progression_ex(key, "major", [1, 4, 7, 3, 6, 2, 5, 1], octave, "triad");
 }
@@ -417,10 +481,12 @@ fn circle_of_fifths_ex(key, octave) {
 // Utility: Get Progression by Name
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn progression(name, key) {
     progression_ex(name, key, 3)
 }
 
+/// @vibelang-api export=public support=supported
 fn progression_ex(name, key, octave) {
     let n = name.to_lower().replace(" ", "_");
     
@@ -479,10 +545,12 @@ fn progression_ex(name, key, octave) {
 // ============================================================================
 
 // Convert progression (array of chord arrays) to single note array with rests
+/// @vibelang-api export=public support=supported
 fn flatten_progression(progression) {
     flatten_progression_ex(progression, 1)
 }
 
+/// @vibelang-api export=public support=supported
 fn flatten_progression_ex(progression, notes_per_chord) {
     let result = [];
     
@@ -499,6 +567,7 @@ fn flatten_progression_ex(progression, notes_per_chord) {
 }
 
 // Get roots of progression (useful for bass lines)
+/// @vibelang-api export=public support=supported
 fn progression_roots(progression) {
     let result = [];
     

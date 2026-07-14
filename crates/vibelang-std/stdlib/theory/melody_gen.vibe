@@ -13,10 +13,12 @@ import "stdlib/theory/arpeggios.vibe" as arp;
 // ============================================================================
 
 // Generate random-walk melody within a scale
+/// @vibelang-api export=public support=supported
 fn random_walk_melody(root, scale_name, length) {
     random_walk_melody_ex(root, scale_name, length, 4, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn random_walk_melody_ex(root, scale_name, length, octave, max_jump) {
     
     // Get scale notes (enough for melody)
@@ -48,10 +50,12 @@ fn random_walk_melody_ex(root, scale_name, length, octave, max_jump) {
 }
 
 // Generate stepwise melody (mostly conjunct motion)
+/// @vibelang-api export=public support=supported
 fn stepwise_melody(root, scale_name, length) {
     stepwise_melody_ex(root, scale_name, length, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn stepwise_melody_ex(root, scale_name, length, octave) {
     
     let scale = scales::scale(root, scale_name, octave, length + 4);
@@ -77,10 +81,12 @@ fn stepwise_melody_ex(root, scale_name, length, octave) {
 // ============================================================================
 
 // Generate melody using chord tones
+/// @vibelang-api export=public support=supported
 fn chord_tone_melody(progression) {
     chord_tone_melody_ex(progression, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn chord_tone_melody_ex(progression, notes_per_chord) {
     let result = [];
     
@@ -98,10 +104,12 @@ fn chord_tone_melody_ex(progression, notes_per_chord) {
 }
 
 // Arpeggiated melody from chords
+/// @vibelang-api export=public support=supported
 fn arpeggiated_melody(progression) {
     arpeggiated_melody_ex(progression, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggiated_melody_ex(progression, pattern) {
     
     let result = [];
@@ -128,6 +136,7 @@ fn arpeggiated_melody_ex(progression, pattern) {
 // ============================================================================
 
 // Add passing tones between melody notes
+/// @vibelang-api export=public support=supported
 fn add_passing_tones(melody) {
     
     let result = [];
@@ -155,10 +164,12 @@ fn add_passing_tones(melody) {
 }
 
 // Add neighbor tones (upper or lower neighbor)
+/// @vibelang-api export=public support=supported
 fn add_neighbor_tones(melody) {
     add_neighbor_tones_ex(melody, true)
 }
 
+/// @vibelang-api export=public support=supported
 fn add_neighbor_tones_ex(melody, lower) {
     
     let result = [];
@@ -186,10 +197,12 @@ fn add_neighbor_tones_ex(melody, lower) {
 // ============================================================================
 
 // Generate ascending melody
+/// @vibelang-api export=public support=supported
 fn ascending_melody(root, scale_name, length) {
     ascending_melody_ex(root, scale_name, length, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn ascending_melody_ex(root, scale_name, length, octave) {
     
     let scale = scales::scale(root, scale_name, octave, length);
@@ -197,10 +210,12 @@ fn ascending_melody_ex(root, scale_name, length, octave) {
 }
 
 // Generate descending melody
+/// @vibelang-api export=public support=supported
 fn descending_melody(root, scale_name, length) {
     descending_melody_ex(root, scale_name, length, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn descending_melody_ex(root, scale_name, length, octave) {
     
     let scale = scales::scale(root, scale_name, octave, length);
@@ -214,10 +229,12 @@ fn descending_melody_ex(root, scale_name, length, octave) {
 }
 
 // Generate arch-shaped melody (up then down)
+/// @vibelang-api export=public support=supported
 fn arch_melody(root, scale_name, length) {
     arch_melody_ex(root, scale_name, length, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn arch_melody_ex(root, scale_name, length, octave) {
     
     let scale = scales::scale(root, scale_name, octave, length);
@@ -244,10 +261,12 @@ fn arch_melody_ex(root, scale_name, length, octave) {
 }
 
 // Generate wave melody (up-down-up-down)
+/// @vibelang-api export=public support=supported
 fn wave_melody(root, scale_name, length) {
     wave_melody_ex(root, scale_name, length, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn wave_melody_ex(root, scale_name, length, octave) {
     
     let scale = scales::scale(root, scale_name, octave, length);
@@ -276,10 +295,12 @@ fn wave_melody_ex(root, scale_name, length, octave) {
 // ============================================================================
 
 // Ascending sequence (repeat a motif at higher pitches)
+/// @vibelang-api export=public support=supported
 fn ascending_sequence(motif, steps) {
     ascending_sequence_ex(motif, steps, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn ascending_sequence_ex(motif, steps, semitone_interval) {
     
     let result = [];
@@ -300,10 +321,12 @@ fn ascending_sequence_ex(motif, steps, semitone_interval) {
 }
 
 // Descending sequence
+/// @vibelang-api export=public support=supported
 fn descending_sequence(motif, steps) {
     descending_sequence_ex(motif, steps, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn descending_sequence_ex(motif, steps, semitone_interval) {
     
     let result = [];
@@ -328,6 +351,7 @@ fn descending_sequence_ex(motif, steps, semitone_interval) {
 // ============================================================================
 
 // Retrograde (reverse the motif)
+/// @vibelang-api export=public support=supported
 fn retrograde(motif) {
     let result = [];
     
@@ -339,6 +363,7 @@ fn retrograde(motif) {
 }
 
 // Inversion (flip intervals)
+/// @vibelang-api export=public support=supported
 fn inversion(motif) {
     
     if motif.len() < 2 {
@@ -361,6 +386,7 @@ fn inversion(motif) {
 }
 
 // Augmentation (double note durations by inserting rests)
+/// @vibelang-api export=public support=supported
 fn augmentation(motif) {
     let result = [];
     
@@ -373,6 +399,7 @@ fn augmentation(motif) {
 }
 
 // Diminution (halve note durations by removing rests)
+/// @vibelang-api export=public support=supported
 fn diminution(motif) {
     let result = [];
     
@@ -390,10 +417,12 @@ fn diminution(motif) {
 // ============================================================================
 
 // Create call and response (motif, rest, answer)
+/// @vibelang-api export=public support=supported
 fn call_and_response(call_motif) {
     call_and_response_ex(call_motif, ())
 }
 
+/// @vibelang-api export=public support=supported
 fn call_and_response_ex(call_motif, answer_motif) {
     let result = [];
 
@@ -426,10 +455,12 @@ fn call_and_response_ex(call_motif, answer_motif) {
 // ============================================================================
 
 // Bebop scale run (chromatic passing tone on upbeat)
+/// @vibelang-api export=public support=supported
 fn bebop_run(root) {
     bebop_run_ex(root, 4, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn bebop_run_ex(root, octave, direction) {
     
     // Bebop dominant scale: major scale + b7 and natural 7
@@ -451,6 +482,7 @@ fn bebop_run_ex(root, octave, direction) {
 // ============================================================================
 
 // Fill melody with rests to specific length
+/// @vibelang-api export=public support=supported
 fn pad_with_rests(melody, target_length) {
     let result = melody;
     
@@ -462,6 +494,7 @@ fn pad_with_rests(melody, target_length) {
 }
 
 // Remove consecutive rests (leave only single rests)
+/// @vibelang-api export=public support=supported
 fn remove_consecutive_rests(melody) {
     let result = [];
     let last_was_rest = false;
@@ -482,6 +515,7 @@ fn remove_consecutive_rests(melody) {
 }
 
 // Limit melody to specific range
+/// @vibelang-api export=public support=supported
 fn limit_range(melody, lowest_note, highest_note) {
     
     let lowest_midi = core::note_to_midi(lowest_note);

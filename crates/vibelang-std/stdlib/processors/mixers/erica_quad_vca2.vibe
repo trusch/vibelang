@@ -5,6 +5,7 @@
 // bias_N is the manual opening voltage; patched CV is represented by driving
 // cv_N from a kr source and is summed with the same bias_N.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_quad_vca2_gain(cv, bias, level, curve) {
     let control = clip(cv + bias, 0.0, 1.0);
     let linear = control;

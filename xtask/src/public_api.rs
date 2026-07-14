@@ -5,10 +5,14 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
-use syn::{Expr, ExprBlock, ExprMethodCall, FnArg, GenericArgument, Item, ItemFn, Lit, Pat, Type};
+use syn::{
+    BinOp, Expr, ExprBinary, ExprBlock, ExprCall, ExprCast, ExprMacro, ExprMethodCall, ExprRange,
+    ExprTry, FnArg, GenericArgument, Item, ItemFn, Lit, Pat, ReturnType, Type,
+};
 use vibelang_api_manifest::{
-    stable_id, to_pretty_json, Anchor, ApiEntry, Availability, EntryDetails, Lifecycle, Overload,
-    Parameter, PublicApiManifest, UgenInput, SCHEMA_URI, SCHEMA_VERSION,
+    stable_id, to_pretty_json, Anchor, ApiEntry, Availability, BoundaryFacet, BoundarySemantics,
+    DuplicateNameHandling, EntryDetails, Lifecycle, Overload, Parameter, PublicApiManifest,
+    StdlibDeclaration, UgenInput, SCHEMA_URI, SCHEMA_VERSION,
 };
 use walkdir::WalkDir;
 
@@ -17,29 +21,17 @@ mod dsp_build_support;
 use dsp_build_support::UGenManifest;
 
 const MANIFEST_PATH: &str = "api/public-api-manifest-v1.json";
+const STDLIB_REFERENCE_PATH: &str = "docs/reference/generated/stdlib.md";
 const MANIFEST_TEST_SYMBOL: &str =
     "public_api::tests::generated_manifest_matches_committed_snapshot";
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     let manifest = build_manifest(root)?;
     let json = to_pretty_json(&manifest).map_err(|error| error.to_string())?;
-    let path = root.join(MANIFEST_PATH);
+    let stdlib_reference = render_stdlib_reference(&manifest)?;
 
-    if check {
-        let committed = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        if committed != json {
-            return Err(format!(
-                "{} is stale; run `CARGO_BUILD_JOBS=1 cargo run -p xtask -- public-api generate`",
-                MANIFEST_PATH
-            ));
-        }
-        println!("{} is current", MANIFEST_PATH);
-    } else {
-        fs::write(&path, json)
-            .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
-        println!("generated {}", MANIFEST_PATH);
-    }
+    write_or_check(root, MANIFEST_PATH, &json, check)?;
+    write_or_check(root, STDLIB_REFERENCE_PATH, &stdlib_reference, check)?;
 
     println!(
         "{} entries, {} overloads",
@@ -51,6 +43,142 @@ pub fn generate(root: &Path, check: bool) -> Result<(), String> {
             .sum::<usize>()
     );
     Ok(())
+}
+
+fn write_or_check(root: &Path, relative: &str, generated: &str, check: bool) -> Result<(), String> {
+    let path = root.join(relative);
+    if check {
+        let committed = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        if committed != generated {
+            return Err(format!(
+                "{relative} is stale; run `CARGO_BUILD_JOBS=1 cargo run -p xtask -- public-api generate`"
+            ));
+        }
+        println!("{relative} is current");
+    } else {
+        fs::write(&path, generated)
+            .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
+        println!("generated {relative}");
+    }
+    Ok(())
+}
+
+fn render_stdlib_reference(manifest: &PublicApiManifest) -> Result<String, String> {
+    let stat = |name: &str| {
+        manifest
+            .stats
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("manifest stat `{name}` missing for stdlib reference"))
+    };
+    let mut output = String::new();
+    output.push_str("# Generated standard-library index\n\n");
+    output.push_str(
+        "> Generated from `api/public-api-manifest-v1.json`; edit stdlib source metadata and regenerate instead of editing this file.\n\n",
+    );
+    output.push_str(&format!(
+        "The shipped tree contains **{} `.vibe` files**, **{} DSP definition occurrences / {} unique names**, and **{} explicitly classified function declarations**: **{} supported public** and **{} import-callable internal/unsupported**.\n\n",
+        stat("stdlib_files")?,
+        stat("stdlib_definition_occurrences")?,
+        stat("stdlib_definition_names")?,
+        stat("stdlib_function_classified")?,
+        stat("stdlib_function_public_supported")?,
+        stat("stdlib_function_import_callable_internal")?,
+    ));
+    output.push_str("Import paths are module-scoped. Public functions are supported API; `import_callable_internal` functions remain callable because Rhai imports expose them, but their explicit support status is `unsupported`. Duplicate DSP registry names remain source-order-sensitive, while function namespaces can disambiguate duplicate function names.\n\n");
+
+    output.push_str("## DSP definitions\n\n");
+    output.push_str(
+        "| Public name | Kind | Export / support | Import module | Source | Duplicate handling |\n",
+    );
+    output.push_str("|---|---|---|---|---|---|\n");
+    for entry in manifest
+        .entries
+        .iter()
+        .filter(|entry| matches!(&entry.details, EntryDetails::StdlibDefinition { .. }))
+    {
+        let EntryDetails::StdlibDefinition {
+            definition_kind,
+            declarations,
+            duplicate_name,
+            ..
+        } = &entry.details
+        else {
+            unreachable!()
+        };
+        for declaration in declarations {
+            output.push_str(&format!(
+                "| `{}` | `{}` | `{}` / `{}` | `{}` | {} | `{}` ({}) |\n",
+                entry.registered_name,
+                definition_kind,
+                declaration.export_classification,
+                declaration.support_classification,
+                declaration.import_path,
+                markdown_anchor(&declaration.source_anchor),
+                duplicate_name.status,
+                duplicate_name.declaration_count,
+            ));
+        }
+    }
+
+    for (heading, export, support) in [
+        ("Supported public functions", "public", "supported"),
+        (
+            "Import-callable implementation functions",
+            "import_callable_internal",
+            "unsupported",
+        ),
+    ] {
+        output.push_str(&format!("\n## {heading}\n\n"));
+        output.push_str("| Exact callable signature | Import module | Export / support | Source | Duplicate handling |\n");
+        output.push_str("|---|---|---|---|---|\n");
+        for entry in manifest
+            .entries
+            .iter()
+            .filter(|entry| matches!(&entry.details, EntryDetails::StdlibFunction { .. }))
+        {
+            let EntryDetails::StdlibFunction {
+                declarations,
+                duplicate_name,
+                ..
+            } = &entry.details
+            else {
+                unreachable!()
+            };
+            for declaration in declarations.iter().filter(|declaration| {
+                declaration.export_classification == export
+                    && declaration.support_classification == support
+            }) {
+                output.push_str(&format!(
+                    "| `{}` | `{}` | `{}` / `{}` | {} | `{}` ({}) |\n",
+                    declaration
+                        .callable_signature
+                        .as_deref()
+                        .unwrap_or("not directly callable"),
+                    declaration.import_path,
+                    declaration.export_classification,
+                    declaration.support_classification,
+                    markdown_anchor(&declaration.source_anchor),
+                    duplicate_name.status,
+                    duplicate_name.declaration_count,
+                ));
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn markdown_anchor(anchor: &Anchor) -> String {
+    let line = anchor.line.unwrap_or_default();
+    if line == 0 {
+        format!("[`{}`](../../../{})", anchor.path, anchor.path)
+    } else {
+        format!(
+            "[`{}:{line}`](../../../{}#L{line})",
+            anchor.path, anchor.path
+        )
+    }
 }
 
 fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
@@ -70,6 +198,7 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
     let stdlib = scan_stdlib(root)?;
     entries.extend(stdlib.entries);
 
+    classify_lifecycles(&mut entries);
     canonicalize_entries(&mut entries);
     validate_entries(&entries)?;
 
@@ -114,8 +243,60 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
         source_index.types.len() as u64,
     );
     stats.insert("stdlib_definition_occurrences".into(), stdlib.definitions);
+    stats.insert(
+        "stdlib_definition_names".into(),
+        entries
+            .iter()
+            .filter(|entry| matches!(&entry.details, EntryDetails::StdlibDefinition { .. }))
+            .count() as u64,
+    );
     stats.insert("stdlib_files".into(), stdlib.files);
     stats.insert("stdlib_function_declarations".into(), stdlib.functions);
+    stats.insert(
+        "stdlib_function_classified".into(),
+        entries
+            .iter()
+            .filter_map(|entry| match &entry.details {
+                EntryDetails::StdlibFunction { declarations, .. } => Some(declarations),
+                _ => None,
+            })
+            .flatten()
+            .filter(|declaration| {
+                declaration.export_classification != "unknown"
+                    && declaration.support_classification != "unknown"
+            })
+            .count() as u64,
+    );
+    stats.insert(
+        "stdlib_function_public_supported".into(),
+        entries
+            .iter()
+            .filter_map(|entry| match &entry.details {
+                EntryDetails::StdlibFunction { declarations, .. } => Some(declarations),
+                _ => None,
+            })
+            .flatten()
+            .filter(|declaration| {
+                declaration.export_classification == "public"
+                    && declaration.support_classification == "supported"
+            })
+            .count() as u64,
+    );
+    stats.insert(
+        "stdlib_function_import_callable_internal".into(),
+        entries
+            .iter()
+            .filter_map(|entry| match &entry.details {
+                EntryDetails::StdlibFunction { declarations, .. } => Some(declarations),
+                _ => None,
+            })
+            .flatten()
+            .filter(|declaration| {
+                declaration.export_classification == "import_callable_internal"
+                    && declaration.support_classification == "unsupported"
+            })
+            .count() as u64,
+    );
     stats.insert(
         "ugen_callable_records".into(),
         ugen_catalog.callable_records,
@@ -146,6 +327,87 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
     })
 }
 
+fn classify_lifecycles(entries: &mut [ApiEntry]) {
+    const NAMED_TERMINALS: &[&str] = &[
+        "apply",
+        "body",
+        "body_map",
+        "cancel",
+        "launch",
+        "now",
+        "remove",
+        "restart",
+        "run",
+        "start",
+        "start_now",
+        "stop",
+    ];
+    for entry in entries {
+        entry.lifecycle = match &entry.details {
+            EntryDetails::RhaiType { .. } => Lifecycle {
+                phase: "type_registration".into(),
+                terminal: "not_applicable".into(),
+                classification: "registration-derived".into(),
+            },
+            EntryDetails::Ugen { callable, .. } => Lifecycle {
+                phase: if *callable {
+                    "graph_construction"
+                } else {
+                    "unavailable_or_documentation_only"
+                }
+                .into(),
+                terminal: if *callable { "call" } else { "not_applicable" }.into(),
+                classification: "ugen-generator-derived".into(),
+            },
+            EntryDetails::StdlibDefinition { .. } => Lifecycle {
+                phase: "module_import".into(),
+                terminal: "definition_registration".into(),
+                classification: "stdlib-source-derived".into(),
+            },
+            EntryDetails::StdlibFunction { .. } => Lifecycle {
+                phase: "script_call".into(),
+                terminal: "call".into(),
+                classification: "stdlib-source-derived".into(),
+            },
+            EntryDetails::Rhai { .. } if entry.kind == "property_get" => Lifecycle {
+                phase: "read".into(),
+                terminal: "property_get".into(),
+                classification: "registration-derived".into(),
+            },
+            EntryDetails::Rhai { .. } if entry.kind == "property_set" => Lifecycle {
+                phase: "mutation".into(),
+                terminal: "property_set".into(),
+                classification: "registration-derived".into(),
+            },
+            EntryDetails::Rhai { .. } => {
+                let returns_receiver = !entry.overloads.is_empty()
+                    && entry
+                        .overloads
+                        .iter()
+                        .all(|overload| overload.returns_receiver == Some(true));
+                let named_terminal = NAMED_TERMINALS.contains(&entry.registered_name.as_str());
+                Lifecycle {
+                    phase: if returns_receiver {
+                        "builder_or_handle_call"
+                    } else {
+                        "call"
+                    }
+                    .into(),
+                    terminal: if named_terminal {
+                        "named_terminal"
+                    } else if returns_receiver {
+                        "non_terminal_chain"
+                    } else {
+                        "call_result"
+                    }
+                    .into(),
+                    classification: "signature-and-registration-derived".into(),
+                }
+            }
+        };
+    }
+}
+
 fn validate_baseline(stats: &BTreeMap<String, u64>) -> Result<(), String> {
     let expected = [
         ("registration_declarations", 638),
@@ -153,8 +415,12 @@ fn validate_baseline(stats: &BTreeMap<String, u64>) -> Result<(), String> {
         ("manifest_ugen_callable_entries", 1_174),
         ("manifest_ugen_callable_overloads", 5_962),
         ("stdlib_definition_occurrences", 890),
+        ("stdlib_definition_names", 887),
         ("stdlib_files", 829),
         ("stdlib_function_declarations", 707),
+        ("stdlib_function_classified", 707),
+        ("stdlib_function_public_supported", 595),
+        ("stdlib_function_import_callable_internal", 112),
         ("ugen_callable_records", 802),
         ("ugen_demand_names", 25),
         ("ugen_quarantined_names", 25),
@@ -333,22 +599,53 @@ fn rhai_entries(
                     .map(|_| 1usize)
             })
         });
-        let parameters = function
-            .params
-            .iter()
-            .skip(receiver_parameter.unwrap_or(0))
-            .enumerate()
-            .map(|(position, parameter)| Parameter {
-                position: position as u32,
-                name: parameter.name.clone(),
-                accepted_types: vec![parameter
-                    .parameter_type
-                    .clone()
-                    .unwrap_or_else(|| "Dynamic".into())],
+        let parameters = if ugen.is_some_and(|ugen| ugen.is_array_overload(function)) {
+            vec![Parameter {
+                position: 0,
+                name: Some("inputs".into()),
+                accepted_types: vec!["array".into()],
                 optional: false,
                 default: None,
-            })
-            .collect();
+            }]
+        } else {
+            function
+                .params
+                .iter()
+                .skip(receiver_parameter.unwrap_or(0))
+                .enumerate()
+                .map(|(position, parameter)| Parameter {
+                    position: position as u32,
+                    name: parameter.name.clone(),
+                    accepted_types: vec![parameter
+                        .parameter_type
+                        .as_deref()
+                        .map(clean_type)
+                        .unwrap_or_else(|| "Dynamic".into())],
+                    optional: false,
+                    default: None,
+                })
+                .collect()
+        };
+        let boundary = if let Some(ugen) = ugen {
+            ugen.boundary(function)
+        } else {
+            let mut evidence = BoundaryEvidence::default();
+            for source in &source_matches {
+                evidence.merge(&source.boundary);
+            }
+            evidence.into_semantics(
+                if source_matches.is_empty() {
+                    "effective-rhai-metadata"
+                } else {
+                    "rust-callable-ast"
+                },
+                if source_matches.is_empty() {
+                    "the effective Rhai metadata-only overload"
+                } else {
+                    "the registered Rust callable AST"
+                },
+            )
+        };
         let canonical = format!("{}|{}", entry.id, function.signature);
         entry.overloads.push(Overload {
             id: stable_id("overload", &canonical),
@@ -359,6 +656,7 @@ fn rhai_entries(
             returns_receiver: receiver
                 .as_ref()
                 .map(|receiver| same_type(&function.return_type, receiver)),
+            boundary,
             availability: overload_availability,
             source_anchors,
         });
@@ -799,6 +1097,7 @@ struct SourceRegistration {
     callable: String,
     parameters: Option<Vec<String>>,
     receiver: Option<String>,
+    boundary: BoundaryEvidence,
     anchor: Anchor,
     cfg: Vec<String>,
 }
@@ -1001,10 +1300,220 @@ struct SignatureIndex {
     methods: BTreeMap<(String, String), CallableSignature>,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 struct CallableSignature {
     parameters: Vec<String>,
     receiver: Option<String>,
+    boundary: BoundaryEvidence,
+}
+
+impl PartialEq for CallableSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.parameters == other.parameters && self.receiver == other.receiver
+    }
+}
+
+impl Eq for CallableSignature {}
+
+#[derive(Debug, Clone, Default)]
+struct BoundaryEvidence {
+    coercions: BTreeSet<String>,
+    casts: BTreeSet<String>,
+    clamps: BTreeSet<String>,
+    ranges: BTreeSet<String>,
+    fallbacks: BTreeSet<String>,
+    structured_errors: BTreeSet<String>,
+    panic_exposure: BTreeSet<String>,
+}
+
+impl BoundaryEvidence {
+    fn merge(&mut self, other: &Self) {
+        self.coercions.extend(other.coercions.iter().cloned());
+        self.casts.extend(other.casts.iter().cloned());
+        self.clamps.extend(other.clamps.iter().cloned());
+        self.ranges.extend(other.ranges.iter().cloned());
+        self.fallbacks.extend(other.fallbacks.iter().cloned());
+        self.structured_errors
+            .extend(other.structured_errors.iter().cloned());
+        self.panic_exposure
+            .extend(other.panic_exposure.iter().cloned());
+    }
+
+    fn into_semantics(self, classification: &str, scope: &str) -> BoundarySemantics {
+        BoundarySemantics {
+            classification: classification.into(),
+            coercions: evidence_facet(
+                self.coercions,
+                format!("no coercion operation found in {scope}"),
+            ),
+            casts: evidence_facet(self.casts, format!("no cast operation found in {scope}")),
+            clamps: evidence_facet(self.clamps, format!("no clamp operation found in {scope}")),
+            ranges: evidence_facet(
+                self.ranges,
+                format!("no explicit range operation found in {scope}"),
+            ),
+            fallbacks: evidence_facet(
+                self.fallbacks,
+                format!("no explicit fallback operation found in {scope}"),
+            ),
+            structured_errors: evidence_facet(
+                self.structured_errors,
+                format!("no structured error operation found in {scope}"),
+            ),
+            panic_exposure: evidence_facet(
+                self.panic_exposure,
+                format!("no panic primitive found in {scope}"),
+            ),
+        }
+    }
+}
+
+fn evidence_facet(values: BTreeSet<String>, none_reason: String) -> BoundaryFacet {
+    if values.is_empty() {
+        BoundaryFacet::none(none_reason)
+    } else {
+        BoundaryFacet::present(values)
+    }
+}
+
+#[derive(Default)]
+struct RustBoundaryVisitor {
+    evidence: BoundaryEvidence,
+}
+
+impl<'ast> Visit<'ast> for RustBoundaryVisitor {
+    fn visit_expr_cast(&mut self, node: &'ast ExprCast) {
+        self.evidence.casts.insert(format!(
+            "Rust `as {}` cast in registered callable body",
+            canonical_syn_type(&node.ty)
+        ));
+        syn::visit::visit_expr_cast(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
+        let method = node.method.to_string();
+        match method.as_str() {
+            "try_cast" | "cast" | "try_into" => {
+                self.evidence.coercions.insert(format!(
+                    "explicit `{method}` conversion in registered callable body"
+                ));
+            }
+            "clamp" => {
+                self.evidence
+                    .clamps
+                    .insert("Rust `clamp` operation in registered callable body".into());
+                self.evidence
+                    .ranges
+                    .insert("bounds enforced by Rust `clamp`".into());
+            }
+            "unwrap_or" | "unwrap_or_else" | "unwrap_or_default" | "or_else" => {
+                self.evidence.fallbacks.insert(format!(
+                    "explicit `{method}` fallback in registered callable body"
+                ));
+            }
+            "unwrap" | "expect" => {
+                self.evidence
+                    .panic_exposure
+                    .insert(format!("`{method}` may panic in registered callable body"));
+            }
+            _ => {}
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(path) = &*node.func {
+            if let Some(name) = path
+                .path
+                .segments
+                .last()
+                .map(|segment| segment.ident.to_string())
+            {
+                if name == "clamp" {
+                    self.evidence
+                        .clamps
+                        .insert("registered callable invokes a `clamp` function".into());
+                    self.evidence
+                        .ranges
+                        .insert("bounds enforced by a `clamp` function".into());
+                } else if name == "Err" {
+                    self.evidence
+                        .structured_errors
+                        .insert("registered callable constructs a Rust `Err`".into());
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_binary(&mut self, node: &'ast ExprBinary) {
+        if matches!(
+            node.op,
+            BinOp::Lt(_) | BinOp::Le(_) | BinOp::Gt(_) | BinOp::Ge(_)
+        ) {
+            self.evidence.ranges.insert(
+                "registered callable contains an explicit ordered-boundary comparison".into(),
+            );
+        }
+        syn::visit::visit_expr_binary(self, node);
+    }
+
+    fn visit_expr_range(&mut self, node: &'ast ExprRange) {
+        self.evidence
+            .ranges
+            .insert("registered callable contains a Rust range expression".into());
+        syn::visit::visit_expr_range(self, node);
+    }
+
+    fn visit_expr_try(&mut self, node: &'ast ExprTry) {
+        self.evidence
+            .structured_errors
+            .insert("registered callable propagates a structured Rust error with `?`".into());
+        syn::visit::visit_expr_try(self, node);
+    }
+
+    fn visit_expr_macro(&mut self, node: &'ast ExprMacro) {
+        let name = node
+            .mac
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_default();
+        match name.as_str() {
+            "panic" | "assert" | "assert_eq" | "assert_ne" | "unreachable" | "todo"
+            | "unimplemented" => {
+                self.evidence
+                    .panic_exposure
+                    .insert(format!("`{name}!` may panic in registered callable body"));
+            }
+            "bail" | "ensure" => {
+                self.evidence
+                    .structured_errors
+                    .insert(format!("`{name}!` constructs a structured error"));
+            }
+            _ => {}
+        }
+        syn::visit::visit_expr_macro(self, node);
+    }
+}
+
+fn rust_boundary_for_callable<T: ToTokens>(output: &ReturnType, body: &T) -> BoundaryEvidence {
+    let mut visitor = RustBoundaryVisitor::default();
+    if let ReturnType::Type(_, output) = output {
+        let output = output.to_token_stream().to_string();
+        if output.contains("Result") || output.contains("EvalAltResult") {
+            visitor.evidence.structured_errors.insert(
+                "registered callable return type carries a structured Rust/Rhai error".into(),
+            );
+        }
+    }
+    if let Ok(expression) = syn::parse2::<Expr>(body.to_token_stream()) {
+        visitor.visit_expr(&expression);
+    } else if let Ok(block) = syn::parse2::<syn::Block>(body.to_token_stream()) {
+        visitor.visit_block(&block);
+    }
+    visitor.evidence
 }
 
 impl SignatureIndex {
@@ -1018,7 +1527,11 @@ impl SignatureIndex {
                 Item::Fn(function) => {
                     index.free.insert(
                         function.sig.ident.to_string(),
-                        callable_signature(&function.sig, None),
+                        callable_signature(
+                            &function.sig,
+                            None,
+                            rust_boundary_for_callable(&function.sig.output, &function.block),
+                        ),
                     );
                 }
                 Item::Impl(implementation) => {
@@ -1028,7 +1541,11 @@ impl SignatureIndex {
                         if let syn::ImplItem::Fn(method) = item {
                             index.methods.insert(
                                 (self_type.clone(), method.sig.ident.to_string()),
-                                callable_signature(&method.sig, Some(&self_type)),
+                                callable_signature(
+                                    &method.sig,
+                                    Some(&self_type),
+                                    rust_boundary_for_callable(&method.sig.output, &method.block),
+                                ),
                             );
                         }
                     }
@@ -1064,6 +1581,7 @@ impl SignatureIndex {
                 Some(CallableSignature {
                     parameters,
                     receiver,
+                    boundary: rust_boundary_for_callable(&closure.output, &closure.body),
                 })
             }
             Expr::Path(path) => {
@@ -1097,11 +1615,17 @@ fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String>
         for item in file.items {
             match item {
                 Item::Fn(function) => {
-                    let signature = callable_signature(&function.sig, None);
+                    let signature = callable_signature(
+                        &function.sig,
+                        None,
+                        rust_boundary_for_callable(&function.sig.output, &function.block),
+                    );
                     let candidates = free_candidates
                         .entry(function.sig.ident.to_string())
                         .or_default();
-                    if !candidates.contains(&signature) {
+                    if let Some(existing) = candidates.iter_mut().find(|item| **item == signature) {
+                        existing.boundary.merge(&signature.boundary);
+                    } else {
                         candidates.push(signature);
                     }
                 }
@@ -1112,7 +1636,11 @@ fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String>
                         if let syn::ImplItem::Fn(method) = item {
                             methods.insert(
                                 (self_type.clone(), method.sig.ident.to_string()),
-                                callable_signature(&method.sig, Some(&self_type)),
+                                callable_signature(
+                                    &method.sig,
+                                    Some(&self_type),
+                                    rust_boundary_for_callable(&method.sig.output, &method.block),
+                                ),
                             );
                         }
                     }
@@ -1130,7 +1658,11 @@ fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String>
     Ok(GlobalSignatures { free, methods })
 }
 
-fn callable_signature(signature: &syn::Signature, self_type: Option<&str>) -> CallableSignature {
+fn callable_signature(
+    signature: &syn::Signature,
+    self_type: Option<&str>,
+    boundary: BoundaryEvidence,
+) -> CallableSignature {
     let explicit_receiver = signature
         .inputs
         .iter()
@@ -1163,6 +1695,7 @@ fn callable_signature(signature: &syn::Signature, self_type: Option<&str>) -> Ca
     CallableSignature {
         parameters,
         receiver,
+        boundary,
     }
 }
 
@@ -1220,6 +1753,10 @@ impl RegistrationVisitor<'_> {
                 return;
             };
             let signature = self.signatures.callable(callable);
+            let boundary = signature
+                .as_ref()
+                .map(|signature| signature.boundary.clone())
+                .unwrap_or_default();
             self.registrations.push(SourceRegistration {
                 name: name.value(),
                 kind: if method == "register_get" {
@@ -1232,6 +1769,7 @@ impl RegistrationVisitor<'_> {
                     .as_ref()
                     .map(|signature| signature.parameters.clone()),
                 receiver: signature.and_then(|signature| signature.receiver),
+                boundary,
                 anchor: Anchor {
                     path: self.relative.into(),
                     symbol: format!("{}::{method}", self.function),
@@ -1348,6 +1886,83 @@ struct GeneratedUgen {
 impl GeneratedUgen {
     fn matches_metadata(&self, function: &RhaiFunction) -> bool {
         metadata_matches_generated_ugen(self.manifest.inputs.len(), function)
+    }
+
+    fn is_array_overload(&self, function: &RhaiFunction) -> bool {
+        dsp_build_support::has_array_overload(self.manifest.inputs.len())
+            && function.num_params == 1
+            && function.params.is_empty()
+    }
+
+    fn boundary(&self, function: &RhaiFunction) -> BoundarySemantics {
+        let array_overload = self.is_array_overload(function);
+        let shape_input = if self.manifest.name == "LocalIn" {
+            Some("numChannels")
+        } else {
+            self.manifest.channel_count_input.as_deref()
+        };
+        let clamps = if matches!(
+            function.name.as_str(),
+            "splay_ar" | "splay_kr" | "splay_az_ar" | "splay_az_kr"
+        ) {
+            BoundaryFacet::present(["numeric level-compensation exponents are clamped to 0..=1"])
+        } else {
+            BoundaryFacet::none("generated UGen wrapper performs no clamp")
+        };
+        let ranges = if array_overload {
+            BoundaryFacet::present([format!(
+                "array overload requires exactly {} elements",
+                self.manifest.inputs.len()
+            )])
+        } else if let Some(shape_input) = shape_input {
+            BoundaryFacet::present([format!(
+                "`{shape_input}` must be a finite integer in 1..={} when supplied",
+                i16::MAX
+            )])
+        } else {
+            BoundaryFacet::none("generated UGen wrapper declares no host-side numeric range")
+        };
+        let fallbacks = if !array_overload && function.num_params < self.manifest.inputs.len() {
+            BoundaryFacet::present([format!(
+                "{} omitted trailing input(s) use manifest defaults, or 0.0 where no numeric default is declared",
+                self.manifest.inputs.len() - function.num_params
+            )])
+        } else {
+            BoundaryFacet::none("overload supplies every generated UGen input")
+        };
+        let structured_errors = if array_overload {
+            BoundaryFacet::present(["wrong array length returns a Rhai evaluation error"])
+        } else {
+            BoundaryFacet::none(
+                "conversion/build errors are unwrapped by the registration closure instead of returned",
+            )
+        };
+        let (coercions, casts) = if self.manifest.inputs.is_empty() {
+            (
+                BoundaryFacet::not_applicable("zero-input UGen has no values to coerce"),
+                BoundaryFacet::not_applicable("zero-input UGen has no values to cast"),
+            )
+        } else {
+            (
+                BoundaryFacet::present([
+                    "Dynamic NodeRef values pass through as graph inputs",
+                    "Dynamic f64/i64/i32 values lower to graph constants",
+                ]),
+                BoundaryFacet::present(["accepted numeric graph constants are cast to f32"]),
+            )
+        };
+        BoundarySemantics {
+            classification: "generated-ugen-registration".into(),
+            coercions,
+            casts,
+            clamps,
+            ranges,
+            fallbacks,
+            structured_errors,
+            panic_exposure: BoundaryFacet::present([
+                "generated Rhai registration closure unwraps SynthDefError and can panic",
+            ]),
+        }
     }
 
     fn details(&self, callable: bool) -> EntryDetails {
@@ -1629,6 +2244,104 @@ fn stdlib_availability() -> Availability {
     }
 }
 
+fn parse_stdlib_classification(
+    name: &str,
+    comments: &[String],
+) -> Result<(String, String), String> {
+    let annotations = comments
+        .iter()
+        .filter_map(|comment| comment.split_once("@vibelang-api").map(|(_, value)| value))
+        .collect::<Vec<_>>();
+    if annotations.len() != 1 {
+        return Err(format!(
+            "stdlib function `{name}` requires exactly one `@vibelang-api export=<...> support=<...>` annotation; found {}",
+            annotations.len()
+        ));
+    }
+    let fields = annotations[0]
+        .split_whitespace()
+        .filter_map(|field| field.split_once('='))
+        .collect::<BTreeMap<_, _>>();
+    let export = fields
+        .get("export")
+        .copied()
+        .ok_or_else(|| format!("stdlib function `{name}` annotation is missing `export`"))?;
+    let support = fields
+        .get("support")
+        .copied()
+        .ok_or_else(|| format!("stdlib function `{name}` annotation is missing `support`"))?;
+    if !matches!(export, "public" | "import_callable_internal") {
+        return Err(format!(
+            "stdlib function `{name}` has unsupported export classification `{export}`"
+        ));
+    }
+    if !matches!(support, "supported" | "unsupported") {
+        return Err(format!(
+            "stdlib function `{name}` has unsupported support classification `{support}`"
+        ));
+    }
+    if (export == "public") != (support == "supported") {
+        return Err(format!(
+            "stdlib function `{name}` has inconsistent export/support classification `{export}`/`{support}`"
+        ));
+    }
+    Ok((export.into(), support.into()))
+}
+
+fn duplicate_name_handling(
+    kind: &str,
+    declarations: &[StdlibDeclaration],
+    resolution: &str,
+) -> DuplicateNameHandling {
+    DuplicateNameHandling {
+        status: if declarations.len() > 1 {
+            "duplicate"
+        } else {
+            "unique"
+        }
+        .into(),
+        declaration_count: declarations.len() as u32,
+        import_paths: declarations
+            .iter()
+            .map(|declaration| declaration.import_path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        resolution: if declarations.len() > 1 {
+            resolution.into()
+        } else {
+            format!("unique {kind} name in the shipped stdlib source inventory")
+        },
+    }
+}
+
+fn stdlib_definition_boundary() -> BoundarySemantics {
+    BoundarySemantics {
+        classification: "stdlib-definition-registration".into(),
+        coercions: BoundaryFacet::not_applicable(
+            "DSP definition inventory entry is not a directly callable function",
+        ),
+        casts: BoundaryFacet::not_applicable(
+            "DSP definition inventory entry is not a directly callable function",
+        ),
+        clamps: BoundaryFacet::not_applicable(
+            "DSP definition inventory entry is not a directly callable function",
+        ),
+        ranges: BoundaryFacet::not_applicable(
+            "DSP definition inventory entry is not a directly callable function",
+        ),
+        fallbacks: BoundaryFacet::none(
+            "literal define_synthdef/define_fx registration has no fallback",
+        ),
+        structured_errors: BoundaryFacet::none(
+            "definition inventory boundary declares no structured error",
+        ),
+        panic_exposure: BoundaryFacet::none(
+            "definition inventory boundary contains no native panic primitive",
+        ),
+    }
+}
+
 fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
     let stdlib_root = root.join("crates/vibelang-std/stdlib");
     let mut paths = Vec::new();
@@ -1645,7 +2358,7 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
     let mut engine = rhai::Engine::new_raw();
     engine.set_max_expr_depths(4096, 4096);
     engine.set_max_call_levels(4096);
-    let mut definitions: BTreeMap<(String, String), Vec<(String, Anchor)>> = BTreeMap::new();
+    let mut definitions: BTreeMap<(String, String), Vec<StdlibDeclaration>> = BTreeMap::new();
     let mut functions: BTreeMap<(String, Option<String>), StdlibFunctionGroup> = BTreeMap::new();
     let mut definition_count = 0;
     let mut function_count = 0;
@@ -1658,20 +2371,27 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
 
         for definition in scan_definitions(&tokens) {
             definition_count += 1;
+            let definition_kind = definition.kind.clone();
+            let anchor = Anchor {
+                path: relative.clone(),
+                symbol: definition.name.clone(),
+                line: Some(definition.line),
+            };
             definitions
-                .entry((definition.kind, definition.name.clone()))
+                .entry((definition_kind.clone(), definition.name.clone()))
                 .or_default()
-                .push((
-                    import_path.clone(),
-                    Anchor {
-                        path: relative.clone(),
-                        symbol: definition.name,
-                        line: Some(definition.line),
-                    },
-                ));
+                .push(StdlibDeclaration {
+                    import_path: import_path.clone(),
+                    definition_kind,
+                    callable_signature: None,
+                    access: "module_import".into(),
+                    export_classification: "public_registry_definition".into(),
+                    support_classification: "supported".into(),
+                    source_anchor: anchor,
+                });
         }
 
-        let mut lines = scan_function_lines(&tokens);
+        let mut sources = scan_function_sources(&tokens);
         let ast = engine
             .compile(&body)
             .map_err(|error| format!("failed to compile {}: {error}", path.display()))?;
@@ -1681,7 +2401,7 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
             }
             function_count += 1;
             let signature = function.to_string();
-            let queue = lines
+            let queue = sources
                 .get_mut(&(function.name.to_owned(), function.params.len()))
                 .ok_or_else(|| {
                     format!(
@@ -1690,13 +2410,20 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
                         path.display()
                     )
                 })?;
-            let line = queue.pop_front().ok_or_else(|| {
+            let source = queue.pop_front().ok_or_else(|| {
                 format!(
                     "source anchor exhausted for {} in {}",
                     signature,
                     path.display()
                 )
             })?;
+            let comments = function
+                .comments
+                .iter()
+                .map(|comment| comment.to_string())
+                .collect::<Vec<_>>();
+            let (export_classification, support_classification) =
+                parse_stdlib_classification(function.name, &comments)?;
             let receiver = function.this_type.map(str::to_owned);
             let group = functions
                 .entry((function.name.to_owned(), receiver.clone()))
@@ -1708,27 +2435,36 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
                     access: BTreeSet::new(),
                     documentation: BTreeSet::new(),
                     anchors: BTreeSet::new(),
+                    declarations: Vec::new(),
                 });
             let anchor = Anchor {
                 path: relative.clone(),
                 symbol: signature.clone(),
-                line: Some(line),
+                line: Some(source.line),
             };
+            let access = format!("{:?}", function.access).to_lowercase();
             group.import_paths.insert(import_path.clone());
-            group
-                .access
-                .insert(format!("{:?}", function.access).to_lowercase());
-            group
-                .documentation
-                .extend(function.comments.iter().map(|comment| comment.to_string()));
+            group.access.insert(access.clone());
+            group.documentation.extend(
+                comments
+                    .into_iter()
+                    .filter(|comment| !comment.contains("@vibelang-api")),
+            );
             group.anchors.insert(anchor.clone());
+            group.declarations.push(StdlibDeclaration {
+                import_path: import_path.clone(),
+                definition_kind: "script_function".into(),
+                callable_signature: Some(signature.clone()),
+                access,
+                export_classification,
+                support_classification,
+                source_anchor: anchor.clone(),
+            });
             group
                 .overloads
                 .entry(signature.clone())
-                .or_insert_with(|| Overload {
-                    id: String::new(),
+                .or_insert_with(|| StdlibOverloadGroup {
                     signature,
-                    aliases: Vec::new(),
                     parameters: function
                         .params
                         .iter()
@@ -1741,15 +2477,19 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
                             default: None,
                         })
                         .collect(),
-                    return_type: "Dynamic".into(),
-                    returns_receiver: None,
-                    availability: stdlib_availability(),
                     source_anchors: Vec::new(),
+                    boundary: BoundaryEvidence::default(),
                 })
                 .source_anchors
                 .push(anchor);
+            group
+                .overloads
+                .get_mut(&function.to_string())
+                .expect("stdlib overload inserted")
+                .boundary
+                .merge(&source.boundary);
         }
-        if lines.values().any(|queue| !queue.is_empty()) {
+        if sources.values().any(|queue| !queue.is_empty()) {
             return Err(format!(
                 "Rhai AST did not expose every function declaration in {}",
                 path.display()
@@ -1758,14 +2498,14 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
     }
 
     let mut entries = Vec::new();
-    for ((kind, name), occurrences) in definitions {
-        let anchors: Vec<_> = occurrences
+    for ((kind, name), declarations) in definitions {
+        let anchors: Vec<_> = declarations
             .iter()
-            .map(|(_, anchor)| anchor.clone())
+            .map(|declaration| declaration.source_anchor.clone())
             .collect();
-        let import_paths: Vec<_> = occurrences
+        let import_paths: Vec<_> = declarations
             .iter()
-            .map(|(path, _)| path.clone())
+            .map(|declaration| declaration.import_path.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
@@ -1785,6 +2525,7 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
                 parameters: Vec::new(),
                 return_type: "definition".into(),
                 returns_receiver: None,
+                boundary: stdlib_definition_boundary(),
                 availability: stdlib_availability(),
                 source_anchors: anchors.clone(),
             }],
@@ -1794,10 +2535,15 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
             test_anchors: test_anchors("stdlib"),
             details: EntryDetails::StdlibDefinition {
                 definition_kind: kind,
+                duplicate_name: duplicate_name_handling(
+                    "dsp_definition",
+                    &declarations,
+                    "synthdef/effect registry replacement is source-order-sensitive; import namespaces do not isolate registry names",
+                ),
                 import_paths,
-                occurrences: anchors,
-                export_classification: "unknown".into(),
-                support_classification: "unknown".into(),
+                declarations,
+                export_classification: "public_registry_definition".into(),
+                support_classification: "supported".into(),
             },
         });
     }
@@ -1816,24 +2562,62 @@ fn scan_stdlib(root: &Path) -> Result<StdlibScan, String> {
 struct StdlibFunctionGroup {
     name: String,
     receiver: Option<String>,
-    overloads: BTreeMap<String, Overload>,
+    overloads: BTreeMap<String, StdlibOverloadGroup>,
     import_paths: BTreeSet<String>,
     access: BTreeSet<String>,
     documentation: BTreeSet<String>,
     anchors: BTreeSet<Anchor>,
+    declarations: Vec<StdlibDeclaration>,
+}
+
+struct StdlibOverloadGroup {
+    signature: String,
+    parameters: Vec<Parameter>,
+    source_anchors: Vec<Anchor>,
+    boundary: BoundaryEvidence,
 }
 
 impl StdlibFunctionGroup {
-    fn into_entry(mut self) -> ApiEntry {
+    fn into_entry(self) -> ApiEntry {
         let canonical = format!(
             "stdlib|script_function|{}|{}",
             self.name,
             self.receiver.as_deref().unwrap_or("")
         );
         let entry_id = stable_id("entry", &canonical);
-        for overload in self.overloads.values_mut() {
-            overload.id = stable_id("overload", &format!("{}|{}", entry_id, overload.signature));
-        }
+        let overloads = self
+            .overloads
+            .into_values()
+            .map(|overload| Overload {
+                id: stable_id("overload", &format!("{}|{}", entry_id, overload.signature)),
+                signature: overload.signature,
+                aliases: Vec::new(),
+                parameters: overload.parameters,
+                return_type: "Dynamic".into(),
+                returns_receiver: None,
+                boundary: overload
+                    .boundary
+                    .into_semantics("stdlib-rhai-source", "the stdlib Rhai function body"),
+                availability: stdlib_availability(),
+                source_anchors: overload.source_anchors,
+            })
+            .collect();
+        let export_classification = self
+            .declarations
+            .iter()
+            .map(|declaration| declaration.export_classification.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join("|");
+        let support_classification = self
+            .declarations
+            .iter()
+            .map(|declaration| declaration.support_classification.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join("|");
         ApiEntry {
             id: entry_id,
             surface: "stdlib".into(),
@@ -1841,7 +2625,7 @@ impl StdlibFunctionGroup {
             registered_name: self.name,
             aliases: Vec::new(),
             receiver: self.receiver,
-            overloads: self.overloads.into_values().collect(),
+            overloads,
             availability: stdlib_availability(),
             lifecycle: Lifecycle::default(),
             source_anchors: self.anchors.into_iter().collect(),
@@ -1850,8 +2634,14 @@ impl StdlibFunctionGroup {
                 import_paths: self.import_paths.into_iter().collect(),
                 access: self.access.into_iter().collect::<Vec<_>>().join("|"),
                 documentation: self.documentation.into_iter().collect(),
-                export_classification: "unknown".into(),
-                support_classification: "unknown".into(),
+                duplicate_name: duplicate_name_handling(
+                    "script_function",
+                    &self.declarations,
+                    "functions remain module-scoped; namespace imports disambiguate duplicate names and unqualified collisions follow Rhai import resolution",
+                ),
+                declarations: self.declarations,
+                export_classification,
+                support_classification,
             },
         }
     }
@@ -1861,10 +2651,7 @@ fn stdlib_import_path(stdlib_root: &Path, path: &Path) -> Result<String, String>
     let relative = path
         .strip_prefix(stdlib_root)
         .map_err(|error| error.to_string())?;
-    let mut import = relative.to_string_lossy().replace('\\', "/");
-    if let Some(without_extension) = import.strip_suffix(".vibe") {
-        import = without_extension.into();
-    }
+    let import = relative.to_string_lossy().replace('\\', "/");
     Ok(format!("stdlib/{import}"))
 }
 
@@ -2009,8 +2796,15 @@ fn scan_definitions(tokens: &[RhaiToken]) -> Vec<DefinitionOccurrence> {
     definitions
 }
 
-fn scan_function_lines(tokens: &[RhaiToken]) -> BTreeMap<(String, usize), VecDeque<u32>> {
-    let mut lines: BTreeMap<(String, usize), VecDeque<u32>> = BTreeMap::new();
+struct StdlibFunctionSource {
+    line: u32,
+    boundary: BoundaryEvidence,
+}
+
+fn scan_function_sources(
+    tokens: &[RhaiToken],
+) -> BTreeMap<(String, usize), VecDeque<StdlibFunctionSource>> {
+    let mut sources: BTreeMap<(String, usize), VecDeque<StdlibFunctionSource>> = BTreeMap::new();
     let mut index = 0;
     while index + 2 < tokens.len() {
         let RhaiTokenKind::Ident(keyword) = &tokens[index].kind else {
@@ -2046,13 +2840,96 @@ fn scan_function_lines(tokens: &[RhaiToken]) -> BTreeMap<(String, usize), VecDeq
         if has_parameter {
             arity += 1;
         }
-        lines
+        while cursor < tokens.len() && !matches!(tokens[cursor].kind, RhaiTokenKind::Symbol('{')) {
+            cursor += 1;
+        }
+        let body_start = cursor.saturating_add(1);
+        let mut brace_depth = usize::from(cursor < tokens.len());
+        while cursor + 1 < tokens.len() && brace_depth > 0 {
+            cursor += 1;
+            match tokens[cursor].kind {
+                RhaiTokenKind::Symbol('{') => brace_depth += 1,
+                RhaiTokenKind::Symbol('}') => brace_depth -= 1,
+                _ => {}
+            }
+        }
+        let body_end = cursor.min(tokens.len());
+        sources
             .entry((name.clone(), arity))
             .or_default()
-            .push_back(tokens[index].line);
-        index = cursor;
+            .push_back(StdlibFunctionSource {
+                line: tokens[index].line,
+                boundary: stdlib_boundary_evidence(&tokens[body_start..body_end]),
+            });
+        index = cursor.saturating_add(1);
     }
-    lines
+    sources
+}
+
+fn stdlib_boundary_evidence(tokens: &[RhaiToken]) -> BoundaryEvidence {
+    let identifiers = tokens
+        .iter()
+        .filter_map(|token| match &token.kind {
+            RhaiTokenKind::Ident(identifier) => Some(identifier.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut evidence = BoundaryEvidence::default();
+    if identifiers
+        .iter()
+        .any(|identifier| matches!(*identifier, "as" | "to_int" | "to_float" | "to_string"))
+    {
+        evidence
+            .coercions
+            .insert("stdlib Rhai body performs an explicit value conversion".into());
+    }
+    if identifiers.contains("as") {
+        evidence
+            .casts
+            .insert("stdlib Rhai body contains an explicit `as` cast".into());
+    }
+    if identifiers.contains("clamp") {
+        evidence
+            .clamps
+            .insert("stdlib Rhai body invokes `clamp`".into());
+        evidence
+            .ranges
+            .insert("stdlib Rhai body enforces bounds with `clamp`".into());
+    }
+    if tokens.iter().any(|token| {
+        matches!(
+            token.kind,
+            RhaiTokenKind::Symbol('<') | RhaiTokenKind::Symbol('>')
+        )
+    }) {
+        evidence
+            .ranges
+            .insert("stdlib Rhai body contains an ordered-boundary comparison".into());
+    }
+    if identifiers.iter().any(|identifier| {
+        matches!(
+            *identifier,
+            "if" | "switch" | "try" | "catch" | "unwrap_or" | "unwrap_or_else"
+        )
+    }) {
+        evidence
+            .fallbacks
+            .insert("stdlib Rhai body contains an explicit conditional/fallback branch".into());
+    }
+    if identifiers.contains("throw") {
+        evidence
+            .structured_errors
+            .insert("stdlib Rhai body can `throw` a structured evaluation error".into());
+    }
+    if identifiers.iter().any(|identifier| {
+        identifier.ends_with("_ar") || identifier.ends_with("_kr") || identifier.ends_with("_ir")
+    }) {
+        evidence.panic_exposure.insert(
+            "stdlib Rhai body calls a generated UGen registration whose Rust wrapper unwraps graph errors"
+                .into(),
+        );
+    }
+    evidence
 }
 
 fn canonicalize_entries(entries: &mut Vec<ApiEntry>) {
@@ -2107,6 +2984,13 @@ fn validate_entries(entries: &[ApiEntry]) -> Result<(), String> {
         if entry.test_anchors.is_empty() {
             return Err(format!("{} has no test anchor", entry.id));
         }
+        if entry.lifecycle.phase == "unknown"
+            || entry.lifecycle.terminal == "unknown"
+            || entry.lifecycle.classification == "unknown"
+            || entry.lifecycle.classification.starts_with("pending-")
+        {
+            return Err(format!("{} has unclassified lifecycle metadata", entry.id));
+        }
         for anchor in entry.source_anchors.iter().chain(&entry.test_anchors) {
             validate_anchor(anchor)?;
         }
@@ -2117,9 +3001,71 @@ fn validate_entries(entries: &[ApiEntry]) -> Result<(), String> {
             if overload.source_anchors.is_empty() {
                 return Err(format!("{} has no source anchor", overload.id));
             }
+            if !overload.boundary.is_complete() {
+                return Err(format!(
+                    "{} has incomplete boundary semantics classification `{}`",
+                    overload.id, overload.boundary.classification
+                ));
+            }
+            for parameter in &overload.parameters {
+                if parameter.accepted_types.is_empty()
+                    || parameter
+                        .accepted_types
+                        .iter()
+                        .any(|accepted| accepted.eq_ignore_ascii_case("unknown"))
+                {
+                    return Err(format!(
+                        "{} parameter {} has unclassified accepted types",
+                        overload.id, parameter.position
+                    ));
+                }
+            }
             for anchor in &overload.source_anchors {
                 validate_anchor(anchor)?;
             }
+        }
+        match &entry.details {
+            EntryDetails::StdlibDefinition {
+                declarations,
+                duplicate_name,
+                export_classification,
+                support_classification,
+                ..
+            }
+            | EntryDetails::StdlibFunction {
+                declarations,
+                duplicate_name,
+                export_classification,
+                support_classification,
+                ..
+            } => {
+                if declarations.is_empty()
+                    || export_classification.contains("unknown")
+                    || support_classification.contains("unknown")
+                {
+                    return Err(format!("{} has unclassified stdlib metadata", entry.id));
+                }
+                if duplicate_name.declaration_count as usize != declarations.len() {
+                    return Err(format!(
+                        "{} duplicate-name count does not match declarations",
+                        entry.id
+                    ));
+                }
+                for declaration in declarations {
+                    if declaration.import_path.is_empty()
+                        || declaration.definition_kind.is_empty()
+                        || declaration.export_classification == "unknown"
+                        || declaration.support_classification == "unknown"
+                    {
+                        return Err(format!(
+                            "{} has incomplete stdlib declaration metadata",
+                            entry.id
+                        ));
+                    }
+                    validate_anchor(&declaration.source_anchor)?;
+                }
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -2186,6 +3132,27 @@ mod tests {
                 let root = root();
                 let manifest = build_manifest(&root).unwrap();
                 assert_eq!(manifest.schema_version, 1);
+                assert_eq!(manifest.stats["stdlib_function_classified"], 707);
+                assert_eq!(manifest.stats["stdlib_function_public_supported"], 595);
+                assert_eq!(
+                    manifest.stats["stdlib_function_import_callable_internal"],
+                    112
+                );
+                assert!(manifest.entries.iter().all(|entry| {
+                    entry.lifecycle.phase != "unknown"
+                        && entry.lifecycle.terminal != "unknown"
+                        && !entry.lifecycle.classification.starts_with("pending-")
+                        && entry.overloads.iter().all(|overload| {
+                            overload.boundary.is_complete()
+                                && overload.parameters.iter().all(|parameter| {
+                                    !parameter.accepted_types.is_empty()
+                                        && !parameter
+                                            .accepted_types
+                                            .iter()
+                                            .any(|accepted| accepted == "unknown")
+                                })
+                        })
+                }));
                 let global_group = manifest
                     .entries
                     .iter()
@@ -2212,10 +3179,59 @@ mod tests {
                     .unwrap();
                 assert_eq!(midi_group.availability.status, "conditional");
                 assert_eq!(midi_group.availability.features, ["midi"]);
+                let clamp = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.surface == "rhai" && entry.registered_name == "clamp")
+                    .unwrap();
+                assert!(clamp.overloads.iter().all(|overload| {
+                    overload.boundary.clamps.status == "present"
+                        && overload.boundary.ranges.status == "present"
+                }));
+                let generated_ugen = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.registered_name == "sin_osc_ar")
+                    .unwrap();
+                assert!(generated_ugen.overloads.iter().all(|overload| {
+                    overload.boundary.coercions.status == "present"
+                        && overload.boundary.panic_exposure.status == "present"
+                }));
+                let stdlib_declarations = manifest
+                    .entries
+                    .iter()
+                    .filter_map(|entry| match &entry.details {
+                        EntryDetails::StdlibFunction { declarations, .. } => Some(declarations),
+                        _ => None,
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+                assert_eq!(stdlib_declarations.len(), 707);
+                assert_eq!(
+                    stdlib_declarations
+                        .iter()
+                        .filter(|declaration| declaration.export_classification == "public")
+                        .count(),
+                    595
+                );
+                let duplicate_function = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.registered_name == "arpeggio_up_down")
+                    .unwrap();
+                assert!(matches!(
+                    &duplicate_function.details,
+                    EntryDetails::StdlibFunction { duplicate_name, .. }
+                        if duplicate_name.status == "duplicate"
+                            && duplicate_name.declaration_count == 2
+                ));
                 let generated = to_pretty_json(&manifest).unwrap();
                 assert_eq!(generated, to_pretty_json(&manifest).unwrap());
                 let committed = fs::read_to_string(root.join(MANIFEST_PATH)).unwrap();
                 assert_eq!(generated, committed);
+                let stdlib_reference = render_stdlib_reference(&manifest).unwrap();
+                let committed = fs::read_to_string(root.join(STDLIB_REFERENCE_PATH)).unwrap();
+                assert_eq!(stdlib_reference, committed);
             })
             .unwrap()
             .join()
@@ -2296,9 +3312,41 @@ mod tests {
             "#,
         )
         .unwrap();
-        let lines = scan_function_lines(&tokens);
-        assert_eq!(lines.get(&("real".into(), 2)).unwrap().len(), 1);
-        assert!(!lines.keys().any(|(name, _)| name.contains("fake")));
+        let sources = scan_function_sources(&tokens);
+        assert_eq!(sources.get(&("real".into(), 2)).unwrap().len(), 1);
+        assert!(!sources.keys().any(|(name, _)| name.contains("fake")));
+    }
+
+    #[test]
+    fn explicit_stdlib_classification_is_required_and_validated() {
+        assert_eq!(
+            parse_stdlib_classification(
+                "public_fn",
+                &["@vibelang-api export=public support=supported".into()]
+            )
+            .unwrap(),
+            ("public".into(), "supported".into())
+        );
+        assert!(parse_stdlib_classification("missing", &[]).is_err());
+        assert!(parse_stdlib_classification(
+            "mixed",
+            &["@vibelang-api export=public support=unsupported".into()]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rust_callable_fixture_classifies_clamps_and_panics() {
+        let expression: Expr = syn::parse_str("|value: f64| value.clamp(0.0, 1.0).unwrap()")
+            .expect("valid closure fixture");
+        let Expr::Closure(closure) = expression else {
+            panic!("expected closure fixture");
+        };
+        let boundary = rust_boundary_for_callable(&closure.output, &closure.body)
+            .into_semantics("fixture", "the test closure");
+        assert_eq!(boundary.clamps.status, "present");
+        assert_eq!(boundary.ranges.status, "present");
+        assert_eq!(boundary.panic_exposure.status, "present");
     }
 
     #[test]

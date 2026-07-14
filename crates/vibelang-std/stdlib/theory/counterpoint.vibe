@@ -17,6 +17,7 @@ import "stdlib/theory/voice_leading.vibe" as vl;
 // Every note in cantus firmus has a corresponding note in counterpoint
 
 // Check if interval is valid for first species
+/// @vibelang-api export=public support=supported
 fn is_valid_first_species_interval(semitones) {
     let interval = semitones % 12;
     
@@ -27,10 +28,12 @@ fn is_valid_first_species_interval(semitones) {
 }
 
 // Generate first species counterpoint above a cantus firmus
+/// @vibelang-api export=public support=supported
 fn first_species_above(cantus_firmus, key_root) {
     first_species_above_ex(cantus_firmus, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn first_species_above_ex(cantus_firmus, key_root, mode) {
     
     let scale = scales::scale(key_root, mode, 5, 14);  // Two octaves
@@ -77,10 +80,12 @@ fn first_species_above_ex(cantus_firmus, key_root, mode) {
 }
 
 // Generate first species counterpoint below a cantus firmus
+/// @vibelang-api export=public support=supported
 fn first_species_below(cantus_firmus, key_root) {
     first_species_below_ex(cantus_firmus, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn first_species_below_ex(cantus_firmus, key_root, mode) {
     
     let scale = scales::scale(key_root, mode, 3, 14);  // Lower octaves
@@ -128,23 +133,27 @@ fn first_species_below_ex(cantus_firmus, key_root, mode) {
 // ============================================================================
 
 // Check if interval is consonant (for counterpoint)
+/// @vibelang-api export=public support=supported
 fn is_consonant_interval(semitones) {
     return harm::is_consonant(semitones);
 }
 
 // Check if interval is perfect consonance
+/// @vibelang-api export=public support=supported
 fn is_perfect_consonance(semitones) {
     let interval = semitones % 12;
     return interval == 0 || interval == 7;  // Unison, P5, P8
 }
 
 // Check if interval is imperfect consonance
+/// @vibelang-api export=public support=supported
 fn is_imperfect_consonance(semitones) {
     let interval = semitones % 12;
     return interval == 3 || interval == 4 || interval == 8 || interval == 9;  // 3rds, 6ths
 }
 
 // Check if dissonance is prepared (approached by step from consonance)
+/// @vibelang-api export=public support=supported
 fn is_prepared_dissonance(prev_interval, curr_interval, step_size) {
     if is_consonant_interval(prev_interval) && !is_consonant_interval(curr_interval) {
         return step_size <= 2;  // Stepwise motion
@@ -153,6 +162,7 @@ fn is_prepared_dissonance(prev_interval, curr_interval, step_size) {
 }
 
 // Check if dissonance is resolved (left by step to consonance)
+/// @vibelang-api export=public support=supported
 fn is_resolved_dissonance(curr_interval, next_interval, step_size) {
     if !is_consonant_interval(curr_interval) && is_consonant_interval(next_interval) {
         return step_size <= 2;  // Stepwise motion
@@ -165,12 +175,14 @@ fn is_resolved_dissonance(curr_interval, next_interval, step_size) {
 // ============================================================================
 
 // Analyze motion between two voices
+/// @vibelang-api export=public support=supported
 fn analyze_counterpoint_motion(voice1_note1, voice1_note2, voice2_note1, voice2_note2) {
     
     return vl::analyze_motion(voice1_note1, voice1_note2, voice2_note1, voice2_note2);
 }
 
 // Check for forbidden parallel motion
+/// @vibelang-api export=public support=supported
 fn check_parallel_perfects_counterpoint(voice1, voice2) {
     
     let violations = [];
@@ -205,6 +217,7 @@ fn check_parallel_perfects_counterpoint(voice1, voice2) {
 }
 
 // Check for hidden/direct fifths and octaves
+/// @vibelang-api export=public support=supported
 fn check_hidden_perfects(voice1, voice2) {
     
     let violations = [];
@@ -246,6 +259,7 @@ fn check_hidden_perfects(voice1, voice2) {
 // ============================================================================
 
 // Check if melodic interval is valid (no large leaps)
+/// @vibelang-api export=public support=supported
 fn is_valid_melodic_interval(semitones) {
     let abs_interval = if semitones < 0 { -semitones } else { semitones };
     
@@ -262,6 +276,7 @@ fn is_valid_melodic_interval(semitones) {
 }
 
 // Check for proper treatment of melodic leaps
+/// @vibelang-api export=public support=supported
 fn check_leap_treatment(melody) {
     
     let violations = [];
@@ -300,6 +315,7 @@ fn check_leap_treatment(melody) {
 // ============================================================================
 
 // Check if ending is a proper cadence
+/// @vibelang-api export=public support=supported
 fn is_proper_cadence(voice1_final, voice2_final, voice1_penult, voice2_penult) {
     
     let final_interval = core::interval_semitones(voice1_final, voice2_final) % 12;
@@ -332,6 +348,7 @@ fn is_proper_cadence(voice1_final, voice2_final, voice1_penult, voice2_penult) {
 // ============================================================================
 
 // Validate complete two-voice counterpoint
+/// @vibelang-api export=public support=supported
 fn validate_counterpoint(voice1, voice2) {
     let errors = [];
     
@@ -390,10 +407,12 @@ fn validate_counterpoint(voice1, voice2) {
 // ============================================================================
 
 // Generate simple cantus firmus
+/// @vibelang-api export=public support=supported
 fn generate_cantus_firmus(key_root) {
     generate_cantus_firmus_ex(key_root, "major", 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn generate_cantus_firmus_ex(key_root, mode, length) {
     
     let scale = scales::scale(key_root, mode, 4, length);
@@ -433,6 +452,7 @@ fn generate_cantus_firmus_ex(key_root, mode, length) {
 // ============================================================================
 
 // Get contrapuntal quality score (higher is better)
+/// @vibelang-api export=public support=supported
 fn score_counterpoint(voice1, voice2) {
     let validation = validate_counterpoint(voice1, voice2);
     let base_score = 100;

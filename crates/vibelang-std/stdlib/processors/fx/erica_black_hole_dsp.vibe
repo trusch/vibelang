@@ -13,10 +13,12 @@
 //   9 reverse-ish delay, 10 comb resonator, 11 flanger, 12 freeze wash,
 //   13 filter drive, 14 ring mod, 15 reserved stereo widener.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_bh_cv_weight(assign, target) {
     1.0 - clip(abs(assign - target), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_bh_soft(sig, drive) {
     let drive = clip(drive, 0.5, 12.0);
     tanh_ar(sig * drive) / drive.sqrt()

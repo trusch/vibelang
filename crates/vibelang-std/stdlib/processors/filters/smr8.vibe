@@ -3,11 +3,13 @@
 // Fixed eight-band scale-rotating resonant filter bank with odd/even routing,
 // individual band taps, and kr envelope followers for spectral patching.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _smr8_wrap_index(idx, len) {
     let oct = floor(idx / len);
     idx - oct * len
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _smr8_degree(idx, scale) {
     let sc = round(clip_kr(scale, 0.0, 5.0));
 
@@ -81,6 +83,7 @@ fn _smr8_degree(idx, scale) {
     s0 * chromatic + s1 * major + s2 * minor + s3 * pentatonic + s4 * pelog + s5 * bohlen_pierce
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _smr8_freq(root, scale, rotate, spread, band_index, lock, transpose, fine, lag_t) {
     let rot = floor(clip_kr(rotate + 0.5, 0.0, 7.0));
     let step = floor(clip_kr(spread + 0.5, 1.0, 7.0));
@@ -92,6 +95,7 @@ fn _smr8_freq(root, scale, rotate, spread, band_index, lock, transpose, fine, la
     clip_kr(lag_kr(root * pow(2.0, semi / 12.0), lag_t), 20.0, 18000.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _smr8_band(src, freq, q, two_pass, level) {
     let one = bpf_ar(src, freq, q);
     let two = bpf_ar(one, freq, q);

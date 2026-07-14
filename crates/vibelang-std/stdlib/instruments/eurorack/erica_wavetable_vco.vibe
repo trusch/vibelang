@@ -18,6 +18,7 @@
 //   bank_cv/wave_cv/bitcrush_cv: bipolar CV inputs for matching controls.
 //   *_cv_amt       : 0..1 attenuators; bank/wave CV span the full 0..15 range.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_wt_sub_shape(freq, shape) {
     let shape = clip(shape, 0.0, 1.0);
     let square = lf_pulse_ar(freq, 0.0, 0.5) * 2.0 - 1.0;
@@ -31,6 +32,7 @@ fn _erica_wt_sub_shape(freq, shape) {
     square * square_w + tri * tri_w + sine * sine_w
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_wt_bank_cell(freq, bank, wave) {
     let w = clip(wave, 0.0, 1.0);
     let inv_w = 1.0 - w;

@@ -5,6 +5,7 @@
 // feed a stereo wet bus, with pitch-shifted/tone-shaped feedback and a separate
 // comb-resonator layer.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _rainmaker_filter(sig, cutoff, q, filter_type) {
     let cutoff = clip(cutoff, 20.0, 18000.0);
     let q = clip(q, 0.1, 1.0);
@@ -18,6 +19,7 @@ fn _rainmaker_filter(sig, cutoff, q, filter_type) {
         rhpf_ar(sig, cutoff, q) * high_w
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _rainmaker_tap(src, base_time, grid, tap_index, level, pan, cutoff, q, filter_type, pitch, detune, mute, reverse) {
     let reverse = clip(round(reverse), 0.0, 1.0);
     let step = tap_index * (1.0 - reverse) + (17.0 - tap_index) * reverse;
@@ -36,6 +38,7 @@ fn _rainmaker_tap(src, base_time, grid, tap_index, level, pan, cutoff, q, filter
     ]
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _rainmaker_comb_weight(taps, threshold) {
     clip((taps - threshold + 1.0) / 8.0, 0.0, 1.0)
 }

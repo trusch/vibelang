@@ -16,10 +16,12 @@
 //   *_cv_amt        : 0..1 attenuators for the matching stage CV.
 //   loop_gate       : rounded 0/1; when high, gate runs attack-decay looping.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_vc_eg_gate(x) {
     schmidt_kr(x, 0.05, 0.25)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_vc_eg_stage(base, cv, amt) {
     let base_clamped = clip_kr(base, 0.0, 1.0);
     let cv_clamped = clip_kr(cv, -1.0, 1.0);
@@ -28,6 +30,7 @@ fn _erica_vc_eg_stage(base, cv, amt) {
     (base_clamped * (1.0 + cv_clamped * amt_clamped)).max(0.001)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_vc_eg_level(base, cv, amt) {
     let base_clamped = clip_kr(base, 0.0, 1.0);
     let cv_clamped = clip_kr(cv, -1.0, 1.0);
@@ -36,6 +39,7 @@ fn _erica_vc_eg_level(base, cv, amt) {
     clip_kr(base_clamped * (1.0 + cv_clamped * amt_clamped), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_vc_eg_rise(pos) {
     let x = clip_kr(pos, 0.0, 1.0);
     x * x * (3.0 - 2.0 * x)

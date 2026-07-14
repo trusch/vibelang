@@ -39,8 +39,79 @@ pub struct Overload {
     pub parameters: Vec<Parameter>,
     pub return_type: String,
     pub returns_receiver: Option<bool>,
+    pub boundary: BoundarySemantics,
     pub availability: Availability,
     pub source_anchors: Vec<Anchor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundarySemantics {
+    pub classification: String,
+    pub coercions: BoundaryFacet,
+    pub casts: BoundaryFacet,
+    pub clamps: BoundaryFacet,
+    pub ranges: BoundaryFacet,
+    pub fallbacks: BoundaryFacet,
+    pub structured_errors: BoundaryFacet,
+    pub panic_exposure: BoundaryFacet,
+}
+
+impl BoundarySemantics {
+    pub fn is_complete(&self) -> bool {
+        self.classification != "unknown"
+            && [
+                &self.coercions,
+                &self.casts,
+                &self.clamps,
+                &self.ranges,
+                &self.fallbacks,
+                &self.structured_errors,
+                &self.panic_exposure,
+            ]
+            .into_iter()
+            .all(BoundaryFacet::is_complete)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryFacet {
+    pub status: String,
+    pub details: Vec<String>,
+}
+
+impl BoundaryFacet {
+    pub fn present(details: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            status: "present".into(),
+            details: details.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    pub fn none(reason: impl Into<String>) -> Self {
+        Self {
+            status: "none".into(),
+            details: vec![reason.into()],
+        }
+    }
+
+    pub fn not_applicable(reason: impl Into<String>) -> Self {
+        Self {
+            status: "not_applicable".into(),
+            details: vec![reason.into()],
+        }
+    }
+
+    pub fn unknown(reason: impl Into<String>) -> Self {
+        Self {
+            status: "unknown".into(),
+            details: vec![reason.into()],
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        matches!(self.status.as_str(), "present" | "none" | "not_applicable")
+            && !self.details.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -113,7 +184,8 @@ pub enum EntryDetails {
     StdlibDefinition {
         definition_kind: String,
         import_paths: Vec<String>,
-        occurrences: Vec<Anchor>,
+        declarations: Vec<StdlibDeclaration>,
+        duplicate_name: DuplicateNameHandling,
         export_classification: String,
         support_classification: String,
     },
@@ -121,9 +193,30 @@ pub enum EntryDetails {
         import_paths: Vec<String>,
         access: String,
         documentation: Vec<String>,
+        declarations: Vec<StdlibDeclaration>,
+        duplicate_name: DuplicateNameHandling,
         export_classification: String,
         support_classification: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StdlibDeclaration {
+    pub import_path: String,
+    pub definition_kind: String,
+    pub callable_signature: Option<String>,
+    pub access: String,
+    pub export_classification: String,
+    pub support_classification: String,
+    pub source_anchor: Anchor,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DuplicateNameHandling {
+    pub status: String,
+    pub declaration_count: u32,
+    pub import_paths: Vec<String>,
+    pub resolution: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,5 +269,24 @@ mod tests {
         assert_eq!(first, second);
         assert!(first.ends_with("}\n"));
         assert!(!first.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn boundary_completeness_rejects_unknown_facets() {
+        let complete = BoundarySemantics {
+            classification: "fixture".into(),
+            coercions: BoundaryFacet::none("fixture has no coercion"),
+            casts: BoundaryFacet::none("fixture has no cast"),
+            clamps: BoundaryFacet::none("fixture has no clamp"),
+            ranges: BoundaryFacet::none("fixture has no range"),
+            fallbacks: BoundaryFacet::none("fixture has no fallback"),
+            structured_errors: BoundaryFacet::none("fixture has no structured error"),
+            panic_exposure: BoundaryFacet::none("fixture has no panic exposure"),
+        };
+        assert!(complete.is_complete());
+
+        let mut incomplete = complete;
+        incomplete.ranges = BoundaryFacet::unknown("range not classified");
+        assert!(!incomplete.is_complete());
     }
 }

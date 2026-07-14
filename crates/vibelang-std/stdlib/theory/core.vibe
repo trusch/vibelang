@@ -10,6 +10,7 @@
 
 // Parse note name (e.g., "C4", "F#5", "Bb3") to MIDI number
 // Returns MIDI number (0-127) or throws error
+/// @vibelang-api export=public support=supported
 fn note_to_midi(note_name) {
     // Extract components: note letter, accidental, octave
     let len = note_name.len();
@@ -71,10 +72,12 @@ fn note_to_midi(note_name) {
 // ============================================================================
 
 // Convert MIDI number to note name (with sharps by default)
+/// @vibelang-api export=public support=supported
 fn midi_to_note(midi_num) {
     midi_to_note_ex(midi_num, false)
 }
 
+/// @vibelang-api export=public support=supported
 fn midi_to_note_ex(midi_num, use_flats) {
     if midi_num < 0 || midi_num > 127 {
         throw `MIDI number out of range (0-127): ${midi_num}`;
@@ -101,19 +104,23 @@ fn midi_to_note_ex(midi_num, use_flats) {
 
 // Convert MIDI number to frequency in Hz
 // A4 (MIDI 69) = 440 Hz by default
+/// @vibelang-api export=public support=supported
 fn midi_to_freq(midi_num) {
     midi_to_freq_ex(midi_num, 440.0)
 }
 
+/// @vibelang-api export=public support=supported
 fn midi_to_freq_ex(midi_num, a4_freq) {
     return a4_freq * pow(2.0, (midi_num - 69) / 12.0);
 }
 
 // Convert note name to frequency
+/// @vibelang-api export=public support=supported
 fn note_to_freq(note_name) {
     note_to_freq_ex(note_name, 440.0)
 }
 
+/// @vibelang-api export=public support=supported
 fn note_to_freq_ex(note_name, a4_freq) {
     let midi = note_to_midi(note_name);
     return midi_to_freq_ex(midi, a4_freq);
@@ -124,6 +131,7 @@ fn note_to_freq_ex(note_name, a4_freq) {
 // ============================================================================
 
 // Transpose a note by a number of semitones
+/// @vibelang-api export=public support=supported
 fn transpose_note(note_name, semitones) {
     let midi = note_to_midi(note_name);
     let new_midi = midi + semitones;
@@ -134,6 +142,7 @@ fn transpose_note(note_name, semitones) {
 }
 
 // Calculate interval between two notes in semitones
+/// @vibelang-api export=public support=supported
 fn interval_semitones(note1, note2) {
     let midi1 = note_to_midi(note1);
     let midi2 = note_to_midi(note2);
@@ -141,6 +150,7 @@ fn interval_semitones(note1, note2) {
 }
 
 // Get note at specific interval above root (in semitones)
+/// @vibelang-api export=public support=supported
 fn note_at_interval(root_note, semitones) {
     return transpose_note(root_note, semitones);
 }
@@ -150,6 +160,7 @@ fn note_at_interval(root_note, semitones) {
 // ============================================================================
 
 // Change octave of a note
+/// @vibelang-api export=public support=supported
 fn set_octave(note_name, new_octave) {
     // Parse note without octave
     let len = note_name.len();
@@ -167,6 +178,7 @@ fn set_octave(note_name, new_octave) {
 }
 
 // Shift note by octaves
+/// @vibelang-api export=public support=supported
 fn shift_octave(note_name, octave_shift) {
     let midi = note_to_midi(note_name);
     let new_midi = midi + (octave_shift * 12);
@@ -181,6 +193,7 @@ fn shift_octave(note_name, octave_shift) {
 // ============================================================================
 
 // Transpose an array of notes
+/// @vibelang-api export=public support=supported
 fn transpose_notes(notes, semitones) {
     let result = [];
     for note in notes {
@@ -194,6 +207,7 @@ fn transpose_notes(notes, semitones) {
 }
 
 // Convert note array to MIDI array
+/// @vibelang-api export=public support=supported
 fn notes_to_midi(notes) {
     let result = [];
     for note in notes {
@@ -207,10 +221,12 @@ fn notes_to_midi(notes) {
 }
 
 // Convert note array to frequency array
+/// @vibelang-api export=public support=supported
 fn notes_to_freq(notes) {
     notes_to_freq_ex(notes, 440.0)
 }
 
+/// @vibelang-api export=public support=supported
 fn notes_to_freq_ex(notes, a4_freq) {
     let result = [];
     for note in notes {
@@ -224,6 +240,7 @@ fn notes_to_freq_ex(notes, a4_freq) {
 }
 
 // Convert array to space-separated string (for .step() compatibility)
+/// @vibelang-api export=public support=supported
 fn array_to_step_string(arr) {
     let result = "";
     for i in 0..arr.len() {
@@ -240,6 +257,7 @@ fn array_to_step_string(arr) {
 // ============================================================================
 
 // Get interval name from semitones
+/// @vibelang-api export=public support=supported
 fn interval_name(semitones) {
     let intervals = #{
         "0": "Unison",
@@ -266,6 +284,7 @@ fn interval_name(semitones) {
 }
 
 // Get semitones from interval name
+/// @vibelang-api export=public support=supported
 fn interval_to_semitones(name) {
     let intervals = #{
         "unison": 0, "P1": 0,
@@ -295,6 +314,7 @@ fn interval_to_semitones(name) {
 // ============================================================================
 
 // Get enharmonic equivalent (sharp <-> flat)
+/// @vibelang-api export=public support=supported
 fn enharmonic(note_name) {
     let midi = note_to_midi(note_name);
     let use_flats = !note_name.contains("b");
@@ -305,6 +325,7 @@ fn enharmonic(note_name) {
 // Helper: Parse integer (Rhai doesn't have built-in parse_int on strings)
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn parse_int(str) {
     try {
         return eval(`${str}`);
@@ -320,6 +341,7 @@ fn parse_int(str) {
 // Extract the pitch class (0..11) from a note. Accepts either a MIDI integer
 // (octave is ignored) or a note-name string. Strings work with or without an
 // octave suffix: "C", "C#", "Eb", "F4", "Bb-1" all yield a pitch class.
+/// @vibelang-api export=public support=supported
 fn note_to_pitch_class(note) {
     let t = type_of(note);
     if t == "string" {
@@ -353,6 +375,7 @@ fn note_to_pitch_class(note) {
 // Examples:
 //   scale_mask_from_notes(["C", "D", "Eb", "F", "G", "Ab", "Bb"])  // C minor
 //   scale_mask_from_notes([60, 62, 64, 65, 67, 69, 71])            // C major
+/// @vibelang-api export=public support=supported
 fn scale_mask_from_notes(notes) {
     let active = [false, false, false, false, false, false,
                   false, false, false, false, false, false];

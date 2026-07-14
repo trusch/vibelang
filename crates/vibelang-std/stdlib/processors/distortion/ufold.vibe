@@ -3,6 +3,7 @@
 // Intellijel uFold-inspired DC-coupled mono wavefolder.
 // The fold stage wraps peaks back into the -1..1 window instead of clipping.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _ufold_stage(x) {
     1.0 - abs(wrap_ar(x + 1.0, 0.0, 4.0) - 2.0)
 }

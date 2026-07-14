@@ -11,11 +11,13 @@ import "stdlib/theory/core.vibe" as core;
 // ============================================================================
 
 // Ascending arpeggio
+/// @vibelang-api export=public support=supported
 fn arpeggio_up(chord) {
     return chord;  // Chords are already in ascending order
 }
 
 // Descending arpeggio
+/// @vibelang-api export=public support=supported
 fn arpeggio_down(chord) {
     let result = [];
     
@@ -27,6 +29,7 @@ fn arpeggio_down(chord) {
 }
 
 // Up then down arpeggio
+/// @vibelang-api export=public support=supported
 fn arpeggio_up_down(chord) {
     let result = [];
     
@@ -44,6 +47,7 @@ fn arpeggio_up_down(chord) {
 }
 
 // Down then up arpeggio
+/// @vibelang-api export=public support=supported
 fn arpeggio_down_up(chord) {
     let result = [];
     
@@ -65,10 +69,12 @@ fn arpeggio_down_up(chord) {
 // ============================================================================
 
 // Ascending arpeggio with octave extension
+/// @vibelang-api export=public support=supported
 fn arpeggio_up_extended(chord) {
     arpeggio_up_extended_ex(chord, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_up_extended_ex(chord, octaves) {
     
     let result = [];
@@ -83,10 +89,12 @@ fn arpeggio_up_extended_ex(chord, octaves) {
 }
 
 // Descending arpeggio with octave extension
+/// @vibelang-api export=public support=supported
 fn arpeggio_down_extended(chord) {
     arpeggio_down_extended_ex(chord, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_down_extended_ex(chord, octaves) {
     
     let result = [];
@@ -108,10 +116,12 @@ fn arpeggio_down_extended_ex(chord, octaves) {
 // ============================================================================
 
 // Arpeggio with rests between notes
+/// @vibelang-api export=public support=supported
 fn arpeggio_with_rests(chord) {
     arpeggio_with_rests_ex(chord, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_with_rests_ex(chord, pattern) {
     let base = if pattern == "down" {
         arpeggio_down(chord)
@@ -130,10 +140,12 @@ fn arpeggio_with_rests_ex(chord, pattern) {
 }
 
 // Arpeggio with accented first note (repeated)
+/// @vibelang-api export=public support=supported
 fn arpeggio_accented(chord) {
     arpeggio_accented_ex(chord, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_accented_ex(chord, pattern) {
     let base = if pattern == "down" {
         arpeggio_down(chord)
@@ -159,6 +171,7 @@ fn arpeggio_accented_ex(chord, pattern) {
 // ============================================================================
 
 // Broken chord pattern: 1-3-2-4 (root, fifth, third, seventh)
+/// @vibelang-api export=public support=supported
 fn broken_1_3_2_4(chord) {
     let result = [];
     let len = chord.len();
@@ -172,6 +185,7 @@ fn broken_1_3_2_4(chord) {
 }
 
 // Broken chord pattern: 1-5-3-5 (root, third, root, third)
+/// @vibelang-api export=public support=supported
 fn broken_1_5_3_5(chord) {
     
     let result = [];
@@ -195,6 +209,7 @@ fn broken_1_5_3_5(chord) {
 }
 
 // Alberti bass pattern (1-5-3-5, classical accompaniment)
+/// @vibelang-api export=public support=supported
 fn alberti_bass(chord) {
     let result = [];
     let len = chord.len();
@@ -213,6 +228,7 @@ fn alberti_bass(chord) {
 
 // Generate arpeggio from custom index pattern
 // e.g., [0, 2, 1, 2] = root, fifth, third, fifth
+/// @vibelang-api export=public support=supported
 fn arpeggio_pattern(chord, index_pattern) {
     let result = [];
     
@@ -226,10 +242,12 @@ fn arpeggio_pattern(chord, index_pattern) {
 }
 
 // Repeating arpeggio pattern
+/// @vibelang-api export=public support=supported
 fn arpeggio_repeat(chord) {
     arpeggio_repeat_ex(chord, "up", 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_repeat_ex(chord, pattern, repeats) {
     let base = switch pattern {
         "up" => arpeggio_up(chord),
@@ -255,10 +273,12 @@ fn arpeggio_repeat_ex(chord, pattern, repeats) {
 // ============================================================================
 
 // 8th note arpeggio (normal speed - one note per step)
+/// @vibelang-api export=public support=supported
 fn arpeggio_8th(chord) {
     arpeggio_8th_ex(chord, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_8th_ex(chord, pattern) {
     return if pattern == "down" {
         arpeggio_down(chord)
@@ -268,10 +288,12 @@ fn arpeggio_8th_ex(chord, pattern) {
 }
 
 // 16th note arpeggio (double speed - would need twice as many steps)
+/// @vibelang-api export=public support=supported
 fn arpeggio_16th(chord) {
     arpeggio_16th_ex(chord, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_16th_ex(chord, pattern) {
     let base = if pattern == "down" {
         arpeggio_down(chord)
@@ -293,10 +315,12 @@ fn arpeggio_16th_ex(chord, pattern) {
 }
 
 // Triplet arpeggio (cycle through chord notes in groups of 3)
+/// @vibelang-api export=public support=supported
 fn arpeggio_triplet(chord) {
     arpeggio_triplet_ex(chord, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn arpeggio_triplet_ex(chord, cycles) {
     let result = [];
     let len = chord.len();
@@ -316,6 +340,7 @@ fn arpeggio_triplet_ex(chord, cycles) {
 
 // Rolling arpeggio (classical/romantic style with slight delay)
 // Represented by spreading the chord across multiple steps
+/// @vibelang-api export=public support=supported
 fn rolling_arpeggio(chord) {
     let result = [];
     
@@ -332,10 +357,12 @@ fn rolling_arpeggio(chord) {
 }
 
 // Tremolo arpeggio (rapidly alternating between two notes)
+/// @vibelang-api export=public support=supported
 fn tremolo_arpeggio(chord) {
     tremolo_arpeggio_ex(chord, 0, 1, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn tremolo_arpeggio_ex(chord, note1_idx, note2_idx, repeats) {
     let result = [];
     
@@ -350,10 +377,12 @@ fn tremolo_arpeggio_ex(chord, note1_idx, note2_idx, repeats) {
 }
 
 // Cascading arpeggio (waterfall effect)
+/// @vibelang-api export=public support=supported
 fn cascading_arpeggio(chord) {
     cascading_arpeggio_ex(chord, 2)
 }
 
+/// @vibelang-api export=public support=supported
 fn cascading_arpeggio_ex(chord, cascades) {
     
     let result = [];
@@ -375,6 +404,7 @@ fn cascading_arpeggio_ex(chord, cascades) {
 // ============================================================================
 
 // Invert arpeggio (flip intervals)
+/// @vibelang-api export=public support=supported
 fn invert_arpeggio(arpeggio) {
     
     if arpeggio.len() < 2 {
@@ -396,6 +426,7 @@ fn invert_arpeggio(arpeggio) {
 }
 
 // Transpose entire arpeggio
+/// @vibelang-api export=public support=supported
 fn transpose_arpeggio(arpeggio, semitones) {
     
     let result = [];
@@ -416,10 +447,12 @@ fn transpose_arpeggio(arpeggio, semitones) {
 // ============================================================================
 
 // Apply arpeggio pattern to each chord in progression
+/// @vibelang-api export=public support=supported
 fn apply_to_progression(progression) {
     apply_to_progression_ex(progression, "up")
 }
 
+/// @vibelang-api export=public support=supported
 fn apply_to_progression_ex(progression, pattern) {
     let result = [];
     

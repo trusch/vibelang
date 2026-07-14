@@ -12,6 +12,7 @@ import "stdlib/theory/chords.vibe" as chords;
 // ============================================================================
 
 // Voice lead from one chord to another (smooth voice leading)
+/// @vibelang-api export=public support=supported
 fn voice_lead(chord1, chord2) {
     
     if chord1.len() == 0 || chord2.len() == 0 {
@@ -53,6 +54,7 @@ fn voice_lead(chord1, chord2) {
 }
 
 // Helper: Calculate total distance between two chords
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _total_voice_distance(chord1, chord2) {
     
     let total = 0;
@@ -73,6 +75,7 @@ fn _total_voice_distance(chord1, chord2) {
 // ============================================================================
 
 // Apply voice leading to entire progression
+/// @vibelang-api export=public support=supported
 fn voice_lead_progression(progression) {
     if progression.len() == 0 {
         return [];
@@ -95,6 +98,7 @@ fn voice_lead_progression(progression) {
 // ============================================================================
 
 // Find common tones between two chords
+/// @vibelang-api export=public support=supported
 fn find_common_tones(chord1, chord2) {
     
     let common = [];
@@ -117,6 +121,7 @@ fn find_common_tones(chord1, chord2) {
 }
 
 // Helper: Check if array contains a pitch class
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _contains_pitch_class(notes, pitch_class) {
     
     for note in notes {
@@ -130,6 +135,7 @@ fn _contains_pitch_class(notes, pitch_class) {
 }
 
 // Retain common tones when voice leading
+/// @vibelang-api export=public support=supported
 fn voice_lead_with_common_tones(chord1, chord2) {
     
     let common_tones = find_common_tones(chord1, chord2);
@@ -178,6 +184,7 @@ fn voice_lead_with_common_tones(chord1, chord2) {
 }
 
 // Helper: Find closest unused note
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _find_closest_unused(target, chord, used) {
     
     let target_midi = core::note_to_midi(target);
@@ -210,6 +217,7 @@ fn _find_closest_unused(target, chord, used) {
 // ============================================================================
 
 // Analyze motion type between two voices
+/// @vibelang-api export=public support=supported
 fn analyze_motion(note1_start, note1_end, note2_start, note2_end) {
     
     let voice1_motion = core::interval_semitones(note1_start, note1_end);
@@ -227,6 +235,7 @@ fn analyze_motion(note1_start, note1_end, note2_start, note2_end) {
 }
 
 // Check for parallel fifths or octaves (voice leading error)
+/// @vibelang-api export=public support=supported
 fn check_parallel_perfect(chord1, chord2) {
     
     let violations = [];
@@ -262,6 +271,7 @@ fn check_parallel_perfect(chord1, chord2) {
 // ============================================================================
 
 // Check for voice crossing
+/// @vibelang-api export=public support=supported
 fn has_voice_crossing(chord) {
     
     for i in 0..chord.len() - 1 {
@@ -277,12 +287,14 @@ fn has_voice_crossing(chord) {
 }
 
 // Fix voice crossing by reordering notes
+/// @vibelang-api export=public support=supported
 fn fix_voice_crossing(chord) {
     
     return chords::_sort_notes_by_pitch(chord);
 }
 
 // Check if chord fits within range for each voice
+/// @vibelang-api export=public support=supported
 fn check_range(chord, ranges) {
     
     let violations = [];
@@ -311,6 +323,7 @@ fn check_range(chord, ranges) {
 }
 
 // Standard SATB ranges
+/// @vibelang-api export=public support=supported
 fn satb_ranges() {
     return [
         #{ "low": "C3", "high": "A4" },   // Soprano
@@ -325,6 +338,7 @@ fn satb_ranges() {
 // ============================================================================
 
 // Voice lead for SATB (4-part harmony)
+/// @vibelang-api export=public support=supported
 fn satb_voice_lead(chord1, chord2) {
     let voiced = voice_lead_with_common_tones(chord1, chord2);
     
@@ -346,6 +360,7 @@ fn satb_voice_lead(chord1, chord2) {
 }
 
 // Helper: Fix range violations
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _fix_range_violations(chord, ranges) {
     
     let result = [];
@@ -381,6 +396,7 @@ fn _fix_range_violations(chord, ranges) {
 // ============================================================================
 
 // Rate voice leading quality (lower is better)
+/// @vibelang-api export=public support=supported
 fn assess_voice_leading(chord1, chord2) {
     let score = 0;
     

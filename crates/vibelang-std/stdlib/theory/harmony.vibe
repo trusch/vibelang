@@ -12,6 +12,7 @@ import "stdlib/theory/scales.vibe" as scales;
 // ============================================================================
 
 // Identify chord quality from notes
+/// @vibelang-api export=public support=supported
 fn identify_chord(notes) {
     
     if notes.len() < 2 {
@@ -54,6 +55,7 @@ fn identify_chord(notes) {
 }
 
 // Helper: Sort intervals
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _sort_intervals(intervals) {
     let result = intervals;
     let n = result.len();
@@ -72,6 +74,7 @@ fn _sort_intervals(intervals) {
 }
 
 // Helper: Convert intervals array to string
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _intervals_to_string(intervals) {
     let result = "";
     
@@ -90,10 +93,12 @@ fn _intervals_to_string(intervals) {
 // ============================================================================
 
 // Find the degree of a chord in a key
+/// @vibelang-api export=public support=supported
 fn chord_degree_in_key(chord_root, key_root) {
     chord_degree_in_key_ex(chord_root, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn chord_degree_in_key_ex(chord_root, key_root, mode) {
     
     let scale = scales::scale(key_root, mode, 4, 7);
@@ -110,10 +115,12 @@ fn chord_degree_in_key_ex(chord_root, key_root, mode) {
 }
 
 // Get Roman numeral for chord in key
+/// @vibelang-api export=public support=supported
 fn roman_numeral(chord_root, chord_quality, key_root) {
     roman_numeral_ex(chord_root, chord_quality, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn roman_numeral_ex(chord_root, chord_quality, key_root, mode) {
     let degree = chord_degree_in_key(chord_root, key_root, mode);
     
@@ -146,10 +153,12 @@ fn roman_numeral_ex(chord_root, chord_quality, key_root, mode) {
 // ============================================================================
 
 // Determine harmonic function (Tonic, Subdominant, Dominant)
+/// @vibelang-api export=public support=supported
 fn harmonic_function(degree) {
     harmonic_function_ex(degree, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn harmonic_function_ex(degree, mode) {
     if mode.to_lower() == "major" {
         return switch degree {
@@ -178,6 +187,7 @@ fn harmonic_function_ex(degree, mode) {
 }
 
 // Check if progression follows functional harmony rules
+/// @vibelang-api export=public support=supported
 fn is_functional_progression(degrees) {
     // T -> S -> D -> T is good
     // T -> D -> T is good
@@ -215,10 +225,12 @@ fn is_functional_progression(degrees) {
 // ============================================================================
 
 // Get available tensions/extensions for a chord
+/// @vibelang-api export=public support=supported
 fn available_tensions(chord_quality) {
     available_tensions_ex(chord_quality, "jazz")
 }
 
+/// @vibelang-api export=public support=supported
 fn available_tensions_ex(chord_quality, context) {
     let q = chord_quality.to_lower();
     
@@ -250,6 +262,7 @@ fn available_tensions_ex(chord_quality, context) {
 }
 
 // Add available tension to chord
+/// @vibelang-api export=public support=supported
 fn add_tension(chord, tension_semitones) {
     
     let result = chord;
@@ -265,10 +278,12 @@ fn add_tension(chord, tension_semitones) {
 // ============================================================================
 
 // Get scale degree of a note in a key
+/// @vibelang-api export=public support=supported
 fn scale_degree(note, key_root) {
     scale_degree_ex(note, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn scale_degree_ex(note, key_root, mode) {
     
     let scale = scales::scale(key_root, mode, 4, 7);
@@ -285,6 +300,7 @@ fn scale_degree_ex(note, key_root, mode) {
 }
 
 // Check if note is a chord tone
+/// @vibelang-api export=public support=supported
 fn is_chord_tone(note, chord) {
     
     let note_pc = core::note_to_midi(note) % 12;
@@ -300,19 +316,23 @@ fn is_chord_tone(note, chord) {
 }
 
 // Check if note is a scale tone
+/// @vibelang-api export=public support=supported
 fn is_scale_tone(note, key_root) {
     is_scale_tone_ex(note, key_root, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn is_scale_tone_ex(note, key_root, mode) {
     return scale_degree(note, key_root, mode) > 0;
 }
 
 // Classify melodic note (chord tone, passing tone, neighbor, etc.)
+/// @vibelang-api export=public support=supported
 fn classify_melodic_note(note, prev_note, next_note, chord, key) {
     classify_melodic_note_ex(note, prev_note, next_note, chord, key, "major")
 }
 
+/// @vibelang-api export=public support=supported
 fn classify_melodic_note_ex(note, prev_note, next_note, chord, key, mode) {
     
     if is_chord_tone(note, chord) {
@@ -350,6 +370,7 @@ fn classify_melodic_note_ex(note, prev_note, next_note, chord, key, mode) {
 // ============================================================================
 
 // Analyze harmonic rhythm (how often chords change)
+/// @vibelang-api export=public support=supported
 fn analyze_harmonic_rhythm(progression, beats_per_chord) {
     let total_chords = progression.len();
     let total_beats = total_chords * beats_per_chord;
@@ -374,12 +395,14 @@ fn analyze_harmonic_rhythm(progression, beats_per_chord) {
 // ============================================================================
 
 // Get tritone substitution (for dominant chords)
+/// @vibelang-api export=public support=supported
 fn tritone_sub(chord_root) {
     
     return core::transpose_note(chord_root, 6);  // Transpose by tritone
 }
 
 // Get relative major/minor
+/// @vibelang-api export=public support=supported
 fn relative_key(key_root, current_mode) {
     
     if current_mode.to_lower() == "major" {
@@ -392,12 +415,14 @@ fn relative_key(key_root, current_mode) {
 }
 
 // Get parallel major/minor
+/// @vibelang-api export=public support=supported
 fn parallel_key(key_root, current_mode) {
     // Parallel key has same root, different mode
     return key_root;
 }
 
 // Suggest substitute chords for a given chord
+/// @vibelang-api export=public support=supported
 fn suggest_substitutes(chord_root, chord_quality) {
     
     let subs = [];
@@ -434,6 +459,7 @@ fn suggest_substitutes(chord_root, chord_quality) {
 // ============================================================================
 
 // Check if interval is consonant
+/// @vibelang-api export=public support=supported
 fn is_consonant(semitones) {
     let interval = semitones % 12;
     
@@ -444,6 +470,7 @@ fn is_consonant(semitones) {
 }
 
 // Rate dissonance level (0 = most consonant, higher = more dissonant)
+/// @vibelang-api export=public support=supported
 fn dissonance_level(semitones) {
     let interval = semitones % 12;
     
@@ -465,6 +492,7 @@ fn dissonance_level(semitones) {
 }
 
 // Analyze overall consonance of a chord
+/// @vibelang-api export=public support=supported
 fn chord_consonance(chord) {
     
     let total_dissonance = 0;
