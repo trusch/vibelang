@@ -152,25 +152,21 @@ sequence("song")
     code: `// Send MIDI to external hardware
 set_tempo(128);
 
-// Open a MIDI output device
-let hw = midi_out("USB MIDI Device");
+// Open a MIDI output device on channel 1
+let hw = midi_device("USB MIDI Device").channel(1);
 
 // Create a MIDI voice on channel 1
 let bass = voice("hw_bass")
-    .midi(hw, 1)
+    .on(hw)
     .poly(4);
 
 // Play melodies on external gear
 melody("bass_line").on(bass)
     .notes("C2 - - E2 | G2 - - C2")
-    .velocity(100)
     .start();
 
-// Send CC messages for filter sweeps
-pattern("filter").on(bass)
-    .step("x.x.x.x.x.x.x.x.")
-    .cc(74, [0, 20, 40, 60, 80, 100, 120, 100])
-    .start();`
+// Send a filter cutoff CC message
+hw.cc(1, 74, 96);`
   },
 ];
 

@@ -1,9 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DataLoader = void 0;
+exports.DataLoader = exports.isRuntimeCallableUGen = void 0;
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
+const ugenAvailability_1 = require("./ugenAvailability");
+var ugenAvailability_2 = require("./ugenAvailability");
+Object.defineProperty(exports, "isRuntimeCallableUGen", { enumerable: true, get: function () { return ugenAvailability_2.isRuntimeCallableUGen; } });
 class DataLoader {
     /**
      * Clear all cached data. Call this when you need to reload data.
@@ -46,7 +49,7 @@ class DataLoader {
                 if (file.endsWith('.json')) {
                     const content = fs.readFileSync(path.join(manifestPath, file), 'utf-8');
                     const ugens = JSON.parse(content);
-                    this._ugens.push(...ugens);
+                    this._ugens.push(...ugens.filter(ugenAvailability_1.isRuntimeCallableUGen));
                 }
             }
         }

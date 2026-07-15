@@ -13,6 +13,7 @@ const CLI_HELP_PATH: &str = "docs/reference/generated/cli-help.txt";
 const UGEN_REFERENCE_PATH: &str = "docs/reference/generated/ugens.md";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
 const EDITOR_RHAI_PATH: &str = "vscode-extension/src/data/rhai-api.json";
+const LSP_RHAI_PATH: &str = "crates/vibelang-lsp/src/data/rhai-api.json";
 const EDITOR_STDLIB_PATH: &str = "vscode-extension/src/data/stdlib.json";
 const HTTP_SNAPSHOT_PATH: &str = "api/http-api-snapshot-v1.json";
 const HTTP_REFERENCE_PATH: &str = "docs/reference/generated/http-routes.md";
@@ -30,6 +31,7 @@ pub fn generate(root: &Path, cli_help_path: &Path, check: bool) -> Result<(), St
     .map_err(|error| error.to_string())?;
     validate_manifest_availability(&manifest)?;
     validate_example_imports(root)?;
+    validate_editor_consumers(root, &manifest)?;
 
     let cli_help = normalize_cli_help(
         &fs::read_to_string(cli_help_path)
@@ -41,6 +43,7 @@ pub fn generate(root: &Path, cli_help_path: &Path, check: bool) -> Result<(), St
         (UGEN_REFERENCE_PATH, render_ugen_reference(&manifest)?),
         (WASM_TYPES_PATH, render_wasm_types(root)?),
         (EDITOR_RHAI_PATH, render_editor_rhai(&manifest)?),
+        (LSP_RHAI_PATH, render_editor_rhai(&manifest)?),
         (EDITOR_STDLIB_PATH, render_editor_stdlib(root, &manifest)?),
         (HTTP_SNAPSHOT_PATH, pretty_json(&http)?),
         (HTTP_REFERENCE_PATH, render_http_reference(&http)),
@@ -311,6 +314,7 @@ struct EditorRhaiEntry<'a> {
     description: String,
     signature: &'a str,
     example: &'static str,
+    receiver: Option<&'a str>,
     availability: &'a Availability,
 }
 
@@ -340,6 +344,7 @@ fn render_editor_rhai(manifest: &PublicApiManifest) -> Result<String, String> {
                 ),
                 signature: &overload.signature,
                 example: "",
+                receiver: entry.receiver.as_deref(),
                 availability: &overload.availability,
             });
         }
@@ -1244,6 +1249,188 @@ fn validate_example_imports(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_editor_consumers(root: &Path, manifest: &PublicApiManifest) -> Result<(), String> {
+    const EDITOR_ROOTS: &[&str] = &["crates/vibelang-lsp/src", "vscode-extension/src"];
+    const DOCUMENTED_CONSUMERS: &[&str] = &[
+        "docs/interfaces/lsp-and-editors.md",
+        "landing-page/src/components/CodeDemo.jsx",
+        "landing-page/src/components/Documentation.jsx",
+        "landing-page/src/data/autocompleteData.js",
+    ];
+
+    let supported = manifest
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.kind == "function"
+                && matches!(
+                    entry.surface.as_str(),
+                    "rhai" | "dsp_rhai" | "rhai_extension"
+                )
+                && !matches!(
+                    entry.availability.status.as_str(),
+                    "quarantined" | "documentation_only"
+                )
+                && !entry.overloads.is_empty()
+        })
+        .map(|entry| entry.registered_name.as_str())
+        .collect::<BTreeSet<_>>();
+    for required in ["sample", "set_quantization"] {
+        if !supported.contains(required) {
+            return Err(format!(
+                "editor replacement `{required}` is not backed by an available manifest function"
+            ));
+        }
+    }
+
+    let mut checked = 0usize;
+    for relative_root in EDITOR_ROOTS {
+        for entry in WalkDir::new(root.join(relative_root)) {
+            let entry = entry.map_err(|error| error.to_string())?;
+            if !entry.file_type().is_file()
+                || !matches!(
+                    entry.path().extension().and_then(|value| value.to_str()),
+                    Some("rs" | "ts")
+                )
+            {
+                continue;
+            }
+            let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
+            let source = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+            validate_editor_source(relative, &source, true)?;
+            checked += 1;
+        }
+    }
+    for relative in DOCUMENTED_CONSUMERS {
+        let source = fs::read_to_string(root.join(relative)).map_err(|error| error.to_string())?;
+        validate_editor_source(Path::new(relative), &source, false)?;
+        checked += 1;
+    }
+
+    println!(
+        "validated manifest-backed editor metadata and rejected-call fixtures in {checked} consumer files"
+    );
+    Ok(())
+}
+
+fn validate_editor_source(
+    path: &Path,
+    source: &str,
+    reject_stale_rows: bool,
+) -> Result<(), String> {
+    const FICTIONAL_CALLS: &[&str] = &[
+        "load_sample",
+        "at_bar",
+        "after",
+        "fade_in",
+        "fade_out",
+        "midi_out",
+        "midi_in",
+        "export_audio",
+    ];
+    const STALE_ROWS: &[&str] = &["load_sample", "at_bar", "midi_out", "midi_in"];
+
+    for name in FICTIONAL_CALLS {
+        if contains_unqualified_call(source, name) {
+            return Err(format!(
+                "{} contains fictional public editor call `{name}`",
+                path.display()
+            ));
+        }
+    }
+    if contains_string_first_argument_call(source, "set_quantization") {
+        return Err(format!(
+            "{} emits string-valued `set_quantization`; the manifest accepts only numeric overloads",
+            path.display()
+        ));
+    }
+    if reject_stale_rows {
+        for name in STALE_ROWS {
+            if contains_identifier(source, name) {
+                return Err(format!(
+                    "{} retains stale editor metadata row `{name}` without a manifest source",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn contains_unqualified_call(source: &str, name: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut offset = 0;
+    while let Some(relative) = source[offset..].find(name) {
+        let start = offset + relative;
+        let end = start + name.len();
+        let before_ok = start == 0
+            || (!bytes[start - 1].is_ascii_alphanumeric()
+                && bytes[start - 1] != b'_'
+                && bytes[start - 1] != b'.');
+        let mut after = end;
+        while after < bytes.len() && bytes[after].is_ascii_whitespace() {
+            after += 1;
+        }
+        if before_ok && after < bytes.len() && bytes[after] == b'(' {
+            return true;
+        }
+        offset = end;
+    }
+    false
+}
+
+fn contains_identifier(source: &str, name: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut offset = 0;
+    while let Some(relative) = source[offset..].find(name) {
+        let start = offset + relative;
+        let end = start + name.len();
+        let before_ok =
+            start == 0 || (!bytes[start - 1].is_ascii_alphanumeric() && bytes[start - 1] != b'_');
+        let after_ok =
+            end == bytes.len() || (!bytes[end].is_ascii_alphanumeric() && bytes[end] != b'_');
+        if before_ok && after_ok {
+            return true;
+        }
+        offset = end;
+    }
+    false
+}
+
+fn contains_string_first_argument_call(source: &str, name: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut offset = 0;
+    while let Some(relative) = source[offset..].find(name) {
+        let start = offset + relative;
+        let end = start + name.len();
+        let before_ok = start == 0
+            || (!bytes[start - 1].is_ascii_alphanumeric()
+                && bytes[start - 1] != b'_'
+                && bytes[start - 1] != b'.');
+        let mut after = end;
+        while after < bytes.len() && bytes[after].is_ascii_whitespace() {
+            after += 1;
+        }
+        if before_ok && after < bytes.len() && bytes[after] == b'(' {
+            after += 1;
+            while after < bytes.len() && bytes[after].is_ascii_whitespace() {
+                after += 1;
+            }
+            if after < bytes.len() && matches!(bytes[after], b'"' | b'\'') {
+                return true;
+            }
+            if after + 1 < bytes.len()
+                && bytes[after] == b'\\'
+                && matches!(bytes[after + 1], b'"' | b'\'')
+            {
+                return true;
+            }
+        }
+        offset = end;
+    }
+    false
+}
+
 fn imports(source: &str) -> Vec<String> {
     source
         .lines()
@@ -1331,6 +1518,7 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(root.join(MANIFEST_PATH)).unwrap()).unwrap();
         validate_manifest_availability(&manifest).unwrap();
         validate_example_imports(&root).unwrap();
+        validate_editor_consumers(&root, &manifest).unwrap();
         assert_eq!(
             render_ugen_reference(&manifest).unwrap(),
             fs::read_to_string(root.join(UGEN_REFERENCE_PATH)).unwrap()
@@ -1342,6 +1530,10 @@ mod tests {
         assert_eq!(
             render_editor_rhai(&manifest).unwrap(),
             fs::read_to_string(root.join(EDITOR_RHAI_PATH)).unwrap()
+        );
+        assert_eq!(
+            render_editor_rhai(&manifest).unwrap(),
+            fs::read_to_string(root.join(LSP_RHAI_PATH)).unwrap()
         );
         assert_eq!(
             render_editor_stdlib(&root, &manifest).unwrap(),
@@ -1381,6 +1573,41 @@ mod tests {
         assert!(!contains_call(&code, "load_sample"));
         assert!(!contains_call(&code, "after"));
         assert!(contains_call(&code, "export_audio"));
+    }
+
+    #[test]
+    fn editor_consumer_rejects_fictional_snippets_and_stale_rows() {
+        let error = validate_editor_source(
+            Path::new("sampleBrowser.ts"),
+            r#"const snippet = `let kick = load_sample("kick", "kick.wav");`;"#,
+            true,
+        )
+        .unwrap_err();
+        assert!(error.contains("fictional public editor call `load_sample`"));
+
+        for name in ["load_sample", "at_bar", "midi_out", "midi_in"] {
+            let source = format!(r#"let row = ("{name}", "legacy signature");"#);
+            let error =
+                validate_editor_source(Path::new("signature_help.rs"), &source, true).unwrap_err();
+            assert!(error.contains(&format!("stale editor metadata row `{name}`")));
+        }
+    }
+
+    #[test]
+    fn editor_consumer_rejects_string_quantization_snippets() {
+        for source in [
+            r#"const snippet = 'set_quantization("bar")';"#,
+            r#""set_quantization(\"$1\")$0".to_string()"#,
+        ] {
+            let error = validate_editor_source(Path::new("completion"), source, true).unwrap_err();
+            assert!(error.contains("emits string-valued `set_quantization`"));
+        }
+        validate_editor_source(
+            Path::new("completion"),
+            "const snippet = 'set_quantization(4.0)';",
+            true,
+        )
+        .unwrap();
     }
 
     #[test]

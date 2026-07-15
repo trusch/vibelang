@@ -13,6 +13,7 @@ exports.SoundDesignerPanel = void 0;
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
+const dataLoader_1 = require("../utils/dataLoader");
 class SoundDesignerPanel {
     constructor(panel, extensionPath, store) {
         this._disposables = [];
@@ -78,7 +79,8 @@ class SoundDesignerPanel {
                 const categoryName = path.basename(file, '.json');
                 const filePath = path.join(manifestDir, file);
                 const content = fs.readFileSync(filePath, 'utf8');
-                const ugens = JSON.parse(content);
+                const ugens = JSON.parse(content)
+                    .filter(dataLoader_1.isRuntimeCallableUGen);
                 const config = categoryConfig[categoryName] || { icon: '?', color: '#858585' };
                 this._ugenCategories.push({
                     name: categoryName.charAt(0).toUpperCase() + categoryName.slice(1),

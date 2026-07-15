@@ -13,7 +13,7 @@ const BUILTIN_FUNCTIONS = new Set([
   'voice', 'pattern', 'melody', 'sequence', 'fade', 'fx', 'automation',
   'scene', 'scene_morph', 'melody_gen', 'envelope',
   // Loading
-  'sample', 'load_sample', 'load_sfz', 'load_vst_instrument', 'load_vst_effect',
+  'sample', 'load_sfz', 'load_vst_instrument', 'load_vst_effect',
   'load_synthdef_bytes',
   // Getters
   'group', 'get_voice', 'get_pattern', 'get_melody', 'get_effect',

@@ -10,7 +10,7 @@ export const functions = [
   { name: 'set_tempo', signature: 'set_tempo(bpm: float)', description: 'Set the global tempo in BPM', category: 'global', insertText: 'set_tempo(${1:120})' },
   { name: 'get_tempo', signature: 'get_tempo() -> float', description: 'Get the current tempo', category: 'global', insertText: 'get_tempo()' },
   { name: 'set_time_signature', signature: 'set_time_signature(num: int, denom: int)', description: 'Set the time signature', category: 'global', insertText: 'set_time_signature(${1:4}, ${2:4})' },
-  { name: 'set_quantization', signature: 'set_quantization(grid: string)', description: 'Set quantization grid', category: 'global', insertText: 'set_quantization("${1:bar}")' },
+  { name: 'set_quantization', signature: 'set_quantization(beats: float)', description: 'Set quantization grid in beats', category: 'global', insertText: 'set_quantization(${1:4.0})' },
   { name: 'get_current_beat', signature: 'get_current_beat() -> float', description: 'Get current beat position', category: 'global', insertText: 'get_current_beat()' },
   { name: 'get_current_bar', signature: 'get_current_bar() -> int', description: 'Get current bar number', category: 'global', insertText: 'get_current_bar()' },
   { name: 'jump_to_start', signature: 'jump_to_start()', description: 'Jump transport to beat 0', category: 'global', insertText: 'jump_to_start()' },
@@ -34,7 +34,6 @@ export const functions = [
 
   // Loading
   { name: 'sample', signature: 'sample(name: string, path: string)', description: 'Load an audio sample', category: 'loading', insertText: 'sample("${1:name}", "${2:path/to/sample.wav}")' },
-  { name: 'load_sample', signature: 'load_sample(name: string, path: string)', description: 'Load an audio sample', category: 'loading', insertText: 'load_sample("${1:name}", "${2:path}")' },
   { name: 'load_sfz', signature: 'load_sfz(name: string, path: string)', description: 'Load an SFZ instrument', category: 'loading', insertText: 'load_sfz("${1:name}", "${2:path/to/instrument.sfz}")' },
   { name: 'load_vst_instrument', signature: 'load_vst_instrument(name: string, plugin: string)', description: 'Load a VST instrument', category: 'loading', insertText: 'load_vst_instrument("${1:name}", "${2:plugin_key}")' },
   { name: 'load_vst_effect', signature: 'load_vst_effect(name: string, plugin: string)', description: 'Load a VST effect', category: 'loading', insertText: 'load_vst_effect("${1:name}", "${2:plugin_key}")' },
@@ -177,7 +176,6 @@ export const methods = [
 
   // Scheduling
   { name: 'now', signature: '.now()', description: 'Execute immediately', context: ['MuteBuilder', 'UnmuteBuilder'], insertText: 'now()' },
-  { name: 'after', signature: '.after(time: string)', description: 'Execute after delay', context: ['MuteBuilder', 'UnmuteBuilder', 'ParamFadeBuilder'], insertText: 'after("${1:4bar}")' },
 
   // Effect
   { name: 'bypass', signature: '.bypass(enabled: bool) -> Self', description: 'Bypass effect', context: ['Fx', 'Effect'], insertText: 'bypass(${1:true})' },

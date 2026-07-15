@@ -47,6 +47,9 @@ export class VibelangCompletionItemProvider implements vscode.CompletionItemProv
         // 2. Rhai API Completions
         const rhaiApi = DataLoader.loadRhaiApi(this.extensionPath);
         for (const func of rhaiApi) {
+            if (func.receiver || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(func.name)) {
+                continue;
+            }
             const item = new vscode.CompletionItem(func.name, vscode.CompletionItemKind.Function);
             item.detail = "Vibelang API";
             item.documentation = new vscode.MarkdownString(`**${func.signature}**\n\n${func.description}\n\n*Example:*\n\`\`\`vibe\n${func.example}\n\`\`\``);

@@ -12,7 +12,8 @@ esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_dir="${CARGO_TARGET_DIR:-$root/target}"
-snapshot="$(mktemp)"
+mkdir -p "$target_dir"
+snapshot="$(mktemp "$target_dir/public-artifacts.XXXXXX")"
 trap 'rm -f "$snapshot"' EXIT
 
 assert_cargo_idle() {
@@ -27,7 +28,8 @@ assert_cargo_idle() {
 
 run_cargo() {
   assert_cargo_idle
-  CARGO_BUILD_JOBS=1 cargo "$@"
+  echo "cargo/rustc idle before: cargo $*"
+  CARGO_BUILD_JOBS=1 bash -c 'cargo "$@"' -- "$@"
 }
 
 cd "$root"
@@ -47,3 +49,6 @@ export NO_COLOR=1
 } > "$snapshot"
 
 run_cargo run -p xtask -- public-artifacts "$mode" "$snapshot"
+
+npm --prefix crates/vibelang-wasm ci --ignore-scripts --no-audit --no-fund
+npm --prefix crates/vibelang-wasm run check:types

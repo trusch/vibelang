@@ -15,10 +15,11 @@ scripts/public-artifacts.sh check
 The command serializes Cargo with `CARGO_BUILD_JOBS=1`, renders the default
 Clap command/subcommand help from the just-built `vibe` binary, then regenerates
 or checks the manifest-backed core/UGen/stdlib reference, WASM TypeScript
-surface, HTTP route/schema snapshot, VS Code core/stdlib tables, and the
-canonical UGen subsets bundled by the LSP and VS Code extension. A dirty CLI
-option therefore changes the help snapshot and fails `check`; it cannot be
-published as a clean-revision artifact by accident.
+surface and executable type smoke, HTTP route/schema snapshot, shared LSP/VS
+Code Rhai tables, VS Code stdlib tables, and the canonical UGen subsets bundled
+by both editors. The same check scans editor/snippet consumers for rejected
+fictional calls. A dirty CLI option therefore changes the help snapshot and
+fails `check`; it cannot be published as a clean-revision artifact by accident.
 
 The editor UGen bundles intentionally remain the existing 24-category package
 subset. The entry point refreshes every bundled file byte-for-byte from

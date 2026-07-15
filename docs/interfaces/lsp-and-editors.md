@@ -33,9 +33,10 @@ clears state. References treat quoted strings as entity names and identifiers
 as variables in the one open document.
 
 Initialization loads workspace/stdlib import paths, scans stdlib definitions,
-and initializes UGen/validation caches. Completion, hover, signature, and
-inlays currently combine static hand-maintained API data with manifests and
-scanned synthdefs; that table is incomplete/stale relative to registration.
+and initializes UGen/validation caches. Completion, hover, signature, semantic
+classification, and inlays consume the Rhai table generated from
+`api/public-api-manifest-v1.json`; the shared artifact check rejects stale
+handwritten rows and fictional emitted calls in the LSP and VS Code sources.
 
 ### Semantic token protocol defect
 
@@ -54,10 +55,9 @@ operator,comment,macro,parameter,enumMember`, and can set modifier bit 5 for
 `defaultLibrary`. Tokens are therefore misclassified or out of legend. This is
 a current protocol bug, not a client interpretation issue.
 
-Static metadata also contains fictional/stale calls such as string-valued
-`set_quantization`, two-argument `note`, `load_sample`, `at_bar`, `every`,
-`after`, `fade_in`, `fade_out`, `midi_out`, `midi_in`, and `export_audio`, while
-omitting many actual builders, helpers, properties, MIDI calls, and UGens.
+API metadata is manifest-generated. Numeric quantization overloads and the
+`sample` constructor are projected directly; removed legacy identifiers are not
+retained as signature, completion, inlay, or semantic-token rows.
 
 ## VS Code extension
 

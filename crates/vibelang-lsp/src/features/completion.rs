@@ -50,7 +50,7 @@ fn get_top_level_completions() -> Vec<CompletionItem> {
 
     docs.values()
         .map(|func| CompletionItem {
-            label: func.name.to_string(),
+            label: func.name.clone(),
             kind: Some(CompletionItemKind::FUNCTION),
             label_details: Some(CompletionItemLabelDetails {
                 detail: Some(format!(" {}", func.signature)),
@@ -58,12 +58,16 @@ fn get_top_level_completions() -> Vec<CompletionItem> {
             }),
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!(
-                    "{}\n\n**Example:**\n```rhai\n{}\n```",
-                    func.description, func.example
-                ),
+                value: if func.example.is_empty() {
+                    func.description.clone()
+                } else {
+                    format!(
+                        "{}\n\n**Example:**\n```rhai\n{}\n```",
+                        func.description, func.example
+                    )
+                },
             })),
-            insert_text: Some(get_snippet_for_function(func.name)),
+            insert_text: Some(get_snippet_for_function(&func.name)),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
             ..Default::default()
         })
@@ -92,13 +96,13 @@ fn get_snippet_for_function(name: &str) -> String {
                 .to_string()
         }
         "set_tempo" => "set_tempo($1)$0".to_string(),
-        "set_quantization" => "set_quantization(\"$1\")$0".to_string(),
+        "set_quantization" => "set_quantization(${1:4.0})$0".to_string(),
         "set_time_signature" => "set_time_signature($1, $2)$0".to_string(),
         "db" => "db($1)$0".to_string(),
         "bars" => "bars($1)$0".to_string(),
-        "note" => "note($1, $2)$0".to_string(),
+        "note" => "note(\"${1:C4}\")$0".to_string(),
         "record" => "record(\"$1\")$0".to_string(),
-        "chord" => "chord(\"$1\", \"$2\")$0".to_string(),
+        "chord" => "chord(\"${1:C}\", ${2:4})$0".to_string(),
         "scale" => "scale(\"$1\", \"$2\", $3)$0".to_string(),
         "envelope" => "envelope()$0".to_string(),
         // Filesystem extension (ext-fs)

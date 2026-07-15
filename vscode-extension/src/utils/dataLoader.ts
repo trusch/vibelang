@@ -27,6 +27,7 @@ export interface RhaiFunction {
     description: string;
     signature: string;
     example: string;
+    receiver?: string | null;
 }
 
 export interface StdlibItem {

@@ -129,8 +129,8 @@ piano.note_off("C4");`
       signature: '.on(midi_device)',
       description: 'Route this voice to an external MIDI device. Notes and parameter changes will be sent as MIDI messages.',
       params: [{ name: 'midi_device', type: 'MidiDevice', description: 'MIDI output device' }],
-      example: `let midi_out = midi_device("synth").output("My Synth");
-voice("hw_synth").on(midi_out).channel(0);`
+      example: `let midi_out = midi_device("My Synth").channel(1);
+voice("hw_synth").on(midi_out);`
     },
     {
       name: '.channel',
