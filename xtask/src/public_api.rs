@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use syn::spanned::Spanned;
 use syn::visit::Visit;
 use syn::{
     BinOp, Expr, ExprBinary, ExprBlock, ExprCall, ExprCast, ExprMacro, ExprMethodCall, ExprRange,
@@ -242,6 +243,33 @@ fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
         "registered_type_declarations".into(),
         source_index.types.len() as u64,
     );
+    stats.insert(
+        "generated_custom_type_accessor_declarations".into(),
+        source_index.generated_accessors.len() as u64,
+    );
+    stats.insert(
+        "effective_generated_property_overloads".into(),
+        entries
+            .iter()
+            .filter(|entry| entry.kind.starts_with("property_"))
+            .flat_map(|entry| &entry.overloads)
+            .filter(|overload| {
+                overload.boundary.classification == "rust-custom-type-generated-accessor"
+            })
+            .count() as u64,
+    );
+    stats.insert(
+        "effective_fallible_generated_property_setters".into(),
+        entries
+            .iter()
+            .filter(|entry| entry.kind == "property_set")
+            .flat_map(|entry| &entry.overloads)
+            .filter(|overload| {
+                overload.boundary.classification == "rust-custom-type-generated-accessor"
+                    && overload.return_type.contains("EvalAltResult")
+            })
+            .count() as u64,
+    );
     stats.insert("stdlib_definition_occurrences".into(), stdlib.definitions);
     stats.insert(
         "stdlib_definition_names".into(),
@@ -412,6 +440,8 @@ fn validate_baseline(stats: &BTreeMap<String, u64>) -> Result<(), String> {
     let expected = [
         ("registration_declarations", 638),
         ("registered_type_declarations", 34),
+        ("effective_generated_property_overloads", 239),
+        ("effective_fallible_generated_property_setters", 30),
         ("manifest_ugen_callable_entries", 1_174),
         ("manifest_ugen_callable_overloads", 5_962),
         ("stdlib_definition_occurrences", 890),
@@ -517,6 +547,16 @@ fn rhai_entries(
             sources.matches(function, registered_name, kind)
         };
         let receiver = infer_receiver(function, kind, &source_matches);
+        let generated_accessor_matches = if ugen.is_none()
+            && source_matches.is_empty()
+            && kind.starts_with("property_")
+        {
+            sources.generated_accessor_matches(function, registered_name, kind, receiver.as_deref())
+        } else {
+            Vec::new()
+        };
+        let generated_accessor =
+            (generated_accessor_matches.len() == 1).then(|| generated_accessor_matches[0]);
         let property_type_sources = if source_matches.is_empty() && kind.starts_with("property_") {
             receiver
                 .as_deref()
@@ -537,27 +577,37 @@ fn rhai_entries(
             receiver.clone(),
         );
 
-        let source_anchors =
-            entry_source_anchors(&source_matches, &property_type_sources, ugen, root)?;
+        let source_anchors = entry_source_anchors(
+            &source_matches,
+            &property_type_sources,
+            &generated_accessor_matches,
+            ugen,
+            root,
+        )?;
         let aliases = sources.aliases(registered_name, &source_matches);
+        let callable_identities = source_matches
+            .iter()
+            .map(|source| source.callable.clone())
+            .chain(
+                generated_accessor_matches
+                    .iter()
+                    .map(|accessor| accessor.callable_identity()),
+            )
+            .collect::<BTreeSet<_>>();
         let details = if let Some(ugen) = ugen {
             ugen.details(true)
         } else {
             EntryDetails::Rhai {
-                callable_identities: source_matches
-                    .iter()
-                    .map(|source| source.callable.clone())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect(),
+                callable_identities: callable_identities.iter().cloned().collect(),
             }
         };
 
-        let overload_availability = availability(&source_matches, &property_type_sources, ugen);
-        let callable_identities = source_matches
-            .iter()
-            .map(|source| source.callable.clone())
-            .collect::<BTreeSet<_>>();
+        let overload_availability = availability(
+            &source_matches,
+            &property_type_sources,
+            &generated_accessor_matches,
+            ugen,
+        );
         let entry = grouped.entry(key).or_insert_with(|| {
             let canonical = format!(
                 "{surface}|{kind}|{registered_name}|{}",
@@ -599,7 +649,24 @@ fn rhai_entries(
                     .map(|_| 1usize)
             })
         });
-        let parameters = if ugen.is_some_and(|ugen| ugen.is_array_overload(function)) {
+        let parameters = if let Some(accessor) = generated_accessor {
+            accessor
+                .parameter_types(function)
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+                .map(|(position, accepted_types)| Parameter {
+                    position: position as u32,
+                    name: function
+                        .params
+                        .get(position + receiver_parameter.unwrap_or_default())
+                        .and_then(|parameter| parameter.name.clone()),
+                    accepted_types,
+                    optional: false,
+                    default: None,
+                })
+                .collect()
+        } else if ugen.is_some_and(|ugen| ugen.is_array_overload(function)) {
             vec![Parameter {
                 position: 0,
                 name: Some("inputs".into()),
@@ -628,23 +695,20 @@ fn rhai_entries(
         };
         let boundary = if let Some(ugen) = ugen {
             ugen.boundary(function)
+        } else if let Some(accessor) = generated_accessor {
+            accessor.boundary()
+        } else if source_matches.is_empty() {
+            unknown_boundary(if generated_accessor_matches.is_empty() {
+                "effective Rhai overload has no mechanically resolved callable or generated accessor source"
+            } else {
+                "effective Rhai overload matches multiple generated accessor sources"
+            })
         } else {
             let mut evidence = BoundaryEvidence::default();
             for source in &source_matches {
                 evidence.merge(&source.boundary);
             }
-            evidence.into_semantics(
-                if source_matches.is_empty() {
-                    "effective-rhai-metadata"
-                } else {
-                    "rust-callable-ast"
-                },
-                if source_matches.is_empty() {
-                    "the effective Rhai metadata-only overload"
-                } else {
-                    "the registered Rust callable AST"
-                },
-            )
+            evidence.into_semantics("rust-callable-ast", "the registered Rust callable AST")
         };
         let canonical = format!("{}|{}", entry.id, function.signature);
         entry.overloads.push(Overload {
@@ -930,12 +994,23 @@ fn source_type_surface(sources: &[&SourceType]) -> &'static str {
 fn entry_source_anchors(
     sources: &[&SourceRegistration],
     property_types: &[&SourceType],
+    generated_accessors: &[&GeneratedAccessor],
     ugen: Option<&GeneratedUgen>,
     root: &Path,
 ) -> Result<Vec<Anchor>, String> {
     let mut anchors: BTreeSet<Anchor> =
         sources.iter().map(|source| source.anchor.clone()).collect();
+    anchors.extend(
+        sources
+            .iter()
+            .flat_map(|source| source.evidence_anchors.iter().cloned()),
+    );
     anchors.extend(property_types.iter().map(|source| source.anchor.clone()));
+    anchors.extend(
+        generated_accessors
+            .iter()
+            .map(|accessor| accessor.anchor.clone()),
+    );
     if let Some(ugen) = ugen {
         anchors.insert(ugen.anchor.clone());
         anchors.insert(build_registration_anchor(root)?);
@@ -976,6 +1051,7 @@ fn test_anchors(surface: &str) -> Vec<Anchor> {
 fn availability(
     sources: &[&SourceRegistration],
     property_types: &[&SourceType],
+    generated_accessors: &[&GeneratedAccessor],
     ugen: Option<&GeneratedUgen>,
 ) -> Availability {
     let cfg: BTreeSet<String> = sources
@@ -985,6 +1061,11 @@ fn availability(
             property_types
                 .iter()
                 .flat_map(|source| source.cfg.iter().cloned()),
+        )
+        .chain(
+            generated_accessors
+                .iter()
+                .flat_map(|accessor| accessor.cfg.iter().cloned()),
         )
         .collect();
     let features = cfg_features(&cfg);
@@ -1087,6 +1168,7 @@ fn merge_sorted(current: &mut Vec<String>, additional: &[String]) {
 struct SourceIndex {
     registrations: Vec<SourceRegistration>,
     types: Vec<SourceType>,
+    generated_accessors: Vec<GeneratedAccessor>,
     aliases: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -1099,6 +1181,7 @@ struct SourceRegistration {
     receiver: Option<String>,
     boundary: BoundaryEvidence,
     anchor: Anchor,
+    evidence_anchors: BTreeSet<Anchor>,
     cfg: Vec<String>,
 }
 
@@ -1107,6 +1190,25 @@ struct SourceType {
     rust_type: String,
     anchor: Anchor,
     cfg: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GeneratedAccessor {
+    name: String,
+    kind: String,
+    receiver: String,
+    template: GeneratedAccessorTemplate,
+    anchor: Anchor,
+    cfg: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+enum GeneratedAccessorTemplate {
+    DirectGet { field_type: String },
+    OptionGet { inner_type: String },
+    DirectSet { field_type: String },
+    OptionSet { inner_type: String },
+    Custom,
 }
 
 impl SourceIndex {
@@ -1133,9 +1235,10 @@ impl SourceIndex {
         paths.sort();
         paths.dedup();
 
-        let global_signatures = load_global_signatures(&paths)?;
+        let global_signatures = load_global_signatures(root, &paths)?;
         let mut registrations = Vec::new();
         let mut types = Vec::new();
+        let mut generated_accessors = Vec::new();
         for path in paths {
             scan_registration_file(
                 root,
@@ -1143,6 +1246,7 @@ impl SourceIndex {
                 &global_signatures,
                 &mut registrations,
                 &mut types,
+                &mut generated_accessors,
             )?;
         }
 
@@ -1169,6 +1273,7 @@ impl SourceIndex {
         Ok(Self {
             registrations,
             types,
+            generated_accessors,
             aliases,
         })
     }
@@ -1239,6 +1344,27 @@ impl SourceIndex {
             .filter(|source| same_type(&source.rust_type, receiver))
             .collect()
     }
+
+    fn generated_accessor_matches(
+        &self,
+        function: &RhaiFunction,
+        name: &str,
+        kind: &str,
+        receiver: Option<&str>,
+    ) -> Vec<&GeneratedAccessor> {
+        let Some(receiver) = receiver else {
+            return Vec::new();
+        };
+        self.generated_accessors
+            .iter()
+            .filter(|accessor| {
+                accessor.name == name
+                    && accessor.kind == kind
+                    && same_type(&accessor.receiver, receiver)
+                    && accessor.matches_metadata(function)
+            })
+            .collect()
+    }
 }
 
 fn scan_registration_file(
@@ -1247,13 +1373,16 @@ fn scan_registration_file(
     global_signatures: &GlobalSignatures,
     registrations: &mut Vec<SourceRegistration>,
     types: &mut Vec<SourceType>,
+    generated_accessors: &mut Vec<GeneratedAccessor>,
 ) -> Result<(), String> {
     let body = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let file = syn::parse_file(&body)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
     let relative = relative_path(root, path)?;
     let module_cfg = module_cfg(root, path)?;
-    let signatures = SignatureIndex::new(&file, global_signatures);
+    let signatures = SignatureIndex::new(&file, global_signatures, &relative);
+
+    collect_generated_accessors(&file.items, &relative, &module_cfg, generated_accessors)?;
 
     let mut registration_functions = Vec::new();
     collect_registration_functions(&file.items, &mut registration_functions);
@@ -1271,6 +1400,283 @@ fn scan_registration_file(
         visitor.visit_block(&function.block);
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct GeneratedFieldOptions {
+    name: Option<String>,
+    skip: bool,
+    readonly: bool,
+    custom_get: bool,
+    custom_set: bool,
+}
+
+fn collect_generated_accessors(
+    items: &[Item],
+    relative: &str,
+    inherited_cfg: &[String],
+    accessors: &mut Vec<GeneratedAccessor>,
+) -> Result<(), String> {
+    for item in items {
+        match item {
+            Item::Struct(item) if derives_custom_type(&item.attrs) => {
+                let receiver = item.ident.to_string();
+                let mut struct_cfg = inherited_cfg.to_vec();
+                struct_cfg.extend(cfg_attrs(&item.attrs));
+                for (index, field) in item.fields.iter().enumerate() {
+                    let options = generated_field_options(&field.attrs)?;
+                    if options.skip {
+                        continue;
+                    }
+                    let field_name = field
+                        .ident
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| format!("field{index}"));
+                    let property_name = options.name.unwrap_or_else(|| field_name.clone());
+                    let field_type = canonical_syn_type(&field.ty);
+                    let option_inner = option_inner_type(&field.ty).map(canonical_syn_type);
+                    let mut cfg = struct_cfg.clone();
+                    cfg.extend(cfg_attrs(&field.attrs));
+                    cfg.sort();
+                    cfg.dedup();
+                    let line = span_line(field.span());
+
+                    accessors.push(GeneratedAccessor {
+                        name: property_name.clone(),
+                        kind: "property_get".into(),
+                        receiver: receiver.clone(),
+                        template: if options.custom_get {
+                            GeneratedAccessorTemplate::Custom
+                        } else if let Some(inner_type) = &option_inner {
+                            GeneratedAccessorTemplate::OptionGet {
+                                inner_type: inner_type.clone(),
+                            }
+                        } else {
+                            GeneratedAccessorTemplate::DirectGet {
+                                field_type: field_type.clone(),
+                            }
+                        },
+                        anchor: Anchor {
+                            path: relative.into(),
+                            symbol: format!("{receiver}::{field_name}::generated_get"),
+                            line,
+                        },
+                        cfg: cfg.clone(),
+                    });
+
+                    if !options.readonly {
+                        accessors.push(GeneratedAccessor {
+                            name: property_name,
+                            kind: "property_set".into(),
+                            receiver: receiver.clone(),
+                            template: if options.custom_set {
+                                GeneratedAccessorTemplate::Custom
+                            } else if let Some(inner_type) = option_inner {
+                                GeneratedAccessorTemplate::OptionSet { inner_type }
+                            } else {
+                                GeneratedAccessorTemplate::DirectSet { field_type }
+                            },
+                            anchor: Anchor {
+                                path: relative.into(),
+                                symbol: format!("{receiver}::{field_name}::generated_set"),
+                                line,
+                            },
+                            cfg,
+                        });
+                    }
+                }
+            }
+            Item::Mod(module) => {
+                if let Some((_, items)) = &module.content {
+                    let mut module_cfg = inherited_cfg.to_vec();
+                    module_cfg.extend(cfg_attrs(&module.attrs));
+                    collect_generated_accessors(items, relative, &module_cfg, accessors)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn derives_custom_type(attrs: &[syn::Attribute]) -> bool {
+    attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("derive"))
+        .filter_map(|attribute| {
+            attribute
+                .parse_args_with(
+                    syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+                )
+                .ok()
+        })
+        .flatten()
+        .any(|path| {
+            path.segments
+                .last()
+                .is_some_and(|segment| segment.ident == "CustomType")
+        })
+}
+
+fn generated_field_options(attrs: &[syn::Attribute]) -> Result<GeneratedFieldOptions, String> {
+    let mut options = GeneratedFieldOptions::default();
+    for attribute in attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("rhai_type"))
+    {
+        let values = attribute
+            .parse_args_with(syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated)
+            .map_err(|error| format!("invalid rhai_type field attribute: {error}"))?;
+        for value in values {
+            match value {
+                Expr::Path(path) if path.path.is_ident("skip") => options.skip = true,
+                Expr::Path(path) if path.path.is_ident("readonly") => options.readonly = true,
+                Expr::Assign(assign) => {
+                    let Expr::Path(key) = &*assign.left else {
+                        continue;
+                    };
+                    if key.path.is_ident("name") {
+                        if let Expr::Lit(value) = &*assign.right {
+                            if let Lit::Str(value) = &value.lit {
+                                options.name = Some(value.value());
+                            }
+                        }
+                    } else if key.path.is_ident("get") || key.path.is_ident("get_mut") {
+                        options.custom_get = true;
+                    } else if key.path.is_ident("set") {
+                        options.custom_set = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn option_inner_type(value: &Type) -> Option<&Type> {
+    let Type::Path(path) = value else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    if segment.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    arguments.args.iter().find_map(|argument| match argument {
+        GenericArgument::Type(value) => Some(value),
+        _ => None,
+    })
+}
+
+impl GeneratedAccessor {
+    fn matches_metadata(&self, function: &RhaiFunction) -> bool {
+        let expected_arity = if self.kind == "property_get" { 1 } else { 2 };
+        if function.num_params != expected_arity || function.params.len() != expected_arity {
+            return false;
+        }
+        let receiver_matches = function
+            .params
+            .first()
+            .and_then(|parameter| parameter.parameter_type.as_deref())
+            .is_some_and(|receiver| same_type(receiver, &self.receiver));
+        if !receiver_matches {
+            return false;
+        }
+        match &self.template {
+            GeneratedAccessorTemplate::DirectGet { field_type } => {
+                same_type(&function.return_type, field_type)
+            }
+            GeneratedAccessorTemplate::OptionGet { .. } => {
+                same_type(&function.return_type, "Dynamic")
+            }
+            GeneratedAccessorTemplate::DirectSet { field_type } => function
+                .params
+                .get(1)
+                .and_then(|parameter| parameter.parameter_type.as_deref())
+                .is_some_and(|parameter| same_type(parameter, field_type)),
+            GeneratedAccessorTemplate::OptionSet { .. } => {
+                function
+                    .params
+                    .get(1)
+                    .and_then(|parameter| parameter.parameter_type.as_deref())
+                    .is_some_and(|parameter| same_type(parameter, "Dynamic"))
+                    && function.return_type.contains("Result")
+                    && function.return_type.contains("EvalAltResult")
+            }
+            GeneratedAccessorTemplate::Custom => true,
+        }
+    }
+
+    fn callable_identity(&self) -> String {
+        format!(
+            "CustomType::{}::{}::{}",
+            self.receiver, self.kind, self.name
+        )
+    }
+
+    fn parameter_types(&self, function: &RhaiFunction) -> Option<Vec<Vec<String>>> {
+        match &self.template {
+            GeneratedAccessorTemplate::OptionSet { inner_type } => {
+                Some(vec![vec!["()".into(), inner_type.clone()]])
+            }
+            _ if self.kind == "property_set" => Some(vec![vec![function
+                .params
+                .get(1)?
+                .parameter_type
+                .as_deref()
+                .map(clean_type)
+                .unwrap_or_else(|| "Dynamic".into())]]),
+            _ => Some(Vec::new()),
+        }
+    }
+
+    fn boundary(&self) -> BoundarySemantics {
+        let source = format!("CustomType-generated {} accessor", self.kind);
+        let none = |facet: &str| BoundaryFacet::none(format!("{source} performs no {facet}"));
+        let (coercions, fallbacks, structured_errors) = match &self.template {
+            GeneratedAccessorTemplate::OptionGet { inner_type } => (
+                BoundaryFacet::present([format!(
+                    "Some({inner_type}) is converted to Rhai Dynamic with Dynamic::from"
+                )]),
+                BoundaryFacet::present(["None maps to Rhai Dynamic::UNIT via map_or"]),
+                none("structured error operation"),
+            ),
+            GeneratedAccessorTemplate::OptionSet { inner_type } => (
+                BoundaryFacet::present([format!(
+                    "Rhai Dynamic input is exact-type extracted as {inner_type} via read_lock"
+                )]),
+                BoundaryFacet::present(["Rhai unit maps to None"]),
+                BoundaryFacet::present([format!(
+                    "non-unit input other than {inner_type} returns EvalAltResult::ErrorMismatchDataType"
+                )]),
+            ),
+            GeneratedAccessorTemplate::DirectGet { .. }
+            | GeneratedAccessorTemplate::DirectSet { .. } => (
+                none("coercion operation"),
+                none("fallback operation"),
+                none("structured error operation"),
+            ),
+            GeneratedAccessorTemplate::Custom => {
+                return unknown_boundary(
+                    "custom CustomType accessor override requires declared callable evidence",
+                );
+            }
+        };
+        BoundarySemantics {
+            classification: "rust-custom-type-generated-accessor".into(),
+            coercions,
+            casts: none("cast operation"),
+            clamps: none("clamp operation"),
+            ranges: none("range operation"),
+            fallbacks,
+            structured_errors,
+            panic_exposure: none("panic primitive"),
+        }
+    }
 }
 
 fn collect_registration_functions<'a>(items: &'a [Item], output: &mut Vec<&'a ItemFn>) {
@@ -1305,6 +1711,8 @@ struct CallableSignature {
     parameters: Vec<String>,
     receiver: Option<String>,
     boundary: BoundaryEvidence,
+    calls: BTreeSet<String>,
+    evidence_anchors: BTreeSet<Anchor>,
 }
 
 impl PartialEq for CallableSignature {
@@ -1315,7 +1723,7 @@ impl PartialEq for CallableSignature {
 
 impl Eq for CallableSignature {}
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct BoundaryEvidence {
     coercions: BTreeSet<String>,
     casts: BTreeSet<String>,
@@ -1337,6 +1745,23 @@ impl BoundaryEvidence {
             .extend(other.structured_errors.iter().cloned());
         self.panic_exposure
             .extend(other.panic_exposure.iter().cloned());
+    }
+
+    fn merge_delegated(&mut self, callable: &str, other: &Self) {
+        let delegated = |values: &BTreeSet<String>| {
+            values
+                .iter()
+                .map(|detail| format!("via project call `{callable}`: {detail}"))
+                .collect::<BTreeSet<_>>()
+        };
+        self.coercions.extend(delegated(&other.coercions));
+        self.casts.extend(delegated(&other.casts));
+        self.clamps.extend(delegated(&other.clamps));
+        self.ranges.extend(delegated(&other.ranges));
+        self.fallbacks.extend(delegated(&other.fallbacks));
+        self.structured_errors
+            .extend(delegated(&other.structured_errors));
+        self.panic_exposure.extend(delegated(&other.panic_exposure));
     }
 
     fn into_semantics(self, classification: &str, scope: &str) -> BoundarySemantics {
@@ -1365,6 +1790,20 @@ impl BoundaryEvidence {
                 format!("no panic primitive found in {scope}"),
             ),
         }
+    }
+}
+
+fn unknown_boundary(reason: &str) -> BoundarySemantics {
+    let unknown = || BoundaryFacet::unknown(reason);
+    BoundarySemantics {
+        classification: "unknown".into(),
+        coercions: unknown(),
+        casts: unknown(),
+        clamps: unknown(),
+        ranges: unknown(),
+        fallbacks: unknown(),
+        structured_errors: unknown(),
+        panic_exposure: unknown(),
     }
 }
 
@@ -1399,12 +1838,29 @@ impl<'ast> Visit<'ast> for RustBoundaryVisitor {
                 ));
             }
             "clamp" => {
-                self.evidence
-                    .clamps
-                    .insert("Rust `clamp` operation in registered callable body".into());
-                self.evidence
-                    .ranges
-                    .insert("bounds enforced by Rust `clamp`".into());
+                let bounds = node
+                    .args
+                    .iter()
+                    .map(|argument| argument.to_token_stream().to_string())
+                    .collect::<Vec<_>>();
+                self.evidence.clamps.insert(format!(
+                    "Rust `clamp({})` operation in registered callable body",
+                    bounds.join(", ")
+                ));
+                self.evidence.ranges.insert(format!(
+                    "inclusive bounds `{}` enforced by Rust `clamp`",
+                    bounds.join("..=")
+                ));
+            }
+            "max" | "min" if node.args.len() == 1 => {
+                let bound = node.args[0].to_token_stream().to_string();
+                let direction = if method == "max" { "lower" } else { "upper" };
+                self.evidence.clamps.insert(format!(
+                    "Rust `{method}({bound})` operation enforces a {direction} clamp"
+                ));
+                self.evidence.ranges.insert(format!(
+                    "inclusive {direction} bound `{bound}` enforced by Rust `{method}`"
+                ));
             }
             "unwrap_or" | "unwrap_or_else" | "unwrap_or_default" | "or_else" => {
                 self.evidence.fallbacks.insert(format!(
@@ -1516,8 +1972,34 @@ fn rust_boundary_for_callable<T: ToTokens>(output: &ReturnType, body: &T) -> Bou
     visitor.evidence
 }
 
+#[derive(Default)]
+struct RustCallVisitor {
+    calls: BTreeSet<String>,
+}
+
+impl<'ast> Visit<'ast> for RustCallVisitor {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(path) = &*node.func {
+            if let Some(name) = path.path.segments.last() {
+                self.calls.insert(name.ident.to_string());
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+}
+
+fn rust_calls_for_callable<T: ToTokens>(body: &T) -> BTreeSet<String> {
+    let mut visitor = RustCallVisitor::default();
+    if let Ok(expression) = syn::parse2::<Expr>(body.to_token_stream()) {
+        visitor.visit_expr(&expression);
+    } else if let Ok(block) = syn::parse2::<syn::Block>(body.to_token_stream()) {
+        visitor.visit_block(&block);
+    }
+    visitor.calls
+}
+
 impl SignatureIndex {
-    fn new(file: &syn::File, global_signatures: &GlobalSignatures) -> Self {
+    fn new(file: &syn::File, global_signatures: &GlobalSignatures, relative: &str) -> Self {
         let mut index = Self {
             free: global_signatures.free.clone(),
             methods: global_signatures.methods.clone(),
@@ -1525,28 +2007,50 @@ impl SignatureIndex {
         for item in &file.items {
             match item {
                 Item::Fn(function) => {
-                    index.free.insert(
-                        function.sig.ident.to_string(),
-                        callable_signature(
-                            &function.sig,
-                            None,
-                            rust_boundary_for_callable(&function.sig.output, &function.block),
-                        ),
+                    let name = function.sig.ident.to_string();
+                    let mut local = callable_signature(
+                        &function.sig,
+                        None,
+                        rust_boundary_for_callable(&function.sig.output, &function.block),
+                        rust_calls_for_callable(&function.block),
                     );
+                    local.evidence_anchors.insert(Anchor {
+                        path: relative.into(),
+                        symbol: name.clone(),
+                        line: span_line(function.sig.ident.span()),
+                    });
+                    let resolved = global_signatures
+                        .free
+                        .get(&name)
+                        .filter(|global| **global == local)
+                        .cloned()
+                        .unwrap_or(local);
+                    index.free.insert(name, resolved);
                 }
                 Item::Impl(implementation) => {
                     let self_type =
                         clean_type(&implementation.self_ty.to_token_stream().to_string());
                     for item in &implementation.items {
                         if let syn::ImplItem::Fn(method) = item {
-                            index.methods.insert(
-                                (self_type.clone(), method.sig.ident.to_string()),
-                                callable_signature(
-                                    &method.sig,
-                                    Some(&self_type),
-                                    rust_boundary_for_callable(&method.sig.output, &method.block),
-                                ),
+                            let key = (self_type.clone(), method.sig.ident.to_string());
+                            let mut local = callable_signature(
+                                &method.sig,
+                                Some(&self_type),
+                                rust_boundary_for_callable(&method.sig.output, &method.block),
+                                rust_calls_for_callable(&method.block),
                             );
+                            local.evidence_anchors.insert(Anchor {
+                                path: relative.into(),
+                                symbol: format!("{}::{}", self_type, method.sig.ident),
+                                line: span_line(method.sig.ident.span()),
+                            });
+                            let resolved = global_signatures
+                                .methods
+                                .get(&key)
+                                .filter(|global| **global == local)
+                                .cloned()
+                                .unwrap_or(local);
+                            index.methods.insert(key, resolved);
                         }
                     }
                 }
@@ -1578,11 +2082,24 @@ impl SignatureIndex {
                     }
                     _ => None,
                 });
-                Some(CallableSignature {
+                let mut signature = CallableSignature {
                     parameters,
                     receiver,
                     boundary: rust_boundary_for_callable(&closure.output, &closure.body),
-                })
+                    calls: rust_calls_for_callable(&closure.body),
+                    evidence_anchors: BTreeSet::new(),
+                };
+                for callable in signature.calls.clone() {
+                    if let Some(callee) = self.free.get(&callable) {
+                        signature
+                            .boundary
+                            .merge_delegated(&callable, &callee.boundary);
+                        signature
+                            .evidence_anchors
+                            .extend(callee.evidence_anchors.iter().cloned());
+                    }
+                }
+                Some(signature)
             }
             Expr::Path(path) => {
                 let segments: Vec<_> = path.path.segments.iter().collect();
@@ -1605,26 +2122,35 @@ struct GlobalSignatures {
     methods: BTreeMap<(String, String), CallableSignature>,
 }
 
-fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String> {
+fn load_global_signatures(root: &Path, paths: &[PathBuf]) -> Result<GlobalSignatures, String> {
     let mut free_candidates = BTreeMap::<String, Vec<CallableSignature>>::new();
     let mut methods = BTreeMap::new();
     for path in paths {
         let body = fs::read_to_string(path).map_err(|error| error.to_string())?;
         let file = syn::parse_file(&body)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        let relative = relative_path(root, path)?;
         for item in file.items {
             match item {
                 Item::Fn(function) => {
-                    let signature = callable_signature(
+                    let mut signature = callable_signature(
                         &function.sig,
                         None,
                         rust_boundary_for_callable(&function.sig.output, &function.block),
+                        rust_calls_for_callable(&function.block),
                     );
+                    signature.evidence_anchors.insert(Anchor {
+                        path: relative.clone(),
+                        symbol: function.sig.ident.to_string(),
+                        line: span_line(function.sig.ident.span()),
+                    });
                     let candidates = free_candidates
                         .entry(function.sig.ident.to_string())
                         .or_default();
                     if let Some(existing) = candidates.iter_mut().find(|item| **item == signature) {
                         existing.boundary.merge(&signature.boundary);
+                        existing.calls.extend(signature.calls);
+                        existing.evidence_anchors.extend(signature.evidence_anchors);
                     } else {
                         candidates.push(signature);
                     }
@@ -1634,13 +2160,20 @@ fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String>
                         clean_type(&implementation.self_ty.to_token_stream().to_string());
                     for item in implementation.items {
                         if let syn::ImplItem::Fn(method) = item {
+                            let mut signature = callable_signature(
+                                &method.sig,
+                                Some(&self_type),
+                                rust_boundary_for_callable(&method.sig.output, &method.block),
+                                rust_calls_for_callable(&method.block),
+                            );
+                            signature.evidence_anchors.insert(Anchor {
+                                path: relative.clone(),
+                                symbol: format!("{}::{}", self_type, method.sig.ident),
+                                line: span_line(method.sig.ident.span()),
+                            });
                             methods.insert(
                                 (self_type.clone(), method.sig.ident.to_string()),
-                                callable_signature(
-                                    &method.sig,
-                                    Some(&self_type),
-                                    rust_boundary_for_callable(&method.sig.output, &method.block),
-                                ),
+                                signature,
                             );
                         }
                     }
@@ -1649,19 +2182,108 @@ fn load_global_signatures(paths: &[PathBuf]) -> Result<GlobalSignatures, String>
             }
         }
     }
-    let free = free_candidates
-        .into_iter()
-        .filter_map(|(name, mut candidates)| {
-            (candidates.len() == 1).then(|| (name, candidates.pop().unwrap()))
-        })
-        .collect();
+    let names = free_candidates.keys().cloned().collect::<Vec<_>>();
+    let mut memo = BTreeMap::new();
+    let mut anchor_memo = BTreeMap::new();
+    let mut free = BTreeMap::new();
+    for name in names {
+        let Some(mut signature) = free_candidates
+            .get(&name)
+            .filter(|candidates| candidates.len() == 1)
+            .and_then(|candidates| candidates.first())
+            .cloned()
+        else {
+            continue;
+        };
+        signature.boundary =
+            resolve_free_boundary(&name, &free_candidates, &mut memo, &mut BTreeSet::new());
+        signature.evidence_anchors = resolve_free_anchors(
+            &name,
+            &free_candidates,
+            &mut anchor_memo,
+            &mut BTreeSet::new(),
+        );
+        free.insert(name, signature);
+    }
     Ok(GlobalSignatures { free, methods })
+}
+
+fn resolve_free_anchors(
+    name: &str,
+    candidates: &BTreeMap<String, Vec<CallableSignature>>,
+    memo: &mut BTreeMap<String, BTreeSet<Anchor>>,
+    visiting: &mut BTreeSet<String>,
+) -> BTreeSet<Anchor> {
+    if let Some(anchors) = memo.get(name) {
+        return anchors.clone();
+    }
+    let Some(signature) = candidates
+        .get(name)
+        .filter(|candidates| candidates.len() == 1)
+        .and_then(|candidates| candidates.first())
+    else {
+        return BTreeSet::new();
+    };
+    let mut anchors = signature.evidence_anchors.clone();
+    if !visiting.insert(name.into()) {
+        return anchors;
+    }
+    for callable in &signature.calls {
+        if callable == name
+            || candidates
+                .get(callable)
+                .is_none_or(|candidates| candidates.len() != 1)
+        {
+            continue;
+        }
+        anchors.extend(resolve_free_anchors(callable, candidates, memo, visiting));
+    }
+    visiting.remove(name);
+    memo.insert(name.into(), anchors.clone());
+    anchors
+}
+
+fn resolve_free_boundary(
+    name: &str,
+    candidates: &BTreeMap<String, Vec<CallableSignature>>,
+    memo: &mut BTreeMap<String, BoundaryEvidence>,
+    visiting: &mut BTreeSet<String>,
+) -> BoundaryEvidence {
+    if let Some(boundary) = memo.get(name) {
+        return boundary.clone();
+    }
+    let Some(signature) = candidates
+        .get(name)
+        .filter(|candidates| candidates.len() == 1)
+        .and_then(|candidates| candidates.first())
+    else {
+        return BoundaryEvidence::default();
+    };
+    let mut boundary = signature.boundary.clone();
+    if !visiting.insert(name.into()) {
+        return boundary;
+    }
+    for callable in &signature.calls {
+        if callable == name
+            || candidates
+                .get(callable)
+                .is_none_or(|candidates| candidates.len() != 1)
+        {
+            continue;
+        }
+        let delegated = resolve_free_boundary(callable, candidates, memo, visiting);
+        boundary.merge_delegated(callable, &delegated);
+    }
+    visiting.remove(name);
+    memo.insert(name.into(), boundary.clone());
+    boundary
 }
 
 fn callable_signature(
     signature: &syn::Signature,
     self_type: Option<&str>,
     boundary: BoundaryEvidence,
+    calls: BTreeSet<String>,
 ) -> CallableSignature {
     let explicit_receiver = signature
         .inputs
@@ -1696,6 +2318,8 @@ fn callable_signature(
         parameters,
         receiver,
         boundary,
+        calls,
+        evidence_anchors: BTreeSet::new(),
     }
 }
 
@@ -1757,6 +2381,10 @@ impl RegistrationVisitor<'_> {
                 .as_ref()
                 .map(|signature| signature.boundary.clone())
                 .unwrap_or_default();
+            let evidence_anchors = signature
+                .as_ref()
+                .map(|signature| signature.evidence_anchors.clone())
+                .unwrap_or_default();
             self.registrations.push(SourceRegistration {
                 name: name.value(),
                 kind: if method == "register_get" {
@@ -1775,6 +2403,7 @@ impl RegistrationVisitor<'_> {
                     symbol: format!("{}::{method}", self.function),
                     line: span_line(node.method.span()),
                 },
+                evidence_anchors,
                 cfg: self
                     .cfg_stack
                     .iter()
@@ -3347,6 +3976,154 @@ mod tests {
         assert_eq!(boundary.clamps.status, "present");
         assert_eq!(boundary.ranges.status, "present");
         assert_eq!(boundary.panic_exposure.status, "present");
+    }
+
+    #[test]
+    fn custom_type_fixture_preserves_generated_and_unknown_semantics() {
+        let file = syn::parse_file(
+            r#"
+                #[derive(CustomType)]
+                struct Fixture {
+                    value: f64,
+                    maybe: Option<String>,
+                    #[rhai_type(readonly)]
+                    readonly: i64,
+                    #[rhai_type(get = custom_get)]
+                    custom: bool,
+                    #[rhai_type(skip)]
+                    hidden: bool,
+                }
+            "#,
+        )
+        .unwrap();
+        let mut accessors = Vec::new();
+        collect_generated_accessors(&file.items, "fixture.rs", &[], &mut accessors).unwrap();
+
+        assert_eq!(accessors.len(), 7);
+        let option_set = accessors
+            .iter()
+            .find(|accessor| accessor.name == "maybe" && accessor.kind == "property_set")
+            .unwrap();
+        let metadata = RhaiFunction {
+            name: "set$maybe".into(),
+            this_type: Some("Fixture".into()),
+            num_params: 2,
+            params: vec!["Fixture", "Dynamic"]
+                .into_iter()
+                .map(|parameter_type| RhaiParameter {
+                    name: None,
+                    parameter_type: Some(parameter_type.into()),
+                })
+                .collect(),
+            return_type: "Result<(), Box<EvalAltResult>>".into(),
+            signature: "set$maybe(_: &mut Fixture, _: Dynamic) -> Result<(), Box<EvalAltResult>>"
+                .into(),
+        };
+        assert!(option_set.matches_metadata(&metadata));
+        assert_eq!(
+            option_set.parameter_types(&metadata).unwrap(),
+            vec![vec!["()".to_owned(), "string".to_owned()]]
+        );
+        assert_eq!(option_set.boundary().fallbacks.status, "present");
+        assert_eq!(option_set.boundary().structured_errors.status, "present");
+        assert!(option_set.anchor.symbol.contains("generated_set"));
+
+        let unresolved_get = accessors
+            .iter()
+            .find(|accessor| accessor.name == "custom" && accessor.kind == "property_get")
+            .unwrap();
+        assert!(!unresolved_get.boundary().is_complete());
+        assert_eq!(unresolved_get.boundary().coercions.status, "unknown");
+    }
+
+    #[test]
+    fn generated_property_accessors_are_source_backed() {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let manifest = build_manifest(&root()).unwrap();
+                let generated = manifest
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.kind.starts_with("property_"))
+                    .flat_map(|entry| &entry.overloads)
+                    .filter(|overload| {
+                        overload.boundary.classification == "rust-custom-type-generated-accessor"
+                    })
+                    .collect::<Vec<_>>();
+
+                assert_eq!(generated.len(), 239);
+                assert_eq!(
+                    generated
+                        .iter()
+                        .filter(|overload| overload.return_type.contains("EvalAltResult"))
+                        .count(),
+                    30
+                );
+                assert!(generated
+                    .iter()
+                    .filter(|overload| overload.return_type.contains("EvalAltResult"))
+                    .all(|overload| overload.boundary.structured_errors.status == "present"));
+                assert!(generated.iter().all(|overload| {
+                    overload
+                        .source_anchors
+                        .iter()
+                        .any(|anchor| anchor.symbol.contains("generated_"))
+                }));
+
+                let option_setter = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| {
+                        entry.kind == "property_set"
+                            && entry.registered_name == "channel"
+                            && entry.receiver.as_deref() == Some("BendMapping")
+                    })
+                    .unwrap()
+                    .overloads
+                    .first()
+                    .unwrap();
+                assert_eq!(option_setter.parameters[0].accepted_types, ["()", "u8"]);
+
+                let tempo_int = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.registered_name == "set_tempo")
+                    .unwrap()
+                    .overloads
+                    .iter()
+                    .find(|overload| overload.signature.contains("i64"))
+                    .unwrap();
+                assert_eq!(tempo_int.boundary.clamps.status, "present");
+                assert_eq!(tempo_int.boundary.ranges.status, "present");
+                assert!(tempo_int.boundary.clamps.details.iter().any(|detail| {
+                    detail.contains("via project call `set_tempo`")
+                        && detail.contains("clamp(1.0, 999.0)")
+                }));
+                assert!(tempo_int
+                    .source_anchors
+                    .iter()
+                    .any(|anchor| { anchor.symbol == "set_tempo" && anchor.line == Some(30) }));
+
+                let quantization = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.registered_name == "set_quantization")
+                    .unwrap();
+                assert!(quantization.overloads.iter().all(|overload| {
+                    overload.boundary.clamps.status == "present"
+                        && overload.boundary.ranges.status == "present"
+                        && overload
+                            .boundary
+                            .clamps
+                            .details
+                            .iter()
+                            .any(|detail| detail.contains("max(0.0)"))
+                }));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     #[test]

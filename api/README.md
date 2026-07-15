@@ -44,9 +44,12 @@ canonical DSP UGen JSON manifests, and parsed stdlib `.vibe` sources. It
 contains no timestamp, host path, build directory, or Git state.
 
 Each callable overload records accepted types plus classified coercion, cast,
-clamp, range, fallback, structured-error, and panic-exposure facets. A facet is
-`present`, `none`, or `not_applicable`; `unknown` is serializable for staged
-schema migrations but fails generation. Stdlib functions require an adjacent
+clamp, range, fallback, structured-error, and panic-exposure facets. Generated
+`CustomType` properties are tied back to their source fields and derive-template
+semantics, including fallible `Option<T>` setters; declared callables retain
+their definition anchors and transitive in-project boundary evidence. A facet
+is `present`, `none`, or `not_applicable`; mechanically unresolved evidence is
+`unknown` and fails generation. Stdlib functions require an adjacent
 `@vibelang-api export=... support=...` source annotation. The manifest preserves
 all 707 declarations, import paths, exact signatures, source anchors, and
 duplicate-name behavior.
