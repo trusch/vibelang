@@ -71,8 +71,9 @@ The following rules are non-negotiable:
    invalid-value policy. V2 rejects invalid or ambiguous values.
 7. Availability is evaluated from semantic capability truth, not inferred from
    a compiled method or feature flag.
-8. V1 remains behaviorally frozen behind an explicit compatibility profile.
-   V2 is opt-in until the release gate permits it to become the default.
+8. V1 authoring semantics remain frozen behind an explicit compatibility
+   profile; enumerated truthfulness/fencing safety exceptions cannot be opted
+   out. V2 is opt-in until the release gate permits it to become the default.
 
 ## Ownership and dependency direction
 
@@ -85,8 +86,8 @@ behavior, which avoids making the manifest crate a runtime dependency hub.
 | Mechanical declarations | The executing crate or canonical catalog: Rhai registrations, UGen manifests/build rules, stdlib source, Clap, Axum/Serde, WASM exports, typed WS payloads, LSP rule/legend definitions | `xtask` discovery | Repetition in semantic fragments |
 | Non-inferable semantics | Domain-owned `api/contract/*.toml` fragments validated by the manifest crate | `xtask` join | Names, signatures, routes, field shapes, or package paths already discoverable mechanically |
 | Composition, validation, generation, projection, compatibility diff | `xtask` | CI and release tooling | Editors, runtime crates, or docs writing competing manifests |
-| `AttemptId`, `RuntimeEpoch`, `RevisionId`, `EventSequence`, receipt/state transitions, mutation ledger, `MutationContext`, component outcomes | `vibelang-core` | CLI, Rhai, HTTP, WebSocket, WASM | Per-transport receipt enums or success booleans |
-| Runtime capability snapshot and probe results | `vibelang-core`, using capability IDs defined by the effective contract | CLI, HTTP/WS, WASM, editors | Compile-time feature lists presented as runtime truth |
+| `AttemptId`, `RuntimeEpoch`, `RevisionId`, `EventSequence`, receipt/status/error/capability wire structs, state transitions, mutation ledger, `MutationContext`, component outcomes | `vibelang-core`; its annotated Rust/Serde declarations are mechanical discovery sources | `xtask`, CLI, Rhai, HTTP, WebSocket, WASM | Per-transport receipt enums, copied wire structs, or success booleans |
+| Runtime capability probe results and snapshot assembly | `vibelang-core`, using capability IDs defined by the effective contract | CLI, HTTP/WS, WASM, editors | Compile-time feature lists presented as runtime truth |
 | Builder/Ref/Observation host types and candidate lowering | `vibelang-rhai`, with shared logical identity and receipt primitives from `vibelang-core` | Scripts and migration tooling | Backend IDs or physical resource ownership in Refs |
 | Backend activation, acknowledgements, resource generations, live observations | `vibelang-core` backend/runtime/resource owners | Receipt ledger and capability evaluator | HTTP, WASM, or Rhai adapters guessing apply state |
 | Wire bindings | `vibelang-http`, `vibelang-wasm`, and `vibelang-cli` | Their clients | Canonical domain semantics duplicated in DTOs |
@@ -96,6 +97,17 @@ Dependency direction is `executing source -> discovery -> compiled contract ->
 projection`, while runtime behavior is `ingress -> vibelang-core ledger ->
 observation -> projection`. The static manifest never imports runtime state, and
 runtime crates do not depend on `xtask`.
+
+Wire derivation has one direction. Annotated `vibelang-core` Rust/Serde structs
+are the mechanical source for receipt, status, error, diagnostic, capability,
+and observation field shape. Domain fragments attach non-inferable semantics by
+stable field/type ID. `xtask` joins both into the effective contract, and JSON
+Schema, OpenAPI, Rhai records, TypeScript/WASM, CLI JSON, and WebSocket bindings
+project from that contract. Bidirectional checks prove every mechanical
+field/enum variant appears exactly once in the manifest and every projected
+wire field round-trips through the core serializer fixtures. A core wire change
+and its contract/v1-compatibility projections land together; no public boundary
+may carry a newer core shape with a stale contract digest.
 
 ## Static contract authority
 
@@ -142,11 +154,20 @@ byte for byte, and leaves the worktree clean.
 - Contract and capability semantic hashes use SHA-256 over RFC 8785 JSON
   Canonicalization Scheme bytes. Cross-language fixtures pin the bytes and
   digest.
-- Every attempt has a `submission_digest` over its normalized ingress payload.
-  An accepted candidate or command also has an `operation_digest` over the
-  canonical, source-independent operation or Candidate IR. Idempotency and
-  cross-surface equivalence use `operation_digest`; parse failures retain only
-  `submission_digest`.
+- Idempotency equality uses a private `request_fingerprint`: HMAC-SHA-256 with
+  a per-epoch server key over a domain-separated canonical semantic request.
+  It includes every behavior-affecting input, including credential bytes. A
+  server-owned secret reference contributes its opaque reference plus secret
+  generation/version. The fingerprint is never serialized, logged, placed in
+  diagnostics, or exposed through capabilities. The key is created with the
+  epoch, held only in runtime-private memory, never persisted, and destroyed
+  when that epoch ends; fingerprints from different epochs are never compared.
+- A receipt may expose a `submission_digest` and, after acceptance, an
+  `operation_digest` using ordinary SHA-256 over a privacy-redacted canonical
+  request or source-independent Candidate IR. These public digests support
+  correlation and cross-surface comparison only; they are never evidence of
+  idempotency equality. A digest is omitted when a safe pre-parse redaction
+  cannot be produced.
 - Beat positions in receipts use signed fixed-point integer ticks at
   1/65,536 quarter-note beat resolution, serialized as decimal strings.
   Backend seconds remain a finite number and never replace the musical value.
@@ -171,6 +192,20 @@ or unrecoverable backend reconstruction creates a new epoch. The runtime retains
 the newest 10,000 transition events and every event younger than 15 minutes; an
 event is evictable only after both protections no longer apply. The current
 window and expiration boundary are exposed as capability/status fields.
+
+The latest receipt and full idempotency record remain replayable for at least
+that same dual count-and-age window. Once the receipt is no longer queryable, a
+compact tombstone containing the caller namespace, key fingerprint, private
+request fingerprint, and expiry remains for the rest of the runtime epoch.
+Reuse returns `idempotency_key_expired`; it is never reinterpreted as a new
+operation. Tombstone capacity is a capability. On capacity exhaustion the
+runtime rejects new keyed submissions with `idempotency_capacity_exhausted`
+rather than evicting silently. A retry carries the epoch in which its key was
+issued; after restart or epoch replacement it returns
+`runtime_epoch_changed`, without comparing the old fingerprint under the new
+key. A caller that intentionally wants a new operation obtains the current
+epoch and uses a new key. A retry of a key-required external effect without its
+original key rejects as `idempotency_key_required`; it is not a new operation.
 
 ### States and terminal outcomes
 
@@ -235,8 +270,9 @@ for retry.
 `Atomicity::BestEffort` is explicit. V1 in-place reconciliation is projected as
 best effort while it is instrumented. External MIDI output, recording/file I/O,
 process execution, and network effects are separate best-effort revisions; they
-cannot be hidden inside a required-atomic Candidate. Mixed requests are split
-before admission or rejected.
+cannot be hidden inside a required-atomic Candidate. A mixed submission is
+rejected before revision allocation with `mixed_atomicity_not_supported`; the
+runtime never auto-splits one submission.
 
 Queue admission, channel send, socket write, JS dispatch, snapshot assignment,
 and fixed sleep are not effective boundaries. Native `applied` requires a
@@ -254,6 +290,15 @@ receive a capability/atomicity rejection. V1 evaluation preserves current
 extension behavior and reports any leaked pre-admission effect as an attempt
 with terminal partial outcome.
 
+Caller-side sequencing is not an aggregate transaction. Each external
+best-effort operation and later Candidate is a separate caller submission with
+its own AttemptId and, when admitted, RevisionId. Every submission in that
+sequence uses a distinct idempotency key and performs its own expected-revision
+check, cancellation, and terminal receipt in normal ledger order. An optional
+client correlation ID may group them for UI display but creates no parent
+receipt, shared terminal, rollback promise, or idempotency scope. Failure of one
+submission never causes the runtime to invent or cancel another.
+
 ### Idempotency, concurrency, and observation
 
 The idempotency namespace is `(runtime_epoch, caller_namespace,
@@ -263,11 +308,15 @@ remote mode may mutate only with a server-issued opaque session namespace; it
 never derives identity from IP address, origin text, or a secret exposed in
 capabilities.
 
-Same namespace/key/digest returns the existing attempt and latest receipt.
-Same key with a different digest rejects as `idempotency_conflict`. V2 remote
-note, MIDI output, record-start, and other non-idempotent external operations
-require a key. Replace/delete/whole-candidate operations also require
-`expected_revision` unless explicit unconditional best effort was selected.
+Same namespace/key/private fingerprint returns the existing attempt and latest
+receipt. Same key with a different private fingerprint rejects as
+`idempotency_conflict`, including a request that differs only in a credential,
+secret reference generation, URL, body, or other redacted field. An expired
+record returns `idempotency_key_expired`; a prior epoch returns
+`runtime_epoch_changed`. V2 remote note, MIDI output, record-start, and other
+non-idempotent external operations require a key. Replace/delete/whole-candidate
+operations also require `expected_revision` unless explicit unconditional best
+effort was selected.
 The expected revision is checked at admission and again immediately before
 planning. A later mismatch rejects the allocated revision with no requested
 effect.
@@ -413,6 +462,12 @@ are accepted as normative with these fixed choices:
   a tagged union of events or pattern text. Melody content is a tagged union of
   events, text, or lanes. Supplying more than one representation rejects as
   ambiguous.
+- Every generated UGen closure and public DSP, Rhai-helper, extension, and
+  stdlib parse/coercion boundary propagates a structured `Result`; no
+  user-controlled v2 value reaches `unwrap`, panic/unwind, a default-value
+  substitution, token drop, or partial-success fallback. Generation-time I/O
+  failures may stop generation, but generated runtime adapters contain no
+  infallible assertion on user input.
 - Definition identity is `(kind_id, module_id, local_name)`. Non-identical
   duplicate deployment rejects independent of load order; identical hashes are
   idempotent and report only under verbose diagnostics. The `cv/lfo` definitions
@@ -478,17 +533,52 @@ origins, commands, device names/paths, usernames, or secret-bearing error text.
 Privileged detail uses stable opaque device IDs. Source paths/spans in remote
 diagnostics are project-relative or redacted according to scope.
 
-Request/receipt digests exclude secrets and authentication material. Audit logs
-may reference attempt/revision IDs and redacted operation IDs, but they are not
-the receipt ledger and cannot substitute for caller-visible failure.
+Public request/receipt digests exclude secrets and authentication material. The
+private keyed idempotency fingerprint includes complete semantic input but is
+never exported. Audit logs may reference attempt/revision IDs and redacted
+operation IDs, but they are not the receipt ledger and cannot substitute for
+caller-visible failure.
 
 ## Versioning, compatibility, and deprecation budget
 
-V1 remains frozen and unversioned during migration; no new public feature is
-added only to v1. V2 uses the language directive above, `/v2` HTTP routes,
-versioned WebSocket schemas/events, v2 WASM methods, and a shared contract digest
-in every consumer. Unknown schema/contract versions fail visibly rather than
-downgrading to success.
+V1 authoring, timing, duplicate, routing, resource, and lifecycle semantics
+remain frozen and unversioned during migration; no new product feature is added
+only to v1. Truthfulness and runtime-fencing corrections are explicit safety
+exceptions to that freeze. They are classified `behavioral_change` plus
+`security_operational`, announced in release notes, and pinned by old/new
+carrier goldens. A caller can preserve eager/in-place best effort through
+`compat.vibelang.v1`, but cannot opt back into a known false applied claim.
+
+V2 uses the language directive above, `/v2` HTTP routes, versioned WebSocket
+schemas/events, v2 WASM methods, and a shared contract digest in every consumer.
+Unknown schema/contract versions fail visibly rather than downgrading to
+success.
+
+### V1 truthfulness exception and carrier projection
+
+The following carrier table is normative for every v1 landing. The canonical
+receipt always has precedence. A legacy field is retained only with a fixed
+narrower meaning; it never projects a known partial outcome as success.
+
+| Legacy carrier | Non-terminal accepted | Applied | Rejected, superseded, or partial |
+|---|---|---|---|
+| HTTP v1 direct mutations | `202 Accepted`, canonical receipt and `Location`; any old entity/status payload is nested as `legacy_result`, and `X-Vibelang-Legacy-Success-Scope: queue_admitted` prevents it being read as applied | Original family 2xx plus terminal receipt and revision watermark | Rejected uses its typed 4xx or capability 503; superseded and partial use 409 with the canonical receipt. Partial never returns an old success body at top level. |
+| HTTP v1 `/eval` | `EvalResponse.success` means parse/evaluation succeeded only, is marked `legacy_success_scope=evaluation_only`, and accompanies a pending receipt | A terminal wait may return success with the applied receipt | A failure known before return sets `success=false`; a waited superseded/partial returns 409 and `success=false`. A later outcome is observed only through the receipt URL/event, so the earlier evaluation boolean is not a terminal projection. |
+| WASM `ExecutionResult.success` | Means evaluation succeeded only and returns an attempt/receipt handle; missing init/bridge or dispatch failure known before return makes it false | Awaiting the handle may yield applied; the boolean is not repeated as a terminal field | Awaited rejected/superseded/partial is the canonical outcome. A later partial cannot rewrite an earlier evaluation boolean, and generated types label that boolean deprecated and evaluation-only. |
+| CLI startup/one-shot | Default waits terminal; `--wait accepted` may exit zero only after printing `pending`, attempt/revision IDs, and the narrow accepted scope | Exit 0 and the applied revision | Rejected, superseded, and partial exit nonzero. Partial prints components and fence state. |
+| CLI watch | Each change prints its attempt immediately and never prints reload success at queue admission | Prints the applied revision/boundary and keeps watching | Rejected/superseded is reported per attempt. Partial stops further mutation submissions while status/read commands remain available. |
+| Rhai v1 terminal return | Existing in-evaluation Handle/unit/value shape remains candidate-local; the host evaluation receipt is the only runtime outcome | Host receipt observes applied | Terminal/local validation errors propagate. Runtime rejected/superseded/partial is observed through the outer receipt and cannot be replaced by a legacy terminal return. |
+| Legacy sync/notifier | Pending until the correlated runtime and backend barrier completes | Returns success only after the barrier | Backend failure, timeout, partial, or fence returns an error. Unconditional notifier success is removed as an explicit safety exception. |
+| Legacy WebSocket telemetry | Remains telemetry and carries epoch/sequence/receipt links | May carry an applied watermark but is not an acknowledgement | Gap/reset and receipt events carry the terminal truth; telemetry never maps partial to success. |
+
+A partial or unknown managed-runtime state fences every v1 and v2 mutation
+ingress by default with `runtime_fenced`; reads, status, receipt lookup, and
+recovery remain available. V1 does not continue automatically. An operator may
+submit an idempotent `continue_best_effort` control attempt only after reading
+and acknowledging the partial receipt. If reconciliation or compensation is
+needed, that work receives its own revision. The active capability snapshot is
+then degraded and records the explicit compatibility policy until a clean
+revision or runtime reset restores normal operation.
 
 The compatibility budget is:
 
@@ -526,18 +616,23 @@ The immutable checkpoints are:
 2. land schema/fragment types and fixture-only validators;
 3. compose the declaration graph and prove v1 byte equivalence;
 4. land receipt IDs, transition validation, ledger, and MutationContext without
-   changing success semantics;
+   changing success semantics, and refresh the canonical/v1 projections against
+   the new core mechanical wire source;
 5. instrument current v1 behavior as honest best effort so every leaked or
-   uncertain effect is partial rather than success;
+   uncertain effect is partial rather than success, update every CLI/Rhai/HTTP/
+   WASM adapter, and land the enumerated v1 safety-exception projections;
 6. land conventions/capability metadata and privacy-minimal snapshots;
 7. make Candidate construction pure and add Builder/Ref/Observation primitives;
 8. implement native inactive-generation/resource transaction support and only
    then advertise required atomicity;
-9. migrate authoring families and transport bindings domain by domain;
-10. switch consumers only after their operations are effective or rejected and
+9. migrate authoring families, routes, resources, recording, MIDI, and external
+   operation bindings domain by domain;
+10. eliminate public DSP/UGen/helper/stdlib panic and silent-fallback boundaries;
+11. migrate HTTP/WebSocket and WASM transport bindings;
+12. switch consumers only after their operations are effective or rejected and
     generated projections are current;
-11. validate docs/packages/migrations and pass the final cross-surface matrix;
-12. make v2 default only after every release gate is green.
+13. validate docs/packages/migrations and pass the final cross-surface matrix;
+14. make v2 default only after every release gate is green.
 
 Generated artifacts have one landing owner per integration wave. Parallel
 domain tasks modify semantic source and behavior/tests, not shared generated
@@ -612,8 +707,10 @@ This story is complete only when:
   structured rejection. Builder purity tests find zero pre-terminal state,
   registry, queue, deployment, or resource effects.
 - Transition/property tests prove monotonic revisions/sequences, valid edges,
-  idempotency, expected revisions, cancellation races, component partitioning,
-  and no terminal rewrite.
+  secret-only idempotency conflicts, same-key replay, required-key rejection,
+  expiry/tombstone/capacity behavior, restart/epoch rejection, expected
+  revisions, cancellation races, component partitioning, and no terminal
+  rewrite.
 - Phase-indexed failure injection before and after every apply boundary proves
   prior-state preservation, confirmed rollback, partial/fencing, and cleanup
   health exactly as declared.
@@ -656,7 +753,7 @@ partial state, or claim a capability absent from the selected snapshot.
 | Capability snapshot revision shape | Convention study sketched accepted/applied fields | Snapshot embeds the canonical epoch/event/accepted-through/last-confirmed shape by reference; no second revision system. |
 | HTTP versioning | Path, media type, or header was open | `/v2` paths, with explicit schema/contract digest headers; no content-negotiation-only version. |
 | WASM progress | Host tick or internal scheduler was open | Host-driven explicit tick in initial v2; lack of progress remains pending and is advertised. |
-| External effects | Could be deferred inside mixed Candidate or split | Split into separate best-effort revisions; required-atomic Candidate never hides them. |
+| External effects | Could be deferred inside a mixed Candidate or runtime-split into child revisions | Mixed submissions reject before revision allocation. The caller may explicitly issue separately keyed best-effort and Candidate submissions; there is no parent/aggregate receipt. |
 
 ## Rejected alternatives
 

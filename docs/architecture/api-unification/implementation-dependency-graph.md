@@ -48,19 +48,21 @@ M08 core authoring families
              |
 M09 routes, resources, recording, MIDI, external effects
              |
+M10 strict DSP/UGen/parser public boundaries
+             |
        +-----+------------------+
        |                        |
-M10 HTTP v2 + WebSocket         M11 WASM v2
+M11 HTTP v2 + WebSocket         M12 WASM v2
        +------------+-----------+
                     |
-M12 editors + migration + docs + packages
+M13 editors + migration + docs + packages
                     |
-M13 final integration and default-readiness gate
+M14 final integration and default-readiness gate
 ```
 
 M05 and M06 may be developed in parallel after M04, but their shared contract
-and projection refresh lands through one integration owner. M10 and M11 may be
-developed in parallel after M09. All other arrows are hard landing dependencies.
+and projection refresh lands through one integration owner. M11 and M12 may be
+developed in parallel after M10. All other arrows are hard landing dependencies.
 
 ## Task-by-task landing map
 
@@ -147,34 +149,49 @@ domain task refreshes projections independently after this point.
 
 **Depends on:** M02.
 
-**Owned paths:** new focused modules under `crates/vibelang-core`, plus the
-minimal exports needed by adapters. Avoid broad runtime behavior edits here.
+**Owned paths:** new focused modules and annotated mechanical wire declarations
+under `crates/vibelang-core`; the boundary integration commit also owns
+`api/contract/runtime.toml`, the matching `xtask` discovery/conformance fixtures,
+and the canonical/v1 generated projection refresh. Avoid broad runtime behavior
+edits here.
 
 **Deliverables:**
 
-- UUIDv7 attempt/epoch IDs, checked revision/event newtypes, digests, canonical
-  receipt/status/component types, and wire adapters;
+- UUIDv7 attempt/epoch IDs, checked revision/event newtypes, public redacted
+  digests, private keyed complete-semantic request fingerprints, canonical
+  receipt/status/error/diagnostic/capability/component types, and wire adapters;
 - transition-table validator, monotonic ledger, retention window, idempotency,
   expected-revision, cancellation, and gap-query primitives;
+- idempotency expiry/tombstones, explicit epoch-change and capacity errors, and
+  no silent key reinterpretation;
 - `MutationContext` and reply/event sinks that internal messages can carry;
 - one canonical error/diagnostic envelope and redaction hooks.
 
 **Landing gate:** property tests cover monotonic concurrent allocation,
 transition edges, terminal immutability, component partitioning, rejected versus
 partial invariants, idempotency conflicts, expected-revision races,
-cancellation races, retention/reset, and lossless JSON/Rhai/WASM-friendly wire
-round trips.
+cancellation races, secret-only request differences, expiry, tombstone
+capacity, restart/epoch retry, retention/reset, and lossless JSON/Rhai/
+WASM-friendly wire round trips. Bidirectional discovery proves every core wire
+field and enum variant appears once in the contract and every projection
+round-trips through core serializer fixtures. The canonical and v1 projections
+are clean at this exact public landing.
 
-**Merge boundary:** exclusive ownership of shared core contract types. No
-transport defines a parallel receipt.
+**Merge boundary:** exclusive ownership of shared core contract types, followed
+by one runtime-fragment/projection integration commit. No transport defines a
+parallel receipt and no core wire change lands without its matching contract
+digest.
 
 ### M04 — instrument v1 as honest best effort
 
 **Depends on:** M03.
 
 **Owned paths:** `crates/vibelang-core/src/message.rs`, runtime dispatch/reload
-paths, existing handler domains, then CLI/Rhai ingress adapters in an ordered
-series. Generated output remains untouched.
+paths, existing handler domains, `vibelang-cli`, `vibelang-rhai`,
+`vibelang-http` including legacy WebSocket projection, and `vibelang-wasm`
+ingress/carrier adapters. The closing integration commit owns the runtime,
+HTTP, WebSocket, and WASM semantic fragments plus canonical/v1 generated
+projections.
 
 **Deliverables:**
 
@@ -186,17 +203,28 @@ series. Generated output remains untouched.
 - real result-bearing `sync_and_wait` and backend failure propagation;
 - current queue admission exposed as accepted, never applied;
 - any leaked/uncertain v1 effect reported as partial, with fencing when state is
-  unknown.
+  unknown;
+- the ADR's carrier table for legacy HTTP statuses/bodies, EvalResponse,
+  WASM ExecutionResult, CLI exit/watch behavior, Rhai terminals, sync, and
+  WebSocket telemetry;
+- explicit `continue_best_effort` acknowledgement/recovery control and default
+  mutation rejection while fenced.
 
 **Landing gate:** every message variant is classified internal,
 receipt-bearing, or receipt-linked; queue full/closed, handler failure, staging
 failure, route failure, backend rejection, sync timeout, and acknowledgement
-loss have distinct codes. All v1 golden behavior remains unchanged apart from
-the additive truthful receipt/diagnostic projection.
+loss have distinct codes. V1 authoring, timing, duplicate, routing, resource,
+and lifecycle goldens remain unchanged. Separate safety-exception goldens prove
+the classified status/exit/sync/fence behavior changes, late partial precedence,
+explicit continuation, and retry. No legacy carrier returns known partial as
+success. Canonical and v1 compatibility projections are clean at each public
+adapter landing boundary.
 
 **Merge boundary:** serialized commits in this order: message/context, runtime
-ledger, domain handlers, CLI/Rhai adapters. Review after each boundary because
-`runtime.rs` and `message.rs` are high-contention files.
+ledger, domain handlers, CLI/Rhai adapters, HTTP/legacy-WS adapters, WASM
+adapters, then fragment/projection integration. Review and run contract
+conformance after each public boundary because `runtime.rs`, `message.rs`, and
+legacy carriers are high-contention paths.
 
 ### M05 — populate conventions and semantic capability snapshots
 
@@ -304,7 +332,7 @@ than logs/no-ops.
 **Merge boundary:** family modules may be implemented in separate worktrees
 after shared primitives freeze. They land one family at a time. Only the final
 family integration commit edits shared registration/module lists and generated
-contract fragments.
+projections; each family worker owns only its domain semantic fragment.
 
 ### M09 — migrate routes, resources, recording, MIDI, and external effects
 
@@ -322,21 +350,69 @@ their focused core handlers. Generated outputs remain integration-owned.
   run, and scheduling semantics;
 - MIDI 1–16 public channels/groups, width-qualified values, typed unavailable
   device results, route/callback Refs, and receipt-bearing output commands;
-- filesystem/process/network/MIDI/file effects split into best-effort revisions.
+- mixed required-atomic/external-effect submissions rejected before revision
+  allocation; filesystem/process/network/MIDI/file effects accepted only as
+  explicit caller-issued best-effort submissions, each with a distinct key and
+  no runtime-created parent/child receipt.
 
 **Landing gate:** route matrix, generation replacement, record completion,
 strict numeric/parser boundaries, device disappearance, external-effect
 failure, and capability rejection all yield exact receipts. No sentinel handle,
 physical buffer leak, accepted unsupported field, or log-only terminal remains
-in v2.
+in v2. Mixed submissions and repeated keys across an explicitly sequenced
+external-effect/Candidate pair reject without creating child work.
 
 **Merge boundary:** route/resource/record/MIDI subdomains may develop in
 parallel after M08, but shared registration and core message changes land in a
 single ordered integration series before transports start.
 
-### M10 — publish HTTP v2 and typed WebSocket projections
+### M10 — close strict DSP, UGen, helper, and stdlib public boundaries
 
 **Depends on:** M09.
+
+**Owned paths:** `crates/vibelang-dsp/build.rs`, generated UGen registration
+adapter templates and fixtures, focused `crates/vibelang-dsp/src/api.rs`,
+`helpers.rs`, and `notes.rs` boundaries, relevant
+`crates/vibelang-rhai/src/api/**` and `src/extensions/**` helpers/parsers, and
+`crates/vibelang-std/stdlib/**` public parsers/coercions. The closing integration
+commit owns these domains' semantic fragments and the canonical/v1 projection
+refresh; transport consumers remain untouched.
+
+**Deliverables:**
+
+- generated UGen runtime closures propagate structured `Result` errors instead
+  of unwrapping conversion/constructor failures;
+- v2 numeric adapters reject non-finite, wrong-integrality, below-range, and
+  above-range values before DSP or backend dispatch;
+- note, time, chord, scale, curve, target, melody, pattern, and stdlib parsers
+  consume the full input and return stable diagnostics with spans;
+- every classified clamp, fallback, token drop, sentinel, partial parse, and
+  potential-panic site is either a strict v2 rejection or an explicitly named
+  v1 compatibility recovery with exactly one diagnostic;
+- generated adversarial fixtures cover all 5,962 UGen overloads and every
+  classified DSP/Rhai/helper/extension/stdlib boundary from the accepted
+  inventory.
+
+**Landing gate:** generated runtime adapter source contains zero user-input
+`unwrap`/`expect`/panic paths and zero silent default substitution. The
+adversarial matrix reports zero v2 unwind/panic, `compat_clamp`,
+`compat_fallback`, `compat_drop`, forgiving partial parse, or silent token loss;
+it exercises NaN, both infinities, wrong integrality, each finite boundary and
+its immediate outside values, malformed/trailing parser input, and every
+classified 4,788 UGen fallback plus 5,962 potential-panic exposure. All v1
+recovery goldens retain their legacy effective value and emit exactly one
+stable compatibility diagnostic. The inventory denominator cannot shrink, and
+the semantic fragments plus canonical/v1 projections are clean before any
+transport consumer lands.
+
+**Merge boundary:** serialize DSP generator/runtime adapters first, then focused
+DSP/Rhai/extension/stdlib parsers, adversarial inventory fixtures, and one
+domain-fragment/projection integration commit. A finding returns to its owning
+boundary; the projection owner does not mask it with generated output edits.
+
+### M11 — publish HTTP v2 and typed WebSocket projections
+
+**Depends on:** M10.
 
 **Owned paths:** `vibelang-http`, HTTP/WS semantic fragments, schemas, client
 fixtures, and this boundary's generated transport projections.
@@ -364,9 +440,9 @@ and privacy boundary tests pass.
 **Merge boundary:** HTTP routes and models land before generated OpenAPI/JSON
 Schema/client types. One projection refresh closes the task.
 
-### M11 — publish the WASM v2 runtime contract
+### M12 — publish the WASM v2 runtime contract
 
-**Depends on:** M09.
+**Depends on:** M10.
 
 **Owned paths:** `vibelang-wasm`, web backend bridge seams, WASM semantic
 fragment, TypeScript/package fixtures, and no HTTP code.
@@ -386,12 +462,12 @@ backend acknowledgement loss, and worker/window fixtures return the declared
 receipt/capability truth. No success-shaped warning remains. Package types match
 Rust exports.
 
-**Merge boundary:** may develop alongside M10. Generated TypeScript and archive
+**Merge boundary:** may develop alongside M11. Generated TypeScript and archive
 index update only after source behavior and package fixtures pass.
 
-### M12 — switch editors, migration tooling, docs, and packages
+### M13 — switch editors, migration tooling, docs, and packages
 
-**Depends on:** M10 and M11.
+**Depends on:** M11 and M12.
 
 **Owned paths:** LSP, VS Code, Emacs, migration CLI, docs/examples, package
 manifests, consumer semantic fragment, and the final consumer projection refresh.
@@ -418,9 +494,9 @@ clients consume the same digest.
 projection/docs refresh. Package archive outputs are never committed unless
 already part of the declared checked artifact set.
 
-### M13 — final integration and default-readiness gate
+### M14 — final integration and default-readiness gate
 
-**Depends on:** M12.
+**Depends on:** M13.
 
 **Owned paths:** integration/failure-injection fixtures, release policy records,
 compatibility baselines, and no new feature behavior.
@@ -451,13 +527,14 @@ only.
 | High-contention boundary | Exclusive landing owner/order |
 |---|---|
 | `crates/vibelang-api-manifest/**` | M01, then schema-aware fixes through a designated contract owner |
-| `xtask/src/public_api.rs`, `xtask/src/public_artifacts.rs`, contract/diff modules | M02, then one projection owner at each M05+M06, M08, M09, M10/M11, and M12 boundary |
+| `xtask/src/public_api.rs`, `xtask/src/public_artifacts.rs`, contract/diff modules | M02, then one projection owner at each M03, M04, M05+M06, M08, M09, M10, M11/M12, and M13 boundary |
 | `api/contract/*.toml` | Domain tasks edit only their owned fragment; projection owner resolves cross-fragment changes |
 | `crates/vibelang-core/src/message.rs` | M03 exports, M04 context propagation, M09 external-domain additions; serialized |
 | `crates/vibelang-core/src/runtime.rs`, reload/state roots | M04 instrumentation, M07 transaction, M08/M09 focused lowering; serialized reviews |
 | Rhai registration roots | M06 base, M08 family integration, M09 route/resource/MIDI integration; one owner per boundary |
+| DSP generation plus public parser/coercion boundaries | M10 generator/adapters, then DSP/Rhai/extension/stdlib paths in an ordered series before transports |
 | Generated artifacts | Never edited by domain workers; one clean generation commit per named boundary |
-| Package manifests/indexes | M11 canonical WASM source, M12 consumer/package convergence; serialized |
+| Package manifests/indexes | M12 canonical WASM source, M13 consumer/package convergence; serialized |
 
 ## Final evidence bundle
 
