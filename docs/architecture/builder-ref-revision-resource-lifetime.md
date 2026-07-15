@@ -488,7 +488,9 @@ integration tests for these obligations:
 - rejection across language major, manifest digest, engine instance, and
   runtime epoch, plus explicit persisted-address re-resolution;
 - parse, evaluation, group-body, semantic, synthdef compile, and deploy-stage
-  failures produce no partial candidate, registry mutation, or backend effect;
+  failures produce no partial candidate or registry mutation; deploy-stage
+  backend effects remain confined to the inactive generation and are removed
+  through its exact-once cleanup ledger, leaving no lasting or committed effect;
 - every entity kind has a terminal that is effective and returns its typed Ref.
 
 ### Duplicates and contributions
