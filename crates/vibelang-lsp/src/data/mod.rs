@@ -45,45 +45,92 @@ pub struct ApiFunctionDoc {
     pub parameters: Vec<(String, String, String)>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ApiLifecycle {
+    pub phase: String,
+    pub terminal: String,
+    pub classification: String,
+}
+
+/// Manifest-generated method overload documentation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiMethodDoc {
+    pub name: String,
+    pub description: String,
+    pub signature: String,
+    pub receiver: String,
+    pub lifecycle: ApiLifecycle,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct GeneratedApiRow {
     name: String,
     description: String,
     signature: String,
     example: String,
     receiver: Option<String>,
+    lifecycle: ApiLifecycle,
 }
+
+/// Static cache for rows generated from the canonical public manifest.
+static API_ROWS: OnceLock<Vec<GeneratedApiRow>> = OnceLock::new();
 
 /// Static cache for API documentation generated from the canonical manifest.
 static API_DOCS: OnceLock<HashMap<String, ApiFunctionDoc>> = OnceLock::new();
 
+/// Static cache for method overloads generated from the canonical manifest.
+static API_METHODS: OnceLock<Vec<ApiMethodDoc>> = OnceLock::new();
+
+fn get_api_rows() -> &'static [GeneratedApiRow] {
+    API_ROWS.get_or_init(|| {
+        serde_json::from_str(include_str!("rhai-api.json"))
+            .expect("generated LSP Rhai API metadata must be valid JSON")
+    })
+}
+
 /// Get manifest-backed global API function documentation.
 pub fn get_api_docs() -> &'static HashMap<String, ApiFunctionDoc> {
     API_DOCS.get_or_init(|| {
-        let rows: Vec<GeneratedApiRow> = serde_json::from_str(include_str!("rhai-api.json"))
-            .expect("generated LSP Rhai API metadata must be valid JSON");
         let mut docs = HashMap::<String, ApiFunctionDoc>::new();
-        for row in rows {
+        for row in get_api_rows() {
             if row.receiver.is_some() || !is_public_identifier(&row.name) {
                 continue;
             }
             let doc = docs
                 .entry(row.name.clone())
                 .or_insert_with(|| ApiFunctionDoc {
-                    name: row.name,
+                    name: row.name.clone(),
                     signature: String::new(),
-                    description: row.description,
-                    example: row.example,
+                    description: row.description.clone(),
+                    example: row.example.clone(),
                     parameters: Vec::new(),
                 });
             if doc.signature.is_empty() {
-                doc.signature = row.signature;
+                doc.signature.clone_from(&row.signature);
             } else if !doc.signature.split(" | ").any(|part| part == row.signature) {
                 doc.signature.push_str(" | ");
-                doc.signature.push_str(&row.signature);
+                doc.signature.push_str(row.signature.as_str());
             }
         }
         docs
+    })
+}
+
+/// Get every supported method overload projected from the canonical manifest.
+pub fn get_api_method_docs() -> &'static [ApiMethodDoc] {
+    API_METHODS.get_or_init(|| {
+        get_api_rows()
+            .iter()
+            .filter_map(|row| {
+                Some(ApiMethodDoc {
+                    name: row.name.clone(),
+                    description: row.description.clone(),
+                    signature: row.signature.clone(),
+                    receiver: row.receiver.clone()?,
+                    lifecycle: row.lifecycle.clone(),
+                })
+            })
+            .collect()
     })
 }
 

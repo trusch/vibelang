@@ -5,7 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use syn::{Expr, FnArg, ImplItem, Item, ReturnType, Type, Visibility};
 use vibelang_api_manifest::{
-    ApiEntry, Availability, EntryDetails, PublicApiManifest, StdlibDeclaration, UgenInput,
+    ApiEntry, Availability, EntryDetails, Lifecycle, PublicApiManifest, StdlibDeclaration,
+    UgenInput,
 };
 use walkdir::WalkDir;
 
@@ -315,6 +316,7 @@ struct EditorRhaiEntry<'a> {
     signature: &'a str,
     example: &'static str,
     receiver: Option<&'a str>,
+    lifecycle: &'a Lifecycle,
     availability: &'a Availability,
 }
 
@@ -345,6 +347,7 @@ fn render_editor_rhai(manifest: &PublicApiManifest) -> Result<String, String> {
                 signature: &overload.signature,
                 example: "",
                 receiver: entry.receiver.as_deref(),
+                lifecycle: &entry.lifecycle,
                 availability: &overload.availability,
             });
         }
