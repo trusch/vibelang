@@ -546,7 +546,7 @@ fn rhai_entries(
         } else {
             sources.matches(function, registered_name, kind)
         };
-        let receiver = infer_receiver(function, kind, &source_matches);
+        let receiver = infer_receiver(function, kind, &source_matches)?;
         let generated_accessor_matches = if ugen.is_none()
             && source_matches.is_empty()
             && kind.starts_with("property_")
@@ -719,7 +719,7 @@ fn rhai_entries(
             return_type: function.return_type.clone(),
             returns_receiver: receiver
                 .as_ref()
-                .map(|receiver| same_type(&function.return_type, receiver)),
+                .map(|receiver| return_type_is_receiver(&function.return_type, receiver)),
             boundary,
             availability: overload_availability,
             source_anchors,
@@ -807,30 +807,69 @@ fn infer_receiver(
     function: &RhaiFunction,
     kind: &str,
     sources: &[&SourceRegistration],
-) -> Option<String> {
-    if let Some(this_type) = &function.this_type {
-        return Some(clean_type(this_type));
+) -> Result<Option<String>, String> {
+    let source_receivers = sources
+        .iter()
+        .filter_map(|source| source.receiver.as_deref())
+        .map(clean_type)
+        .collect::<BTreeSet<_>>();
+    if source_receivers.len() > 1 {
+        return Err(format!(
+            "ambiguous receiver evidence for `{}`: {}",
+            function.signature,
+            source_receivers.into_iter().collect::<Vec<_>>().join(", ")
+        ));
     }
-    if kind.starts_with("property_") {
-        return function
+    if !source_receivers.is_empty() && sources.iter().any(|source| source.receiver.is_none()) {
+        return Err(format!(
+            "ambiguous receiver evidence for `{}`: matched method and free-function registrations",
+            function.signature
+        ));
+    }
+
+    let metadata_receiver = if let Some(this_type) = &function.this_type {
+        Some(clean_type(this_type))
+    } else if kind.starts_with("property_") {
+        function
             .params
             .first()
             .and_then(|parameter| parameter.parameter_type.as_deref())
-            .map(clean_type);
-    }
+            .map(clean_type)
+    } else {
+        None
+    };
     let first_type = function
         .params
         .first()
         .and_then(|parameter| parameter.parameter_type.as_deref());
-    sources
-        .iter()
-        .filter_map(|source| source.receiver.as_deref())
-        .find(|receiver| {
-            first_type
-                .map(|first_type| same_type(first_type, receiver))
-                .unwrap_or(false)
-        })
-        .map(str::to_owned)
+    let source_receiver = source_receivers.into_iter().next();
+
+    if let Some(receiver) = &source_receiver {
+        let Some(first_type) = first_type else {
+            return Err(format!(
+                "incomplete receiver evidence for `{}`: source declares `{receiver}` but metadata has no first parameter",
+                function.signature
+            ));
+        };
+        if !same_type(first_type, receiver) {
+            return Err(format!(
+                "incomplete receiver evidence for `{}`: source declares `{receiver}` but metadata first parameter is `{}`",
+                function.signature,
+                clean_type(first_type)
+            ));
+        }
+    }
+    if let (Some(metadata_receiver), Some(source_receiver)) = (&metadata_receiver, &source_receiver)
+    {
+        if !same_type(metadata_receiver, source_receiver) {
+            return Err(format!(
+                "ambiguous receiver evidence for `{}`: metadata declares `{metadata_receiver}` but source declares `{source_receiver}`",
+                function.signature
+            ));
+        }
+    }
+
+    Ok(metadata_receiver.or(source_receiver))
 }
 
 fn clean_type(value: &str) -> String {
@@ -851,6 +890,46 @@ fn clean_type(value: &str) -> String {
 
 fn same_type(left: &str, right: &str) -> bool {
     clean_type(left) == clean_type(right)
+}
+
+fn return_type_is_receiver(return_type: &str, receiver: &str) -> bool {
+    let Ok(return_type) = syn::parse_str::<Type>(return_type) else {
+        return same_type(return_type, receiver);
+    };
+    same_type(
+        &transparent_success_type(&return_type)
+            .to_token_stream()
+            .to_string(),
+        receiver,
+    )
+}
+
+fn transparent_success_type(return_type: &Type) -> &Type {
+    match return_type {
+        Type::Group(group) => transparent_success_type(&group.elem),
+        Type::Paren(paren) => transparent_success_type(&paren.elem),
+        Type::Path(path) => {
+            let Some(segment) = path.path.segments.last() else {
+                return return_type;
+            };
+            if segment.ident != "Result" {
+                return return_type;
+            }
+            let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                return return_type;
+            };
+            arguments
+                .args
+                .iter()
+                .find_map(|argument| match argument {
+                    GenericArgument::Type(success) => Some(success),
+                    _ => None,
+                })
+                .map(transparent_success_type)
+                .unwrap_or(return_type)
+        }
+        _ => return_type,
+    }
 }
 
 fn canonical_syn_type(value: &Type) -> String {
@@ -2117,6 +2196,7 @@ impl SignatureIndex {
     }
 }
 
+#[derive(Default)]
 struct GlobalSignatures {
     free: BTreeMap<String, CallableSignature>,
     methods: BTreeMap<(String, String), CallableSignature>,
@@ -2304,16 +2384,32 @@ fn callable_signature(
             }
         })
         .collect::<Vec<_>>();
-    let receiver = explicit_receiver.or_else(|| {
-        signature.inputs.iter().find_map(|input| match input {
-            FnArg::Typed(input)
-                if !is_native_call_context(&input.ty.to_token_stream().to_string()) =>
-            {
-                mutable_receiver_type(&input.ty)
-            }
-            _ => None,
-        })
+    let mutable_receiver = signature.inputs.iter().find_map(|input| match input {
+        FnArg::Typed(input) if !is_native_call_context(&input.ty.to_token_stream().to_string()) => {
+            mutable_receiver_type(&input.ty).map(|receiver| {
+                self_type
+                    .map(|self_type| receiver.replace("Self", self_type))
+                    .unwrap_or(receiver)
+            })
+        }
+        _ => None,
     });
+    let first_non_context_type = signature.inputs.iter().find_map(|input| match input {
+        FnArg::Typed(input) if !is_native_call_context(&input.ty.to_token_stream().to_string()) => {
+            Some(input.ty.as_ref())
+        }
+        _ => None,
+    });
+    let associated_by_value_receiver = self_type.and_then(|self_type| {
+        first_non_context_type
+            .filter(|first_type| !matches!(first_type, Type::Reference(_)))
+            .and_then(|_| parameters.first())
+            .filter(|first_type| same_type(first_type, self_type))
+            .map(|_| self_type.to_owned())
+    });
+    let receiver = explicit_receiver
+        .or(mutable_receiver)
+        .or(associated_by_value_receiver);
     CallableSignature {
         parameters,
         receiver,
@@ -3753,6 +3849,56 @@ mod tests {
             .to_path_buf()
     }
 
+    fn registration_fixture(source: &str) -> SourceIndex {
+        let file = syn::parse_file(source).unwrap();
+        let signatures = SignatureIndex::new(&file, &GlobalSignatures::default(), "fixture.rs");
+        let mut registrations = Vec::new();
+        let mut types = Vec::new();
+        let mut registration_functions = Vec::new();
+        collect_registration_functions(&file.items, &mut registration_functions);
+        for function in registration_functions {
+            let mut visitor = RegistrationVisitor {
+                relative: "fixture.rs",
+                function: function.sig.ident.to_string(),
+                cfg_stack: Vec::new(),
+                signatures: &signatures,
+                registrations: &mut registrations,
+                types: &mut types,
+            };
+            visitor.visit_block(&function.block);
+        }
+        SourceIndex {
+            registrations,
+            types,
+            generated_accessors: Vec::new(),
+            aliases: BTreeMap::new(),
+        }
+    }
+
+    fn receiver_fixture_metadata() -> RhaiMetadata {
+        let function = |name: &str| RhaiFunction {
+            name: name.into(),
+            this_type: None,
+            num_params: 2,
+            params: vec![
+                RhaiParameter {
+                    name: Some("receiver".into()),
+                    parameter_type: Some("Builder".into()),
+                },
+                RhaiParameter {
+                    name: Some("amount".into()),
+                    parameter_type: Some("i64".into()),
+                },
+            ],
+            return_type: "Result<Builder, Failure>".into(),
+            signature: format!("{name}(_: Builder, _: i64) -> Result<Builder, Failure>"),
+        };
+        RhaiMetadata {
+            custom_types: Vec::new(),
+            functions: vec![function("chain"), function("free")],
+        }
+    }
+
     #[test]
     fn generated_manifest_matches_committed_snapshot() {
         std::thread::Builder::new()
@@ -3808,6 +3954,66 @@ mod tests {
                     .unwrap();
                 assert_eq!(midi_group.availability.status, "conditional");
                 assert_eq!(midi_group.availability.features, ["midi"]);
+                let group_body = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| {
+                        entry.surface == "rhai"
+                            && entry.registered_name == "body"
+                            && entry.receiver.as_deref() == Some("GroupHandle")
+                    })
+                    .unwrap();
+                assert_eq!(group_body.lifecycle.phase, "builder_or_handle_call");
+                assert_eq!(group_body.lifecycle.terminal, "named_terminal");
+                assert_eq!(group_body.overloads.len(), 1);
+                assert_eq!(group_body.overloads[0].parameters.len(), 1);
+                assert_eq!(group_body.overloads[0].parameters[0].accepted_types, ["Fn"]);
+                assert_eq!(group_body.overloads[0].returns_receiver, Some(true));
+                assert!(group_body.overloads[0]
+                    .source_anchors
+                    .iter()
+                    .any(|anchor| anchor.symbol == "GroupHandle::body"));
+                let group_alias = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| {
+                        entry.surface == "rhai"
+                            && entry.registered_name == "alias"
+                            && entry.receiver.as_deref() == Some("GroupHandle")
+                    })
+                    .unwrap();
+                assert_eq!(group_alias.lifecycle.phase, "builder_or_handle_call");
+                assert_eq!(group_alias.lifecycle.terminal, "non_terminal_chain");
+                assert_eq!(group_alias.overloads.len(), 1);
+                assert_eq!(group_alias.overloads[0].parameters.len(), 1);
+                assert_eq!(
+                    group_alias.overloads[0].parameters[0].accepted_types,
+                    ["string"]
+                );
+                assert_eq!(group_alias.overloads[0].returns_receiver, Some(true));
+                assert!(group_alias.overloads[0]
+                    .source_anchors
+                    .iter()
+                    .any(|anchor| anchor.symbol == "GroupHandle::alias"));
+                let fallible_receiver_chains = manifest
+                    .entries
+                    .iter()
+                    .filter_map(|entry| entry.receiver.as_deref().map(|receiver| (entry, receiver)))
+                    .flat_map(|(entry, receiver)| {
+                        entry
+                            .overloads
+                            .iter()
+                            .map(move |overload| (receiver, overload))
+                    })
+                    .filter(|(receiver, overload)| {
+                        overload.return_type.contains("Result")
+                            && return_type_is_receiver(&overload.return_type, receiver)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(fallible_receiver_chains.len(), 33);
+                assert!(fallible_receiver_chains
+                    .iter()
+                    .all(|(_, overload)| overload.returns_receiver == Some(true)));
                 let clamp = manifest
                     .entries
                     .iter()
@@ -3976,6 +4182,164 @@ mod tests {
         assert_eq!(boundary.clamps.status, "present");
         assert_eq!(boundary.ranges.status, "present");
         assert_eq!(boundary.panic_exposure.status, "present");
+    }
+
+    #[test]
+    fn associated_by_value_receiver_fixture_preserves_identity_and_chaining() {
+        let sources = registration_fixture(
+            r#"
+                struct Builder;
+                struct Failure;
+
+                impl Builder {
+                    fn chain(
+                        _ctx: NativeCallContext,
+                        receiver: Self,
+                        amount: i64,
+                    ) -> Result<Self, Failure> {
+                        receiver
+                    }
+                }
+
+                fn free(receiver: Builder, amount: i64) -> Result<Builder, Failure> {
+                    receiver
+                }
+
+                fn register(engine: &mut Engine) {
+                    engine.build_type::<Builder>();
+                    engine.register_fn("chain", Builder::chain);
+                    engine.register_fn("free", free);
+                }
+            "#,
+        );
+        let metadata = receiver_fixture_metadata();
+        let ugens = UgenCatalog {
+            records: Vec::new(),
+            generated: BTreeMap::new(),
+            quarantined: BTreeMap::new(),
+            callable_records: 0,
+            demand_names: 0,
+        };
+        let mut entries = rhai_entries(&metadata, &sources, &ugens, &root()).unwrap();
+        classify_lifecycles(&mut entries);
+
+        let chain = entries
+            .iter()
+            .find(|entry| entry.registered_name == "chain")
+            .unwrap();
+        assert_eq!(chain.receiver.as_deref(), Some("Builder"));
+        assert_eq!(
+            chain.overloads[0].signature,
+            "chain(_: Builder, _: i64) -> Result<Builder, Failure>"
+        );
+        assert_eq!(chain.overloads[0].parameters.len(), 1);
+        assert_eq!(chain.overloads[0].parameters[0].position, 0);
+        assert_eq!(
+            chain.overloads[0].parameters[0].name.as_deref(),
+            Some("amount")
+        );
+        assert_eq!(chain.overloads[0].parameters[0].accepted_types, ["i64"]);
+        assert_eq!(chain.overloads[0].returns_receiver, Some(true));
+        assert_eq!(chain.lifecycle.phase, "builder_or_handle_call");
+        assert_eq!(chain.lifecycle.terminal, "non_terminal_chain");
+
+        let free = entries
+            .iter()
+            .find(|entry| entry.registered_name == "free")
+            .unwrap();
+        assert_eq!(free.receiver, None);
+        assert_eq!(free.overloads[0].parameters.len(), 2);
+        assert_eq!(free.overloads[0].parameters[0].accepted_types, ["Builder"]);
+        assert_eq!(free.overloads[0].parameters[1].accepted_types, ["i64"]);
+        assert_eq!(free.overloads[0].returns_receiver, None);
+        assert_eq!(free.lifecycle.phase, "call");
+        assert_eq!(free.lifecycle.terminal, "call_result");
+    }
+
+    #[test]
+    fn receiver_fixture_rejects_ambiguous_and_incomplete_evidence() {
+        let sources = registration_fixture(
+            r#"
+                struct Builder;
+                impl Builder {
+                    fn chain(receiver: Self, amount: i64) -> Self { receiver }
+                    fn borrowed(_receiver: &Self, _amount: i64) -> Self { Builder }
+                }
+                fn free(receiver: Builder, amount: i64) -> Builder { receiver }
+                fn register(engine: &mut Engine) {
+                    engine.register_fn("chain", Builder::chain);
+                    engine.register_fn("chain", free);
+                    engine.register_fn("borrowed", Builder::borrowed);
+                }
+            "#,
+        );
+        let metadata = receiver_fixture_metadata();
+        let chain = sources
+            .registrations
+            .iter()
+            .find(|source| source.name == "chain")
+            .unwrap();
+        let free = sources
+            .registrations
+            .iter()
+            .find(|source| source.name == "chain" && source.receiver.is_none())
+            .unwrap();
+        let borrowed = sources
+            .registrations
+            .iter()
+            .find(|source| source.name == "borrowed")
+            .unwrap();
+        assert_eq!(borrowed.receiver, None);
+
+        let ambiguous =
+            infer_receiver(&metadata.functions[0], "function", &[chain, free]).unwrap_err();
+        assert!(ambiguous.contains("matched method and free-function registrations"));
+
+        let incomplete = RhaiFunction {
+            name: "chain".into(),
+            this_type: None,
+            num_params: 0,
+            params: Vec::new(),
+            return_type: "Builder".into(),
+            signature: "chain() -> Builder".into(),
+        };
+        let incomplete = infer_receiver(&incomplete, "function", &[chain]).unwrap_err();
+        assert!(incomplete.contains("metadata has no first parameter"));
+
+        let ugens = UgenCatalog {
+            records: Vec::new(),
+            generated: BTreeMap::new(),
+            quarantined: BTreeMap::new(),
+            callable_records: 0,
+            demand_names: 0,
+        };
+        let ambiguous_metadata = RhaiMetadata {
+            custom_types: Vec::new(),
+            functions: vec![receiver_fixture_metadata().functions.remove(0)],
+        };
+        let ambiguous = rhai_entries(&ambiguous_metadata, &sources, &ugens, &root()).unwrap_err();
+        assert!(ambiguous.contains("registration declaration coverage failed"));
+
+        let incomplete_sources = SourceIndex {
+            registrations: vec![chain.clone()],
+            types: Vec::new(),
+            generated_accessors: Vec::new(),
+            aliases: BTreeMap::new(),
+        };
+        let incomplete_metadata = RhaiMetadata {
+            custom_types: Vec::new(),
+            functions: vec![RhaiFunction {
+                name: "chain".into(),
+                this_type: None,
+                num_params: 0,
+                params: Vec::new(),
+                return_type: "Builder".into(),
+                signature: "chain() -> Builder".into(),
+            }],
+        };
+        let incomplete =
+            rhai_entries(&incomplete_metadata, &incomplete_sources, &ugens, &root()).unwrap_err();
+        assert!(incomplete.contains("registration declaration coverage failed"));
     }
 
     #[test]

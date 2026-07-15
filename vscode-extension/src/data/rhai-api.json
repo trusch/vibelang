@@ -2281,10 +2281,10 @@
   },
   {
     "name": "alias",
-    "description": "Source-backed rhai registration; availability: available.",
+    "description": "Source-backed rhai method on GroupHandle registration; availability: available.",
     "signature": "alias(_: GroupHandle, _: string) -> core::result::Result<vibelang_rhai::api::group::GroupHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
-    "receiver": null,
+    "receiver": "GroupHandle",
     "availability": {
       "status": "available",
       "cfg": [],
@@ -3021,10 +3021,10 @@
   },
   {
     "name": "body",
-    "description": "Source-backed rhai registration; availability: available.",
+    "description": "Source-backed rhai method on GroupHandle registration; availability: available.",
     "signature": "body(_: GroupHandle, _: Fn) -> GroupHandle",
     "example": "",
-    "receiver": null,
+    "receiver": "GroupHandle",
     "availability": {
       "status": "available",
       "cfg": [],

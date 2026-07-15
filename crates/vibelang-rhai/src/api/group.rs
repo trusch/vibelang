@@ -271,6 +271,51 @@ impl GroupHandle {
         });
         self
     }
+
+    /// Define the group body with a closure (builder method).
+    ///
+    /// This is the builder equivalent of `define_group("name", || { ... })`.
+    /// The closure executes in the group's context, allowing nested definitions.
+    fn body(ctx: NativeCallContext, handle: Self, closure: FnPtr) -> Self {
+        let group_id = context::get_or_create_group_id(&handle.path);
+
+        context::with_state(|state| {
+            if let Some(config) = state.groups.get_mut(&group_id) {
+                config.name = handle.name.clone();
+            }
+        });
+
+        let pos = ctx.call_position();
+        let contribution_id = context::begin_body_contribution(
+            group_id,
+            handle.path.clone(),
+            ctx.call_source().map(ToOwned::to_owned),
+            pos.line().map(|line| line as u32),
+            pos.position().map(|column| column as u32),
+        );
+
+        let result = context::with_group_path(&handle.path, || {
+            closure.call_within_context::<rhai::Dynamic>(&ctx, ())
+        });
+        context::end_body_contribution(contribution_id);
+
+        if let Err(e) = result {
+            log::error!("Error in group('{}').body(): {}", handle.name, e);
+        }
+
+        handle
+    }
+
+    /// Register an authoring alias for a canonical group handle.
+    fn alias(
+        ctx: NativeCallContext,
+        handle: Self,
+        alias: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        context::add_group_alias(alias, handle.path.clone())
+            .map_err(|err| alias_error(err, ctx.call_position()))?;
+        Ok(handle)
+    }
 }
 
 fn format_alias_target(target: &GroupAliasTarget) -> String {
@@ -383,51 +428,6 @@ pub fn define_group(
     Ok(GroupHandle::new(full_path))
 }
 
-/// Define the group body with a closure (builder method).
-///
-/// This is the builder equivalent of `define_group("name", || { ... })`.
-/// The closure executes in the group's context, allowing nested definitions.
-fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> GroupHandle {
-    let group_id = context::get_or_create_group_id(&handle.path);
-
-    context::with_state(|state| {
-        if let Some(config) = state.groups.get_mut(&group_id) {
-            config.name = handle.name.clone();
-        }
-    });
-
-    let pos = ctx.call_position();
-    let contribution_id = context::begin_body_contribution(
-        group_id,
-        handle.path.clone(),
-        ctx.call_source().map(ToOwned::to_owned),
-        pos.line().map(|line| line as u32),
-        pos.position().map(|column| column as u32),
-    );
-
-    let result = context::with_group_path(&handle.path, || {
-        closure.call_within_context::<rhai::Dynamic>(&ctx, ())
-    });
-    context::end_body_contribution(contribution_id);
-
-    if let Err(e) = result {
-        log::error!("Error in group('{}').body(): {}", handle.name, e);
-    }
-
-    handle
-}
-
-/// Register an authoring alias for a canonical group handle.
-fn group_alias(
-    ctx: NativeCallContext,
-    handle: GroupHandle,
-    alias: String,
-) -> Result<GroupHandle, Box<EvalAltResult>> {
-    context::add_group_alias(alias, handle.path.clone())
-        .map_err(|err| alias_error(err, ctx.call_position()))?;
-    Ok(handle)
-}
-
 /// Get a group handle by path.
 pub fn group(ctx: NativeCallContext, path: String) -> Result<GroupHandle, Box<EvalAltResult>> {
     let full_path = context::resolve_group_reference(&path)
@@ -464,8 +464,8 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("effect_count", GroupHandle::effect_count);
 
     // Group body and output routing
-    engine.register_fn("body", group_body);
-    engine.register_fn("alias", group_alias);
+    engine.register_fn("body", GroupHandle::body);
+    engine.register_fn("alias", GroupHandle::alias);
     engine.register_fn("output", GroupHandle::output);
     engine.register_fn("output", GroupHandle::output_mono);
 
