@@ -28,4 +28,6 @@ test('all 25 canonical demand-rate UGens are quarantined from editor surfaces', 
     assert.deepEqual(demandUGens.map(ugen => ugen.name), expectedNames);
     assert.ok(demandUGens.every(ugen => !isRuntimeCallableUGen(ugen)));
     assert.equal(isRuntimeCallableUGen({ name: 'Demand', rates: ['ar', 'kr'] }), true);
+    assert.equal(isRuntimeCallableUGen({ name: 'Pseudo', rates: ['builder'] }), false);
+    assert.equal(isRuntimeCallableUGen({ name: 'InitialRate', rates: ['ir'] }), true);
 });

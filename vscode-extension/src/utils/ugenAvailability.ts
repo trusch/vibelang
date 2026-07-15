@@ -32,5 +32,6 @@ export const QUARANTINED_DEMAND_UGENS = [
 ] as const;
 
 export function isRuntimeCallableUGen(ugen: RateTaggedUGen): boolean {
-    return !ugen.rates.includes('demand');
+    return !ugen.rates.some(rate => rate === 'demand' || rate === 'builder')
+        && ugen.rates.some(rate => rate === 'ar' || rate === 'kr' || rate === 'ir');
 }

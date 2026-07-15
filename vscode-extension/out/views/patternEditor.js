@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PatternEditor = void 0;
 const vscode = require("vscode");
 const patternParser_1 = require("../utils/patternParser");
+const sourceEmitters_1 = require("../utils/sourceEmitters");
 const sharedComponents_1 = require("./sharedComponents");
 class PatternEditor {
     constructor(panel, store) {
@@ -581,7 +582,7 @@ class PatternEditor {
                     const start = lineText.indexOf(match[0]);
                     const end = start + match[0].length;
                     const edit = new vscode.WorkspaceEdit();
-                    edit.replace(document.uri, new vscode.Range(lineIdx, start, lineIdx, end), `.step("${newPatternString}")`);
+                    edit.replace(document.uri, new vscode.Range(lineIdx, start, lineIdx, end), sourceEmitters_1.vibe.member('Pattern', 'step', [sourceEmitters_1.vibe.string(newPatternString)]));
                     await vscode.workspace.applyEdit(edit);
                     // Save the document to trigger live reload
                     await document.save();
@@ -632,7 +633,11 @@ class PatternEditor {
             if (!lane.voiceName)
                 continue;
             const patternString = (0, patternParser_1.generatePatternString)(lane.grid);
-            codeLines.push(`pattern("${lane.patternName}").on(${lane.voiceName}).step("${patternString}").start();`);
+            codeLines.push(sourceEmitters_1.vibe.free('pattern', [sourceEmitters_1.vibe.string(lane.patternName)])
+                + sourceEmitters_1.vibe.member('Pattern', 'on', [sourceEmitters_1.vibe.expr('Voice', lane.voiceName)])
+                + sourceEmitters_1.vibe.member('Pattern', 'step', [sourceEmitters_1.vibe.string(patternString)])
+                + sourceEmitters_1.vibe.member('Pattern', 'start', [])
+                + ';');
         }
         return codeLines.join('\n');
     }
@@ -827,7 +832,11 @@ class PatternEditor {
                     break;
                 }
             }
-            codeLines.push(`pattern("${patternName}").on(${voiceName}).step("${patternString}").start();`);
+            codeLines.push(sourceEmitters_1.vibe.free('pattern', [sourceEmitters_1.vibe.string(patternName)])
+                + sourceEmitters_1.vibe.member('Pattern', 'on', [sourceEmitters_1.vibe.expr('Voice', voiceName)])
+                + sourceEmitters_1.vibe.member('Pattern', 'step', [sourceEmitters_1.vibe.string(patternString)])
+                + sourceEmitters_1.vibe.member('Pattern', 'start', [])
+                + ';');
         }
         return codeLines.join('\n');
     }
@@ -1604,6 +1613,7 @@ class PatternEditor {
     </div>
 
     <script>
+        ${sourceEmitters_1.WEBVIEW_VIBE_EMITTER_RUNTIME}
         const vscode = acquireVsCodeApi();
 
         let state = {
@@ -2503,7 +2513,13 @@ class PatternEditor {
             for (const lane of state.lanes) {
                 if (!lane.voiceName) continue;
                 const patternStr = generatePatternStringFromGrid(lane.grid);
-                codeLines.push(\`pattern("\${lane.patternName}").on(\${lane.voiceName}).step("\${patternStr}").start();\`);
+                codeLines.push(
+                    vibe.free('pattern', [vibe.string(lane.patternName)])
+                    + vibe.member('Pattern', 'on', [vibe.expr('Voice', lane.voiceName)])
+                    + vibe.member('Pattern', 'step', [vibe.string(patternStr)])
+                    + vibe.member('Pattern', 'start', [])
+                    + ';'
+                );
             }
             state.generatedCode = codeLines.join('\\n');
 

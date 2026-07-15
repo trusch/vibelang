@@ -5,6 +5,8 @@
  * Automation allows parameters to change over time using control points and bezier curves.
  */
 
+import { vibe } from './sourceEmitters';
+
 /**
  * Curve type determines how values interpolate between control points
  */
@@ -289,12 +291,9 @@ export function generateFadeCode(lane: AutomationLane): string {
 
     const target = lane.target;
     const sequenceName = `automation:${target.type}:${target.name}:${target.param}`;
-    const targetMethod = target.type === 'group'
-        ? 'on_group'
-        : target.type === 'voice' ? 'on_voice' : 'on_effect';
     const lines = [
-        `sequence(${quoteVibeString(sequenceName)})`,
-        `    .loop_beats(${points[points.length - 1].beat.toFixed(2)})`,
+        vibe.free('sequence', [vibe.string(sequenceName)]),
+        `    ${vibe.member('Sequence', 'loop_beats', [vibe.f64Fixed(points[points.length - 1].beat, 2)])}`,
     ];
 
     for (let i = 0; i < points.length - 1; i++) {
@@ -307,19 +306,26 @@ export function generateFadeCode(lane: AutomationLane): string {
         const startValue = normalizedToParamValue(p1.value, lane.minValue, lane.maxValue);
         const endValue = normalizedToParamValue(p2.value, lane.minValue, lane.maxValue);
         const fadeName = `${sequenceName}:${i + 1}`;
-        lines.push(
-            `    .clip(${p1.beat.toFixed(2)}..${p2.beat.toFixed(2)}, fade(${quoteVibeString(fadeName)})`,
-            `        .${targetMethod}(${quoteVibeString(target.name)})`,
-            `        .param(${quoteVibeString(target.param)})`,
-            `        .from(${startValue.toFixed(3)})`,
-            `        .to(${endValue.toFixed(3)})`,
-            `        .over(${duration.toFixed(2)})`,
-            `        .curve(${quoteVibeString(automationCurveName(p1.curveType))})`,
-            '        .apply())',
-        );
+        const targetCall = target.type === 'group'
+            ? vibe.member('Fade', 'on_group', [vibe.string(target.name)])
+            : target.type === 'voice'
+                ? vibe.member('Fade', 'on_voice', [vibe.string(target.name)])
+                : vibe.member('Fade', 'on_effect', [vibe.string(target.name)]);
+        const fade = vibe.free('fade', [vibe.string(fadeName)])
+            + targetCall
+            + vibe.member('Fade', 'param', [vibe.string(target.param)])
+            + vibe.member('Fade', 'from', [vibe.f64Fixed(startValue, 3)])
+            + vibe.member('Fade', 'to', [vibe.f64Fixed(endValue, 3)])
+            + vibe.member('Fade', 'over', [vibe.f64Fixed(duration, 2)])
+            + vibe.member('Fade', 'curve', [vibe.string(automationCurveName(p1.curveType))])
+            + vibe.member('Fade', 'apply', []);
+        lines.push(`    ${vibe.member('Sequence', 'clip', [
+            vibe.rangeF64Fixed(p1.beat, p2.beat, 2),
+            vibe.expr('Fade', fade),
+        ])}`);
     }
 
-    lines.push('    .start();');
+    lines.push(`    ${vibe.member('Sequence', 'start', [])};`);
     return lines.join('\n');
 }
 

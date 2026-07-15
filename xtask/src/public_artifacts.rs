@@ -1,5 +1,5 @@
 use quote::ToTokens;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1285,7 +1285,7 @@ fn validate_editor_consumers(root: &Path, manifest: &PublicApiManifest) -> Resul
             ));
         }
     }
-    validate_vscode_emitter_contracts(manifest)?;
+    validate_vscode_emitter_contracts(root, manifest)?;
 
     let mut checked = 0usize;
     for relative_root in EDITOR_ROOTS {
@@ -1391,230 +1391,484 @@ fn contains_member_call(source: &str, name: &str) -> bool {
     false
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum EmitterCallSyntax {
     Free,
     Member,
     Setter,
+    Operator,
+    DynamicUgen,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct EmitterCallContract {
-    emitter: &'static str,
-    name: &'static str,
-    receiver: Option<&'static str>,
-    arguments: Vec<&'static str>,
+    emitter: String,
+    name: String,
+    receiver: Option<String>,
+    arguments: Vec<String>,
     syntax: EmitterCallSyntax,
 }
 
-fn emitter_call(
-    emitter: &'static str,
-    name: &'static str,
-    receiver: Option<&'static str>,
-    arguments: &[&'static str],
+#[derive(Debug, Deserialize)]
+struct EditorUgen {
+    name: String,
+    rates: Vec<String>,
+    inputs: Vec<EditorUgenInput>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EditorUgenInput {
+    #[allow(dead_code)]
+    name: String,
+}
+
+fn split_javascript_arguments(source: &str) -> Result<Vec<&str>, String> {
+    let bytes = source.as_bytes();
+    let mut arguments = Vec::new();
+    let mut start = 0usize;
+    let mut stack = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let next = bytes.get(index + 1).copied();
+        if line_comment {
+            if byte == b'\n' {
+                line_comment = false;
+            }
+        } else if block_comment {
+            if byte == b'*' && next == Some(b'/') {
+                block_comment = false;
+                index += 1;
+            }
+        } else if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == delimiter {
+                quote = None;
+            }
+        } else {
+            match (byte, next) {
+                (b'/', Some(b'/')) => {
+                    line_comment = true;
+                    index += 1;
+                }
+                (b'/', Some(b'*')) => {
+                    block_comment = true;
+                    index += 1;
+                }
+                (b'\'' | b'"' | b'`', _) => quote = Some(byte),
+                (b'(' | b'[' | b'{', _) => stack.push(byte),
+                (b')', _) if stack.pop() != Some(b'(') => {
+                    return Err("unbalanced JavaScript call parentheses".into());
+                }
+                (b']', _) if stack.pop() != Some(b'[') => {
+                    return Err("unbalanced JavaScript array brackets".into());
+                }
+                (b'}', _) if stack.pop() != Some(b'{') => {
+                    return Err("unbalanced JavaScript object braces".into());
+                }
+                (b',', _) if stack.is_empty() => {
+                    arguments.push(source[start..index].trim());
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    if quote.is_some() || block_comment || !stack.is_empty() {
+        return Err("unterminated JavaScript emitter expression".into());
+    }
+    let last = source[start..].trim();
+    if !last.is_empty() {
+        arguments.push(last);
+    }
+    Ok(arguments)
+}
+
+fn javascript_call_end(source: &str, open: usize) -> Result<usize, String> {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut index = open;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let next = bytes.get(index + 1).copied();
+        if line_comment {
+            if byte == b'\n' {
+                line_comment = false;
+            }
+        } else if block_comment {
+            if byte == b'*' && next == Some(b'/') {
+                block_comment = false;
+                index += 1;
+            }
+        } else if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == delimiter {
+                quote = None;
+            }
+        } else {
+            match (byte, next) {
+                (b'/', Some(b'/')) => {
+                    line_comment = true;
+                    index += 1;
+                }
+                (b'/', Some(b'*')) => {
+                    block_comment = true;
+                    index += 1;
+                }
+                (b'\'' | b'"' | b'`', _) => quote = Some(byte),
+                (b'(', _) => depth += 1,
+                (b')', _) => {
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or_else(|| "unbalanced JavaScript call".to_string())?;
+                    if depth == 0 {
+                        return Ok(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    Err("unterminated JavaScript emitter call".into())
+}
+
+fn javascript_string_literal(source: &str) -> Option<String> {
+    let source = source.trim();
+    let delimiter = *source.as_bytes().first()?;
+    if !matches!(delimiter, b'\'' | b'"') || source.as_bytes().last() != Some(&delimiter) {
+        return None;
+    }
+    let mut value = String::new();
+    let mut escaped = false;
+    for character in source[1..source.len() - 1].chars() {
+        if escaped {
+            value.push(character);
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else {
+            value.push(character);
+        }
+    }
+    (!escaped).then_some(value)
+}
+
+fn vibe_method(source: &str) -> Option<(&str, usize, usize)> {
+    let vibe = source.find("vibe.")?;
+    let method_start = vibe + "vibe.".len();
+    let method_end = source[method_start..]
+        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))?
+        + method_start;
+    let mut open = method_end;
+    while source
+        .as_bytes()
+        .get(open)
+        .is_some_and(u8::is_ascii_whitespace)
+    {
+        open += 1;
+    }
+    (source.as_bytes().get(open) == Some(&b'(')).then_some((
+        &source[method_start..method_end],
+        open,
+        vibe,
+    ))
+}
+
+fn vibe_argument_type(source: &str) -> Result<Option<String>, String> {
+    let Some((method, open, _)) = vibe_method(source.trim()) else {
+        return Ok(None);
+    };
+    let end = javascript_call_end(source.trim(), open)?;
+    let arguments = split_javascript_arguments(&source.trim()[open + 1..end])?;
+    let argument_type = match method {
+        "string" => Some("string".into()),
+        "f64" | "f64Fixed" => Some("f64".into()),
+        "i64" => Some("i64".into()),
+        "bool" => Some("bool".into()),
+        "fn" => Some("Fn".into()),
+        "rangeF64" | "rangeF64Fixed" => Some("Range<f64>".into()),
+        "expr" => arguments
+            .first()
+            .and_then(|value| javascript_string_literal(value)),
+        "ugen" => Some("NodeRef".into()),
+        "operator" => {
+            let left = arguments
+                .first()
+                .and_then(|value| javascript_string_literal(value));
+            let right = arguments
+                .get(2)
+                .and_then(|value| javascript_string_literal(value));
+            match (left.as_deref(), right.as_deref()) {
+                (Some("NodeRef"), _) | (_, Some("NodeRef")) => Some("NodeRef".into()),
+                (Some("f64"), Some("f64")) => Some("f64".into()),
+                _ => None,
+            }
+        }
+        "add" | "subtract" | "multiply" => None,
+        _ => None,
+    };
+    Ok(argument_type)
+}
+
+fn emitter_array_types(source: &str) -> Result<Vec<String>, String> {
+    let source = source.trim();
+    if !source.starts_with('[') || !source.ends_with(']') {
+        return Err(format!("emitter argument list is not an array: {source}"));
+    }
+    split_javascript_arguments(&source[1..source.len() - 1])?
+        .into_iter()
+        .map(|argument| {
+            vibe_argument_type(argument)?.ok_or_else(|| {
+                format!("emitter argument lacks structural VibeLang type metadata: {argument}")
+            })
+        })
+        .collect()
+}
+
+fn extracted_call(
+    emitter: &str,
+    name: String,
+    receiver: Option<String>,
+    arguments: Vec<String>,
+    syntax: EmitterCallSyntax,
 ) -> EmitterCallContract {
     EmitterCallContract {
-        emitter,
+        emitter: emitter.into(),
         name,
         receiver,
-        arguments: arguments.to_vec(),
-        syntax: if receiver.is_some() {
-            EmitterCallSyntax::Member
-        } else {
-            EmitterCallSyntax::Free
-        },
+        arguments,
+        syntax,
     }
 }
 
-fn setter_call(
-    emitter: &'static str,
-    name: &'static str,
-    receiver: &'static str,
-    argument: &'static str,
-) -> EmitterCallContract {
-    EmitterCallContract {
-        emitter,
-        name,
-        receiver: Some(receiver),
-        arguments: vec![argument],
-        syntax: EmitterCallSyntax::Setter,
+fn extract_vibe_calls(emitter: &str, source: &str) -> Result<Vec<EmitterCallContract>, String> {
+    let mut calls = Vec::new();
+    let mut offset = 0usize;
+    while let Some(relative) = source[offset..].find("vibe.") {
+        let vibe = offset + relative;
+        let Some((method, open, _)) = vibe_method(&source[vibe..]) else {
+            offset = vibe + "vibe.".len();
+            continue;
+        };
+        let open = vibe + open;
+        let end =
+            javascript_call_end(source, open).map_err(|error| format!("{emitter}: {error}"))?;
+        let arguments = split_javascript_arguments(&source[open + 1..end])
+            .map_err(|error| format!("{emitter}: {error}"))?;
+        let literal = |index: usize, label: &str| {
+            arguments
+                .get(index)
+                .and_then(|value| javascript_string_literal(value))
+                .ok_or_else(|| format!("{emitter}: vibe.{method} {label} must be a string literal"))
+        };
+        match method {
+            "free" => {
+                if arguments.len() != 2 {
+                    return Err(format!("{emitter}: vibe.free metadata arity changed"));
+                }
+                calls.push(extracted_call(
+                    emitter,
+                    literal(0, "name")?,
+                    None,
+                    emitter_array_types(arguments[1])?,
+                    EmitterCallSyntax::Free,
+                ));
+            }
+            "member" => {
+                if arguments.len() != 3 {
+                    return Err(format!("{emitter}: vibe.member metadata arity changed"));
+                }
+                calls.push(extracted_call(
+                    emitter,
+                    literal(1, "name")?,
+                    Some(literal(0, "receiver")?),
+                    emitter_array_types(arguments[2])?,
+                    EmitterCallSyntax::Member,
+                ));
+            }
+            "property" => {
+                if arguments.len() != 4 {
+                    return Err(format!("{emitter}: vibe.property metadata arity changed"));
+                }
+                let argument = vibe_argument_type(arguments[3])?
+                    .ok_or_else(|| format!("{emitter}: vibe.property value lacks type metadata"))?;
+                calls.push(extracted_call(
+                    emitter,
+                    literal(2, "name")?,
+                    Some(literal(0, "receiver")?),
+                    vec![argument],
+                    EmitterCallSyntax::Setter,
+                ));
+            }
+            "operator" => {
+                if arguments.len() != 5 {
+                    return Err(format!("{emitter}: vibe.operator metadata arity changed"));
+                }
+                let left = literal(0, "left type")?;
+                let operator = literal(1, "operator")?;
+                let right = literal(2, "right type")?;
+                for (expression, declared) in [(arguments[3], &left), (arguments[4], &right)] {
+                    if let Some(actual) = vibe_argument_type(expression)? {
+                        if &actual != declared {
+                            return Err(format!(
+                                "{emitter}: vibe.operator declares {declared} for {actual} expression"
+                            ));
+                        }
+                    }
+                }
+                calls.push(extracted_call(
+                    emitter,
+                    operator,
+                    None,
+                    vec![left, right],
+                    EmitterCallSyntax::Operator,
+                ));
+            }
+            "add" | "subtract" | "multiply" => {
+                if arguments.len() != 2 {
+                    return Err(format!("{emitter}: vibe.{method} metadata arity changed"));
+                }
+                let operator = match method {
+                    "add" => "+",
+                    "subtract" => "-",
+                    _ => "*",
+                };
+                for types in [
+                    ["NodeRef", "NodeRef"],
+                    ["NodeRef", "f64"],
+                    ["f64", "NodeRef"],
+                ] {
+                    calls.push(extracted_call(
+                        emitter,
+                        operator.into(),
+                        None,
+                        types.into_iter().map(str::to_string).collect(),
+                        EmitterCallSyntax::Operator,
+                    ));
+                }
+            }
+            "ugen" => {
+                if arguments.len() != 2 {
+                    return Err(format!("{emitter}: vibe.ugen metadata arity changed"));
+                }
+                if let Some(name) = javascript_string_literal(arguments[0]) {
+                    calls.push(extracted_call(
+                        emitter,
+                        name,
+                        None,
+                        emitter_array_types(arguments[1])?,
+                        EmitterCallSyntax::Free,
+                    ));
+                } else if arguments[0].trim() == "vibe.ugenName(node.name, node.rate)"
+                    && arguments[1].trim() == "args"
+                {
+                    calls.push(extracted_call(
+                        emitter,
+                        "<manifest-ugen>".into(),
+                        None,
+                        Vec::new(),
+                        EmitterCallSyntax::DynamicUgen,
+                    ));
+                } else {
+                    return Err(format!(
+                        "{emitter}: dynamic vibe.ugen must use vibe.ugenName(node.name, node.rate), args"
+                    ));
+                }
+            }
+            "string" | "f64" | "f64Fixed" | "i64" | "bool" | "expr" | "fn" | "rangeF64"
+            | "rangeF64Fixed" | "ugenName" => {}
+            unknown => {
+                return Err(format!(
+                    "{emitter}: unknown vibe.{unknown} emitter primitive fails closed"
+                ));
+            }
+        }
+        offset = vibe + "vibe.".len();
     }
+    calls.sort();
+    Ok(calls)
 }
 
-fn vscode_emitter_contracts() -> Vec<EmitterCallContract> {
-    let mut calls = vec![
-        // Arrangement timeline: Fade builders are scheduled by Sequence clips.
-        emitter_call("arrangement-timeline", "sequence", None, &["string"]),
-        emitter_call(
-            "arrangement-timeline",
-            "loop_beats",
-            Some("Sequence"),
-            &["f64"],
-        ),
-        emitter_call(
-            "arrangement-timeline",
-            "clip",
-            Some("Sequence"),
-            &["Range<f64>", "Fade"],
-        ),
-        emitter_call("arrangement-timeline", "start", Some("Sequence"), &[]),
-        emitter_call("arrangement-timeline", "fade", None, &["string"]),
-        emitter_call(
-            "arrangement-timeline",
-            "on_group",
-            Some("Fade"),
-            &["string"],
-        ),
-        emitter_call(
-            "arrangement-timeline",
-            "on_voice",
-            Some("Fade"),
-            &["string"],
-        ),
-        emitter_call(
-            "arrangement-timeline",
-            "on_effect",
-            Some("Fade"),
-            &["string"],
-        ),
-        emitter_call("arrangement-timeline", "param", Some("Fade"), &["string"]),
-        emitter_call("arrangement-timeline", "from", Some("Fade"), &["f64"]),
-        emitter_call("arrangement-timeline", "to", Some("Fade"), &["f64"]),
-        emitter_call("arrangement-timeline", "over", Some("Fade"), &["f64"]),
-        emitter_call("arrangement-timeline", "curve", Some("Fade"), &["string"]),
-        emitter_call("arrangement-timeline", "apply", Some("Fade"), &[]),
-        // Effect rack: Fx.group_path is a registered property setter.
-        emitter_call("effect-rack", "fx", None, &["string"]),
-        setter_call("effect-rack", "group_path", "Fx", "string"),
-        emitter_call("effect-rack", "synth", Some("Fx"), &["string"]),
-        emitter_call("effect-rack", "param", Some("Fx"), &["string", "f64"]),
-        emitter_call("effect-rack", "apply", Some("Fx"), &[]),
-        // Pattern and melody editor source/copy paths.
-        emitter_call("pattern-editor", "pattern", None, &["string"]),
-        emitter_call("pattern-editor", "on", Some("Pattern"), &["Voice"]),
-        emitter_call("pattern-editor", "step", Some("Pattern"), &["string"]),
-        emitter_call("pattern-editor", "start", Some("Pattern"), &[]),
-        emitter_call("melody-editor", "melody", None, &["string"]),
-        emitter_call("melody-editor", "on", Some("Melody"), &["Voice"]),
-        emitter_call("melody-editor", "notes", Some("Melody"), &["string"]),
-        emitter_call("melody-editor", "start", Some("Melody"), &[]),
-        // Sample browser load, slice, preview, voice, pattern, and warp snippets.
-        emitter_call("sample-browser", "sample", None, &["string", "string"]),
-        emitter_call(
-            "sample-browser",
-            "slice",
-            Some("SampleHandle"),
-            &["f64", "f64"],
-        ),
-        emitter_call("sample-browser", "attack", Some("SampleHandle"), &["f64"]),
-        emitter_call("sample-browser", "release", Some("SampleHandle"), &["f64"]),
-        emitter_call(
-            "sample-browser",
-            "loop_mode",
-            Some("SampleHandle"),
-            &["bool"],
-        ),
-        emitter_call(
-            "sample-browser",
-            "warp_to_bpm",
-            Some("SampleHandle"),
-            &["f64"],
-        ),
-        emitter_call(
-            "sample-browser",
-            "semitones",
-            Some("SampleHandle"),
-            &["f64"],
-        ),
-        emitter_call("sample-browser", "speed", Some("SampleHandle"), &["f64"]),
-        emitter_call("sample-browser", "voice", None, &["string"]),
-        emitter_call("sample-browser", "on", Some("Voice"), &["SampleHandle"]),
-        emitter_call("sample-browser", "synth", Some("Voice"), &["string"]),
-        emitter_call("sample-browser", "param", Some("Voice"), &["string", "f64"]),
-        emitter_call("sample-browser", "pattern", None, &["string"]),
-        emitter_call("sample-browser", "on", Some("Pattern"), &["Voice"]),
-        emitter_call("sample-browser", "step", Some("Pattern"), &["string"]),
-        emitter_call("sample-browser", "start", Some("Pattern"), &[]),
-        // Sound Designer fixed builder surface. Regular UGen rows come from the
-        // canonical UGen projections byte-compared by sync_ugen_projections.
-        emitter_call("sound-designer", "define_synthdef", None, &["string", "Fn"]),
-        emitter_call(
-            "sound-designer",
-            "param",
-            Some("SynthDefBuilderHandle"),
-            &["string", "f64"],
-        ),
-        emitter_call(
-            "sound-designer",
-            "body",
-            Some("SynthDefBuilderHandle"),
-            &["Fn"],
-        ),
-        emitter_call("sound-designer", "envelope", None, &[]),
-        emitter_call(
-            "sound-designer",
-            "adsr",
-            Some("EnvelopeBuilder"),
-            &["f64", "f64", "f64", "f64"],
-        ),
-        emitter_call(
-            "sound-designer",
-            "asr",
-            Some("EnvelopeBuilder"),
-            &["f64", "f64", "f64"],
-        ),
-        emitter_call(
-            "sound-designer",
-            "perc",
-            Some("EnvelopeBuilder"),
-            &["f64", "f64"],
-        ),
-        emitter_call(
-            "sound-designer",
-            "gate",
-            Some("EnvelopeBuilder"),
-            &["NodeRef"],
-        ),
-        emitter_call(
-            "sound-designer",
-            "cleanup_on_finish",
-            Some("EnvelopeBuilder"),
-            &[],
-        ),
-        emitter_call("sound-designer", "build", Some("EnvelopeBuilder"), &[]),
-    ];
-    calls.sort_by(|left, right| {
-        (
-            left.emitter,
-            left.receiver,
-            left.name,
-            left.arguments.as_slice(),
-        )
-            .cmp(&(
-                right.emitter,
-                right.receiver,
-                right.name,
-                right.arguments.as_slice(),
-            ))
-    });
-    calls.dedup_by(|left, right| {
-        left.emitter == right.emitter
-            && left.name == right.name
-            && left.receiver == right.receiver
-            && left.arguments == right.arguments
-            && left.syntax == right.syntax
-    });
-    calls
+fn vscode_emitter_inventory(
+    root: &Path,
+    packaged: bool,
+) -> Result<Vec<EmitterCallContract>, String> {
+    let relative_root = if packaged {
+        "vscode-extension/out"
+    } else {
+        "vscode-extension/src"
+    };
+    let extension = if packaged { "js" } else { "ts" };
+    let mut calls = Vec::new();
+    for entry in WalkDir::new(root.join(relative_root)) {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some(extension)
+            || entry
+                .path()
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.ends_with(".test"))
+        {
+            continue;
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(root.join(relative_root))
+            .map_err(|error| error.to_string())?;
+        let mut emitter = relative
+            .with_extension("")
+            .to_string_lossy()
+            .replace('\\', "/");
+        if let Some(stripped) = emitter.strip_suffix(".js") {
+            emitter = stripped.into();
+        }
+        let source = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+        calls.extend(extract_vibe_calls(&emitter, &source)?);
+    }
+    calls.sort();
+    Ok(calls)
 }
 
-fn accepted_type_matches(accepted: &str, actual: &str) -> bool {
-    accepted == "Dynamic"
-        || accepted == actual
-        || accepted.rsplit("::").next() == Some(actual)
-        || matches!((accepted, actual), ("f32", "f64") | ("Range", "Range<f64>"))
+fn accepted_type_matches(
+    overload: &vibelang_api_manifest::Overload,
+    accepted: &str,
+    actual: &str,
+) -> bool {
+    if accepted == actual || accepted.rsplit("::").next() == Some(actual) {
+        return true;
+    }
+    if accepted != "Dynamic" || overload.boundary.coercions.status != "present" {
+        return false;
+    }
+    overload.boundary.coercions.details.iter().any(|detail| {
+        detail
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|token| token == actual)
+    })
 }
 
-fn parameters_accept(parameters: &[vibelang_api_manifest::Parameter], arguments: &[&str]) -> bool {
+fn parameters_accept(
+    overload: &vibelang_api_manifest::Overload,
+    parameters: &[vibelang_api_manifest::Parameter],
+    arguments: &[String],
+) -> bool {
     let required = parameters
         .iter()
         .filter(|parameter| !parameter.optional)
@@ -1625,7 +1879,7 @@ fn parameters_accept(parameters: &[vibelang_api_manifest::Parameter], arguments:
             parameter
                 .accepted_types
                 .iter()
-                .any(|accepted| accepted_type_matches(accepted, actual))
+                .any(|accepted| accepted_type_matches(overload, accepted, actual))
         })
 }
 
@@ -1640,7 +1894,7 @@ fn emitter_call_is_registered(manifest: &PublicApiManifest, call: &EmitterCallCo
             || entry.registered_name != call.name
             || !matches!(
                 entry.surface.as_str(),
-                "rhai" | "dsp_rhai" | "rhai_extension"
+                "rhai" | "dsp_rhai" | "dsp_ugen" | "rhai_extension"
             )
             || matches!(
                 entry.availability.status.as_str(),
@@ -1657,22 +1911,22 @@ fn emitter_call_is_registered(manifest: &PublicApiManifest, call: &EmitterCallCo
                 return false;
             }
             match call.syntax {
-                EmitterCallSyntax::Free => {
+                EmitterCallSyntax::Free | EmitterCallSyntax::Operator => {
                     entry.receiver.is_none()
-                        && parameters_accept(&overload.parameters, &call.arguments)
+                        && parameters_accept(overload, &overload.parameters, &call.arguments)
                 }
                 EmitterCallSyntax::Setter => {
-                    entry.receiver.as_deref() == call.receiver
+                    entry.receiver.as_deref() == call.receiver.as_deref()
                         && overload
                             .signature
                             .starts_with(&format!("set${}", call.name))
-                        && parameters_accept(&overload.parameters, &call.arguments)
+                        && parameters_accept(overload, &overload.parameters, &call.arguments)
                 }
                 EmitterCallSyntax::Member => {
-                    if entry.receiver.as_deref() == call.receiver {
-                        return parameters_accept(&overload.parameters, &call.arguments);
+                    if entry.receiver.as_deref() == call.receiver.as_deref() {
+                        return parameters_accept(overload, &overload.parameters, &call.arguments);
                     }
-                    let Some(receiver) = call.receiver else {
+                    let Some(receiver) = call.receiver.as_deref() else {
                         return false;
                     };
                     entry.receiver.is_none()
@@ -1680,35 +1934,180 @@ fn emitter_call_is_registered(manifest: &PublicApiManifest, call: &EmitterCallCo
                             parameter
                                 .accepted_types
                                 .iter()
-                                .any(|accepted| accepted_type_matches(accepted, receiver))
+                                .any(|accepted| accepted_type_matches(overload, accepted, receiver))
                         })
-                        && parameters_accept(&overload.parameters[1..], &call.arguments)
+                        && parameters_accept(overload, &overload.parameters[1..], &call.arguments)
                 }
+                EmitterCallSyntax::DynamicUgen => false,
             }
         })
     })
 }
 
-fn validate_vscode_emitter_contracts(manifest: &PublicApiManifest) -> Result<(), String> {
-    let calls = vscode_emitter_contracts();
-    for call in &calls {
+fn snake_ugen_name(name: &str) -> String {
+    if name == "DC" {
+        return "dc".into();
+    }
+    let characters = name.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    for (index, character) in characters.iter().copied().enumerate() {
+        if character.is_ascii_uppercase() {
+            let previous = index.checked_sub(1).and_then(|value| characters.get(value));
+            let next = characters.get(index + 1);
+            if index > 0
+                && previous != Some(&'_')
+                && (previous.is_some_and(char::is_ascii_lowercase)
+                    || next.is_some_and(char::is_ascii_lowercase))
+            {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn editor_ugen_function(ugen: &EditorUgen, rate: &str) -> String {
+    format!("{}_{rate}", snake_ugen_name(&ugen.name))
+}
+
+fn validate_dynamic_editor_ugens(
+    root: &Path,
+    manifest: &PublicApiManifest,
+) -> Result<usize, String> {
+    let mut checked = 0usize;
+    for entry in WalkDir::new(root.join("vscode-extension/ugen_manifests")) {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some("json")
+        {
+            continue;
+        }
+        let ugens: Vec<EditorUgen> = serde_json::from_str(
+            &fs::read_to_string(entry.path()).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        for ugen in ugens {
+            if ugen
+                .rates
+                .iter()
+                .any(|rate| matches!(rate.as_str(), "demand" | "builder"))
+            {
+                continue;
+            }
+            for rate in ugen
+                .rates
+                .iter()
+                .filter(|rate| matches!(rate.as_str(), "ar" | "kr" | "ir"))
+            {
+                let function = editor_ugen_function(&ugen, rate);
+                let manifest_entry = manifest.entries.iter().find(|candidate| {
+                    candidate.registered_name == function
+                        && candidate.receiver.is_none()
+                        && candidate.kind == "function"
+                        && matches!(candidate.details, EntryDetails::Ugen { callable: true, .. })
+                        && !matches!(
+                            candidate.availability.status.as_str(),
+                            "quarantined" | "documentation_only"
+                        )
+                }).ok_or_else(|| {
+                    format!(
+                        "Sound Designer UGen {} rate {rate} resolves to missing public function {function}",
+                        ugen.name
+                    )
+                })?;
+                let overload = manifest_entry.overloads.iter().find(|overload| {
+                    overload.parameters.len() == ugen.inputs.len()
+                        && overload.parameters.iter().all(|parameter| {
+                            parameter.accepted_types.iter().any(|accepted| {
+                                accepted_type_matches(overload, accepted, "f64")
+                            }) && parameter.accepted_types.iter().any(|accepted| {
+                                accepted_type_matches(overload, accepted, "NodeRef")
+                            })
+                        })
+                }).ok_or_else(|| {
+                    format!(
+                        "Sound Designer UGen {function} has no exact {}-argument manifest overload coercing both f64 and NodeRef inputs",
+                        ugen.inputs.len()
+                    )
+                })?;
+                if !ugen.inputs.is_empty() && overload.boundary.coercions.status != "present" {
+                    return Err(format!(
+                        "Sound Designer UGen {function} input coercion metadata is not present"
+                    ));
+                }
+                checked += 1;
+            }
+        }
+    }
+    Ok(checked)
+}
+
+fn validate_emitter_calls(
+    manifest: &PublicApiManifest,
+    calls: &[EmitterCallContract],
+) -> Result<(), String> {
+    for call in calls {
+        if call.syntax == EmitterCallSyntax::DynamicUgen {
+            continue;
+        }
         if !emitter_call_is_registered(manifest, call) {
             return Err(format!(
                 "VS Code emitter {} has no public manifest match for {:?} {}.{}({})",
                 call.emitter,
                 call.syntax,
-                call.receiver.unwrap_or("<free>"),
+                call.receiver.as_deref().unwrap_or("<free>"),
                 call.name,
                 call.arguments.join(", ")
             ));
         }
     }
+    Ok(())
+}
+
+fn compare_vscode_emitter_inventories(
+    source: &[EmitterCallContract],
+    packaged: &[EmitterCallContract],
+) -> Result<(), String> {
+    if source == packaged {
+        return Ok(());
+    }
+    let source_set = source.iter().collect::<BTreeSet<_>>();
+    let packaged_set = packaged.iter().collect::<BTreeSet<_>>();
+    let source_only = source_set.difference(&packaged_set).next();
+    let packaged_only = packaged_set.difference(&source_set).next();
+    Err(format!(
+        "VS Code source/package emitter inventory diverged (source {}, packaged {}, source-only {:?}, packaged-only {:?})",
+        source.len(), packaged.len(), source_only, packaged_only
+    ))
+}
+
+fn validate_vscode_emitter_contracts(
+    root: &Path,
+    manifest: &PublicApiManifest,
+) -> Result<(), String> {
+    let calls = vscode_emitter_inventory(root, false)?;
+    let packaged = vscode_emitter_inventory(root, true)?;
+    compare_vscode_emitter_inventories(&calls, &packaged)?;
+    validate_emitter_calls(manifest, &calls)?;
+    let dynamic_sites = calls
+        .iter()
+        .filter(|call| call.syntax == EmitterCallSyntax::DynamicUgen)
+        .count();
+    if dynamic_sites != 1 {
+        return Err(format!(
+            "expected one structurally typed dynamic Sound Designer UGen site, found {dynamic_sites}"
+        ));
+    }
+    let ugens = validate_dynamic_editor_ugens(root, manifest)?;
     let emitters = calls
         .iter()
-        .map(|call| call.emitter)
+        .map(|call| call.emitter.as_str())
         .collect::<BTreeSet<_>>();
     println!(
-        "validated {} VS Code emitter call signatures across {} active emitter paths against the public manifest",
+        "structurally extracted and validated {} VS Code emitter call/operator occurrences across {} active TypeScript paths, exact packaged JavaScript parity, and {ugens} dynamic UGen signatures against manifest types and coercions",
         calls.len(),
         emitters.len()
     );
@@ -1973,22 +2372,29 @@ mod tests {
         let root = root();
         let manifest: PublicApiManifest =
             serde_json::from_str(&fs::read_to_string(root.join(MANIFEST_PATH)).unwrap()).unwrap();
-        let calls = vscode_emitter_contracts();
-        assert!(calls.len() >= 50);
-        validate_vscode_emitter_contracts(&manifest).unwrap();
+        let calls = vscode_emitter_inventory(&root, false).unwrap();
+        let packaged = vscode_emitter_inventory(&root, true).unwrap();
+        assert!(calls.len() >= 100);
+        compare_vscode_emitter_inventories(&calls, &packaged).unwrap();
+        validate_vscode_emitter_contracts(&root, &manifest).unwrap();
 
         for (index, call) in calls.iter().enumerate() {
+            if call.syntax == EmitterCallSyntax::DynamicUgen {
+                continue;
+            }
             let mut missing_name = call.clone();
-            missing_name.name = Box::leak(format!("missing_emitter_call_{index}").into_boxed_str());
+            missing_name.name = format!("missing_emitter_call_{index}");
             assert!(!emitter_call_is_registered(&manifest, &missing_name));
 
             let mut wrong_receiver = call.clone();
-            wrong_receiver.receiver = Some("MissingEmitterReceiver");
+            wrong_receiver.receiver = Some("MissingEmitterReceiver".into());
             wrong_receiver.syntax = EmitterCallSyntax::Member;
             assert!(!emitter_call_is_registered(&manifest, &wrong_receiver));
 
             let mut wrong_arity = call.clone();
-            wrong_arity.arguments.extend(["string"; 32]);
+            wrong_arity
+                .arguments
+                .extend(std::iter::repeat_n("string".into(), 32));
             assert!(!emitter_call_is_registered(&manifest, &wrong_arity));
         }
 
@@ -1997,11 +2403,75 @@ mod tests {
             .filter(|call| !call.arguments.is_empty())
             .filter(|call| {
                 let mut mutation = (*call).clone();
-                mutation.arguments[0] = "MissingEmitterArgumentType";
+                mutation.arguments[0] = "MissingEmitterArgumentType".into();
                 !emitter_call_is_registered(&manifest, &mutation)
             })
             .count();
-        assert!(strict_arguments >= 30);
+        assert!(strict_arguments >= 70);
+    }
+
+    #[test]
+    fn actual_typescript_and_packaged_emitters_reject_call_operator_and_literal_mutations() {
+        let root = root();
+        let manifest: PublicApiManifest =
+            serde_json::from_str(&fs::read_to_string(root.join(MANIFEST_PATH)).unwrap()).unwrap();
+        for relative in [
+            "vscode-extension/src/views/sampleBrowser.ts",
+            "vscode-extension/out/views/sampleBrowser.js",
+        ] {
+            let source = fs::read_to_string(root.join(relative)).unwrap();
+            for (needle, replacement) in [
+                ("vibe.free('sample'", "vibe.free('missing_public_call'"),
+                (
+                    "vibe.member('SampleHandle', 'semitones'",
+                    "vibe.member('MissingReceiver', 'semitones'",
+                ),
+                (
+                    "vibe.member('SampleHandle', 'semitones', [vibe.f64(-5)])",
+                    "vibe.member('SampleHandle', 'semitones', [vibe.f64(-5), vibe.f64(1)])",
+                ),
+                (
+                    "vibe.member('SampleHandle', 'semitones', [vibe.f64(-5)])",
+                    "vibe.member('SampleHandle', 'semitones', [vibe.i64(-5)])",
+                ),
+            ] {
+                assert!(
+                    source.contains(needle),
+                    "missing mutation fixture {needle} in {relative}"
+                );
+                let mutated = source.replacen(needle, replacement, 1);
+                let calls = extract_vibe_calls(relative, &mutated).unwrap();
+                assert!(validate_emitter_calls(&manifest, &calls).is_err());
+            }
+        }
+
+        for relative in [
+            "vscode-extension/src/views/soundDesigner.ts",
+            "vscode-extension/out/views/soundDesigner.js",
+        ] {
+            let source = fs::read_to_string(root.join(relative)).unwrap();
+            let needle = "vibe.operator('NodeRef', '*', 'f64'";
+            assert!(
+                source.contains(needle),
+                "missing operator fixture in {relative}"
+            );
+            let mutated = source.replacen(needle, "vibe.operator('NodeRef', '^', 'f64'", 1);
+            let calls = extract_vibe_calls(relative, &mutated).unwrap();
+            assert!(validate_emitter_calls(&manifest, &calls).is_err());
+        }
+    }
+
+    #[test]
+    fn actual_emitter_source_and_package_inventory_divergence_fails_closed() {
+        let root = root();
+        let mut source =
+            fs::read_to_string(root.join("vscode-extension/src/views/sampleBrowser.ts")).unwrap();
+        source.push_str("\nvibe.free('voice', [vibe.string('parity_mutation')]);\n");
+        let source_calls = extract_vibe_calls("views/sampleBrowser", &source).unwrap();
+        let packaged =
+            fs::read_to_string(root.join("vscode-extension/out/views/sampleBrowser.js")).unwrap();
+        let packaged_calls = extract_vibe_calls("views/sampleBrowser", &packaged).unwrap();
+        assert!(compare_vscode_emitter_inventories(&source_calls, &packaged_calls).is_err());
     }
 
     #[test]

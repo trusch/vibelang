@@ -23,6 +23,7 @@ import {
     generatePatternString,
     createEmptyGrid,
 } from '../utils/patternParser';
+import { vibe, WEBVIEW_VIBE_EMITTER_RUNTIME } from '../utils/sourceEmitters';
 import {
     getEditorBaseStyles,
     getRecordingPanelStyles,
@@ -736,7 +737,7 @@ export class PatternEditor {
                     edit.replace(
                         document.uri,
                         new vscode.Range(lineIdx, start, lineIdx, end),
-                        `.step("${newPatternString}")`
+                        vibe.member('Pattern', 'step', [vibe.string(newPatternString)])
                     );
 
                     await vscode.workspace.applyEdit(edit);
@@ -794,7 +795,13 @@ export class PatternEditor {
             if (!lane.voiceName) continue;
 
             const patternString = generatePatternString(lane.grid);
-            codeLines.push(`pattern("${lane.patternName}").on(${lane.voiceName}).step("${patternString}").start();`);
+            codeLines.push(
+                vibe.free('pattern', [vibe.string(lane.patternName)])
+                + vibe.member('Pattern', 'on', [vibe.expr('Voice', lane.voiceName)])
+                + vibe.member('Pattern', 'step', [vibe.string(patternString)])
+                + vibe.member('Pattern', 'start', [])
+                + ';'
+            );
         }
 
         return codeLines.join('\n');
@@ -1025,7 +1032,13 @@ export class PatternEditor {
                 }
             }
 
-            codeLines.push(`pattern("${patternName}").on(${voiceName}).step("${patternString}").start();`);
+            codeLines.push(
+                vibe.free('pattern', [vibe.string(patternName)])
+                + vibe.member('Pattern', 'on', [vibe.expr('Voice', voiceName)])
+                + vibe.member('Pattern', 'step', [vibe.string(patternString)])
+                + vibe.member('Pattern', 'start', [])
+                + ';'
+            );
         }
 
         return codeLines.join('\n');
@@ -1809,6 +1822,7 @@ export class PatternEditor {
     </div>
 
     <script>
+        ${WEBVIEW_VIBE_EMITTER_RUNTIME}
         const vscode = acquireVsCodeApi();
 
         let state = {
@@ -2708,7 +2722,13 @@ export class PatternEditor {
             for (const lane of state.lanes) {
                 if (!lane.voiceName) continue;
                 const patternStr = generatePatternStringFromGrid(lane.grid);
-                codeLines.push(\`pattern("\${lane.patternName}").on(\${lane.voiceName}).step("\${patternStr}").start();\`);
+                codeLines.push(
+                    vibe.free('pattern', [vibe.string(lane.patternName)])
+                    + vibe.member('Pattern', 'on', [vibe.expr('Voice', lane.voiceName)])
+                    + vibe.member('Pattern', 'step', [vibe.string(patternStr)])
+                    + vibe.member('Pattern', 'start', [])
+                    + ';'
+                );
             }
             state.generatedCode = codeLines.join('\\n');
 

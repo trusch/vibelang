@@ -30,6 +30,7 @@ exports.QUARANTINED_DEMAND_UGENS = [
     'Dxrand',
 ];
 function isRuntimeCallableUGen(ugen) {
-    return !ugen.rates.includes('demand');
+    return !ugen.rates.some(rate => rate === 'demand' || rate === 'builder')
+        && ugen.rates.some(rate => rate === 'ar' || rate === 'kr' || rate === 'ir');
 }
 //# sourceMappingURL=ugenAvailability.js.map

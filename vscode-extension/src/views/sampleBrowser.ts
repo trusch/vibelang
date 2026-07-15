@@ -21,6 +21,7 @@ import { StateStore } from '../state/stateStore';
 import { Sample, SynthDef } from '../api/types';
 import { getWaveformData, WaveformData } from '../utils/waveformProvider';
 import { TagStoreManager, TaggableType } from '../utils/tagStore';
+import { vibe, WEBVIEW_VIBE_EMITTER_RUNTIME } from '../utils/sourceEmitters';
 
 // Type for stdlib synthdef metadata
 interface StdlibSynthdef {
@@ -386,7 +387,7 @@ export class SampleBrowser {
                 }
                 existingNames.add(safeName);
 
-                return `let ${safeName} = sample("${safeName}", "${uri.fsPath}");`;
+                return `let ${safeName} = ${vibe.free('sample', [vibe.string(safeName), vibe.string(uri.fsPath)])};`;
             });
 
             if (samplesFileExists) {
@@ -465,17 +466,17 @@ export class SampleBrowser {
 
     private _generateSampleCode(id: string, path: string): string {
         return `// Load the sample
-let ${id} = sample("${id}", "${path}");
+	let ${id} = ${vibe.free('sample', [vibe.string(id), vibe.string(path)])};
 
-// Create a voice using the sample
-let ${id}_voice = voice("${id}_voice")
-    .on(${id});
+	// Create a voice using the sample
+	let ${id}_voice = ${vibe.free('voice', [vibe.string(`${id}_voice`)])}
+	    ${vibe.member('Voice', 'on', [vibe.expr('SampleHandle', id)])};
 
-// Example pattern
-let ${id}_pattern = pattern("${id}_pattern")
-    .on(${id}_voice)
-    .step("x...x...x...x...")
-    .start();`;
+	// Example pattern
+	let ${id}_pattern = ${vibe.free('pattern', [vibe.string(`${id}_pattern`)])}
+	    ${vibe.member('Pattern', 'on', [vibe.expr('Voice', `${id}_voice`)])}
+	    ${vibe.member('Pattern', 'step', [vibe.string('x...x...x...x...')])}
+	    ${vibe.member('Pattern', 'start', [])};`;
     }
 
     private async _previewSample(sampleId: string) {
@@ -571,11 +572,11 @@ let ${id}_pattern = pattern("${id}_pattern")
 
         const paramsCode = synthdef.params
             .filter(p => p.name !== 'out' && p.name !== 'amp' && p.name !== 'gate')
-            .map(p => `    .param("${p.name}", ${p.default_value})`)
+            .map(p => `    ${vibe.member('Voice', 'param', [vibe.string(p.name), vibe.f64(p.default_value)])}`)
             .join('\n');
 
-        const code = `let my_voice = voice("my_voice")
-    .synth("${synthdef.name}")${paramsCode ? '\n' + paramsCode : ''};`;
+        const code = `let my_voice = ${vibe.free('voice', [vibe.string('my_voice')])}
+    ${vibe.member('Voice', 'synth', [vibe.string(synthdef.name)])}${paramsCode ? '\n' + paramsCode : ''};`;
 
         const editor = vscode.window.activeTextEditor;
         if (editor) {
@@ -1084,10 +1085,10 @@ let ${id}_pattern = pattern("${id}_pattern")
 
             // Use evalCode to play the slice
             const code = `
-                let _preview_sample = sample("_preview", "${sample.path}");
-                let _preview_slice = _preview_sample.slice(${startSeconds}, ${endSeconds});
-                let _preview_voice = voice("_slice_preview").on(_preview_slice);
-                pattern("_slice_preview_pattern").on(_preview_voice).step("x").start();
+                let _preview_sample = ${vibe.free('sample', [vibe.string('_preview'), vibe.string(sample.path)])};
+                let _preview_slice = _preview_sample${vibe.member('SampleHandle', 'slice', [vibe.f64(startSeconds), vibe.f64(endSeconds)])};
+                let _preview_voice = ${vibe.free('voice', [vibe.string('_slice_preview')])}${vibe.member('Voice', 'on', [vibe.expr('SampleHandle', '_preview_slice')])};
+                ${vibe.free('pattern', [vibe.string('_slice_preview_pattern')])}${vibe.member('Pattern', 'on', [vibe.expr('Voice', '_preview_voice')])}${vibe.member('Pattern', 'step', [vibe.string('x')])}${vibe.member('Pattern', 'start', [])};
             `;
             await runtime.evalCode(code);
         } catch (err) {
@@ -2909,6 +2910,7 @@ let ${id}_pattern = pattern("${id}_pattern")
     </div>
 
     <script>
+        ${WEBVIEW_VIBE_EMITTER_RUNTIME}
         const vscode = acquireVsCodeApi();
 
         let state = {
@@ -4232,12 +4234,12 @@ let ${id}_pattern = pattern("${id}_pattern")
 
             slices.forEach(slice => {
                 const varName = choppingState.sampleId + '_slice_' + (slice.index + 1);
-                code += 'let ' + varName + ' = ' + choppingState.sampleId + '.slice(' +
-                        slice.startSeconds.toFixed(3) + ', ' + slice.endSeconds.toFixed(3) + ')\\n';
-                code += '    .attack(' + slice.attack + ')\\n';
-                code += '    .release(' + slice.release + ')';
+                code += 'let ' + varName + ' = ' + choppingState.sampleId
+                    + vibe.member('SampleHandle', 'slice', [vibe.f64Fixed(slice.startSeconds, 3), vibe.f64Fixed(slice.endSeconds, 3)]) + '\\n';
+                code += '    ' + vibe.member('SampleHandle', 'attack', [vibe.f64(slice.attack)]) + '\\n';
+                code += '    ' + vibe.member('SampleHandle', 'release', [vibe.f64(slice.release)]);
                 if (slice.playMode === 'loop') {
-                    code += '\\n    .loop_mode(true)';
+                    code += '\\n    ' + vibe.member('SampleHandle', 'loop_mode', [vibe.bool(true)]);
                 }
                 code += ';\\n\\n';
             });
@@ -4252,12 +4254,12 @@ let ${id}_pattern = pattern("${id}_pattern")
             let code = '';
             slices.forEach(slice => {
                 const varName = choppingState.sampleId + '_slice_' + (slice.index + 1);
-                code += 'let ' + varName + ' = ' + choppingState.sampleId + '.slice(' +
-                        slice.startSeconds.toFixed(3) + ', ' + slice.endSeconds.toFixed(3) + ')\\n';
-                code += '    .attack(' + slice.attack + ')\\n';
-                code += '    .release(' + slice.release + ')';
+                code += 'let ' + varName + ' = ' + choppingState.sampleId
+                    + vibe.member('SampleHandle', 'slice', [vibe.f64Fixed(slice.startSeconds, 3), vibe.f64Fixed(slice.endSeconds, 3)]) + '\\n';
+                code += '    ' + vibe.member('SampleHandle', 'attack', [vibe.f64(slice.attack)]) + '\\n';
+                code += '    ' + vibe.member('SampleHandle', 'release', [vibe.f64(slice.release)]);
                 if (slice.playMode === 'loop') {
-                    code += '\\n    .loop_mode(true)';
+                    code += '\\n    ' + vibe.member('SampleHandle', 'loop_mode', [vibe.bool(true)]);
                 }
                 code += ';\\n\\n';
             });
@@ -4722,13 +4724,13 @@ let ${id}_pattern = pattern("${id}_pattern")
             \`;
 
             // Generate code snippets
-            const loadCode = \`let \${sample.id} = sample("\${sample.id}", "\${sample.path}");\`;
-            const voiceCode = \`let \${sample.id}_voice = voice("\${sample.id}_voice")
-    .on(\${sample.id});\`;
-            const patternCode = \`let \${sample.id}_pattern = pattern("\${sample.id}_pattern")
-    .on(\${sample.id}_voice)
-    .step("x...x...x...x...")
-    .start();\`;
+            const loadCode = 'let ' + sample.id + ' = ' + vibe.free('sample', [vibe.string(sample.id), vibe.string(sample.path)]) + ';';
+            const voiceCode = 'let ' + sample.id + '_voice = ' + vibe.free('voice', [vibe.string(sample.id + '_voice')])
+                + '\\n    ' + vibe.member('Voice', 'on', [vibe.expr('SampleHandle', sample.id)]) + ';';
+            const patternCode = 'let ' + sample.id + '_pattern = ' + vibe.free('pattern', [vibe.string(sample.id + '_pattern')])
+                + '\\n    ' + vibe.member('Pattern', 'on', [vibe.expr('Voice', sample.id + '_voice')])
+                + '\\n    ' + vibe.member('Pattern', 'step', [vibe.string('x...x...x...x...')])
+                + '\\n    ' + vibe.member('Pattern', 'start', []) + ';';
 
             // Generate slice code based on current slice count
             let slicePreview = '';
@@ -4741,18 +4743,18 @@ let ${id}_pattern = pattern("${id}_pattern")
             for (let i = 0; i < sliceCount; i++) {
                 const start = (i * sliceDuration).toFixed(3);
                 const end = ((i + 1) * sliceDuration).toFixed(3);
-                sliceCode += \`let slice_\${i + 1} = \${sample.id}.slice(\${start}, \${end});\\n\`;
+                sliceCode += 'let slice_' + (i + 1) + ' = ' + sample.id
+                    + vibe.member('SampleHandle', 'slice', [vibe.f64(start), vibe.f64(end)]) + ';\\n';
             }
 
             // Time-stretch/pitch-shift code
-            const warpCode = \`// Warp to a target tempo
-let \${sample.id}_warped = sample("\${sample.id}", "\${sample.path}")
-    .warp_to_bpm(120.0);
-
-// Or manually set speed/pitch
-let \${sample.id}_pitched = sample("\${sample.id}", "\${sample.path}")
-    .semitones(-5)      // Pitch down 5 semitones
-    .speed(0.5);        // Half speed\`;
+            const warpCode = '// Warp to a target tempo\\nlet ' + sample.id + '_warped = '
+                + vibe.free('sample', [vibe.string(sample.id), vibe.string(sample.path)])
+                + '\\n    ' + vibe.member('SampleHandle', 'warp_to_bpm', [vibe.f64(120)]) + ';\\n\\n'
+                + '// Or manually set speed/pitch\\nlet ' + sample.id + '_pitched = '
+                + vibe.free('sample', [vibe.string(sample.id), vibe.string(sample.path)])
+                + '\\n    ' + vibe.member('SampleHandle', 'semitones', [vibe.f64(-5)]) + '      // Pitch down 5 semitones\\n'
+                + '    ' + vibe.member('SampleHandle', 'speed', [vibe.f64(0.5)]) + ';        // Half speed';
 
             content.innerHTML = \`
                 <div class="code-section">
@@ -4838,11 +4840,12 @@ let \${sample.id}_pitched = sample("\${sample.id}", "\${sample.path}")
             // Generate voice code with all parameters (without .group() call)
             const paramsCode = synthdef.params
                 .filter(p => p.name !== 'out' && p.name !== 'amp' && p.name !== 'gate')
-                .map(p => \`    .param("\${p.name}", \${p.default_value})\`)
+                .map(p => '    ' + vibe.member('Voice', 'param', [vibe.string(p.name), vibe.f64(p.default_value)]))
                 .join('\\n');
 
-            const voiceCode = \`let my_voice = voice("my_voice")
-    .synth("\${synthdef.name}")\${paramsCode ? '\\n' + paramsCode : ''};\`;
+            const voiceCode = 'let my_voice = ' + vibe.free('voice', [vibe.string('my_voice')])
+                + '\\n    ' + vibe.member('Voice', 'synth', [vibe.string(synthdef.name)])
+                + (paramsCode ? '\\n' + paramsCode : '') + ';';
 
             // Parameter list
             let paramsHtml = '';

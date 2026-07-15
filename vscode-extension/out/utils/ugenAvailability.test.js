@@ -19,5 +19,7 @@ const ugenAvailability_1 = require("./ugenAvailability");
     assert.deepEqual(demandUGens.map(ugen => ugen.name), expectedNames);
     assert.ok(demandUGens.every(ugen => !(0, ugenAvailability_1.isRuntimeCallableUGen)(ugen)));
     assert.equal((0, ugenAvailability_1.isRuntimeCallableUGen)({ name: 'Demand', rates: ['ar', 'kr'] }), true);
+    assert.equal((0, ugenAvailability_1.isRuntimeCallableUGen)({ name: 'Pseudo', rates: ['builder'] }), false);
+    assert.equal((0, ugenAvailability_1.isRuntimeCallableUGen)({ name: 'InitialRate', rates: ['ir'] }), true);
 });
 //# sourceMappingURL=ugenAvailability.test.js.map

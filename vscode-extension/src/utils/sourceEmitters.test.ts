@@ -1,7 +1,13 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { AutomationLane, generateFadeCode, parseFadeCode } from './automationTypes';
-import { generateEffectRackCode } from './sourceEmitters';
+import {
+    generateEffectRackCode,
+    vibe,
+    WEBVIEW_VIBE_EMITTER_RUNTIME,
+} from './sourceEmitters';
 
 test('arrangement automation emits canonical scheduled Fade builders', () => {
     const lane: AutomationLane = {
@@ -54,4 +60,70 @@ test('effect rack rejects non-finite numeric literals', () => {
         () => generateEffectRackCode('verb', 'main', [{ name: 'mix', defaultValue: Infinity }]),
         /must be finite/,
     );
+});
+
+test('operator emission folds scalar arithmetic and preserves strict NodeRef f64 literals', () => {
+    assert.equal(vibe.multiply(vibe.f64(4), vibe.f64(1)).source, '4.0');
+    assert.equal(
+        vibe.multiply(vibe.expr('NodeRef', 'sin_osc_kr(4.0)'), vibe.f64(1)).source,
+        '(sin_osc_kr(4.0) * 1.0)'
+    );
+});
+
+test('webview emitter runtime is executable and matches strict literal/operator output', () => {
+    const webviewVibe = Function(`${WEBVIEW_VIBE_EMITTER_RUNTIME}\nreturn vibe;`)();
+    assert.equal(
+        webviewVibe.member('SampleHandle', 'semitones', [webviewVibe.f64(-5)]),
+        '.semitones(-5.0)'
+    );
+    assert.equal(
+        webviewVibe.multiply(
+            webviewVibe.expr('NodeRef', 'sin_osc_kr(4.0)'),
+            webviewVibe.f64(1)
+        ).source,
+        '(sin_osc_kr(4.0) * 1.0)'
+    );
+});
+
+test('host and webview UGen naming resolve every packaged callable rate to the manifest', () => {
+    const webviewVibe = Function(`${WEBVIEW_VIBE_EMITTER_RUNTIME}\nreturn vibe;`)();
+    const manifest = JSON.parse(fs.readFileSync(
+        path.resolve(__dirname, '../../../api/public-api-manifest-v1.json'),
+        'utf8'
+    )) as {
+        entries: Array<{
+            registered_name: string;
+            receiver: string | null;
+            details: { type: string; callable?: boolean };
+            overloads: Array<{ parameters: Array<{ accepted_types: string[] }> }>;
+        }>;
+    };
+    const byName = new Map(manifest.entries.map(entry => [entry.registered_name, entry]));
+    const directory = path.resolve(__dirname, '../../ugen_manifests');
+    const ugens = fs.readdirSync(directory)
+        .filter(file => file.endsWith('.json'))
+        .flatMap(file => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')) as Array<{
+            name: string;
+            rates: string[];
+            inputs: unknown[];
+        }>);
+    let checked = 0;
+    for (const ugen of ugens) {
+        if (ugen.rates.some(rate => rate === 'demand' || rate === 'builder')) continue;
+        for (const rate of ugen.rates.filter(rate => rate === 'ar' || rate === 'kr' || rate === 'ir')) {
+            const name = vibe.ugenName(ugen.name, rate);
+            assert.equal(webviewVibe.ugenName(ugen.name, rate), name);
+            const entry = byName.get(name);
+            assert.ok(entry, `${ugen.name} ${rate} resolved to missing ${name}`);
+            assert.equal(entry.receiver, null);
+            assert.equal(entry.details.type, 'ugen');
+            assert.equal(entry.details.callable, true);
+            assert.ok(entry.overloads.some(overload =>
+                overload.parameters.length === ugen.inputs.length
+                && overload.parameters.every(parameter => parameter.accepted_types.includes('Dynamic'))
+            ), `${name} lacks the exact ${ugen.inputs.length}-argument Dynamic overload`);
+            checked++;
+        }
+    }
+    assert.equal(checked, 558);
 });
