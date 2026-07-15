@@ -14,7 +14,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_dir="${CARGO_TARGET_DIR:-$root/target}"
 mkdir -p "$target_dir"
 snapshot="$(mktemp "$target_dir/public-artifacts.XXXXXX")"
-trap 'rm -f "$snapshot"' EXIT
+vscode_out="$(mktemp -d "$root/vscode-extension/.out-check.XXXXXX")"
+trap 'rm -f "$snapshot"; rm -rf "$vscode_out"' EXIT
 
 assert_cargo_idle() {
   local processes
@@ -49,6 +50,30 @@ export NO_COLOR=1
 } > "$snapshot"
 
 run_cargo run -p xtask -- public-artifacts "$mode" "$snapshot"
+
+npm --prefix vscode-extension ci --ignore-scripts --no-audit --no-fund
+if [[ "$mode" == "generate" ]]; then
+  rm -rf vscode-extension/out
+  npm --prefix vscode-extension run compile
+  node --test vscode-extension/out/utils/sourceEmitters.test.js
+else
+  npm --prefix vscode-extension exec -- tsc \
+    -p "$root/vscode-extension/tsconfig.json" \
+    --outDir "$vscode_out"
+  node --test "$vscode_out/utils/sourceEmitters.test.js"
+  diff -ru vscode-extension/out "$vscode_out"
+  echo "vscode-extension/out matches a clean deterministic TypeScript compile"
+fi
+vscode_main="$(node -p "require('./vscode-extension/package.json').main")"
+case "$vscode_main" in
+  ./out/*.js) ;;
+  *)
+    echo "vscode-extension package main is not a packaged out/*.js artifact: $vscode_main" >&2
+    exit 1
+    ;;
+esac
+test -f "vscode-extension/${vscode_main#./}"
+echo "vscode-extension package main is compiled and present: $vscode_main"
 
 npm --prefix crates/vibelang-wasm ci --ignore-scripts --no-audit --no-fund
 npm --prefix crates/vibelang-wasm run check:types

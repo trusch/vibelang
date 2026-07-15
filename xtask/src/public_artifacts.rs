@@ -1285,6 +1285,7 @@ fn validate_editor_consumers(root: &Path, manifest: &PublicApiManifest) -> Resul
             ));
         }
     }
+    validate_vscode_emitter_contracts(manifest)?;
 
     let mut checked = 0usize;
     for relative_root in EDITOR_ROOTS {
@@ -1341,6 +1342,18 @@ fn validate_editor_source(
             ));
         }
     }
+    if reject_stale_rows && contains_member_call(source, "fade") {
+        return Err(format!(
+            "{} contains fictional member editor call `fade`",
+            path.display()
+        ));
+    }
+    if reject_stale_rows && contains_identifier(source, "add_effect") {
+        return Err(format!(
+            "{} contains fictional `GroupHandle.add_effect` editor output",
+            path.display()
+        ));
+    }
     if contains_string_first_argument_call(source, "set_quantization") {
         return Err(format!(
             "{} emits string-valued `set_quantization`; the manifest accepts only numeric overloads",
@@ -1357,6 +1370,348 @@ fn validate_editor_source(
             }
         }
     }
+    Ok(())
+}
+
+fn contains_member_call(source: &str, name: &str) -> bool {
+    let needle = format!(".{name}");
+    let bytes = source.as_bytes();
+    let mut offset = 0;
+    while let Some(relative) = source[offset..].find(&needle) {
+        let end = offset + relative + needle.len();
+        let mut after = end;
+        while after < bytes.len() && bytes[after].is_ascii_whitespace() {
+            after += 1;
+        }
+        if after < bytes.len() && bytes[after] == b'(' {
+            return true;
+        }
+        offset = end;
+    }
+    false
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EmitterCallSyntax {
+    Free,
+    Member,
+    Setter,
+}
+
+#[derive(Clone, Debug)]
+struct EmitterCallContract {
+    emitter: &'static str,
+    name: &'static str,
+    receiver: Option<&'static str>,
+    arguments: Vec<&'static str>,
+    syntax: EmitterCallSyntax,
+}
+
+fn emitter_call(
+    emitter: &'static str,
+    name: &'static str,
+    receiver: Option<&'static str>,
+    arguments: &[&'static str],
+) -> EmitterCallContract {
+    EmitterCallContract {
+        emitter,
+        name,
+        receiver,
+        arguments: arguments.to_vec(),
+        syntax: if receiver.is_some() {
+            EmitterCallSyntax::Member
+        } else {
+            EmitterCallSyntax::Free
+        },
+    }
+}
+
+fn setter_call(
+    emitter: &'static str,
+    name: &'static str,
+    receiver: &'static str,
+    argument: &'static str,
+) -> EmitterCallContract {
+    EmitterCallContract {
+        emitter,
+        name,
+        receiver: Some(receiver),
+        arguments: vec![argument],
+        syntax: EmitterCallSyntax::Setter,
+    }
+}
+
+fn vscode_emitter_contracts() -> Vec<EmitterCallContract> {
+    let mut calls = vec![
+        // Arrangement timeline: Fade builders are scheduled by Sequence clips.
+        emitter_call("arrangement-timeline", "sequence", None, &["string"]),
+        emitter_call(
+            "arrangement-timeline",
+            "loop_beats",
+            Some("Sequence"),
+            &["f64"],
+        ),
+        emitter_call(
+            "arrangement-timeline",
+            "clip",
+            Some("Sequence"),
+            &["Range<f64>", "Fade"],
+        ),
+        emitter_call("arrangement-timeline", "start", Some("Sequence"), &[]),
+        emitter_call("arrangement-timeline", "fade", None, &["string"]),
+        emitter_call(
+            "arrangement-timeline",
+            "on_group",
+            Some("Fade"),
+            &["string"],
+        ),
+        emitter_call(
+            "arrangement-timeline",
+            "on_voice",
+            Some("Fade"),
+            &["string"],
+        ),
+        emitter_call(
+            "arrangement-timeline",
+            "on_effect",
+            Some("Fade"),
+            &["string"],
+        ),
+        emitter_call("arrangement-timeline", "param", Some("Fade"), &["string"]),
+        emitter_call("arrangement-timeline", "from", Some("Fade"), &["f64"]),
+        emitter_call("arrangement-timeline", "to", Some("Fade"), &["f64"]),
+        emitter_call("arrangement-timeline", "over", Some("Fade"), &["f64"]),
+        emitter_call("arrangement-timeline", "curve", Some("Fade"), &["string"]),
+        emitter_call("arrangement-timeline", "apply", Some("Fade"), &[]),
+        // Effect rack: Fx.group_path is a registered property setter.
+        emitter_call("effect-rack", "fx", None, &["string"]),
+        setter_call("effect-rack", "group_path", "Fx", "string"),
+        emitter_call("effect-rack", "synth", Some("Fx"), &["string"]),
+        emitter_call("effect-rack", "param", Some("Fx"), &["string", "f64"]),
+        emitter_call("effect-rack", "apply", Some("Fx"), &[]),
+        // Pattern and melody editor source/copy paths.
+        emitter_call("pattern-editor", "pattern", None, &["string"]),
+        emitter_call("pattern-editor", "on", Some("Pattern"), &["Voice"]),
+        emitter_call("pattern-editor", "step", Some("Pattern"), &["string"]),
+        emitter_call("pattern-editor", "start", Some("Pattern"), &[]),
+        emitter_call("melody-editor", "melody", None, &["string"]),
+        emitter_call("melody-editor", "on", Some("Melody"), &["Voice"]),
+        emitter_call("melody-editor", "notes", Some("Melody"), &["string"]),
+        emitter_call("melody-editor", "start", Some("Melody"), &[]),
+        // Sample browser load, slice, preview, voice, pattern, and warp snippets.
+        emitter_call("sample-browser", "sample", None, &["string", "string"]),
+        emitter_call(
+            "sample-browser",
+            "slice",
+            Some("SampleHandle"),
+            &["f64", "f64"],
+        ),
+        emitter_call("sample-browser", "attack", Some("SampleHandle"), &["f64"]),
+        emitter_call("sample-browser", "release", Some("SampleHandle"), &["f64"]),
+        emitter_call(
+            "sample-browser",
+            "loop_mode",
+            Some("SampleHandle"),
+            &["bool"],
+        ),
+        emitter_call(
+            "sample-browser",
+            "warp_to_bpm",
+            Some("SampleHandle"),
+            &["f64"],
+        ),
+        emitter_call(
+            "sample-browser",
+            "semitones",
+            Some("SampleHandle"),
+            &["f64"],
+        ),
+        emitter_call("sample-browser", "speed", Some("SampleHandle"), &["f64"]),
+        emitter_call("sample-browser", "voice", None, &["string"]),
+        emitter_call("sample-browser", "on", Some("Voice"), &["SampleHandle"]),
+        emitter_call("sample-browser", "synth", Some("Voice"), &["string"]),
+        emitter_call("sample-browser", "param", Some("Voice"), &["string", "f64"]),
+        emitter_call("sample-browser", "pattern", None, &["string"]),
+        emitter_call("sample-browser", "on", Some("Pattern"), &["Voice"]),
+        emitter_call("sample-browser", "step", Some("Pattern"), &["string"]),
+        emitter_call("sample-browser", "start", Some("Pattern"), &[]),
+        // Sound Designer fixed builder surface. Regular UGen rows come from the
+        // canonical UGen projections byte-compared by sync_ugen_projections.
+        emitter_call("sound-designer", "define_synthdef", None, &["string", "Fn"]),
+        emitter_call(
+            "sound-designer",
+            "param",
+            Some("SynthDefBuilderHandle"),
+            &["string", "f64"],
+        ),
+        emitter_call(
+            "sound-designer",
+            "body",
+            Some("SynthDefBuilderHandle"),
+            &["Fn"],
+        ),
+        emitter_call("sound-designer", "envelope", None, &[]),
+        emitter_call(
+            "sound-designer",
+            "adsr",
+            Some("EnvelopeBuilder"),
+            &["f64", "f64", "f64", "f64"],
+        ),
+        emitter_call(
+            "sound-designer",
+            "asr",
+            Some("EnvelopeBuilder"),
+            &["f64", "f64", "f64"],
+        ),
+        emitter_call(
+            "sound-designer",
+            "perc",
+            Some("EnvelopeBuilder"),
+            &["f64", "f64"],
+        ),
+        emitter_call(
+            "sound-designer",
+            "gate",
+            Some("EnvelopeBuilder"),
+            &["NodeRef"],
+        ),
+        emitter_call(
+            "sound-designer",
+            "cleanup_on_finish",
+            Some("EnvelopeBuilder"),
+            &[],
+        ),
+        emitter_call("sound-designer", "build", Some("EnvelopeBuilder"), &[]),
+    ];
+    calls.sort_by(|left, right| {
+        (
+            left.emitter,
+            left.receiver,
+            left.name,
+            left.arguments.as_slice(),
+        )
+            .cmp(&(
+                right.emitter,
+                right.receiver,
+                right.name,
+                right.arguments.as_slice(),
+            ))
+    });
+    calls.dedup_by(|left, right| {
+        left.emitter == right.emitter
+            && left.name == right.name
+            && left.receiver == right.receiver
+            && left.arguments == right.arguments
+            && left.syntax == right.syntax
+    });
+    calls
+}
+
+fn accepted_type_matches(accepted: &str, actual: &str) -> bool {
+    accepted == "Dynamic"
+        || accepted == actual
+        || accepted.rsplit("::").next() == Some(actual)
+        || matches!((accepted, actual), ("f32", "f64") | ("Range", "Range<f64>"))
+}
+
+fn parameters_accept(parameters: &[vibelang_api_manifest::Parameter], arguments: &[&str]) -> bool {
+    let required = parameters
+        .iter()
+        .filter(|parameter| !parameter.optional)
+        .count();
+    required <= arguments.len()
+        && arguments.len() <= parameters.len()
+        && parameters.iter().zip(arguments).all(|(parameter, actual)| {
+            parameter
+                .accepted_types
+                .iter()
+                .any(|accepted| accepted_type_matches(accepted, actual))
+        })
+}
+
+fn emitter_call_is_registered(manifest: &PublicApiManifest, call: &EmitterCallContract) -> bool {
+    manifest.entries.iter().any(|entry| {
+        let expected_kind = if call.syntax == EmitterCallSyntax::Setter {
+            "property_set"
+        } else {
+            "function"
+        };
+        if entry.kind != expected_kind
+            || entry.registered_name != call.name
+            || !matches!(
+                entry.surface.as_str(),
+                "rhai" | "dsp_rhai" | "rhai_extension"
+            )
+            || matches!(
+                entry.availability.status.as_str(),
+                "quarantined" | "documentation_only"
+            )
+        {
+            return false;
+        }
+        entry.overloads.iter().any(|overload| {
+            if matches!(
+                overload.availability.status.as_str(),
+                "quarantined" | "documentation_only"
+            ) {
+                return false;
+            }
+            match call.syntax {
+                EmitterCallSyntax::Free => {
+                    entry.receiver.is_none()
+                        && parameters_accept(&overload.parameters, &call.arguments)
+                }
+                EmitterCallSyntax::Setter => {
+                    entry.receiver.as_deref() == call.receiver
+                        && overload
+                            .signature
+                            .starts_with(&format!("set${}", call.name))
+                        && parameters_accept(&overload.parameters, &call.arguments)
+                }
+                EmitterCallSyntax::Member => {
+                    if entry.receiver.as_deref() == call.receiver {
+                        return parameters_accept(&overload.parameters, &call.arguments);
+                    }
+                    let Some(receiver) = call.receiver else {
+                        return false;
+                    };
+                    entry.receiver.is_none()
+                        && overload.parameters.first().is_some_and(|parameter| {
+                            parameter
+                                .accepted_types
+                                .iter()
+                                .any(|accepted| accepted_type_matches(accepted, receiver))
+                        })
+                        && parameters_accept(&overload.parameters[1..], &call.arguments)
+                }
+            }
+        })
+    })
+}
+
+fn validate_vscode_emitter_contracts(manifest: &PublicApiManifest) -> Result<(), String> {
+    let calls = vscode_emitter_contracts();
+    for call in &calls {
+        if !emitter_call_is_registered(manifest, call) {
+            return Err(format!(
+                "VS Code emitter {} has no public manifest match for {:?} {}.{}({})",
+                call.emitter,
+                call.syntax,
+                call.receiver.unwrap_or("<free>"),
+                call.name,
+                call.arguments.join(", ")
+            ));
+        }
+    }
+    let emitters = calls
+        .iter()
+        .map(|call| call.emitter)
+        .collect::<BTreeSet<_>>();
+    println!(
+        "validated {} VS Code emitter call signatures across {} active emitter paths against the public manifest",
+        calls.len(),
+        emitters.len()
+    );
     Ok(())
 }
 
@@ -1611,6 +1966,52 @@ mod tests {
             true,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn vscode_emitter_contracts_reject_generic_structural_mutations() {
+        let root = root();
+        let manifest: PublicApiManifest =
+            serde_json::from_str(&fs::read_to_string(root.join(MANIFEST_PATH)).unwrap()).unwrap();
+        let calls = vscode_emitter_contracts();
+        assert!(calls.len() >= 50);
+        validate_vscode_emitter_contracts(&manifest).unwrap();
+
+        for (index, call) in calls.iter().enumerate() {
+            let mut missing_name = call.clone();
+            missing_name.name = Box::leak(format!("missing_emitter_call_{index}").into_boxed_str());
+            assert!(!emitter_call_is_registered(&manifest, &missing_name));
+
+            let mut wrong_receiver = call.clone();
+            wrong_receiver.receiver = Some("MissingEmitterReceiver");
+            wrong_receiver.syntax = EmitterCallSyntax::Member;
+            assert!(!emitter_call_is_registered(&manifest, &wrong_receiver));
+
+            let mut wrong_arity = call.clone();
+            wrong_arity.arguments.extend(["string"; 32]);
+            assert!(!emitter_call_is_registered(&manifest, &wrong_arity));
+        }
+
+        let strict_arguments = calls
+            .iter()
+            .filter(|call| !call.arguments.is_empty())
+            .filter(|call| {
+                let mut mutation = (*call).clone();
+                mutation.arguments[0] = "MissingEmitterArgumentType";
+                !emitter_call_is_registered(&manifest, &mutation)
+            })
+            .count();
+        assert!(strict_arguments >= 30);
+    }
+
+    #[test]
+    fn editor_consumer_rejects_fictional_member_emitters() {
+        for source in [
+            r#"const code = `group("mix").fade("amp", 0.0, 1.0, 4.0);`;"#,
+            r#"const code = `drums.add_effect("verb");`;"#,
+        ] {
+            assert!(validate_editor_source(Path::new("emitter.ts"), source, true).is_err());
+        }
     }
 
     #[test]

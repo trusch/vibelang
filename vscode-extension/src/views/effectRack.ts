@@ -13,6 +13,7 @@
  */
 
 import * as vscode from 'vscode';
+import { generateEffectRackCode } from '../utils/sourceEmitters';
 import { StateStore } from '../state/stateStore';
 import { Group, Effect, SynthDef, SessionState } from '../api/types';
 
@@ -156,16 +157,11 @@ export class EffectRack {
         const synthdef = this._store.state?.synthdefs.find(s => s.name === synthdefName);
         if (!synthdef) return;
 
-        // Generate effect code
-        const paramsCode = synthdef.params
+        const parameters = synthdef.params
             .filter(p => !['out', 'in', 'bus_in', 'bus_out', 'amp'].includes(p.name))
             .slice(0, 4)
-            .map(p => `    .param("${p.name}", ${p.default_value})`)
-            .join('\n');
-
-        const groupName = groupPath.split('/').pop() || 'my_group';
-        const code = `${groupName}.add_effect("${synthdef.name}")
-${paramsCode};`;
+            .map(p => ({ name: p.name, defaultValue: p.default_value }));
+        const code = generateEffectRackCode(synthdef.name, groupPath, parameters);
 
         const editor = vscode.window.activeTextEditor;
         if (editor) {

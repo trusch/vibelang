@@ -15,6 +15,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EffectRack = void 0;
 const vscode = require("vscode");
+const sourceEmitters_1 = require("../utils/sourceEmitters");
 class EffectRack {
     constructor(panel, store, groupPath) {
         this._disposables = [];
@@ -113,15 +114,11 @@ class EffectRack {
         const synthdef = this._store.state?.synthdefs.find(s => s.name === synthdefName);
         if (!synthdef)
             return;
-        // Generate effect code
-        const paramsCode = synthdef.params
+        const parameters = synthdef.params
             .filter(p => !['out', 'in', 'bus_in', 'bus_out', 'amp'].includes(p.name))
             .slice(0, 4)
-            .map(p => `    .param("${p.name}", ${p.default_value})`)
-            .join('\n');
-        const groupName = groupPath.split('/').pop() || 'my_group';
-        const code = `${groupName}.add_effect("${synthdef.name}")
-${paramsCode};`;
+            .map(p => ({ name: p.name, defaultValue: p.default_value }));
+        const code = (0, sourceEmitters_1.generateEffectRackCode)(synthdef.name, groupPath, parameters);
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             await editor.edit(edit => {

@@ -730,6 +730,7 @@
     "check-public-artifacts": "../scripts/public-artifacts.sh check",
     "compile": "tsc -p ./",
     "test:demand-quarantine": "tsc -p ./ && node --test out/utils/ugenAvailability.test.js",
+    "test:emitters": "tsc -p ./ && node --test out/utils/sourceEmitters.test.js",
     "watch": "tsc -watch -p ./"
   },
   "dependencies": {
