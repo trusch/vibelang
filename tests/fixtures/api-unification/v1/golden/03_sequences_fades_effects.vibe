@@ -12,8 +12,9 @@ group("Arrangement").body(|| {
         .apply();
 
     fade("inert_fade").on_group("Arrangement").param("amp").to(0.5).over(4.0).apply();
-    fade("started_fade").on_group("Arrangement").param("amp").to(0.75).over(4.0).start();
-    fade("now_fade").on_group("Arrangement").param("amp").to(1.0).over(4.0).now();
+    fade("started_fade").on_group("Arrangement").param("amp").from(0.125).to(0.75).over(3.0).curve("ease_in").start();
+    fade("now_fade").on_group("Arrangement").param("amp").from(0.25).to(1.0).over(1.5).curve("step").now();
 
     fx("room").synth("baseline_room").apply();
+    fx("echo").synth("baseline_echo").apply();
 });

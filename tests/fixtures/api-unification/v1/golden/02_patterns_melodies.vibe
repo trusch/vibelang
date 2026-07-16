@@ -1,7 +1,7 @@
 let v = voice("events_voice").synth("baseline_events").apply();
 
 pattern("pattern_dormant")
-    .on(v)
+    .on("missing_pattern_voice")
     .step("x...")
     .set_param("accepted_but_dropped", 9.0)
     .apply();

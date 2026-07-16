@@ -87,7 +87,7 @@
     "fixtures": {
       "counts": {
         "authoring_families": 17,
-        "bytes": 30341,
+        "bytes": 33410,
         "failure_phases": 25,
         "files": 26,
         "negative_defects": 7
@@ -109,9 +109,9 @@
           "sha256": "fe5dc4bcfc6862a8cd8b95d9b4187d7fa4afde9c7b198c734efedb72e8789202"
         },
         {
-          "bytes": 816,
+          "bytes": 1037,
           "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot",
-          "sha256": "0a4c0dc2b16a8f99302f86b5fa3715261f637f40f652e9f14d97d76f5ab71078"
+          "sha256": "0215c634aa8bb51dfa55c0fec3f91562ed51e975dd29de5fcdc64cc6f2ca69dd"
         },
         {
           "bytes": 237,
@@ -119,29 +119,29 @@
           "sha256": "1f38a50c0ede119f89ef735abcce286b704cc0699b15bcef21d7fe0942d4f0bd"
         },
         {
-          "bytes": 821,
+          "bytes": 1366,
           "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot",
-          "sha256": "fb203b6649b2c33fd8e17abf2964487f181ba821434ea7a55c2188bb298bcbc4"
+          "sha256": "aeb22b5c42e78576c2a2ab62036f56d4bff5500677c4a75240d3bd6bc2650b23"
         },
         {
-          "bytes": 346,
+          "bytes": 368,
           "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe",
-          "sha256": "c5f4b38abcfb9e77de1cd1ab804c807d0f83ac952b847f2ff65856346b4e7bc2"
+          "sha256": "c65abf20d6884695e4e874bdbd26ad018de03408499c2ebbce671e4fd0349a7c"
         },
         {
-          "bytes": 808,
+          "bytes": 1509,
           "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot",
-          "sha256": "471adff713d8c3878b436ea1bd1b0da124c48e808bfa506d09ad994f090e223b"
+          "sha256": "c345855e3e86c4467e9e98c007e2d83e2a68fa8cad8effc97438cec3a5c5a428"
         },
         {
-          "bytes": 832,
+          "bytes": 933,
           "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe",
-          "sha256": "9c44d43fc995a12570ff4d2888f4b20b36bef991927da1101eb7c059888cc0a1"
+          "sha256": "734625e08348f8ef1a8169e822e214670dbc7e5d400e625ed20fb32cb32ec38f"
         },
         {
-          "bytes": 828,
+          "bytes": 1049,
           "path": "tests/fixtures/api-unification/v1/golden/04_routes.snapshot",
-          "sha256": "ed9bfbc16208a0ea9ad06582f9afbb164a5863367a69637d2886c7f2ae9a1e7c"
+          "sha256": "866c4619208ce673f5c28fb57ebb33c11390072dcbd49a36eff6cce95e7bacf5"
         },
         {
           "bytes": 288,
@@ -149,9 +149,9 @@
           "sha256": "a8a785fd284e57d1d30b0c38336ea5ce7da437f6957220e3a815146a63f1d47b"
         },
         {
-          "bytes": 807,
+          "bytes": 1073,
           "path": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot",
-          "sha256": "f0a707da9f23159dacd916dde0206fe65e015689f89392811e847ec3a858fe50"
+          "sha256": "c9b37f13404d525db34efcd1a3a8d3acbff71fdd604773883d7fdf40c06812c4"
         },
         {
           "bytes": 317,
@@ -159,9 +159,9 @@
           "sha256": "0565d31c43335d4be925f20f46077be3a5df12cd7afa2ed2c5379bbc8f26a00e"
         },
         {
-          "bytes": 836,
+          "bytes": 1084,
           "path": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot",
-          "sha256": "473dd732e3c6b0a622a6bd30c7760b60acb8dbfaa350cddebf6f070005d25ecf"
+          "sha256": "4447d83764fa9d38d49b2cc08f2bb78cf882272962c0659a7ecfd171cd3831d3"
         },
         {
           "bytes": 422,
@@ -169,9 +169,9 @@
           "sha256": "e8b35302628db7f795dbe94eef7f4f02561b417e112af83e435d45e2326d04d6"
         },
         {
-          "bytes": 728,
+          "bytes": 1251,
           "path": "tests/fixtures/api-unification/v1/golden/07_midi.snapshot",
-          "sha256": "985f5be03acdbaf3bdac0f0633e6449e0b5494585d5a8d7f4ff059031badfb7f"
+          "sha256": "f92787609349949b9bcf1a4ab41765b491b575601ea61b1e366e579f1407cde3"
         },
         {
           "bytes": 258,
@@ -179,9 +179,9 @@
           "sha256": "bd6e060647577956a3f1d81a05a64fd920b6442e5df8d717f12e474aa707a1d6"
         },
         {
-          "bytes": 690,
+          "bytes": 911,
           "path": "tests/fixtures/api-unification/v1/golden/08_transport.snapshot",
-          "sha256": "23bbdbbde5144335befdcbfb14af125dd613d8b2748ac13a28a52ac52e7a2cf0"
+          "sha256": "8d6fa3bdf7e0881e59f329725097361bb2eca335a816848b5b09149b4d99231e"
         },
         {
           "bytes": 63,
@@ -224,7 +224,7 @@
           "sha256": "c7bd18a495284987a7edc915604b50e3f8d231230be461b274a760b08e4a8f3f"
         }
       ],
-      "tree_sha256": "6d6c512b9e589bd0ca5348e7d426a21f3dc8d99bfcab0ccb8f75f4d90f1b5308"
+      "tree_sha256": "97ac6045142ec524e7a8bc4ad87d49f51c082482d573a537dc6b0291bd7dcd67"
     },
     "http": {
       "counts": {
