@@ -1,0 +1,13 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "wasm"
+
+[[records]]
+target_id = "v1:consumer:0e23d87125f9c6ea"
+owner = "vibelang-wasm"
+
+[records.host]
+capability_ids = []
+required_globals = ["globalThis.vibelangBridge"]
+progress = "host_tick"
+canonical_package_owner = "crates/vibelang-wasm"

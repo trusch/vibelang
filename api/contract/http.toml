@@ -1,0 +1,21 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "http"
+
+[[records]]
+target_id = "v1:field:d46ad45191e26d81"
+owner = "vibelang-http"
+operation_id = "v1:operation:27b207db1a90d637"
+consistency = "response_snapshot"
+
+[records.effectiveness]
+status = "compatibility_debt"
+effect_ids = []
+error_ids = []
+observable_at = "response_only"
+
+[records.effectiveness.migration]
+owner = "vibelang-http"
+issue = "M11 HTTP v2 effectiveness binding"
+remove_by = "v2 release-ready gate"
+diagnostic_id = "compat.http.ignored_quantization_beats"

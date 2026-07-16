@@ -1,3 +1,4 @@
+mod effective_contract;
 mod public_api;
 mod public_artifacts;
 
@@ -43,13 +44,20 @@ fn run() -> Result<(), String> {
                 return Err("unexpected extra arguments".into());
             }
             public_api::generate(&root, check)?;
-            public_artifacts::generate(&root, &PathBuf::from(cli_help), check)
+            public_artifacts::generate(&root, &PathBuf::from(cli_help), check)?;
+            effective_contract::generate(&root, check)
+        }
+        "effective-contract" => {
+            if args.next().is_some() {
+                return Err("unexpected extra arguments".into());
+            }
+            effective_contract::generate(&root, check)
         }
         _ => Err(usage()),
     }
 }
 
 fn usage() -> String {
-    "usage: cargo run -p xtask -- <public-api|public-artifacts> <generate|check> [cli-help-snapshot]"
+    "usage: cargo run -p xtask -- <public-api|public-artifacts|effective-contract> <generate|check> [cli-help-snapshot]"
         .into()
 }

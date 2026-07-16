@@ -85,6 +85,10 @@ fn pretty_json<T: Serialize>(value: &T) -> Result<String, String> {
     Ok(json)
 }
 
+pub(crate) fn current_http_snapshot_json(root: &Path) -> Result<String, String> {
+    pretty_json(&build_http_snapshot(root)?)
+}
+
 fn normalize_cli_help(value: &str) -> String {
     let mut normalized = value.replace("\r\n", "\n");
     while normalized.ends_with("\n\n") {

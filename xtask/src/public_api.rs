@@ -182,7 +182,7 @@ fn markdown_anchor(anchor: &Anchor) -> String {
     }
 }
 
-fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
+pub(crate) fn build_manifest(root: &Path) -> Result<PublicApiManifest, String> {
     let source_index = SourceIndex::load(root)?;
     let ugen_catalog = UgenCatalog::load(root)?;
     let metadata_json = vibelang_rhai::public_api_metadata_json()?;
