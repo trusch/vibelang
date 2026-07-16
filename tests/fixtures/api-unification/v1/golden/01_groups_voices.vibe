@@ -8,3 +8,5 @@ group("Drums").gain(0.5).body(|| {
 group("Drums").body(|| {
     voice("snare").synth("baseline_snare");
 });
+
+group("Drums").output(-1);

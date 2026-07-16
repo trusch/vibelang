@@ -51,4 +51,4 @@ midi_clock_outputs=0
 midi2_keyboard_routes=0
 midi2_per_note_routes=0
 midi2_cc_routes=0
-diagnostics=none
+diagnostics=ERROR vibelang_rhai::api::group: group('Drums').output(-1): bus must be in 0..16. Supported forms: group.output(N) for mono, group.output([N]) for mono, group.output([L, R]) for stereo

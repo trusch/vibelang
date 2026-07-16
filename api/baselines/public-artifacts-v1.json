@@ -87,16 +87,16 @@
     "fixtures": {
       "counts": {
         "authoring_families": 17,
-        "bytes": 33410,
+        "bytes": 33731,
         "failure_phases": 25,
         "files": 26,
         "negative_defects": 7
       },
       "files": [
         {
-          "bytes": 4508,
+          "bytes": 4532,
           "path": "api/baselines/authoring-families-v1.json",
-          "sha256": "1bb9c798facf84444bef52d28b21d3735bd6c6c6359c4a70392ca7976a7ec1d6"
+          "sha256": "7dd92a7384db0e1917945504362bf56ae16b72d71d7478e81704e19c6ee8f46b"
         },
         {
           "bytes": 6760,
@@ -109,24 +109,24 @@
           "sha256": "fe5dc4bcfc6862a8cd8b95d9b4187d7fa4afde9c7b198c734efedb72e8789202"
         },
         {
-          "bytes": 1037,
+          "bytes": 1217,
           "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot",
-          "sha256": "0215c634aa8bb51dfa55c0fec3f91562ed51e975dd29de5fcdc64cc6f2ca69dd"
+          "sha256": "851044e5562774a2350dc42af790f76a70d1238a438bccfc1f663d41db7e0e4b"
         },
         {
-          "bytes": 237,
+          "bytes": 265,
           "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe",
-          "sha256": "1f38a50c0ede119f89ef735abcce286b704cc0699b15bcef21d7fe0942d4f0bd"
+          "sha256": "1067f6f67ea308be63e6e75cbf83f6cae3ab2ca2d58d0acdc76b21bbf5932437"
         },
         {
-          "bytes": 1366,
+          "bytes": 1398,
           "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot",
-          "sha256": "aeb22b5c42e78576c2a2ab62036f56d4bff5500677c4a75240d3bd6bc2650b23"
+          "sha256": "c20d9a75cbe06b2d0f9838ddce628a100c2406c2b3cc9f3aff20d4f0aad5995f"
         },
         {
-          "bytes": 368,
+          "bytes": 425,
           "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe",
-          "sha256": "c65abf20d6884695e4e874bdbd26ad018de03408499c2ebbce671e4fd0349a7c"
+          "sha256": "464e72bce1c767eecef7d096877f2ee08b2f9d1ca1330dbbe0183b226367cb30"
         },
         {
           "bytes": 1509,
@@ -224,7 +224,7 @@
           "sha256": "c7bd18a495284987a7edc915604b50e3f8d231230be461b274a760b08e4a8f3f"
         }
       ],
-      "tree_sha256": "97ac6045142ec524e7a8bc4ad87d49f51c082482d573a537dc6b0291bd7dcd67"
+      "tree_sha256": "11fbdd03892acee77a8b1f02ed92ac8f3d966028f8a0a8cf4595df5bd9d6ed36"
     },
     "http": {
       "counts": {

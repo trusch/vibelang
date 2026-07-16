@@ -797,6 +797,52 @@ fn v1_warning_omission_and_drift_mutants_are_rejected() {
 }
 
 #[test]
+fn v1_error_omission_and_drift_mutants_are_rejected() {
+    if updating_goldens() {
+        return;
+    }
+    let (state, diagnostics, expected) = execute_golden("01_groups_voices");
+    let error = "ERROR vibelang_rhai::api::group: group('Drums').output(-1): bus must be in 0..16. Supported forms: group.output(N) for mono, group.output([N]) for mono, group.output([L, R]) for stereo";
+    assert_eq!(diagnostics, [error]);
+    assert_eq!(summarize(&state, &diagnostics), expected);
+    assert_mutant_rejected("ERROR omission", &expected, summarize(&state, &[]));
+    let altered = [format!("{error} [altered]")];
+    assert_mutant_rejected("ERROR text drift", &expected, summarize(&state, &altered));
+}
+
+#[test]
+fn v1_melody_launch_only_drift_mutant_is_rejected() {
+    if updating_goldens() {
+        return;
+    }
+    let (state, diagnostics, expected) = execute_golden("02_patterns_melodies");
+    assert_eq!(summarize(&state, &diagnostics), expected);
+    let launched_id = *state
+        .melodies
+        .iter()
+        .find(|(_, config)| config.name == "melody_launched")
+        .map(|(id, _)| id)
+        .unwrap();
+    let started_id = *state
+        .melodies
+        .iter()
+        .find(|(_, config)| config.name == "melody_playing")
+        .map(|(id, _)| id)
+        .unwrap();
+    assert!(state.playing_melodies.contains(&launched_id));
+    assert!(state.playing_melodies.contains(&started_id));
+
+    let mut launch_only_drift = state.clone();
+    launch_only_drift.playing_melodies.remove(&launched_id);
+    assert!(launch_only_drift.playing_melodies.contains(&started_id));
+    assert_mutant_rejected(
+        "Melody.launch-only playing-state drift",
+        &expected,
+        summarize(&launch_only_drift, &diagnostics),
+    );
+}
+
+#[test]
 fn v1_pattern_param_and_sequence_order_mutants_are_rejected() {
     if updating_goldens() {
         return;

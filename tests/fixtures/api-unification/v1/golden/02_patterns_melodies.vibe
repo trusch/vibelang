@@ -9,3 +9,4 @@ pattern("pattern_playing").on(v).step(".x..").launch();
 
 melody("melody_dormant").on(v).notes("C4 D4").apply();
 melody("melody_playing").on(v).notes("E4 F4").start();
+melody("melody_launched").on(v).notes("G4 A4").launch();

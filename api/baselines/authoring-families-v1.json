@@ -4,7 +4,7 @@
   "accepted_base": "9aff9b40db1597364279f9aacf47d436718a031e",
   "families": [
     { "family": "transport", "script": "tests/fixtures/api-unification/v1/golden/08_transport.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/08_transport.snapshot", "pins": ["tempo", "time_signature", "explicit_quantization"] },
-    { "family": "group", "script": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot", "pins": ["eager_group_write", "body_contribution_order"] },
+    { "family": "group", "script": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot", "pins": ["eager_group_write", "body_contribution_order", "invalid_output_error"] },
     { "family": "voice", "script": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot", "pins": ["named_eager_write", "voice_order", "run_timing"] },
     { "family": "pattern", "script": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot", "pins": ["apply_vs_start", "launch_alias", "set_param_ignored"] },
     { "family": "melody", "script": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot", "pins": ["apply_vs_start", "launch_alias"] },
