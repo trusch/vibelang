@@ -1,5 +1,13 @@
 //! Versioned, deterministic schema for VibeLang's public registration manifest.
 
+pub mod canonical;
+pub mod compatibility;
+pub mod error;
+pub mod fragments;
+pub mod v2;
+
+pub use error::{ErrorCode, ManifestError};
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

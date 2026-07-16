@@ -1,0 +1,13 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "websocket"
+
+[[records]]
+target_id = "v1:event:0000000000000004"
+owner = "vibelang-http"
+
+[records.event]
+ordering = "observation_sequence"
+revision_relation = "applied_revision"
+delivery = "at_least_once"
+loss_detection = "not_applicable"
