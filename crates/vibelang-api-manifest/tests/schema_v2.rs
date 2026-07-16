@@ -217,6 +217,12 @@ fn manifest_with_all_metadata_owners() -> PublicApiManifestV2 {
         error_type_id: type_id.into(),
         effects: Vec::new(),
         idempotency: Idempotency::Yes,
+        effect_timing: Facet::NotApplicable {
+            reason: "fixture read".into(),
+        },
+        atomicity: Facet::NotApplicable {
+            reason: "fixture read".into(),
+        },
         revision: Facet::NotApplicable {
             reason: "fixture read".into(),
         },
@@ -260,6 +266,12 @@ fn manifest_with_all_metadata_owners() -> PublicApiManifestV2 {
         },
         included_ids: Vec::new(),
         exclusions: Vec::new(),
+        host: Facet::NotApplicable {
+            reason: "fixture consumer".into(),
+        },
+        coverage_policy: Facet::NotApplicable {
+            reason: "fixture consumer".into(),
+        },
         package: Facet::NotApplicable {
             reason: "fixture consumer".into(),
         },

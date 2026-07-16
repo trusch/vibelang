@@ -594,6 +594,14 @@ pub enum EffectTiming {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum Atomicity {
+    Required,
+    BestEffort,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Synchronization {
     None,
     SyncToCandidate,
@@ -849,6 +857,8 @@ pub struct Operation {
     pub error_type_id: String,
     pub effects: Vec<Effect>,
     pub idempotency: Idempotency,
+    pub effect_timing: Facet<EffectTiming>,
+    pub atomicity: Facet<Atomicity>,
     pub revision: Facet<RevisionContract>,
     pub receipt: Facet<ReceiptContract>,
     pub consistency: ConsistencyPoint,
@@ -1229,7 +1239,37 @@ pub struct Consumer {
     pub eligibility: Eligibility,
     pub included_ids: Vec<String>,
     pub exclusions: Vec<ConsumerExclusion>,
+    pub host: Facet<WasmHostSemantics>,
+    pub coverage_policy: Facet<CoveragePolicy>,
     pub package: Facet<PackageContract>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WasmHostSemantics {
+    #[serde(default)]
+    pub capability_ids: Vec<String>,
+    #[serde(default)]
+    pub required_globals: Vec<String>,
+    pub progress: WasmProgress,
+    pub canonical_package_owner: String,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WasmProgress {
+    HostTick,
+    WorkletAcknowledgement,
+    Synchronous,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoveragePolicy {
+    pub require_complete_eligibility: bool,
+    pub allow_curated_exclusions: bool,
+    pub forbid_denominator_shrink: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1349,6 +1389,8 @@ impl PublicApiManifestV2 {
         }
         for operation in &self.operations {
             validate_metadata(&operation.metadata, "operation", &mut ids, &mut aliases)?;
+            operation.effect_timing.validate(&operation.metadata.id)?;
+            operation.atomicity.validate(&operation.metadata.id)?;
             operation.revision.validate(&operation.metadata.id)?;
             operation.receipt.validate(&operation.metadata.id)?;
             if let Facet::Applicable { value } = &operation.revision {
@@ -1402,7 +1444,20 @@ impl PublicApiManifestV2 {
         }
         for consumer in &self.consumers {
             validate_metadata(&consumer.metadata, "consumer", &mut ids, &mut aliases)?;
+            consumer.host.validate(&consumer.metadata.id)?;
+            consumer.coverage_policy.validate(&consumer.metadata.id)?;
             consumer.package.validate(&consumer.metadata.id)?;
+            if let Facet::Applicable { value } = &consumer.host {
+                if value.required_globals.is_empty()
+                    || value.canonical_package_owner.trim().is_empty()
+                {
+                    return Err(ManifestError::new(
+                        ErrorCode::MissingFacet,
+                        consumer.metadata.id.clone(),
+                        "applicable WASM host semantics require a global and canonical package owner",
+                    ));
+                }
+            }
             for exclusion in &consumer.exclusions {
                 if exclusion.owner.trim().is_empty() {
                     return Err(ManifestError::new(

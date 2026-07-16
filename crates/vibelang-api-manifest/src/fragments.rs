@@ -1,3 +1,4 @@
+pub use crate::v2::{Atomicity, CoveragePolicy, WasmHostSemantics, WasmProgress};
 use crate::{
     v2::{
         Alias, AvailabilityStatus, AvailabilityV2, CapabilityState, ConsistencyPoint, Effect,
@@ -101,14 +102,6 @@ pub struct RuntimeOperationSemantics {
     pub atomicity: Atomicity,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Atomicity {
-    Required,
-    BestEffort,
-    NotApplicable,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HttpFragment {
@@ -179,26 +172,6 @@ pub struct WasmRecord {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WasmHostSemantics {
-    #[serde(default)]
-    pub capability_ids: Vec<String>,
-    #[serde(default)]
-    pub required_globals: Vec<String>,
-    pub progress: WasmProgress,
-    pub canonical_package_owner: String,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WasmProgress {
-    HostTick,
-    WorkletAcknowledgement,
-    Synchronous,
-    NotApplicable,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ConsumersFragment {
     #[serde(flatten)]
     pub header: FragmentHeader,
@@ -226,14 +199,6 @@ pub struct ConsumerPolicy {
     #[serde(default)]
     pub capability_ids: Vec<String>,
     pub include_preview: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CoveragePolicy {
-    pub require_complete_eligibility: bool,
-    pub allow_curated_exclusions: bool,
-    pub forbid_denominator_shrink: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

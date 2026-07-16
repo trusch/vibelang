@@ -16,17 +16,17 @@ use vibelang_api_manifest::fragments::{
     FragmentSet, SemanticFacet,
 };
 use vibelang_api_manifest::v2::{
-    semantic_id, validate_stable_id, Alias, AliasKind, ApiEntryV2, ApiType, AvailabilityStatus,
-    AvailabilityV2, BindingDetails, CancellationContract, Capability, CapabilityExpression,
-    CapabilityState, ConsistencyPoint, Consumer, ConsumerExclusion, CoverageRecord, Derivation,
-    EffectTiming, Eligibility, EnumVariant, Event, EventDelivery, EventOrdering, ExclusionReason,
-    Facet, FailureContract, FailureDelivery, FailureStage, FallbackPolicy, Field, FieldBinding,
-    FieldDirection, Generator, HttpSuccess, Idempotency, LifecycleContract, LifecycleEffect,
-    LifecyclePhase, LifecycleRole, LossDetection, NodeMetadata, ObservationContract, Operation,
-    OperationKind, Ownership, PackageContract, PanicExposure, ParameterV2, PriorState,
-    ProvenanceAnchor, PublicApiManifestV2, RepeatSemantics, RevisionRelation, Stability,
-    StabilityLevel, SurfaceBinding, Synchronization, TypeKind, UnavailableBehavior, SCHEMA_URI_V2,
-    SCHEMA_VERSION_V2,
+    semantic_id, validate_stable_id, Alias, AliasKind, ApiEntryV2, ApiType, Atomicity,
+    AvailabilityStatus, AvailabilityV2, BindingDetails, CancellationContract, Capability,
+    CapabilityExpression, CapabilityState, ConsistencyPoint, Consumer, ConsumerExclusion,
+    CoverageRecord, Derivation, EffectTiming, Eligibility, EnumVariant, Event, EventDelivery,
+    EventOrdering, ExclusionReason, Facet, FailureContract, FailureDelivery, FailureStage,
+    FallbackPolicy, Field, FieldBinding, FieldDirection, Generator, HttpSuccess, Idempotency,
+    LifecycleContract, LifecycleEffect, LifecyclePhase, LifecycleRole, LossDetection, NodeMetadata,
+    ObservationContract, Operation, OperationKind, Ownership, PackageContract, PanicExposure,
+    ParameterV2, PriorState, ProvenanceAnchor, PublicApiManifestV2, RepeatSemantics,
+    RevisionRelation, Stability, StabilityLevel, SurfaceBinding, Synchronization, TypeKind,
+    UnavailableBehavior, WasmProgress, SCHEMA_URI_V2, SCHEMA_VERSION_V2,
 };
 use vibelang_api_manifest::{
     to_pretty_json, Anchor, ApiEntry, Availability, BoundarySemantics, PublicApiManifest,
@@ -955,8 +955,20 @@ fn discover(root: &Path) -> Result<Discovery, String> {
 
 fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, String>, String> {
     let mut manifest = build_v2(discovery)?;
-    validate_fragment_join(&manifest, &discovery.fragments)?;
+    let composition = validate_fragment_join(discovery, &manifest, &discovery.fragments)?;
     apply_fragments(&mut manifest, &discovery.fragments)?;
+    manifest.stats.insert(
+        "semantic_fragments".into(),
+        composition.accounting.semantic_records,
+    );
+    manifest.stats.insert(
+        "orphan_records".into(),
+        composition.accounting.orphan_records,
+    );
+    manifest.stats.insert(
+        "unclassified_records".into(),
+        composition.accounting.unclassified_records,
+    );
     manifest.validate().map_err(|error| error.to_string())?;
 
     let v2_json = vibelang_api_manifest::v2::to_pretty_json_v2(&manifest)
@@ -968,12 +980,13 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
     }
     let digest = canonical_sha256_hex(&manifest).map_err(|error| error.to_string())?;
 
-    let coverage = build_coverage(root, discovery, &manifest, &digest)?;
-    let debt = build_debt(root, &manifest, &digest)?;
+    let coverage = build_coverage(root, discovery, &manifest, &digest, &composition.accounting)?;
+    let debt = build_debt(root, &manifest, &digest, &composition.accounting)?;
     debt.validate(&contract_ids(&manifest))?;
     let diff = build_diff(discovery, &digest)?;
     diff.report.validate().map_err(|error| error.to_string())?;
-    let packages = build_package_index(root, discovery, &digest)?;
+    let packages =
+        build_package_index(root, discovery, &manifest, &digest, &composition.accounting)?;
 
     let mut outputs = BTreeMap::new();
     outputs.insert(V2_PATH, v2_json);
@@ -1226,10 +1239,6 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             .sum(),
     );
     stats.insert("websocket_events".into(), events.len() as u64);
-    stats.insert("semantic_fragments".into(), 6);
-    stats.insert("orphan_records".into(), 0);
-    stats.insert("unclassified_records".into(), 0);
-
     Ok(PublicApiManifestV2 {
         schema: SCHEMA_URI_V2.into(),
         schema_version: SCHEMA_VERSION_V2,
@@ -1537,6 +1546,12 @@ fn http_operation(
         } else {
             Idempotency::Conditional
         },
+        effect_timing: Facet::NotApplicable {
+            reason: "runtime timing is semantic-fragment owned".into(),
+        },
+        atomicity: Facet::NotApplicable {
+            reason: "runtime atomicity is semantic-fragment owned".into(),
+        },
         revision: Facet::NotApplicable {
             reason: "M02 records current v1 declaration truth; canonical revisions land at M03"
                 .into(),
@@ -1726,6 +1741,12 @@ fn build_consumers(
             },
             included_ids,
             exclusions,
+            host: Facet::NotApplicable {
+                reason: "consumer has no WASM host contract".into(),
+            },
+            coverage_policy: Facet::NotApplicable {
+                reason: "consumer has no explicit M02 coverage-policy refinement".into(),
+            },
             package,
         });
         accounting.insert(category.clone(), current);
@@ -1941,70 +1962,57 @@ fn editor_consumer_accounting(discovery: &Discovery) -> Result<ConsumerAccountin
     Ok(accounting)
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct SemanticRequirement {
+    target_id: String,
+    facet: SemanticFacet,
+    owner: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct SemanticFragmentRecord {
+    key: String,
+    target_id: String,
+    owner: String,
+    facets: BTreeSet<SemanticFacet>,
+    references: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct SemanticJoinAccounting {
+    semantic_records: u64,
+    orphan_records: u64,
+    unclassified_records: u64,
+    unclassified_targets: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct SemanticComposition {
+    accounting: SemanticJoinAccounting,
+}
+
 fn validate_fragment_join(
+    discovery: &Discovery,
     manifest: &PublicApiManifestV2,
     fragments: &FragmentSet,
-) -> Result<(), String> {
+) -> Result<SemanticComposition, String> {
+    let requirements = derive_semantic_requirements(discovery)?;
+    let records = semantic_fragment_records(fragments);
     let ids = contract_ids(manifest);
+    let accounting = semantic_join_accounting(&ids, &requirements, &records);
+
     let mut required: BTreeMap<String, BTreeSet<SemanticFacet>> =
         ids.iter().map(|id| (id.clone(), BTreeSet::new())).collect();
-    for record in &fragments.authoring.records {
-        if record.stability.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::Stability)?;
-        }
-        if record.availability.is_some() {
-            require_facet(
-                &mut required,
-                &record.target_id,
-                SemanticFacet::Availability,
-            )?;
-        }
-        if record.lifecycle.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::Lifecycle)?;
-        }
-    }
-    for record in &fragments.runtime.records {
-        if record.operation.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::Operation)?;
-        }
-    }
-    for record in &fragments.http.records {
-        if record.operation_id.is_some() {
-            require_facet(
-                &mut required,
-                &record.target_id,
-                SemanticFacet::OperationBinding,
-            )?;
-        }
-        if record.effectiveness.is_some() {
-            require_facet(
-                &mut required,
-                &record.target_id,
-                SemanticFacet::Effectiveness,
-            )?;
-        }
-    }
-    for record in &fragments.websocket.records {
-        if record.event.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::Event)?;
-        }
-    }
-    for record in &fragments.wasm.records {
-        if record.host.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::WasmHost)?;
-        }
-    }
-    for record in &fragments.consumers.records {
-        if record.policy.is_some() {
-            require_facet(
-                &mut required,
-                &record.target_id,
-                SemanticFacet::ConsumerPolicy,
-            )?;
-        }
-        if record.coverage.is_some() {
-            require_facet(&mut required, &record.target_id, SemanticFacet::Coverage)?;
-        }
+    for requirement in &requirements {
+        required
+            .get_mut(&requirement.target_id)
+            .ok_or_else(|| {
+                format!(
+                    "derived semantic requirement target {} is not a discovered contract node",
+                    requirement.target_id
+                )
+            })?
+            .insert(requirement.facet);
     }
     let discovered = required
         .into_iter()
@@ -2015,18 +2023,550 @@ fn validate_fragment_join(
         .collect::<Vec<_>>();
     fragments
         .validate(&discovered)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    let claims = records
+        .iter()
+        .flat_map(|record| {
+            record
+                .facets
+                .iter()
+                .map(|facet| ((record.target_id.clone(), *facet), record.owner.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for requirement in &requirements {
+        let owner = claims
+            .get(&(requirement.target_id.clone(), requirement.facet))
+            .ok_or_else(|| {
+                format!(
+                    "required semantic facet {:?} is missing for {}",
+                    requirement.facet, requirement.target_id
+                )
+            })?;
+        if owner != &requirement.owner {
+            return Err(format!(
+                "semantic facet {:?} for {} must be owned by {:?}, found {:?}",
+                requirement.facet, requirement.target_id, requirement.owner, owner
+            ));
+        }
+    }
+    validate_frozen_semantic_refinements(&requirements, fragments)?;
+    if accounting.orphan_records != 0 || accounting.unclassified_records != 0 {
+        return Err(format!(
+            "semantic join found {} orphan record(s) and {} unclassified discovered node(s)",
+            accounting.orphan_records, accounting.unclassified_records
+        ));
+    }
+    Ok(SemanticComposition { accounting })
 }
 
-fn require_facet(
-    required: &mut BTreeMap<String, BTreeSet<SemanticFacet>>,
-    id: &str,
+fn derive_semantic_requirements(discovery: &Discovery) -> Result<Vec<SemanticRequirement>, String> {
+    let authoring = unique_semantic_target(
+        "current stdlib authoring stability anchor",
+        discovery
+            .v1
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.surface == "stdlib"
+                    && entry.kind == "synthdef"
+                    && entry.registered_name == "dmx_kick"
+            })
+            .map(|entry| (entry.id.clone(), entry_owner(entry).to_string()))
+            .collect(),
+    )?;
+    let runtime = unique_semantic_target(
+        "current queued transport mutation",
+        discovery
+            .http
+            .routes
+            .iter()
+            .filter(|route| route.method == "PATCH" && route.path == "/transport")
+            .map(|route| {
+                (
+                    semantic_id(
+                        "operation",
+                        &format!("http|{}|{}", route.method, route.path),
+                    ),
+                    "vibelang-core".into(),
+                )
+            })
+            .collect(),
+    )?;
+    let http = unique_semantic_target(
+        "current ignored HTTP quantization field",
+        discovery
+            .http
+            .types
+            .iter()
+            .filter(|api_type| {
+                api_type.name == "TransportUpdate"
+                    && api_type.source == "crates/vibelang-http/src/models.rs"
+            })
+            .flat_map(|api_type| {
+                api_type
+                    .fields
+                    .iter()
+                    .filter(|field| field.name == "quantization_beats")
+                    .map(|field| {
+                        (
+                            semantic_id(
+                                "field",
+                                &format!(
+                                    "http|{}|{}|{}",
+                                    api_type.source, api_type.name, field.name
+                                ),
+                            ),
+                            "vibelang-http".into(),
+                        )
+                    })
+            })
+            .collect(),
+    )?;
+    let websocket = unique_semantic_target(
+        "current WebSocket hello event",
+        discovery
+            .mechanical
+            .iter()
+            .filter(|declaration| {
+                declaration.surface == "websocket"
+                    && declaration.kind == "event"
+                    && declaration.name == "hello"
+            })
+            .map(|declaration| (declaration.id.clone(), declaration.owner.clone()))
+            .collect(),
+    )?;
+    unique_semantic_target(
+        "current WASM globalThis.vibelangBridge declaration",
+        discovery
+            .mechanical
+            .iter()
+            .filter(|declaration| {
+                declaration.surface == "wasm"
+                    && declaration.kind == "host_bridge"
+                    && declaration.name == "globalThis.vibelangBridge"
+            })
+            .map(|declaration| (declaration.id.clone(), declaration.owner.clone()))
+            .collect(),
+    )?;
+    unique_semantic_target(
+        "current canonical WASM package manifest",
+        discovery
+            .mechanical
+            .iter()
+            .filter(|declaration| {
+                declaration.surface == "packages"
+                    && declaration.kind == "manifest"
+                    && declaration.name == "crates/vibelang-wasm/package.json"
+            })
+            .map(|declaration| (declaration.id.clone(), declaration.owner.clone()))
+            .collect(),
+    )?;
+    if !discovery.baseline.categories.contains_key("wasm")
+        || !discovery.baseline.categories.contains_key("rhai_editor")
+    {
+        return Err("M00 baseline is missing the WASM or editor semantic consumer".into());
+    }
+    let wasm = unique_semantic_target(
+        "current WASM projection consumer",
+        vec![(
+            semantic_id("consumer", "baseline|wasm"),
+            "vibelang-wasm".into(),
+        )],
+    )?;
+    let editor = unique_semantic_target(
+        "current editor projection consumer",
+        vec![(
+            semantic_id("consumer", "baseline|rhai_editor"),
+            "vibelang-tools".into(),
+        )],
+    )?;
+
+    let mut requirements = vec![
+        SemanticRequirement {
+            target_id: authoring.0,
+            facet: SemanticFacet::Stability,
+            owner: authoring.1,
+        },
+        SemanticRequirement {
+            target_id: runtime.0,
+            facet: SemanticFacet::Operation,
+            owner: runtime.1,
+        },
+        SemanticRequirement {
+            target_id: http.0.clone(),
+            facet: SemanticFacet::OperationBinding,
+            owner: http.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: http.0,
+            facet: SemanticFacet::Effectiveness,
+            owner: http.1,
+        },
+        SemanticRequirement {
+            target_id: websocket.0,
+            facet: SemanticFacet::Event,
+            owner: websocket.1,
+        },
+        SemanticRequirement {
+            target_id: wasm.0,
+            facet: SemanticFacet::WasmHost,
+            owner: wasm.1,
+        },
+        SemanticRequirement {
+            target_id: editor.0.clone(),
+            facet: SemanticFacet::ConsumerPolicy,
+            owner: editor.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: editor.0,
+            facet: SemanticFacet::Coverage,
+            owner: editor.1,
+        },
+    ];
+    requirements
+        .sort_by(|left, right| (&left.target_id, left.facet).cmp(&(&right.target_id, right.facet)));
+    Ok(requirements)
+}
+
+fn unique_semantic_target(
+    label: &str,
+    mut candidates: Vec<(String, String)>,
+) -> Result<(String, String), String> {
+    candidates.sort();
+    match candidates.as_slice() {
+        [candidate] => Ok(candidate.clone()),
+        _ => Err(format!(
+            "{label} must discover exactly one mechanical node, found {}: {}",
+            candidates.len(),
+            candidates
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+fn semantic_fragment_records(fragments: &FragmentSet) -> Vec<SemanticFragmentRecord> {
+    let mut records = Vec::new();
+    for (index, record) in fragments.authoring.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        if !record.aliases.is_empty() {
+            facets.insert(SemanticFacet::Aliases);
+        }
+        insert_optional_facet(&mut facets, &record.stability, SemanticFacet::Stability);
+        insert_optional_facet(
+            &mut facets,
+            &record.availability,
+            SemanticFacet::Availability,
+        );
+        insert_optional_facet(&mut facets, &record.lifecycle, SemanticFacet::Lifecycle);
+        insert_optional_facet(
+            &mut facets,
+            &record.value_contract,
+            SemanticFacet::ValueContract,
+        );
+        insert_optional_facet(&mut facets, &record.failure, SemanticFacet::Failure);
+        if !record.operation_ids.is_empty() {
+            facets.insert(SemanticFacet::OperationBinding);
+        }
+        records.push(fragment_record(
+            "authoring",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            record.operation_ids.iter().cloned().collect(),
+        ));
+    }
+    for (index, record) in fragments.runtime.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        insert_optional_facet(&mut facets, &record.operation, SemanticFacet::Operation);
+        insert_optional_facet(&mut facets, &record.revision, SemanticFacet::Revision);
+        insert_optional_facet(&mut facets, &record.receipt, SemanticFacet::Receipt);
+        insert_optional_facet(&mut facets, &record.failure, SemanticFacet::Failure);
+        if !record.effects.is_empty() {
+            facets.insert(SemanticFacet::Effects);
+        }
+        records.push(fragment_record(
+            "runtime",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            BTreeSet::new(),
+        ));
+    }
+    for (index, record) in fragments.http.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        insert_optional_facet(
+            &mut facets,
+            &record.operation_id,
+            SemanticFacet::OperationBinding,
+        );
+        insert_optional_facet(
+            &mut facets,
+            &record.effectiveness,
+            SemanticFacet::Effectiveness,
+        );
+        insert_optional_facet(&mut facets, &record.consistency, SemanticFacet::Consistency);
+        insert_optional_facet(&mut facets, &record.failure, SemanticFacet::Failure);
+        if !record.security_capability_ids.is_empty() {
+            facets.insert(SemanticFacet::Security);
+        }
+        let references = record
+            .operation_id
+            .iter()
+            .chain(&record.security_capability_ids)
+            .cloned()
+            .collect();
+        records.push(fragment_record(
+            "http",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            references,
+        ));
+    }
+    for (index, record) in fragments.websocket.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        insert_optional_facet(
+            &mut facets,
+            &record.operation_id,
+            SemanticFacet::OperationBinding,
+        );
+        insert_optional_facet(&mut facets, &record.event, SemanticFacet::Event);
+        insert_optional_facet(&mut facets, &record.failure, SemanticFacet::Failure);
+        let references = record
+            .operation_id
+            .iter()
+            .chain(
+                record
+                    .event
+                    .iter()
+                    .flat_map(|event| &event.resync_operation_id),
+            )
+            .cloned()
+            .collect();
+        records.push(fragment_record(
+            "websocket",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            references,
+        ));
+    }
+    for (index, record) in fragments.wasm.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        insert_optional_facet(
+            &mut facets,
+            &record.operation_id,
+            SemanticFacet::OperationBinding,
+        );
+        insert_optional_facet(&mut facets, &record.host, SemanticFacet::WasmHost);
+        insert_optional_facet(&mut facets, &record.stability, SemanticFacet::Stability);
+        insert_optional_facet(&mut facets, &record.failure, SemanticFacet::Failure);
+        let references = record
+            .operation_id
+            .iter()
+            .chain(record.host.iter().flat_map(|host| &host.capability_ids))
+            .cloned()
+            .collect();
+        records.push(fragment_record(
+            "wasm",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            references,
+        ));
+    }
+    for (index, record) in fragments.consumers.records.iter().enumerate() {
+        let mut facets = BTreeSet::new();
+        insert_optional_facet(&mut facets, &record.policy, SemanticFacet::ConsumerPolicy);
+        insert_optional_facet(&mut facets, &record.coverage, SemanticFacet::Coverage);
+        if !record.exclusions.is_empty() {
+            facets.insert(SemanticFacet::Exclusions);
+        }
+        let references = record
+            .policy
+            .iter()
+            .flat_map(|policy| &policy.capability_ids)
+            .chain(
+                record
+                    .exclusions
+                    .iter()
+                    .map(|exclusion| &exclusion.target_id),
+            )
+            .cloned()
+            .collect();
+        records.push(fragment_record(
+            "consumers",
+            index,
+            &record.target_id,
+            &record.owner,
+            facets,
+            references,
+        ));
+    }
+    records.sort_by(|left, right| left.key.cmp(&right.key));
+    records
+}
+
+fn insert_optional_facet<T>(
+    facets: &mut BTreeSet<SemanticFacet>,
+    value: &Option<T>,
     facet: SemanticFacet,
+) {
+    if value.is_some() {
+        facets.insert(facet);
+    }
+}
+
+fn fragment_record(
+    domain: &str,
+    index: usize,
+    target_id: &str,
+    owner: &str,
+    facets: BTreeSet<SemanticFacet>,
+    references: BTreeSet<String>,
+) -> SemanticFragmentRecord {
+    SemanticFragmentRecord {
+        key: format!("{domain}:{index:08}:{target_id}"),
+        target_id: target_id.into(),
+        owner: owner.into(),
+        facets,
+        references,
+    }
+}
+
+fn semantic_join_accounting(
+    ids: &BTreeSet<String>,
+    requirements: &[SemanticRequirement],
+    records: &[SemanticFragmentRecord],
+) -> SemanticJoinAccounting {
+    let orphan_records = records
+        .iter()
+        .filter(|record| {
+            !ids.contains(&record.target_id) || record.references.iter().any(|id| !ids.contains(id))
+        })
+        .count() as u64;
+    let claims = records
+        .iter()
+        .flat_map(|record| {
+            record
+                .facets
+                .iter()
+                .map(|facet| ((record.target_id.as_str(), *facet), record.owner.as_str()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let unclassified_targets = requirements
+        .iter()
+        .filter(|requirement| {
+            claims
+                .get(&(requirement.target_id.as_str(), requirement.facet))
+                .is_none_or(|owner| *owner != requirement.owner)
+        })
+        .map(|requirement| requirement.target_id.clone())
+        .collect::<BTreeSet<_>>();
+    SemanticJoinAccounting {
+        semantic_records: records.len() as u64,
+        orphan_records,
+        unclassified_records: unclassified_targets.len() as u64,
+        unclassified_targets,
+    }
+}
+
+fn required_semantic_target(
+    requirements: &[SemanticRequirement],
+    facet: SemanticFacet,
+) -> Result<&str, String> {
+    let targets = requirements
+        .iter()
+        .filter(|requirement| requirement.facet == facet)
+        .map(|requirement| requirement.target_id.as_str())
+        .collect::<BTreeSet<_>>();
+    match targets.iter().copied().collect::<Vec<_>>().as_slice() {
+        [target] => Ok(target),
+        _ => Err(format!(
+            "frozen M02 semantic facet {facet:?} must resolve to exactly one target"
+        )),
+    }
+}
+
+fn validate_frozen_semantic_refinements(
+    requirements: &[SemanticRequirement],
+    fragments: &FragmentSet,
 ) -> Result<(), String> {
-    required
-        .get_mut(id)
-        .ok_or_else(|| format!("semantic fragment target {id} is orphaned"))?
-        .insert(facet);
+    let runtime_target = required_semantic_target(requirements, SemanticFacet::Operation)?;
+    let runtime = fragments
+        .runtime
+        .records
+        .iter()
+        .find(|record| record.target_id == runtime_target)
+        .and_then(|record| record.operation.as_ref())
+        .ok_or_else(|| format!("runtime semantics disappeared for {runtime_target}"))?;
+    if runtime.effect_timing != EffectTiming::RuntimeQueued
+        || runtime.atomicity != Atomicity::BestEffort
+    {
+        return Err(format!(
+            "runtime semantics for {runtime_target} must preserve effect_timing=runtime_queued and atomicity=best_effort"
+        ));
+    }
+
+    let wasm_target = required_semantic_target(requirements, SemanticFacet::WasmHost)?;
+    let wasm = fragments
+        .wasm
+        .records
+        .iter()
+        .find(|record| record.target_id == wasm_target)
+        .and_then(|record| record.host.as_ref())
+        .ok_or_else(|| format!("WASM host semantics disappeared for {wasm_target}"))?;
+    if !wasm.capability_ids.is_empty()
+        || wasm.required_globals != ["globalThis.vibelangBridge"]
+        || wasm.progress != WasmProgress::HostTick
+        || wasm.canonical_package_owner != "crates/vibelang-wasm"
+    {
+        return Err(format!(
+            "WASM semantics for {wasm_target} must preserve globalThis.vibelangBridge, host_tick, and crates/vibelang-wasm ownership"
+        ));
+    }
+
+    let policy_target = required_semantic_target(requirements, SemanticFacet::ConsumerPolicy)?;
+    let consumer = fragments
+        .consumers
+        .records
+        .iter()
+        .find(|record| record.target_id == policy_target)
+        .ok_or_else(|| format!("consumer semantics disappeared for {policy_target}"))?;
+    let policy = consumer
+        .policy
+        .as_ref()
+        .ok_or_else(|| format!("consumer policy disappeared for {policy_target}"))?;
+    if policy.surfaces != ["rhai_editor"]
+        || policy.kinds != ["v1_compatibility_projection"]
+        || !policy.capability_ids.is_empty()
+        || policy.include_preview
+    {
+        return Err(format!(
+            "consumer policy for {policy_target} no longer matches the frozen M02 editor projection"
+        ));
+    }
+    let coverage = consumer
+        .coverage
+        .as_ref()
+        .ok_or_else(|| format!("coverage policy disappeared for {policy_target}"))?;
+    if !coverage.require_complete_eligibility
+        || !coverage.allow_curated_exclusions
+        || !coverage.forbid_denominator_shrink
+    {
+        return Err(format!(
+            "coverage policy for {policy_target} must require complete eligibility, owned curation, and denominator preservation"
+        ));
+    }
     Ok(())
 }
 
@@ -2037,6 +2577,7 @@ fn apply_fragments(
     for record in &fragments.authoring.records {
         let metadata = find_metadata_mut(manifest, &record.target_id)
             .ok_or_else(|| format!("authoring target {} disappeared", record.target_id))?;
+        metadata.ownership.implementation_owner = record.owner.clone();
         if let Some(stability) = &record.stability {
             metadata.stability = stability.clone();
         }
@@ -2050,10 +2591,17 @@ fn apply_fragments(
             .iter_mut()
             .find(|operation| operation.metadata.id == record.target_id)
             .ok_or_else(|| format!("runtime target {} is not an operation", record.target_id))?;
+        operation.metadata.ownership.implementation_owner = record.owner.clone();
         if let Some(semantics) = &record.operation {
             operation.kind = semantics.kind;
             operation.idempotency = semantics.idempotency;
             operation.consistency = semantics.consistency;
+            operation.effect_timing = Facet::Applicable {
+                value: semantics.effect_timing,
+            };
+            operation.atomicity = Facet::Applicable {
+                value: semantics.atomicity,
+            };
         }
     }
     for record in &fragments.http.records {
@@ -2063,6 +2611,7 @@ fn apply_fragments(
             .flat_map(|api_type| api_type.fields.iter_mut())
             .find(|field| field.metadata.id == record.target_id)
             .ok_or_else(|| format!("HTTP target {} is not a field", record.target_id))?;
+        field.metadata.ownership.implementation_owner = record.owner.clone();
         if let (Some(operation_id), Some(effectiveness)) =
             (&record.operation_id, &record.effectiveness)
         {
@@ -2083,6 +2632,7 @@ fn apply_fragments(
             .iter_mut()
             .find(|event| event.metadata.id == record.target_id)
             .ok_or_else(|| format!("WebSocket target {} is not an event", record.target_id))?;
+        event.metadata.ownership.implementation_owner = record.owner.clone();
         if let Some(semantics) = &record.event {
             event.ordering = semantics.ordering;
             event.revision_relation = semantics.revision_relation;
@@ -2091,12 +2641,26 @@ fn apply_fragments(
             event.resync_operation_id = semantics.resync_operation_id.clone();
         }
     }
+    for record in &fragments.wasm.records {
+        let consumer = manifest
+            .consumers
+            .iter_mut()
+            .find(|consumer| consumer.metadata.id == record.target_id)
+            .ok_or_else(|| format!("WASM target {} is not a consumer", record.target_id))?;
+        consumer.metadata.ownership.implementation_owner = record.owner.clone();
+        if let Some(host) = &record.host {
+            consumer.host = Facet::Applicable {
+                value: host.clone(),
+            };
+        }
+    }
     for record in &fragments.consumers.records {
         let consumer = manifest
             .consumers
             .iter_mut()
             .find(|consumer| consumer.metadata.id == record.target_id)
             .ok_or_else(|| format!("consumer target {} disappeared", record.target_id))?;
+        consumer.metadata.ownership.implementation_owner = record.owner.clone();
         if let Some(policy) = &record.policy {
             consumer.eligibility.surfaces = policy.surfaces.clone();
             consumer.eligibility.kinds = policy.kinds.clone();
@@ -2107,6 +2671,11 @@ fn apply_fragments(
                     .stability_levels
                     .insert(StabilityLevel::Preview);
             }
+        }
+        if let Some(coverage) = &record.coverage {
+            consumer.coverage_policy = Facet::Applicable {
+                value: coverage.clone(),
+            };
         }
     }
     Ok(())
@@ -2192,6 +2761,7 @@ fn build_coverage(
     discovery: &Discovery,
     manifest: &PublicApiManifestV2,
     digest: &str,
+    accounting: &SemanticJoinAccounting,
 ) -> Result<CoverageArtifact, String> {
     let mut source_nodes: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     visit_metadata(manifest, |metadata| {
@@ -2250,7 +2820,11 @@ fn build_coverage(
                 eligible_count: coverage.denominator,
                 excluded_count: coverage.exclusions_by_reason.values().sum(),
                 unresolved_count: coverage.unresolved_ids.len() as u64,
-                unclassified_count: 0,
+                unclassified_count: u64::from(
+                    accounting
+                        .unclassified_targets
+                        .contains(&consumer.metadata.id),
+                ),
             }
         })
         .collect::<Vec<_>>();
@@ -2287,8 +2861,8 @@ fn build_coverage(
                 .sum(),
             source_nodes: sources.len() as u64,
             consumer_nodes: consumers.len() as u64,
-            orphan_records: 0,
-            unclassified_records: 0,
+            orphan_records: accounting.orphan_records,
+            unclassified_records: accounting.unclassified_records,
         },
         sources,
         consumers,
@@ -2438,6 +3012,7 @@ fn build_debt(
     root: &Path,
     manifest: &PublicApiManifestV2,
     digest: &str,
+    accounting: &SemanticJoinAccounting,
 ) -> Result<DebtArtifact, String> {
     let mut records = Vec::new();
     for api_type in &manifest.types {
@@ -2630,8 +3205,8 @@ fn build_debt(
         contract_digest: digest.into(),
         records,
         counts,
-        orphan_count: 0,
-        unclassified_count: 0,
+        orphan_count: accounting.orphan_records,
+        unclassified_count: accounting.unclassified_records,
     })
 }
 
@@ -2729,6 +3304,13 @@ fn build_diff(discovery: &Discovery, digest: &str) -> Result<DiffArtifact, Strin
     let report = CompatibilityReport {
         changes: Vec::<CompatibilityChange>::new(),
     };
+    let unclassified_count = report
+        .changes
+        .iter()
+        .filter(|change| {
+            change.classes.is_empty() || change.classes.contains(&CompatibilityClass::Unclassified)
+        })
+        .count() as u64;
     Ok(DiffArtifact {
         schema: "https://vibelang.org/schemas/public-api-compatibility-diff/v1".into(),
         schema_version: 1,
@@ -2737,7 +3319,7 @@ fn build_diff(discovery: &Discovery, digest: &str) -> Result<DiffArtifact, Strin
         candidate_v2_digest: digest.into(),
         unchanged_entry_ids: EXPECTED_ENTRIES as u64,
         unchanged_overload_ids: EXPECTED_OVERLOADS as u64,
-        unclassified_count: 0,
+        unclassified_count,
         report,
     })
 }
@@ -2778,7 +3360,9 @@ struct WasmPackageOwner {
 fn build_package_index(
     root: &Path,
     discovery: &Discovery,
+    manifest: &PublicApiManifestV2,
     digest: &str,
+    accounting: &SemanticJoinAccounting,
 ) -> Result<PackageIndex, String> {
     let packages = discovery
         .baseline
@@ -2787,6 +3371,24 @@ fn build_package_index(
         .ok_or_else(|| "M00 baseline has no package category".to_string())?;
     let mut files = Vec::new();
     let mut wasm_package_owners = Vec::new();
+    let wasm_hosts = manifest
+        .consumers
+        .iter()
+        .filter_map(|consumer| match &consumer.host {
+            Facet::Applicable { value } => Some(value),
+            Facet::NotApplicable { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    let [wasm_host] = wasm_hosts.as_slice() else {
+        return Err(format!(
+            "composed contract must have exactly one WASM host/package owner, found {}",
+            wasm_hosts.len()
+        ));
+    };
+    let canonical_wasm_manifest = format!(
+        "{}/package.json",
+        wasm_host.canonical_package_owner.trim_end_matches('/')
+    );
     for baseline in &packages.files {
         let bytes = fs::read(root.join(&baseline.path))
             .map_err(|error| format!("{}: {error}", baseline.path))?;
@@ -2807,18 +3409,30 @@ fn build_package_index(
             let package: Value =
                 serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
             if package["name"].as_str() == Some("vibelang-wasm") {
+                let canonical = baseline.path == canonical_wasm_manifest;
                 wasm_package_owners.push(WasmPackageOwner {
                     path: baseline.path.clone(),
                     name: "vibelang-wasm".into(),
                     version: package["version"].as_str().unwrap_or("unknown").into(),
-                    canonical: baseline.path == "crates/vibelang-wasm/package.json",
-                    compatibility_debt: baseline.path == "landing-page/src/audio/package.json",
+                    canonical,
+                    compatibility_debt: !canonical,
                 });
             }
         }
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     wasm_package_owners.sort_by(|left, right| left.path.cmp(&right.path));
+    if wasm_package_owners
+        .iter()
+        .filter(|owner| owner.canonical)
+        .count()
+        != 1
+    {
+        return Err(format!(
+            "composed canonical WASM package {} did not resolve exactly once",
+            canonical_wasm_manifest
+        ));
+    }
     let vscode: Value = serde_json::from_str(&read(root, "vscode-extension/package.json")?)
         .map_err(|error| error.to_string())?;
     let main = vscode["main"]
@@ -2843,8 +3457,8 @@ fn build_package_index(
             "crates/vibelang-wasm/pkg/*.js".into(),
             "crates/vibelang-wasm/pkg/*.wasm".into(),
         ],
-        orphan_count: 0,
-        unclassified_count: 0,
+        orphan_count: accounting.orphan_records,
+        unclassified_count: accounting.unclassified_records,
     })
 }
 
@@ -3650,8 +4264,295 @@ mod tests {
                 discovery.fragments.authoring.records[0].target_id =
                     semantic_id("entry", "missing-composer-target");
                 let manifest = build_v2(&discovery).unwrap();
-                let error = validate_fragment_join(&manifest, &discovery.fragments).unwrap_err();
-                assert!(error.contains("orphaned"), "{error}");
+                let error = validate_fragment_join(&discovery, &manifest, &discovery.fragments)
+                    .unwrap_err();
+                assert!(error.to_lowercase().contains("orphan"), "{error}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn semantic_join_accounting_counts_orphans_and_unclassified_nodes() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+                let ids = contract_ids(&manifest);
+                let requirements = derive_semantic_requirements(&discovery).unwrap();
+
+                let mut orphan = discovery.fragments.clone();
+                orphan.authoring.records[0].target_id =
+                    semantic_id("entry", "missing-composer-target");
+                let accounting = semantic_join_accounting(
+                    &ids,
+                    &requirements,
+                    &semantic_fragment_records(&orphan),
+                );
+                assert_eq!(accounting.orphan_records, 1);
+
+                let mut unclassified = discovery.fragments.clone();
+                unclassified.runtime.records[0].operation = None;
+                let accounting = semantic_join_accounting(
+                    &ids,
+                    &requirements,
+                    &semantic_fragment_records(&unclassified),
+                );
+                assert_eq!(accounting.orphan_records, 0);
+                assert_eq!(accounting.unclassified_records, 1);
+                assert_eq!(
+                    accounting.unclassified_targets,
+                    [semantic_id("operation", "http|PATCH|/transport")]
+                        .into_iter()
+                        .collect()
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn every_independently_required_semantic_facet_has_a_deletion_mutant() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+                let assert_missing = |fragments: &FragmentSet, facet: &str| {
+                    let error =
+                        validate_fragment_join(&discovery, &manifest, fragments).expect_err(facet);
+                    assert!(error.contains(facet), "{facet}: {error}");
+                };
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.authoring.records[0].stability = None;
+                assert_missing(&mutant, "Stability");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.runtime.records[0].operation = None;
+                assert_missing(&mutant, "Operation");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.http.records[0].operation_id = None;
+                assert_missing(&mutant, "OperationBinding");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.http.records[0].effectiveness = None;
+                assert_missing(&mutant, "Effectiveness");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.websocket.records[0].event = None;
+                assert_missing(&mutant, "Event");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.wasm.records[0].host = None;
+                assert_missing(&mutant, "WasmHost");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.consumers.records[0].policy = None;
+                assert_missing(&mutant, "ConsumerPolicy");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.consumers.records[0].coverage = None;
+                assert_missing(&mutant, "Coverage");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn required_runtime_wasm_and_consumer_owners_fail_closed() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+                for (domain, mut mutant) in [
+                    ("runtime", discovery.fragments.clone()),
+                    ("WASM", discovery.fragments.clone()),
+                    ("consumer", discovery.fragments.clone()),
+                ] {
+                    match domain {
+                        "runtime" => mutant.runtime.records[0].owner = "wrong-owner".into(),
+                        "WASM" => mutant.wasm.records[0].owner = "wrong-owner".into(),
+                        "consumer" => mutant.consumers.records[0].owner = "wrong-owner".into(),
+                        _ => unreachable!(),
+                    }
+                    let error =
+                        validate_fragment_join(&discovery, &manifest, &mutant).expect_err(domain);
+                    assert!(error.contains("must be owned"), "{domain}: {error}");
+                }
+
+                for (domain, mut mutant) in [
+                    ("runtime", discovery.fragments.clone()),
+                    ("WASM", discovery.fragments.clone()),
+                    ("consumer", discovery.fragments.clone()),
+                ] {
+                    match domain {
+                        "runtime" => mutant.runtime.records[0].owner.clear(),
+                        "WASM" => mutant.wasm.records[0].owner.clear(),
+                        "consumer" => mutant.consumers.records[0].owner.clear(),
+                        _ => unreachable!(),
+                    }
+                    let error =
+                        validate_fragment_join(&discovery, &manifest, &mutant).expect_err(domain);
+                    assert!(error.contains("must be owned"), "{domain}: {error}");
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn frozen_runtime_wasm_and_coverage_refinements_have_mutants() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.runtime.records[0]
+                    .operation
+                    .as_mut()
+                    .unwrap()
+                    .effect_timing = EffectTiming::RuntimeApplied;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("effect_timing=runtime_queued"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.runtime.records[0]
+                    .operation
+                    .as_mut()
+                    .unwrap()
+                    .atomicity = Atomicity::Required;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("atomicity=best_effort"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.wasm.records[0]
+                    .host
+                    .as_mut()
+                    .unwrap()
+                    .required_globals
+                    .clear();
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("globalThis.vibelangBridge"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.wasm.records[0].host.as_mut().unwrap().progress = WasmProgress::Synchronous;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("host_tick"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.wasm.records[0]
+                    .host
+                    .as_mut()
+                    .unwrap()
+                    .canonical_package_owner = "landing-page/src/audio".into();
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("crates/vibelang-wasm ownership"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.consumers.records[0]
+                    .coverage
+                    .as_mut()
+                    .unwrap()
+                    .require_complete_eligibility = false;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("complete eligibility"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.consumers.records[0]
+                    .coverage
+                    .as_mut()
+                    .unwrap()
+                    .allow_curated_exclusions = false;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("owned curation"), "{error}");
+
+                let mut mutant = discovery.fragments.clone();
+                mutant.consumers.records[0]
+                    .coverage
+                    .as_mut()
+                    .unwrap()
+                    .forbid_denominator_shrink = false;
+                let error = validate_fragment_join(&discovery, &manifest, &mutant).unwrap_err();
+                assert!(error.contains("denominator preservation"), "{error}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn valid_semantic_join_composes_facets_owners_and_computed_zero_counts() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let mut manifest = build_v2(&discovery).unwrap();
+                let composition =
+                    validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
+                assert_eq!(composition.accounting.semantic_records, 6);
+                assert_eq!(composition.accounting.orphan_records, 0);
+                assert_eq!(composition.accounting.unclassified_records, 0);
+                assert!(composition.accounting.unclassified_targets.is_empty());
+
+                apply_fragments(&mut manifest, &discovery.fragments).unwrap();
+                let runtime = manifest
+                    .operations
+                    .iter()
+                    .find(|operation| operation.metadata.name == "PATCH /transport")
+                    .unwrap();
+                assert_eq!(
+                    runtime.metadata.ownership.implementation_owner,
+                    "vibelang-core"
+                );
+                assert_eq!(
+                    runtime.effect_timing,
+                    Facet::Applicable {
+                        value: EffectTiming::RuntimeQueued
+                    }
+                );
+                assert_eq!(
+                    runtime.atomicity,
+                    Facet::Applicable {
+                        value: Atomicity::BestEffort
+                    }
+                );
+
+                let wasm = manifest
+                    .consumers
+                    .iter()
+                    .find(|consumer| consumer.eligibility.surfaces == ["wasm"])
+                    .unwrap();
+                assert_eq!(
+                    wasm.metadata.ownership.implementation_owner,
+                    "vibelang-wasm"
+                );
+                let Facet::Applicable { value: host } = &wasm.host else {
+                    panic!("WASM host semantics were not composed");
+                };
+                assert_eq!(host.required_globals, ["globalThis.vibelangBridge"]);
+                assert_eq!(host.progress, WasmProgress::HostTick);
+                assert_eq!(host.canonical_package_owner, "crates/vibelang-wasm");
+
+                let editor = manifest
+                    .consumers
+                    .iter()
+                    .find(|consumer| consumer.eligibility.surfaces == ["rhai_editor"])
+                    .unwrap();
+                assert_eq!(
+                    editor.metadata.ownership.implementation_owner,
+                    "vibelang-tools"
+                );
+                assert!(matches!(editor.coverage_policy, Facet::Applicable { .. }));
             })
             .unwrap()
             .join()
