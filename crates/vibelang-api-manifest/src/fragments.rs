@@ -457,6 +457,9 @@ trait SemanticRecord {
     fn references(&self) -> Vec<&str> {
         Vec::new()
     }
+    fn availability(&self) -> Option<&AvailabilityV2> {
+        None
+    }
     fn validate_semantics(&self) -> Result<(), ManifestError> {
         Ok(())
     }
@@ -497,6 +500,10 @@ impl SemanticRecord for AuthoringRecord {
 
     fn references(&self) -> Vec<&str> {
         self.operation_ids.iter().map(String::as_str).collect()
+    }
+
+    fn availability(&self) -> Option<&AvailabilityV2> {
+        self.availability.as_ref()
     }
 
     fn validate_semantics(&self) -> Result<(), ManifestError> {
@@ -788,6 +795,11 @@ impl FragmentSet {
         }
 
         let mut claims: BTreeMap<(&str, SemanticFacet), (FragmentDomain, &str)> = BTreeMap::new();
+        let capability_ids: BTreeSet<_> = discovered_by_id
+            .keys()
+            .copied()
+            .filter(|id| id.split(':').nth(1) == Some("capability"))
+            .collect();
         self.visit_records(|domain, record| {
             if !discovered_by_id.contains_key(record.target_id()) {
                 return Err(ManifestError::new(
@@ -804,6 +816,16 @@ impl FragmentSet {
                         format!("semantic reference {reference:?} does not resolve"),
                     ));
                 }
+            }
+            if let Some(expression) = record
+                .availability()
+                .and_then(|availability| availability.when.as_ref())
+            {
+                crate::v2::validate_capability_expression(
+                    expression,
+                    &capability_ids,
+                    record.target_id(),
+                )?;
             }
             for facet in record.claims() {
                 if let Some((prior_domain, prior_owner)) =

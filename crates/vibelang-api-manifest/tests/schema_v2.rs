@@ -12,12 +12,17 @@ use vibelang_api_manifest::{
         DiscoveredSemanticNode, FragmentSet, SemanticFacet,
     },
     v2::{
-        parse_manifest, parse_v2_manifest, to_pretty_json_v2, Alias, AliasKind, AvailabilityStatus,
-        AvailabilityV2, Capability, Derivation, Generator, NodeMetadata, ProvenanceAnchor,
-        PublicApiManifestV2, Stability, StabilityLevel, UnavailableBehavior,
-        VersionedPublicApiManifest, SCHEMA_URI_V2, SCHEMA_VERSION_V2,
+        parse_manifest, parse_v2_manifest, to_pretty_json_v2, Alias, AliasKind, ApiEntryV2,
+        ApiType, AvailabilityStatus, AvailabilityV2, BindingDetails, Capability,
+        CapabilityExpression, ConsistencyPoint, Consumer, Derivation, Eligibility, Event,
+        EventDelivery, EventOrdering, Facet, FailureContract, FailureDelivery, FailureStage,
+        FallbackPolicy, Field, FieldDirection, Generator, Idempotency, LossDetection, NodeMetadata,
+        Operation, OperationKind, OverloadV2, PanicExposure, PriorState, ProvenanceAnchor,
+        PublicApiManifestV2, RevisionRelation, Stability, StabilityLevel, SurfaceBinding, TypeKind,
+        UnavailableBehavior, VersionedPublicApiManifest, SCHEMA_URI_V2, SCHEMA_VERSION_V2,
     },
-    ErrorCode, PublicApiManifest,
+    Anchor, DuplicateNameHandling, EntryDetails, ErrorCode, PublicApiManifest, StdlibDeclaration,
+    UgenInput,
 };
 
 const AUTHORING: &str = include_str!("fixtures/authoring.toml");
@@ -55,8 +60,54 @@ fn discovered_nodes() -> Vec<DiscoveredSemanticNode> {
     .collect()
 }
 
+fn fixture_metadata(id: &str, name: &str) -> NodeMetadata {
+    NodeMetadata {
+        id: id.into(),
+        name: name.into(),
+        aliases: Vec::new(),
+        stability: Stability {
+            level: StabilityLevel::Stable,
+            since: Some("0.4.0".into()),
+            deprecated_since: None,
+            replacement_id: None,
+            reason: None,
+            removal_not_before: None,
+        },
+        availability: AvailabilityV2 {
+            status: AvailabilityStatus::Available,
+            when: None,
+            on_unavailable: UnavailableBehavior::Hidden,
+            evidence: vec!["fixture".into()],
+        },
+        ownership: vibelang_api_manifest::v2::Ownership {
+            contract_owner: "manifest".into(),
+            implementation_owner: "core".into(),
+            consumer_owner: None,
+        },
+        source_anchors: vec![ProvenanceAnchor {
+            path: "crates/vibelang-api-manifest/tests/schema_v2.rs".into(),
+            symbol: "fixture_metadata".into(),
+            line: None,
+            derivation: Derivation::BehavioralFixture,
+        }],
+        test_anchors: Vec::new(),
+    }
+}
+
 fn fixture_manifest() -> PublicApiManifestV2 {
     let capability_id = "v1:capability:0000000000000001".to_string();
+    let mut capability_metadata = fixture_metadata(&capability_id, "target.native");
+    capability_metadata.aliases.push(Alias {
+        id: "v1:capability:0000000000000002".into(),
+        canonical_id: capability_id,
+        kind: AliasKind::Rename,
+        since: "0.4.0".into(),
+        deprecated_since: "0.5.0".into(),
+        removal_not_before: "1.0.0".into(),
+        warning: "use target.native".into(),
+        behavior_fixture: "schema_v2::stable_alias".into(),
+        compatibility_classes: [CompatibilityClass::BehavioralChange].into_iter().collect(),
+    });
     PublicApiManifestV2 {
         schema: SCHEMA_URI_V2.into(),
         schema_version: SCHEMA_VERSION_V2,
@@ -70,49 +121,7 @@ fn fixture_manifest() -> PublicApiManifestV2 {
         operations: Vec::new(),
         events: Vec::new(),
         capabilities: vec![Capability {
-            metadata: NodeMetadata {
-                id: capability_id.clone(),
-                name: "target.native".into(),
-                aliases: vec![Alias {
-                    id: "v1:capability:0000000000000002".into(),
-                    canonical_id: capability_id,
-                    kind: AliasKind::Rename,
-                    since: "0.4.0".into(),
-                    deprecated_since: "0.5.0".into(),
-                    removal_not_before: "1.0.0".into(),
-                    warning: "use target.native".into(),
-                    behavior_fixture: "schema_v2::stable_alias".into(),
-                    compatibility_classes: [CompatibilityClass::BehavioralChange]
-                        .into_iter()
-                        .collect(),
-                }],
-                stability: Stability {
-                    level: StabilityLevel::Stable,
-                    since: Some("0.4.0".into()),
-                    deprecated_since: None,
-                    replacement_id: None,
-                    reason: None,
-                    removal_not_before: None,
-                },
-                availability: AvailabilityV2 {
-                    status: AvailabilityStatus::Available,
-                    when: None,
-                    on_unavailable: UnavailableBehavior::Hidden,
-                    evidence: vec!["fixture".into()],
-                },
-                ownership: vibelang_api_manifest::v2::Ownership {
-                    contract_owner: "manifest".into(),
-                    implementation_owner: "core".into(),
-                    consumer_owner: None,
-                },
-                source_anchors: vec![ProvenanceAnchor {
-                    path: "crates/vibelang-api-manifest/tests/schema_v2.rs".into(),
-                    symbol: "fixture_manifest".into(),
-                    line: None,
-                    derivation: Derivation::BehavioralFixture,
-                }],
-                test_anchors: Vec::new(),
-            },
+            metadata: capability_metadata,
             detection_source: "fixture".into(),
             dependencies: Vec::new(),
             conflicts: Vec::new(),
@@ -123,6 +132,157 @@ fn fixture_manifest() -> PublicApiManifestV2 {
         coverage: BTreeMap::new(),
         stats: BTreeMap::new(),
     }
+}
+
+fn manifest_with_entry_details(details: EntryDetails) -> PublicApiManifestV2 {
+    let mut manifest = fixture_manifest();
+    manifest.entries.push(ApiEntryV2 {
+        metadata: fixture_metadata("v1:entry:0000000000000001", "fixture.entry"),
+        surface: "rhai".into(),
+        kind: "type".into(),
+        registered_name: "FixtureEntry".into(),
+        receiver: None,
+        overloads: Vec::new(),
+        details,
+        lifecycle: Facet::NotApplicable {
+            reason: "fixture entry".into(),
+        },
+        operation_ids: Vec::new(),
+        consumer_ids: Vec::new(),
+    });
+    manifest
+}
+
+fn fixture_failure() -> FailureContract {
+    FailureContract {
+        stages: vec![FailureStage::Validate],
+        error_ids: Vec::new(),
+        retryable: false,
+        prior_state: PriorState::Unchanged,
+        fallback: FallbackPolicy::Reject,
+        panic_exposure: PanicExposure::None,
+        delivery: [FailureDelivery::Return].into_iter().collect(),
+        cleanup_owner: None,
+    }
+}
+
+fn manifest_with_all_metadata_owners() -> PublicApiManifestV2 {
+    let mut manifest = manifest_with_entry_details(EntryDetails::RhaiType {
+        display_name: "FixtureEntry".into(),
+    });
+    manifest.entries[0].overloads.push(OverloadV2 {
+        metadata: fixture_metadata("v1:overload:0000000000000001", "fixture.overload"),
+        signature: "FixtureEntry()".into(),
+        parameters: Vec::new(),
+        return_type: "FixtureEntry".into(),
+        returns_receiver: None,
+        lifecycle: Facet::NotApplicable {
+            reason: "fixture overload".into(),
+        },
+        value_contract: Facet::NotApplicable {
+            reason: "fixture overload".into(),
+        },
+        failure: fixture_failure(),
+        operation_ids: Vec::new(),
+    });
+
+    let type_id = "v1:type:0000000000000001";
+    manifest.types.push(ApiType {
+        metadata: fixture_metadata(type_id, "fixture.type"),
+        kind: TypeKind::Record,
+        fields: vec![Field {
+            metadata: fixture_metadata("v1:field:0000000000000001", "fixture.field"),
+            serialized_name: "value".into(),
+            host_name: "value".into(),
+            direction: FieldDirection::Output,
+            required: true,
+            type_id: type_id.into(),
+            default: None,
+            value_contract: Facet::NotApplicable {
+                reason: "fixture field".into(),
+            },
+            bindings: Vec::new(),
+            observation: Facet::NotApplicable {
+                reason: "fixture field".into(),
+            },
+        }],
+        variants: Vec::new(),
+    });
+
+    manifest.operations.push(Operation {
+        metadata: fixture_metadata("v1:operation:0000000000000001", "fixture.operation"),
+        kind: OperationKind::Read,
+        request_type_id: None,
+        response_type_ids: Vec::new(),
+        error_type_id: type_id.into(),
+        effects: Vec::new(),
+        idempotency: Idempotency::Yes,
+        revision: Facet::NotApplicable {
+            reason: "fixture read".into(),
+        },
+        receipt: Facet::NotApplicable {
+            reason: "fixture read".into(),
+        },
+        consistency: ConsistencyPoint::ResponseSnapshot,
+        security_capability_ids: Vec::new(),
+        bindings: vec![SurfaceBinding {
+            metadata: fixture_metadata("v1:binding:0000000000000001", "fixture.binding"),
+            details: BindingDetails::Cli {
+                binary: "vibe".into(),
+                command: vec!["fixture".into()],
+                defaults: BTreeMap::new(),
+                environment_sources: Vec::new(),
+                exit_contract: "fixture".into(),
+            },
+        }],
+    });
+
+    manifest.events.push(Event {
+        metadata: fixture_metadata("v1:event:0000000000000001", "fixture.event"),
+        payload_type_id: type_id.into(),
+        producer_operation_id: None,
+        protocol_version: "v2".into(),
+        ordering: EventOrdering::ObservationSequence,
+        revision_relation: RevisionRelation::None,
+        delivery: EventDelivery::AtLeastOnce,
+        loss_detection: LossDetection::NotApplicable,
+        resync_operation_id: None,
+    });
+
+    manifest.consumers.push(Consumer {
+        metadata: fixture_metadata("v1:consumer:0000000000000001", "fixture.consumer"),
+        source_projections: Vec::new(),
+        eligibility: Eligibility {
+            surfaces: Vec::new(),
+            kinds: Vec::new(),
+            stability_levels: [StabilityLevel::Stable].into_iter().collect(),
+            capability_ids: Vec::new(),
+        },
+        included_ids: Vec::new(),
+        exclusions: Vec::new(),
+        package: Facet::NotApplicable {
+            reason: "fixture consumer".into(),
+        },
+    });
+    manifest
+}
+
+fn assert_v2_details_reject_unknown_field(details: EntryDetails, object_pointer: &str) {
+    let mut value = serde_json::to_value(manifest_with_entry_details(details)).unwrap();
+    parse_v2_manifest(&serde_json::to_string(&value).unwrap()).unwrap();
+    value
+        .pointer_mut(object_pointer)
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("unknown_v2_field".into(), Value::Bool(true));
+    assert_eq!(
+        parse_v2_manifest(&serde_json::to_string(&value).unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::UnknownField,
+        "unknown field at {object_pointer} was accepted"
+    );
 }
 
 #[test]
@@ -148,6 +308,169 @@ fn checked_in_v1_manifest_still_parses_without_projection_changes() {
     }
     assert_eq!(direct.schema_version, 1);
     assert_eq!(direct.entries.len(), 3_626);
+}
+
+#[test]
+fn v2_rejects_unknown_fields_in_every_reused_v1_details_boundary() {
+    assert_v2_details_reject_unknown_field(
+        EntryDetails::RhaiType {
+            display_name: "FixtureEntry".into(),
+        },
+        "/entries/0/details",
+    );
+    assert_v2_details_reject_unknown_field(
+        EntryDetails::Ugen {
+            class: "FixtureUgen".into(),
+            description: "fixture".into(),
+            rate: "ar".into(),
+            runtime_rate: "audio".into(),
+            category: "fixture".into(),
+            inputs: vec![UgenInput {
+                name: "input".into(),
+                input_type: "f64".into(),
+                default: None,
+                description: "fixture".into(),
+            }],
+            outputs: 1,
+            emitted_class: "FixtureUgen".into(),
+            special_index: 0,
+            pseudo: false,
+            callable: true,
+            requires_plugin: None,
+            unavailable_reason: None,
+        },
+        "/entries/0/details/inputs/0",
+    );
+
+    let stdlib_details = EntryDetails::StdlibDefinition {
+        definition_kind: "synthdef".into(),
+        import_paths: vec!["fixture".into()],
+        declarations: vec![StdlibDeclaration {
+            import_path: "fixture".into(),
+            definition_kind: "synthdef".into(),
+            callable_signature: None,
+            access: "public".into(),
+            export_classification: "exported".into(),
+            support_classification: "supported".into(),
+            source_anchor: Anchor {
+                path: "fixture".into(),
+                symbol: "fixture".into(),
+                line: None,
+            },
+        }],
+        duplicate_name: DuplicateNameHandling {
+            status: "unique".into(),
+            declaration_count: 1,
+            import_paths: vec!["fixture".into()],
+            resolution: "exact".into(),
+        },
+        export_classification: "exported".into(),
+        support_classification: "supported".into(),
+    };
+    assert_v2_details_reject_unknown_field(
+        stdlib_details.clone(),
+        "/entries/0/details/declarations/0",
+    );
+    assert_v2_details_reject_unknown_field(
+        stdlib_details.clone(),
+        "/entries/0/details/declarations/0/source_anchor",
+    );
+    assert_v2_details_reject_unknown_field(stdlib_details, "/entries/0/details/duplicate_name");
+}
+
+#[test]
+fn v1_details_remain_permissive_while_the_3626_entry_baseline_parses() {
+    let mut value: Value =
+        serde_json::from_str(include_str!("../../../api/public-api-manifest-v1.json")).unwrap();
+    value["entries"][0]["details"]
+        .as_object_mut()
+        .unwrap()
+        .insert("unknown_v2_field".into(), Value::Bool(true));
+    match parse_manifest(&serde_json::to_string(&value).unwrap()).unwrap() {
+        VersionedPublicApiManifest::V1(parsed) => assert_eq!(parsed.entries.len(), 3_626),
+        VersionedPublicApiManifest::V2(_) => panic!("v1 fixture parsed as v2"),
+    }
+}
+
+#[test]
+fn full_manifest_validates_conditional_availability_for_every_metadata_owner() {
+    let capability_id = "v1:capability:0000000000000001";
+    let conditional = AvailabilityV2 {
+        status: AvailabilityStatus::Conditional,
+        when: Some(CapabilityExpression::All {
+            expressions: vec![
+                CapabilityExpression::Ref {
+                    capability_id: capability_id.into(),
+                },
+                CapabilityExpression::Not {
+                    expression: Box::new(CapabilityExpression::Any {
+                        expressions: vec![CapabilityExpression::Ref {
+                            capability_id: capability_id.into(),
+                        }],
+                    }),
+                },
+            ],
+        }),
+        on_unavailable: UnavailableBehavior::StructuredError,
+        evidence: vec!["fixture".into()],
+    };
+    let mut manifest = manifest_with_all_metadata_owners();
+    manifest.entries[0].metadata.availability = conditional.clone();
+    manifest.entries[0].overloads[0].metadata.availability = conditional.clone();
+    manifest.types[0].metadata.availability = conditional.clone();
+    manifest.types[0].fields[0].metadata.availability = conditional.clone();
+    manifest.operations[0].metadata.availability = conditional.clone();
+    manifest.operations[0].bindings[0].metadata.availability = conditional.clone();
+    manifest.events[0].metadata.availability = conditional.clone();
+    manifest.capabilities[0].metadata.availability = conditional.clone();
+    manifest.consumers[0].metadata.availability = conditional;
+    let valid_json = to_pretty_json_v2(&manifest).unwrap();
+    parse_v2_manifest(&valid_json).unwrap();
+
+    let owners = [
+        ("/entries/0", "v1:entry:0000000000000001"),
+        ("/entries/0/overloads/0", "v1:overload:0000000000000001"),
+        ("/types/0", "v1:type:0000000000000001"),
+        ("/types/0/fields/0", "v1:field:0000000000000001"),
+        ("/operations/0", "v1:operation:0000000000000001"),
+        ("/operations/0/bindings/0", "v1:binding:0000000000000001"),
+        ("/events/0", "v1:event:0000000000000001"),
+        ("/capabilities/0", "v1:capability:0000000000000001"),
+        ("/consumers/0", "v1:consumer:0000000000000001"),
+    ];
+    let base_value: Value = serde_json::from_str(&valid_json).unwrap();
+    let mut unknown_binding = base_value.clone();
+    unknown_binding["operations"][0]["bindings"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert("unknown_v2_field".into(), Value::Bool(true));
+    assert_eq!(
+        parse_v2_manifest(&serde_json::to_string(&unknown_binding).unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::UnknownField
+    );
+    for (owner_pointer, owner_id) in owners {
+        let mut value = base_value.clone();
+        *value
+            .pointer_mut(&format!("{owner_pointer}/availability"))
+            .unwrap() = json!({
+            "status": "conditional",
+            "when": {
+                "kind": "ref",
+                "capability_id": "v1:capability:ffffffffffffffff"
+            },
+            "on_unavailable": "structured_error",
+            "evidence": ["fixture"]
+        });
+        let error = parse_v2_manifest(&serde_json::to_string(&value).unwrap()).unwrap_err();
+        assert_eq!(
+            error.code,
+            ErrorCode::InvalidReference,
+            "owner {owner_pointer}"
+        );
+        assert_eq!(error.path, owner_id, "owner {owner_pointer}");
+    }
 }
 
 #[test]
@@ -220,6 +543,35 @@ fn all_six_fragment_fixtures_parse_and_validate_completeness() {
     let second = fragment_set();
     assert_eq!(first, second);
     first.validate(&discovered_nodes()).unwrap();
+}
+
+#[test]
+fn fragment_set_rejects_orphan_availability_capabilities_and_accepts_valid_references() {
+    let fragment_with_availability = |capability_id: &str| {
+        format!(
+            "{AUTHORING}\n[records.availability]\nstatus = \"conditional\"\non_unavailable = \"structured_error\"\nevidence = [\"fixture\"]\n\n[records.availability.when]\nkind = \"ref\"\ncapability_id = {capability_id:?}\n"
+        )
+    };
+
+    let mut fragments = fragment_set();
+    fragments.authoring = parse_authoring_fragment(&fragment_with_availability(
+        "v1:capability:ffffffffffffffff",
+    ))
+    .unwrap();
+    assert_eq!(
+        fragments.validate(&discovered_nodes()).unwrap_err().code,
+        ErrorCode::InvalidReference
+    );
+
+    let capability_id = "v1:capability:0000000000000001";
+    fragments.authoring =
+        parse_authoring_fragment(&fragment_with_availability(capability_id)).unwrap();
+    let mut discovered = discovered_nodes();
+    discovered.push(DiscoveredSemanticNode {
+        id: capability_id.into(),
+        required_facets: Default::default(),
+    });
+    fragments.validate(&discovered).unwrap();
 }
 
 #[test]

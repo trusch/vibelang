@@ -1,8 +1,8 @@
 use crate::{
-    compatibility::CompatibilityClass, stable_id, EntryDetails, ErrorCode, ManifestError,
-    PublicApiManifest,
+    compatibility::CompatibilityClass, stable_id, Anchor, DuplicateNameHandling, EntryDetails,
+    ErrorCode, ManifestError, PublicApiManifest, StdlibDeclaration, UgenInput,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -286,10 +286,219 @@ pub struct ApiEntryV2 {
     pub registered_name: String,
     pub receiver: Option<String>,
     pub overloads: Vec<OverloadV2>,
+    #[serde(deserialize_with = "deserialize_entry_details_v2")]
     pub details: EntryDetails,
     pub lifecycle: Facet<LifecycleContract>,
     pub operation_ids: Vec<String>,
     pub consumer_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum EntryDetailsV2Wire {
+    Rhai {
+        callable_identities: Vec<String>,
+    },
+    RhaiType {
+        display_name: String,
+    },
+    Ugen {
+        class: String,
+        description: String,
+        rate: String,
+        runtime_rate: String,
+        category: String,
+        inputs: Vec<UgenInputV2Wire>,
+        outputs: u32,
+        emitted_class: String,
+        special_index: i16,
+        pseudo: bool,
+        callable: bool,
+        requires_plugin: Option<String>,
+        unavailable_reason: Option<String>,
+    },
+    StdlibDefinition {
+        definition_kind: String,
+        import_paths: Vec<String>,
+        declarations: Vec<StdlibDeclarationV2Wire>,
+        duplicate_name: DuplicateNameHandlingV2Wire,
+        export_classification: String,
+        support_classification: String,
+    },
+    StdlibFunction {
+        import_paths: Vec<String>,
+        access: String,
+        documentation: Vec<String>,
+        declarations: Vec<StdlibDeclarationV2Wire>,
+        duplicate_name: DuplicateNameHandlingV2Wire,
+        export_classification: String,
+        support_classification: String,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UgenInputV2Wire {
+    name: String,
+    input_type: String,
+    default: Option<Value>,
+    description: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StdlibDeclarationV2Wire {
+    import_path: String,
+    definition_kind: String,
+    callable_signature: Option<String>,
+    access: String,
+    export_classification: String,
+    support_classification: String,
+    source_anchor: AnchorV2Wire,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DuplicateNameHandlingV2Wire {
+    status: String,
+    declaration_count: u32,
+    import_paths: Vec<String>,
+    resolution: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnchorV2Wire {
+    path: String,
+    symbol: String,
+    line: Option<u32>,
+}
+
+fn deserialize_entry_details_v2<'de, D>(deserializer: D) -> Result<EntryDetails, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    EntryDetailsV2Wire::deserialize(deserializer).map(Into::into)
+}
+
+impl From<EntryDetailsV2Wire> for EntryDetails {
+    fn from(details: EntryDetailsV2Wire) -> Self {
+        match details {
+            EntryDetailsV2Wire::Rhai {
+                callable_identities,
+            } => Self::Rhai {
+                callable_identities,
+            },
+            EntryDetailsV2Wire::RhaiType { display_name } => Self::RhaiType { display_name },
+            EntryDetailsV2Wire::Ugen {
+                class,
+                description,
+                rate,
+                runtime_rate,
+                category,
+                inputs,
+                outputs,
+                emitted_class,
+                special_index,
+                pseudo,
+                callable,
+                requires_plugin,
+                unavailable_reason,
+            } => Self::Ugen {
+                class,
+                description,
+                rate,
+                runtime_rate,
+                category,
+                inputs: inputs.into_iter().map(Into::into).collect(),
+                outputs,
+                emitted_class,
+                special_index,
+                pseudo,
+                callable,
+                requires_plugin,
+                unavailable_reason,
+            },
+            EntryDetailsV2Wire::StdlibDefinition {
+                definition_kind,
+                import_paths,
+                declarations,
+                duplicate_name,
+                export_classification,
+                support_classification,
+            } => Self::StdlibDefinition {
+                definition_kind,
+                import_paths,
+                declarations: declarations.into_iter().map(Into::into).collect(),
+                duplicate_name: duplicate_name.into(),
+                export_classification,
+                support_classification,
+            },
+            EntryDetailsV2Wire::StdlibFunction {
+                import_paths,
+                access,
+                documentation,
+                declarations,
+                duplicate_name,
+                export_classification,
+                support_classification,
+            } => Self::StdlibFunction {
+                import_paths,
+                access,
+                documentation,
+                declarations: declarations.into_iter().map(Into::into).collect(),
+                duplicate_name: duplicate_name.into(),
+                export_classification,
+                support_classification,
+            },
+        }
+    }
+}
+
+impl From<UgenInputV2Wire> for UgenInput {
+    fn from(input: UgenInputV2Wire) -> Self {
+        Self {
+            name: input.name,
+            input_type: input.input_type,
+            default: input.default,
+            description: input.description,
+        }
+    }
+}
+
+impl From<StdlibDeclarationV2Wire> for StdlibDeclaration {
+    fn from(declaration: StdlibDeclarationV2Wire) -> Self {
+        Self {
+            import_path: declaration.import_path,
+            definition_kind: declaration.definition_kind,
+            callable_signature: declaration.callable_signature,
+            access: declaration.access,
+            export_classification: declaration.export_classification,
+            support_classification: declaration.support_classification,
+            source_anchor: declaration.source_anchor.into(),
+        }
+    }
+}
+
+impl From<DuplicateNameHandlingV2Wire> for DuplicateNameHandling {
+    fn from(duplicate: DuplicateNameHandlingV2Wire) -> Self {
+        Self {
+            status: duplicate.status,
+            declaration_count: duplicate.declaration_count,
+            import_paths: duplicate.import_paths,
+            resolution: duplicate.resolution,
+        }
+    }
+}
+
+impl From<AnchorV2Wire> for Anchor {
+    fn from(anchor: AnchorV2Wire) -> Self {
+        Self {
+            path: anchor.path,
+            symbol: anchor.symbol,
+            line: anchor.line,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -658,8 +867,7 @@ pub enum OperationKind {
     LifecycleControl,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SurfaceBinding {
     #[serde(flatten)]
     pub metadata: NodeMetadata,
@@ -713,6 +921,85 @@ pub enum BindingDetails {
         command_id: String,
         package_location: String,
     },
+}
+
+const NODE_METADATA_FIELDS: &[&str] = &[
+    "id",
+    "name",
+    "aliases",
+    "stability",
+    "availability",
+    "ownership",
+    "source_anchors",
+    "test_anchors",
+];
+
+const SURFACE_BINDING_FIELDS: &[&str] = &[
+    "id",
+    "name",
+    "aliases",
+    "stability",
+    "availability",
+    "ownership",
+    "source_anchors",
+    "test_anchors",
+    "surface",
+    "method",
+    "path",
+    "path_type_ids",
+    "query_type_ids",
+    "header_type_ids",
+    "body_type_id",
+    "successes",
+    "error_type_id",
+    "protocol_version",
+    "authentication_capability_id",
+    "idempotency_header",
+    "revision_header",
+    "entry_id",
+    "overload_id",
+    "class_or_module",
+    "js_name",
+    "asynchronous",
+    "required_capability_ids",
+    "canonical_package",
+    "binary",
+    "command",
+    "defaults",
+    "environment_sources",
+    "exit_contract",
+    "action_type",
+    "payload_type_id",
+    "consumer_id",
+    "command_id",
+    "package_location",
+];
+
+impl<'de> Deserialize<'de> for SurfaceBinding {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = BTreeMap::<String, Value>::deserialize(deserializer)?;
+        if let Some(field) = fields
+            .keys()
+            .find(|field| !SURFACE_BINDING_FIELDS.contains(&field.as_str()))
+        {
+            return Err(D::Error::unknown_field(field, SURFACE_BINDING_FIELDS));
+        }
+
+        let mut metadata_fields = serde_json::Map::new();
+        for field in NODE_METADATA_FIELDS {
+            if let Some(value) = fields.remove(*field) {
+                metadata_fields.insert((*field).into(), value);
+            }
+        }
+        let metadata =
+            serde_json::from_value(Value::Object(metadata_fields)).map_err(D::Error::custom)?;
+        let details = serde_json::from_value(Value::Object(fields.into_iter().collect()))
+            .map_err(D::Error::custom)?;
+        Ok(Self { metadata, details })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1164,6 +1451,17 @@ impl PublicApiManifestV2 {
                 Err(invalid_reference(path, id))
             }
         };
+        let capability_ids: BTreeSet<_> = self
+            .capabilities
+            .iter()
+            .map(|capability| capability.metadata.id.as_str())
+            .collect();
+        self.visit_metadata(|metadata| {
+            if let Some(expression) = &metadata.availability.when {
+                validate_capability_expression(expression, &capability_ids, &metadata.id)?;
+            }
+            Ok(())
+        })?;
         for entry in &self.entries {
             for id in entry.operation_ids.iter().chain(&entry.consumer_ids) {
                 require(&entry.metadata.id, id)?;
@@ -1258,9 +1556,6 @@ impl PublicApiManifestV2 {
             for id in capability.dependencies.iter().chain(&capability.conflicts) {
                 require(&capability.metadata.id, id)?;
             }
-            if let Some(expression) = &capability.metadata.availability.when {
-                validate_capability_expression(expression, ids, &capability.metadata.id)?;
-            }
         }
         for consumer in &self.consumers {
             for id in consumer
@@ -1270,6 +1565,40 @@ impl PublicApiManifestV2 {
             {
                 require(&consumer.metadata.id, id)?;
             }
+        }
+        Ok(())
+    }
+
+    fn visit_metadata<F>(&self, mut visit: F) -> Result<(), ManifestError>
+    where
+        F: FnMut(&NodeMetadata) -> Result<(), ManifestError>,
+    {
+        for entry in &self.entries {
+            visit(&entry.metadata)?;
+            for overload in &entry.overloads {
+                visit(&overload.metadata)?;
+            }
+        }
+        for api_type in &self.types {
+            visit(&api_type.metadata)?;
+            for field in &api_type.fields {
+                visit(&field.metadata)?;
+            }
+        }
+        for operation in &self.operations {
+            visit(&operation.metadata)?;
+            for binding in &operation.bindings {
+                visit(&binding.metadata)?;
+            }
+        }
+        for event in &self.events {
+            visit(&event.metadata)?;
+        }
+        for capability in &self.capabilities {
+            visit(&capability.metadata)?;
+        }
+        for consumer in &self.consumers {
+            visit(&consumer.metadata)?;
         }
         Ok(())
     }
@@ -1494,7 +1823,7 @@ fn expected_terminal_outcomes() -> BTreeSet<TerminalOutcome> {
     .collect()
 }
 
-fn validate_capability_expression(
+pub(crate) fn validate_capability_expression(
     expression: &CapabilityExpression,
     ids: &BTreeSet<&str>,
     path: &str,
