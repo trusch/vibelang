@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-compatibility-debt/v1",
   "schema_version": 1,
-  "contract_digest": "0311a16fa18068b3ff1c94c00266f8a05e04aa4cd192b1a1d7898b4c07958af6",
+  "contract_digest": "7a384a01aac998f2c03cede11bc6635021cdc0a7d19bf58199b5fb833d13d20e",
   "records": [
     {
       "id": "v1:debt:001cc8b4d1999b0e",
@@ -5269,6 +5269,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:49e8e0c1c49993d8",
+      "surface": "wasm",
+      "node_id": "v1:type:e658a2c32f5d0dd3",
+      "operation_id": null,
+      "member": "VibelangError.stack",
+      "legacy_class": "dead",
+      "owner": "vibelang-wasm",
+      "diagnostic_id": "compat.wasm.dead_generated_error_shape",
+      "issue": "M12 WASM v2 structured error contract",
+      "exit_gate": "remove the unused declaration or return it as the generated structured error type",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-wasm/types/index.d.ts",
+      "test_anchor": "xtask/src/effective_contract.rs"
+    },
+    {
       "id": "v1:debt:49f7de3c16419611",
       "surface": "http",
       "node_id": "v1:field:600009c85cb47dea",
@@ -7219,6 +7234,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:665f617d49051d9d",
+      "surface": "wasm",
+      "node_id": "v1:type:cacf1c5445e9cf59",
+      "operation_id": null,
+      "member": "VibelangError",
+      "legacy_class": "dead",
+      "owner": "vibelang-wasm",
+      "diagnostic_id": "compat.wasm.dead_generated_error_shape",
+      "issue": "M12 WASM v2 structured error contract",
+      "exit_gate": "remove the unused declaration or return it as the generated structured error type",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-wasm/types/index.d.ts",
+      "test_anchor": "xtask/src/effective_contract.rs"
+    },
+    {
       "id": "v1:debt:668671b3dc51d4e9",
       "surface": "http",
       "node_id": "v1:field:9277297948acac20",
@@ -8807,6 +8837,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:7f620d67219df87b",
+      "surface": "wasm",
+      "node_id": "v1:type:8d746711f4d86df0",
+      "operation_id": null,
+      "member": "VibelangError.message",
+      "legacy_class": "dead",
+      "owner": "vibelang-wasm",
+      "diagnostic_id": "compat.wasm.dead_generated_error_shape",
+      "issue": "M12 WASM v2 structured error contract",
+      "exit_gate": "remove the unused declaration or return it as the generated structured error type",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-wasm/types/index.d.ts",
+      "test_anchor": "xtask/src/effective_contract.rs"
     },
     {
       "id": "v1:debt:7f78db5142241e82",
@@ -16774,6 +16819,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:ff2903763b8e0e46",
+      "surface": "wasm",
+      "node_id": "v1:type:6ea4a85cde7d1652",
+      "operation_id": null,
+      "member": "VibelangError.name",
+      "legacy_class": "dead",
+      "owner": "vibelang-wasm",
+      "diagnostic_id": "compat.wasm.dead_generated_error_shape",
+      "issue": "M12 WASM v2 structured error contract",
+      "exit_gate": "remove the unused declaration or return it as the generated structured error type",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-wasm/types/index.d.ts",
+      "test_anchor": "xtask/src/effective_contract.rs"
+    },
+    {
       "id": "v1:debt:ff574f578692cc4d",
       "surface": "http",
       "node_id": "v1:field:a7348bc11b6051c0",
@@ -16835,7 +16895,7 @@
     }
   ],
   "counts": {
-    "dead": 87,
+    "dead": 91,
     "ignored": 24,
     "log_only": 6,
     "stale": 1005

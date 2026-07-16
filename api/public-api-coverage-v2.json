@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "0311a16fa18068b3ff1c94c00266f8a05e04aa4cd192b1a1d7898b4c07958af6",
+  "contract_digest": "7a384a01aac998f2c03cede11bc6635021cdc0a7d19bf58199b5fb833d13d20e",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
@@ -12803,12 +12803,34 @@
       "id": "v1:source:4b966f3e60059f65",
       "path": "crates/vibelang-wasm/types/index.d.ts",
       "kind": "mechanical_declaration",
-      "node_count": 2,
+      "node_count": 24,
       "node_ids": [
         "v1:type:00ca2c83ebe53f21",
-        "v1:type:e8c1bc731f35facf"
+        "v1:type:20e080693ede129f",
+        "v1:type:256b02983b59a788",
+        "v1:type:2cea972bb079420f",
+        "v1:type:321c73e6f534730b",
+        "v1:type:44f3a06b730aff2c",
+        "v1:type:575ffe49fe3d7fd1",
+        "v1:type:67cfa2e13802f07a",
+        "v1:type:6ac3a8183bb5ee48",
+        "v1:type:6ea4a85cde7d1652",
+        "v1:type:8252e358e634f702",
+        "v1:type:83ab10bed03a7977",
+        "v1:type:8d746711f4d86df0",
+        "v1:type:aaf3326808c61c62",
+        "v1:type:ae70ab546d6efd55",
+        "v1:type:ba868c0fc5fd71ba",
+        "v1:type:bdba9d76f77637fc",
+        "v1:type:c4dd51015df0188d",
+        "v1:type:cacf1c5445e9cf59",
+        "v1:type:cadc46ad37a59bb4",
+        "v1:type:e658a2c32f5d0dd3",
+        "v1:type:e8c1bc731f35facf",
+        "v1:type:efa06f581b69cc55",
+        "v1:type:fda85161007560a5"
       ],
-      "node_ids_sha256": "009cb1a06acf3150e48fbcc476ae2f2ca480a8841470d7bdf8987f8878aef4e6"
+      "node_ids_sha256": "1506eaa23ff56da52b5d684f411526574854d2b90c722945c8e32ed7154d45a8"
     },
     {
       "id": "v1:source:4c0762627c9636c1",
@@ -13769,48 +13791,37 @@
       "id": "v1:source:4e4adc1785981701",
       "path": "crates/vibelang-wasm/src/lib.rs",
       "kind": "mechanical_declaration",
-      "node_count": 38,
+      "node_count": 27,
       "node_ids": [
         "v1:type:028ac6532244dab3",
-        "v1:type:0470e3a5deda2ebb",
         "v1:type:0a948083ebddaad8",
-        "v1:type:0b6b795189ce058e",
         "v1:type:1a944a60fe5b803f",
         "v1:type:1c1ec95bf6a20e48",
         "v1:type:22ee8efb26123f38",
-        "v1:type:2784c4a39fce9aac",
         "v1:type:2abfba1ede0624b0",
         "v1:type:2b2e9a7cd64bdf24",
-        "v1:type:38283ace440f989b",
         "v1:type:478eaab47049422d",
         "v1:type:519203138aa65b44",
         "v1:type:5a513275b9910cd2",
         "v1:type:676c6daccd07d731",
-        "v1:type:6a22fa252a498137",
         "v1:type:73bac6272a88199a",
-        "v1:type:799492bf29d147ab",
         "v1:type:7b263fc96b0d8d1e",
         "v1:type:87adf053caaffe00",
         "v1:type:890fc8c90e9dd3f8",
         "v1:type:89f7400090e10c7c",
-        "v1:type:91962e0b48bd2b0c",
         "v1:type:98a1aa73aa319bef",
-        "v1:type:9ace38ed5366eacf",
         "v1:type:a929966177be2444",
-        "v1:type:ae4c04b444ab8cbe",
         "v1:type:b5e5bad3825f97b2",
         "v1:type:b80bb8630be2f851",
         "v1:type:bbd768a6c5422565",
         "v1:type:c8a356a3516bedd4",
-        "v1:type:cfa4d175355b75f8",
         "v1:type:d1ce1d9c0d57eb18",
-        "v1:type:d57e8254bbbc5c64",
         "v1:type:e2a373d2827116a4",
         "v1:type:f1db73cf2909b910",
         "v1:type:f54b27fc6fc36660",
         "v1:type:febe854bfee00143"
       ],
-      "node_ids_sha256": "af96be005ff5ec5b09059eed89bc01a854f6dd7afd8d752392bd40cf47a1427f"
+      "node_ids_sha256": "9b4af0e14f578aedf0b0b2bac2611d72cd06188ac4506accba312b3da334e9e4"
     },
     {
       "id": "v1:source:4e8f471e32210442",
@@ -29371,8 +29382,8 @@
       "projection_paths": [
         "crates/vibelang-wasm/types/index.d.ts"
       ],
-      "included_count": 39,
-      "eligible_count": 40,
+      "included_count": 50,
+      "eligible_count": 51,
       "excluded_count": 1,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29382,8 +29393,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 12990,
-      "eligible_count": 12990,
+      "included_count": 13001,
+      "eligible_count": 13001,
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0

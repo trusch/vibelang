@@ -50,6 +50,7 @@ const ACCEPTED_V1_MANIFEST_SHA256: &str =
     "1dea4d106f11ebc916b9bd8bdade70973df0166d8040deb60aa1f2e60f244e05";
 const ACCEPTED_V1_HTTP_SHA256: &str =
     "6f8a1de4d29e424715ffe1622f681312408fcda16234e39d859c3ec1f458cb2a";
+const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
 const EXPECTED_ENTRIES: usize = 3_626;
 const EXPECTED_OVERLOADS: usize = 8_431;
 const EXPECTED_HTTP_ROUTES: usize = 96;
@@ -199,8 +200,8 @@ fn mechanical_class(
         ("cli", "command" | "argument") => Some(("vibelang-cli", Some("cli"), true, None)),
         (
             "wasm",
-            "class" | "method" | "function" | "compatibility_shim" | "interface" | "result_member"
-            | "host_bridge" | "host_bridge_method",
+            "class" | "method" | "function" | "compatibility_shim" | "interface" | "type_alias"
+            | "type_member" | "host_bridge" | "host_bridge_method",
         ) => Some(("vibelang-wasm", Some("wasm"), true, None)),
         ("wasm", "start_hook") => Some((
             "vibelang-wasm",
@@ -379,28 +380,6 @@ fn discover_wasm_declarations(
                     item.ident.to_string(),
                 ));
             }
-            Item::Struct(item)
-                if item.ident == "ExecutionResult" || item.ident == "CompiledSynthdef" =>
-            {
-                let interface = item.ident.to_string();
-                declarations.push(raw_declaration(
-                    "wasm",
-                    "interface",
-                    interface.clone(),
-                    PATH,
-                    interface.clone(),
-                ));
-                for field in &item.fields {
-                    let Some(field) = &field.ident else { continue };
-                    declarations.push(raw_declaration(
-                        "wasm",
-                        "result_member",
-                        format!("{interface}.{field}"),
-                        PATH,
-                        format!("{interface}::{field}"),
-                    ));
-                }
-            }
             Item::Impl(item) if has_attribute(&item.attrs, "wasm_bindgen") => {
                 let class = item.self_ty.to_token_stream().to_string().replace(' ', "");
                 for impl_item in &item.items {
@@ -472,8 +451,17 @@ fn discover_wasm_declarations(
             method,
         ));
     }
-    const TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
-    let generated_types = read(root, TYPES_PATH)?;
+    let generated_types = read(root, WASM_TYPES_PATH)?;
+    let generated_shapes = discover_generated_typescript_shapes(&generated_types, WASM_TYPES_PATH)?;
+    let missing_shapes = missing_generated_typescript_shapes(&generated_types, &generated_shapes)?;
+    if !missing_shapes.is_empty() {
+        return Err(format!(
+            "{} exported generated-TypeScript WASM shape(s) were not discovered: {}",
+            missing_shapes.len(),
+            missing_shapes.join(", ")
+        ));
+    }
+    declarations.extend(generated_shapes);
     let source_exports = declarations
         .iter()
         .filter(|declaration| declaration.surface == "wasm" && declaration.kind == "function")
@@ -495,12 +483,296 @@ fn discover_wasm_declarations(
                 "wasm",
                 "compatibility_shim",
                 name,
-                TYPES_PATH,
+                WASM_TYPES_PATH,
                 format!("generated wasm-bindgen module export {name}"),
             ));
         }
     }
     Ok(())
+}
+
+fn discover_generated_typescript_shapes(
+    source: &str,
+    path: &str,
+) -> Result<Vec<RawMechanicalDeclaration>, String> {
+    let mut declarations = Vec::new();
+    let mut cursor = 0;
+    while cursor < source.len() {
+        let line_end = source[cursor..]
+            .find('\n')
+            .map_or(source.len(), |offset| cursor + offset);
+        let line = source[cursor..line_end].trim();
+        if let Some(tail) = line.strip_prefix("export interface ") {
+            let name = typescript_declaration_name(tail)
+                .ok_or_else(|| format!("{path}: exported interface has no name"))?;
+            let open = source[cursor..]
+                .find('{')
+                .map(|offset| cursor + offset)
+                .ok_or_else(|| format!("{path}: exported interface {name} has no body"))?;
+            let close = matching_typescript_delimiter(source, open, b'{', b'}')
+                .ok_or_else(|| format!("{path}: exported interface {name} has no closing brace"))?;
+            declarations.push(raw_declaration(
+                "wasm",
+                "interface",
+                name.clone(),
+                path,
+                name.clone(),
+            ));
+            for member in typescript_members(&source[open + 1..close]) {
+                declarations.push(raw_declaration(
+                    "wasm",
+                    "type_member",
+                    format!("{name}.{member}"),
+                    path,
+                    format!("{name}::{member}"),
+                ));
+            }
+            cursor = close + 1;
+            continue;
+        }
+        if let Some(tail) = line.strip_prefix("export type ") {
+            let name = typescript_declaration_name(tail)
+                .ok_or_else(|| format!("{path}: exported type alias has no name"))?;
+            let equals = source[cursor..]
+                .find('=')
+                .map(|offset| cursor + offset)
+                .ok_or_else(|| format!("{path}: exported type alias {name} has no value"))?;
+            let end = typescript_statement_end(source, equals + 1)
+                .ok_or_else(|| format!("{path}: exported type alias {name} has no terminator"))?;
+            declarations.push(raw_declaration(
+                "wasm",
+                "type_alias",
+                name.clone(),
+                path,
+                name.clone(),
+            ));
+            let value = source[equals + 1..end].trim();
+            if value.starts_with('{') {
+                let open = equals + 1 + source[equals + 1..end].find('{').unwrap();
+                let close =
+                    matching_typescript_delimiter(source, open, b'{', b'}').ok_or_else(|| {
+                        format!("{path}: exported type alias {name} has no closing brace")
+                    })?;
+                for member in typescript_members(&source[open + 1..close]) {
+                    declarations.push(raw_declaration(
+                        "wasm",
+                        "type_member",
+                        format!("{name}.{member}"),
+                        path,
+                        format!("{name}::{member}"),
+                    ));
+                }
+            }
+            cursor = end + 1;
+            continue;
+        }
+        cursor = line_end.saturating_add(1);
+    }
+    Ok(declarations)
+}
+
+fn typescript_declaration_name(tail: &str) -> Option<String> {
+    let name = tail
+        .trim_start()
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '$'))
+        .collect::<String>();
+    (!name.is_empty()).then_some(name)
+}
+
+fn matching_typescript_delimiter(
+    source: &str,
+    open: usize,
+    opening: u8,
+    closing: u8,
+) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0_u32;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut index = open;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if matches!(byte, b'\'' | b'"' | b'`') {
+            quote = Some(byte);
+        } else if byte == opening {
+            depth += 1;
+        } else if byte == closing {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn typescript_statement_end(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut braces = 0_i32;
+    let mut brackets = 0_i32;
+    let mut parentheses = 0_i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, byte) in bytes.iter().copied().enumerate().skip(start) {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' | b'`' => quote = Some(byte),
+            b'{' => braces += 1,
+            b'}' => braces -= 1,
+            b'[' => brackets += 1,
+            b']' => brackets -= 1,
+            b'(' => parentheses += 1,
+            b')' => parentheses -= 1,
+            b';' if braces == 0 && brackets == 0 && parentheses == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn typescript_members(body: &str) -> BTreeSet<String> {
+    let bytes = body.as_bytes();
+    let mut members = BTreeSet::new();
+    let mut start = 0;
+    let mut braces = 0_i32;
+    let mut brackets = 0_i32;
+    let mut parentheses = 0_i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, byte) in bytes.iter().copied().enumerate() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' | b'`' => quote = Some(byte),
+            b'{' => braces += 1,
+            b'}' => braces -= 1,
+            b'[' => brackets += 1,
+            b']' => brackets -= 1,
+            b'(' => parentheses += 1,
+            b')' => parentheses -= 1,
+            b';' if braces == 0 && brackets == 0 && parentheses == 0 => {
+                if let Some(member) = typescript_member_name(&body[start..index]) {
+                    members.insert(member);
+                }
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if let Some(member) = typescript_member_name(&body[start..]) {
+        members.insert(member);
+    }
+    members
+}
+
+fn typescript_member_name(statement: &str) -> Option<String> {
+    let mut statement = statement.trim();
+    for modifier in [
+        "readonly ",
+        "public ",
+        "static ",
+        "abstract ",
+        "get ",
+        "set ",
+    ] {
+        if let Some(tail) = statement.strip_prefix(modifier) {
+            statement = tail.trim_start();
+        }
+    }
+    if statement.starts_with('[') {
+        let end = statement.find(']')?;
+        return Some(
+            statement[..=end]
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect(),
+        );
+    }
+    if matches!(statement.as_bytes().first(), Some(b'\'' | b'"')) {
+        let quote = statement.as_bytes()[0];
+        let end = statement.as_bytes()[1..]
+            .iter()
+            .position(|byte| *byte == quote)?
+            + 1;
+        return Some(statement[..=end].into());
+    }
+    let name = statement
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '$'))
+        .collect::<String>();
+    (!name.is_empty()).then_some(name)
+}
+
+fn expected_generated_typescript_shapes(source: &str) -> BTreeSet<(String, String)> {
+    let mut expected = BTreeSet::new();
+    let mut interface = None;
+    for line in source.lines() {
+        let line = line.trim();
+        if let Some(tail) = line.strip_prefix("export interface ") {
+            interface = typescript_declaration_name(tail);
+            if let Some(name) = &interface {
+                expected.insert(("interface".into(), name.clone()));
+            }
+            continue;
+        }
+        if let Some(tail) = line.strip_prefix("export type ") {
+            if let Some(name) = typescript_declaration_name(tail) {
+                expected.insert(("type_alias".into(), name));
+            }
+            continue;
+        }
+        let Some(name) = &interface else { continue };
+        if line.starts_with('}') {
+            interface = None;
+        } else if let Some(member) = typescript_member_name(line.trim_end_matches(';')) {
+            expected.insert(("type_member".into(), format!("{name}.{member}")));
+        }
+    }
+    expected
+}
+
+fn missing_generated_typescript_shapes(
+    source: &str,
+    discovered: &[RawMechanicalDeclaration],
+) -> Result<Vec<String>, String> {
+    let discovered = discovered
+        .iter()
+        .map(|declaration| (declaration.kind.clone(), declaration.name.clone()))
+        .collect::<BTreeSet<_>>();
+    Ok(expected_generated_typescript_shapes(source)
+        .difference(&discovered)
+        .map(|(kind, name)| format!("wasm:{kind}:{name}"))
+        .collect())
 }
 
 fn discover_websocket_declarations(
@@ -1605,10 +1877,18 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
 }
 
 fn mechanical_type(declaration: &MechanicalDeclaration) -> ApiType {
-    let derivation = match declaration.surface.as_str() {
-        "fixtures" => Derivation::BehavioralFixture,
-        "docs" | "packages" | "vscode" | "emacs" => Derivation::Catalog,
-        _ => Derivation::RustAst,
+    let derivation = if declaration
+        .source_anchors
+        .iter()
+        .any(|(path, _)| path == WASM_TYPES_PATH)
+    {
+        Derivation::GeneratedProjection
+    } else {
+        match declaration.surface.as_str() {
+            "fixtures" => Derivation::BehavioralFixture,
+            "docs" | "packages" | "vscode" | "emacs" => Derivation::Catalog,
+            _ => Derivation::RustAst,
+        }
     };
     ApiType {
         metadata: NodeMetadata {
@@ -4059,6 +4339,35 @@ fn build_debt(
             test_anchor: "tests/fixtures/api-unification/v1/negative/stale-success.json".into(),
         });
     }
+    for api_type in &manifest.types {
+        let Some(anchor) = api_type.metadata.source_anchors.iter().find(|anchor| {
+            anchor.path == WASM_TYPES_PATH
+                && (anchor.symbol == "VibelangError"
+                    || anchor.symbol.starts_with("VibelangError::"))
+        }) else {
+            continue;
+        };
+        records.push(DebtRecord {
+            id: semantic_id(
+                "debt",
+                &format!("wasm-generated-error|{}", api_type.metadata.id),
+            ),
+            surface: "wasm".into(),
+            node_id: Some(api_type.metadata.id.clone()),
+            operation_id: None,
+            member: anchor.symbol.replace("::", "."),
+            legacy_class: "dead".into(),
+            owner: "vibelang-wasm".into(),
+            diagnostic_id: "compat.wasm.dead_generated_error_shape".into(),
+            issue: "M12 WASM v2 structured error contract".into(),
+            exit_gate:
+                "remove the unused declaration or return it as the generated structured error type"
+                    .into(),
+            remove_by: "v2 release-ready gate".into(),
+            source_anchor: WASM_TYPES_PATH.into(),
+            test_anchor: "xtask/src/effective_contract.rs".into(),
+        });
+    }
     add_fixture_cases(
         root,
         &mut records,
@@ -5447,6 +5756,136 @@ mod tests {
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    #[test]
+    fn generated_typescript_wasm_shapes_and_dead_error_debt_are_complete() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let generated = discovery
+                    .mechanical
+                    .iter()
+                    .filter(|declaration| {
+                        declaration
+                            .source_anchors
+                            .iter()
+                            .any(|(path, _)| path == WASM_TYPES_PATH)
+                    })
+                    .map(|declaration| (declaration.kind.as_str(), declaration.name.as_str()))
+                    .collect::<BTreeSet<_>>();
+                for expected in [
+                    ("interface", "VibelangResult"),
+                    ("type_member", "VibelangResult.success"),
+                    ("interface", "VibelangCompiledSynthdef"),
+                    ("type_member", "VibelangCompiledSynthdef.data"),
+                    ("interface", "VibelangError"),
+                    ("type_member", "VibelangError.message"),
+                    ("type_member", "VibelangError.name"),
+                    ("type_member", "VibelangError.stack"),
+                    ("interface", "VibelangBridge"),
+                    ("type_member", "VibelangBridge.loadSynthdef"),
+                    ("type_alias", "InitInput"),
+                    ("type_alias", "SyncInitInput"),
+                    ("interface", "InitOutput"),
+                    ("type_member", "InitOutput.memory"),
+                    ("type_member", "InitOutput.[exportName:string]"),
+                    ("compatibility_shim", "initSync"),
+                    ("compatibility_shim", "__wbg_init"),
+                ] {
+                    assert!(generated.contains(&expected), "missing {expected:?}");
+                }
+                assert!(!generated.iter().any(|(_, name)| {
+                    name.starts_with("ExecutionResult") || name.starts_with("CompiledSynthdef")
+                }));
+
+                let manifest = build_v2(&discovery).unwrap();
+                let accounting = semantic_join_accounting(
+                    &contract_ids(&manifest),
+                    &derive_semantic_requirements(&discovery).unwrap(),
+                    &semantic_fragment_records(&discovery.fragments),
+                );
+                let debt = build_debt(&root(), &manifest, "fixture", &accounting).unwrap();
+                let error_nodes = manifest
+                    .types
+                    .iter()
+                    .filter(|api_type| {
+                        api_type.metadata.source_anchors.iter().any(|anchor| {
+                            anchor.path == WASM_TYPES_PATH
+                                && (anchor.symbol == "VibelangError"
+                                    || anchor.symbol.starts_with("VibelangError::"))
+                        })
+                    })
+                    .map(|api_type| api_type.metadata.id.as_str())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(error_nodes.len(), 4);
+                let error_debt = debt
+                    .records
+                    .iter()
+                    .filter(|record| {
+                        record.diagnostic_id == "compat.wasm.dead_generated_error_shape"
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(error_debt.len(), 4);
+                assert!(error_debt.iter().all(|record| {
+                    record.legacy_class == "dead"
+                        && record
+                            .node_id
+                            .as_deref()
+                            .is_some_and(|id| error_nodes.contains(id))
+                }));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn independent_typescript_census_rejects_new_omitted_interfaces_and_members() {
+        let source = r#"
+export interface ArbitraryEnvelope {
+  nonce: string;
+  payload?: Uint8Array;
+  commit(value: number): Promise<void>;
+}
+
+export type ArbitraryUnion = string | number;
+"#;
+        let discovered = discover_generated_typescript_shapes(source, WASM_TYPES_PATH).unwrap();
+        let names = discovered
+            .iter()
+            .map(|declaration| (declaration.kind.as_str(), declaration.name.as_str()))
+            .collect::<BTreeSet<_>>();
+        for expected in [
+            ("interface", "ArbitraryEnvelope"),
+            ("type_member", "ArbitraryEnvelope.nonce"),
+            ("type_member", "ArbitraryEnvelope.payload"),
+            ("type_member", "ArbitraryEnvelope.commit"),
+            ("type_alias", "ArbitraryUnion"),
+        ] {
+            assert!(names.contains(&expected), "missing {expected:?}");
+        }
+
+        let omitted_interface = discovered
+            .iter()
+            .filter(|declaration| declaration.name != "ArbitraryEnvelope")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing_generated_typescript_shapes(source, &omitted_interface).unwrap(),
+            ["wasm:interface:ArbitraryEnvelope"]
+        );
+
+        let omitted_member = discovered
+            .iter()
+            .filter(|declaration| declaration.name != "ArbitraryEnvelope.payload")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing_generated_typescript_shapes(source, &omitted_member).unwrap(),
+            ["wasm:type_member:ArbitraryEnvelope.payload"]
+        );
     }
 
     #[test]
