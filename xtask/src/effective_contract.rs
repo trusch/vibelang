@@ -5,7 +5,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use syn::{Fields, ImplItem, Item, Visibility};
+use syn::visit::Visit;
+use syn::{Fields, FnArg, ImplItem, Item, ItemFn, ReturnType, Type, Visibility};
 use vibelang_api_manifest::canonical::{canonical_sha256_hex, sha256_hex};
 use vibelang_api_manifest::compatibility::{
     CompatibilityChange, CompatibilityClass, CompatibilityReport,
@@ -19,14 +20,15 @@ use vibelang_api_manifest::v2::{
     semantic_id, validate_stable_id, Alias, AliasKind, ApiEntryV2, ApiType, Atomicity,
     AvailabilityStatus, AvailabilityV2, BindingDetails, CancellationContract, Capability,
     CapabilityExpression, CapabilityState, ConsistencyPoint, Consumer, ConsumerExclusion,
-    CoverageRecord, Derivation, EffectTiming, Eligibility, EnumVariant, Event, EventDelivery,
-    EventOrdering, ExclusionReason, Facet, FailureContract, FailureDelivery, FailureStage,
-    FallbackPolicy, Field, FieldBinding, FieldDirection, Generator, HttpSuccess, Idempotency,
-    LifecycleContract, LifecycleEffect, LifecyclePhase, LifecycleRole, LossDetection, NodeMetadata,
-    ObservationContract, Operation, OperationKind, Ownership, PackageContract, PanicExposure,
-    ParameterV2, PriorState, ProvenanceAnchor, PublicApiManifestV2, RepeatSemantics,
-    RevisionRelation, Stability, StabilityLevel, SurfaceBinding, Synchronization, TypeKind,
-    UnavailableBehavior, WasmProgress, SCHEMA_URI_V2, SCHEMA_VERSION_V2,
+    CoverageRecord, Derivation, EffectTiming, Effectiveness, EffectivenessStatus, Eligibility,
+    EnumVariant, Event, EventDelivery, EventOrdering, ExclusionReason, Facet, FailureContract,
+    FailureDelivery, FailureStage, FallbackPolicy, Field, FieldBinding, FieldDirection, Generator,
+    HttpSuccess, Idempotency, LifecycleContract, LifecycleEffect, LifecyclePhase, LifecycleRole,
+    LossDetection, MigrationDebt, NodeMetadata, ObservableAt, ObservationContract, Operation,
+    OperationKind, Ownership, PackageContract, PanicExposure, ParameterV2, PriorState,
+    ProvenanceAnchor, PublicApiManifestV2, RepeatSemantics, RevisionRelation, Stability,
+    StabilityLevel, SurfaceBinding, Synchronization, TypeKind, UnavailableBehavior, WasmProgress,
+    SCHEMA_URI_V2, SCHEMA_VERSION_V2,
 };
 use vibelang_api_manifest::{
     to_pretty_json, Anchor, ApiEntry, Availability, BoundarySemantics, PublicApiManifest,
@@ -905,10 +907,312 @@ fn lisp_form_name<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
     line.strip_prefix(prefix)?.split_whitespace().next()
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct HttpHandlerContract {
+    source: String,
+    path_types: Vec<String>,
+    query_types: Vec<String>,
+    header_types: Vec<String>,
+    body_type: Option<String>,
+    success_statuses: Vec<u16>,
+    success_type: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct HttpTypeAlias {
+    source: String,
+    target: String,
+}
+
+fn discover_http_type_aliases(root: &Path) -> Result<BTreeMap<String, HttpTypeAlias>, String> {
+    let mut aliases = BTreeMap::new();
+    for entry in WalkDir::new(root.join("crates/vibelang-http/src"))
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry.path().extension().and_then(|value| value.to_str()) == Some("rs")
+        })
+    {
+        let path = entry.path();
+        let source = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let file = syn::parse_file(&fs::read_to_string(path).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("{source}: {error}"))?;
+        for item in file.items {
+            let Item::Type(alias) = item else { continue };
+            if !matches!(alias.vis, Visibility::Public(_)) {
+                continue;
+            }
+            let name = alias.ident.to_string();
+            let value = HttpTypeAlias {
+                source: source.clone(),
+                target: type_text(&alias.ty),
+            };
+            if aliases.insert(name.clone(), value).is_some() {
+                return Err(format!("duplicate public HTTP type alias {name}"));
+            }
+        }
+    }
+    Ok(aliases)
+}
+
+fn add_http_alias_type_ids(
+    aliases: &BTreeMap<String, HttpTypeAlias>,
+    type_ids_by_name: &mut BTreeMap<String, Vec<(String, String)>>,
+) -> Result<(), String> {
+    for (name, alias) in aliases {
+        if type_ids_by_name.contains_key(name) {
+            return Err(format!(
+                "HTTP type alias {name} collides with a serialized DTO declaration"
+            ));
+        }
+        if let Some(type_id) = referenced_http_type(&alias.target, &alias.source, type_ids_by_name)?
+        {
+            type_ids_by_name.insert(name.clone(), vec![(alias.source.clone(), type_id)]);
+        }
+    }
+    Ok(())
+}
+
+fn discover_http_handler_contracts(
+    root: &Path,
+    snapshot: &HttpSnapshot,
+) -> Result<BTreeMap<String, HttpHandlerContract>, String> {
+    let mut contracts = BTreeMap::new();
+    for route in &snapshot.routes {
+        if contracts.contains_key(&route.handler) {
+            continue;
+        }
+        let source = http_handler_source(&route.handler)?;
+        let file =
+            syn::parse_file(&read(root, &source)?).map_err(|error| format!("{source}: {error}"))?;
+        let name = route
+            .handler
+            .rsplit("::")
+            .next()
+            .ok_or_else(|| format!("HTTP route has empty handler {}", route.handler))?;
+        let function = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function)
+                    if function.sig.ident == name
+                        && matches!(function.vis, Visibility::Public(_)) =>
+                {
+                    Some(function)
+                }
+                _ => None,
+            })
+            .ok_or_else(|| format!("{} does not define public handler {name}", source))?;
+        contracts.insert(
+            route.handler.clone(),
+            http_handler_contract(&route.handler, source, function)?,
+        );
+    }
+    let routed_handlers = snapshot
+        .routes
+        .iter()
+        .map(|route| route.handler.as_str())
+        .collect::<BTreeSet<_>>();
+    if contracts.len() != routed_handlers.len() {
+        return Err("HTTP handler discovery did not cover the exact routed handler set".into());
+    }
+    Ok(contracts)
+}
+
+fn http_handler_source(handler: &str) -> Result<String, String> {
+    let segments = handler.split("::").collect::<Vec<_>>();
+    match segments.as_slice() {
+        ["routes", module, _] => Ok(format!("crates/vibelang-http/src/routes/{module}.rs")),
+        ["websocket", _] => Ok("crates/vibelang-http/src/websocket.rs".into()),
+        _ => Err(format!("unsupported HTTP handler path {handler}")),
+    }
+}
+
+fn http_handler_contract(
+    handler: &str,
+    source: String,
+    function: &ItemFn,
+) -> Result<HttpHandlerContract, String> {
+    let mut path_types = Vec::new();
+    let mut query_types = Vec::new();
+    let mut header_types = Vec::new();
+    let mut body_type = None;
+    for input in &function.sig.inputs {
+        let FnArg::Typed(input) = input else {
+            return Err(format!("HTTP handler {handler} has a receiver"));
+        };
+        if outer_type_argument(&input.ty, "State").is_some() {
+            continue;
+        }
+        if let Some(ty) = outer_type_argument(&input.ty, "Path") {
+            path_types.push(type_text(ty));
+            continue;
+        }
+        if let Some(ty) = outer_type_argument(&input.ty, "Query") {
+            query_types.push(type_text(ty));
+            continue;
+        }
+        if let Some(ty) = outer_type_argument(&input.ty, "Json") {
+            if body_type.replace(type_text(ty)).is_some() {
+                return Err(format!("HTTP handler {handler} has multiple JSON bodies"));
+            }
+            continue;
+        }
+        if let Some(ty) = outer_type_argument(&input.ty, "TypedHeader") {
+            header_types.push(type_text(ty));
+            continue;
+        }
+        if type_last_ident(&input.ty)
+            .is_some_and(|name| matches!(name.as_str(), "HeaderMap" | "WebSocketUpgrade"))
+        {
+            header_types.push(type_text(&input.ty));
+            continue;
+        }
+        return Err(format!(
+            "HTTP handler {handler} has unclassified extractor {}",
+            type_text(&input.ty)
+        ));
+    }
+
+    let success_type = match &function.sig.output {
+        ReturnType::Default => "()".into(),
+        ReturnType::Type(_, ty) => http_success_payload_type(handler, ty, &header_types)?,
+    };
+    let mut statuses = SuccessStatusVisitor::default();
+    statuses.visit_block(&function.block);
+    let mut success_statuses = statuses
+        .values
+        .into_iter()
+        .filter(|status| (200..300).contains(status))
+        .collect::<Vec<_>>();
+    if success_type == "WebSocketUpgrade" {
+        success_statuses = vec![101];
+    } else if success_statuses.is_empty() {
+        success_statuses.push(200);
+    }
+
+    Ok(HttpHandlerContract {
+        source,
+        path_types,
+        query_types,
+        header_types,
+        body_type,
+        success_statuses,
+        success_type,
+    })
+}
+
+fn outer_type_argument<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    if segment.ident != wrapper {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    arguments.args.iter().find_map(|argument| match argument {
+        syn::GenericArgument::Type(ty) => Some(ty),
+        _ => None,
+    })
+}
+
+fn type_last_ident(ty: &Type) -> Option<String> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    Some(path.path.segments.last()?.ident.to_string())
+}
+
+fn type_text(ty: &Type) -> String {
+    ty.to_token_stream().to_string()
+}
+
+fn http_success_payload_type(
+    handler: &str,
+    ty: &Type,
+    header_types: &[String],
+) -> Result<String, String> {
+    if let Some(ok) = outer_type_argument(ty, "Result") {
+        return http_success_payload_type(handler, ok, header_types);
+    }
+    if let Some(payload) = outer_type_argument(ty, "Json") {
+        return Ok(type_text(payload));
+    }
+    if type_last_ident(ty).as_deref() == Some("StatusCode") {
+        return Ok("()".into());
+    }
+    if let Type::Tuple(tuple) = ty {
+        if let Some(payload) = tuple
+            .elems
+            .iter()
+            .find_map(|element| outer_type_argument(element, "Json"))
+        {
+            return Ok(type_text(payload));
+        }
+        if tuple.elems.is_empty() {
+            return Ok("()".into());
+        }
+    }
+    if matches!(ty, Type::ImplTrait(_))
+        && header_types
+            .iter()
+            .any(|header| header == "WebSocketUpgrade")
+    {
+        return Ok("WebSocketUpgrade".into());
+    }
+    if matches!(ty, Type::Path(_)) {
+        return Ok(type_text(ty));
+    }
+    Err(format!(
+        "HTTP handler {handler} has unsupported success shape {}",
+        type_text(ty)
+    ))
+}
+
+#[derive(Default)]
+struct SuccessStatusVisitor {
+    values: BTreeSet<u16>,
+}
+
+impl<'ast> Visit<'ast> for SuccessStatusVisitor {
+    fn visit_expr_path(&mut self, expression: &'ast syn::ExprPath) {
+        let segments = &expression.path.segments;
+        if segments.len() >= 2 && segments[segments.len() - 2].ident == "StatusCode" {
+            if let Some(status) = http_status_value(&segments[segments.len() - 1].ident.to_string())
+            {
+                self.values.insert(status);
+            }
+        }
+        syn::visit::visit_expr_path(self, expression);
+    }
+}
+
+fn http_status_value(name: &str) -> Option<u16> {
+    Some(match name {
+        "SWITCHING_PROTOCOLS" => 101,
+        "OK" => 200,
+        "CREATED" => 201,
+        "ACCEPTED" => 202,
+        "NO_CONTENT" => 204,
+        "PARTIAL_CONTENT" => 206,
+        _ => return None,
+    })
+}
+
 struct Discovery {
     v1: PublicApiManifest,
     v1_json: String,
     http: HttpSnapshot,
+    http_handlers: BTreeMap<String, HttpHandlerContract>,
+    http_type_aliases: BTreeMap<String, HttpTypeAlias>,
     baseline: ArtifactBaseline,
     fragments: FragmentSet,
     mechanical: Vec<MechanicalDeclaration>,
@@ -935,6 +1239,8 @@ fn discover(root: &Path) -> Result<Discovery, String> {
     )?;
     let http: HttpSnapshot =
         serde_json::from_str(&http_json).map_err(|error| format!("{V1_HTTP_PATH}: {error}"))?;
+    let http_handlers = discover_http_handler_contracts(root, &http)?;
+    let http_type_aliases = discover_http_type_aliases(root)?;
 
     validate_v1_inventory(&v1, &http)?;
     let baseline: ArtifactBaseline = serde_json::from_str(&read(root, BASELINE_PATH)?)
@@ -947,6 +1253,8 @@ fn discover(root: &Path) -> Result<Discovery, String> {
         v1,
         v1_json,
         http,
+        http_handlers,
+        http_type_aliases,
         baseline,
         fragments,
         mechanical,
@@ -957,6 +1265,7 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
     let mut manifest = build_v2(discovery)?;
     let composition = validate_fragment_join(discovery, &manifest, &discovery.fragments)?;
     apply_fragments(&mut manifest, &discovery.fragments)?;
+    validate_http_graph(discovery, &manifest)?;
     manifest.stats.insert(
         "semantic_fragments".into(),
         composition.accounting.semantic_records,
@@ -983,6 +1292,7 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
     let coverage = build_coverage(root, discovery, &manifest, &digest, &composition.accounting)?;
     let debt = build_debt(root, &manifest, &digest, &composition.accounting)?;
     debt.validate(&contract_ids(&manifest))?;
+    validate_http_debt(&debt, &manifest)?;
     let diff = build_diff(discovery, &digest)?;
     diff.report.validate().map_err(|error| error.to_string())?;
     let packages =
@@ -1007,32 +1317,35 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         return Err("WebSocket mechanical discovery produced no events".into());
     }
     let conditional_capability_id = semantic_id("capability", "legacy|declared-condition");
-    let capabilities = vec![Capability {
-        metadata: metadata(
+    let midi_capability_id = semantic_id("capability", "http|feature.midi");
+    let native_capability_id = semantic_id("capability", "http|target.native");
+    let mut capabilities = vec![
+        contract_capability(
             conditional_capability_id.clone(),
             "legacy declared condition",
-            "vibelang-api-manifest",
             BASELINE_PATH,
             "api-unification M02 capability bridge",
-            Derivation::ExplicitSemantics,
-            available(),
-            Vec::new(),
+            "v1 cfg/target/feature/plugin/runtime-condition evidence",
+            "M02 preserves the v1 condition as evidence; runtime evaluation lands at M05",
         ),
-        detection_source: "v1 cfg/target/feature/plugin/runtime-condition evidence".into(),
-        dependencies: Vec::new(),
-        conflicts: Vec::new(),
-        runtime_states: [
-            CapabilityState::Available,
-            CapabilityState::Degraded,
-            CapabilityState::Unavailable,
-            CapabilityState::Unknown,
-        ]
-        .into_iter()
-        .collect(),
-        projection_rules: vec![
-            "M02 preserves the v1 condition as evidence; runtime evaluation lands at M05".into(),
-        ],
-    }];
+        contract_capability(
+            midi_capability_id.clone(),
+            "MIDI HTTP feature",
+            "crates/vibelang-http/src/lib.rs",
+            "cfg(feature = \"midi\") route chain",
+            "Cargo feature midi and the Axum cfg-gated route chain",
+            "Expose the 18 MIDI routes only when feature.midi is available",
+        ),
+        contract_capability(
+            native_capability_id.clone(),
+            "native HTTP recording target",
+            "crates/vibelang-http/src/lib.rs",
+            "cfg(not(target_arch = \"wasm32\")) route chain",
+            "Rust target architecture and the Axum cfg-gated route chain",
+            "Expose the 4 recording routes only on non-wasm32 targets",
+        ),
+    ];
+    capabilities.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
 
     let consumer_ids: BTreeMap<_, _> = discovery
         .baseline
@@ -1085,6 +1398,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
     for candidates in http_type_ids_by_name.values_mut() {
         candidates.sort();
     }
+    add_http_alias_type_ids(&discovery.http_type_aliases, &mut http_type_ids_by_name)?;
     let mut scalar_shapes = BTreeSet::new();
     for api_type in &discovery.http.types {
         for field in &api_type.fields {
@@ -1092,6 +1406,20 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
                 .is_none()
             {
                 scalar_shapes.insert(field.rust_type.clone());
+            }
+        }
+    }
+    for handler in discovery.http_handlers.values() {
+        for shape in handler
+            .path_types
+            .iter()
+            .chain(&handler.query_types)
+            .chain(&handler.header_types)
+            .chain(handler.body_type.iter())
+            .chain(std::iter::once(&handler.success_type))
+        {
+            if referenced_http_type(shape, &handler.source, &http_type_ids_by_name)?.is_none() {
+                scalar_shapes.insert(shape.clone());
             }
         }
     }
@@ -1186,10 +1514,28 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             } else {
                 default_error_type_id
             };
-            http_operation(route, error_type_id, &conditional_capability_id)
+            let handler = discovery
+                .http_handlers
+                .get(&route.handler)
+                .ok_or_else(|| format!("missing HTTP handler contract for {}", route.handler))?;
+            let resolved = resolve_http_route_contract(
+                route,
+                handler,
+                error_type_id,
+                &http_type_ids_by_name,
+                &scalar_type_ids,
+            )?;
+            Ok(http_operation(
+                route,
+                handler,
+                &resolved,
+                &midi_capability_id,
+                &native_capability_id,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     operations.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
+    connect_http_field_bindings(&mut types, &operations, &http_type_ids)?;
 
     let mut events = websocket_events
         .iter()
@@ -1431,6 +1777,10 @@ fn http_type_v2(
                 value_contract: Facet::NotApplicable {
                     reason: "field value semantics land at M05/M11".into(),
                 },
+                operation_applicability: Facet::NotApplicable {
+                    reason: "source-derived HTTP operation applicability is composed after type discovery"
+                        .into(),
+                },
                 bindings: Vec::new(),
                 observation: if matches!(
                     direction,
@@ -1488,26 +1838,201 @@ fn http_type_v2(
     })
 }
 
+fn contract_capability(
+    id: String,
+    name: &str,
+    path: &str,
+    symbol: &str,
+    detection_source: &str,
+    projection_rule: &str,
+) -> Capability {
+    Capability {
+        metadata: metadata(
+            id,
+            name,
+            "vibelang-api-manifest",
+            path,
+            symbol,
+            Derivation::ExplicitSemantics,
+            available(),
+            Vec::new(),
+        ),
+        detection_source: detection_source.into(),
+        dependencies: Vec::new(),
+        conflicts: Vec::new(),
+        runtime_states: [
+            CapabilityState::Available,
+            CapabilityState::Degraded,
+            CapabilityState::Unavailable,
+            CapabilityState::Unknown,
+        ]
+        .into_iter()
+        .collect(),
+        projection_rules: vec![projection_rule.into()],
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ResolvedHttpRouteContract {
+    request_type_id: Option<String>,
+    response_type_ids: Vec<String>,
+    path_type_ids: Vec<String>,
+    query_type_ids: Vec<String>,
+    header_type_ids: Vec<String>,
+    body_type_id: Option<String>,
+    successes: Vec<HttpSuccess>,
+    error_type_id: String,
+}
+
+fn resolve_http_route_contract(
+    route: &HttpRoute,
+    handler: &HttpHandlerContract,
+    error_type_id: &str,
+    type_ids_by_name: &BTreeMap<String, Vec<(String, String)>>,
+    scalar_type_ids: &BTreeMap<String, String>,
+) -> Result<ResolvedHttpRouteContract, String> {
+    let path_type_ids = resolve_http_type_ids(
+        &handler.path_types,
+        &handler.source,
+        type_ids_by_name,
+        scalar_type_ids,
+    )?;
+    let query_type_ids = resolve_http_type_ids(
+        &handler.query_types,
+        &handler.source,
+        type_ids_by_name,
+        scalar_type_ids,
+    )?;
+    let header_type_ids = resolve_http_type_ids(
+        &handler.header_types,
+        &handler.source,
+        type_ids_by_name,
+        scalar_type_ids,
+    )?;
+    let body_type_id = handler
+        .body_type
+        .as_deref()
+        .map(|shape| {
+            resolve_http_type_id(shape, &handler.source, type_ids_by_name, scalar_type_ids)
+        })
+        .transpose()?;
+    let success_type_id = resolve_http_type_id(
+        &handler.success_type,
+        &handler.source,
+        type_ids_by_name,
+        scalar_type_ids,
+    )?;
+    let successes = handler
+        .success_statuses
+        .iter()
+        .map(|status| HttpSuccess {
+            status: *status,
+            type_id: success_type_id.clone(),
+        })
+        .collect::<Vec<_>>();
+    let response_type_ids = vec![success_type_id];
+    let request_type_id = body_type_id
+        .clone()
+        .or_else(|| query_type_ids.first().cloned())
+        .or_else(|| path_type_ids.first().cloned())
+        .or_else(|| header_type_ids.first().cloned());
+
+    let placeholders = route.path.matches('{').count();
+    let extracted = handler
+        .path_types
+        .iter()
+        .map(|shape| http_path_shape_arity(shape))
+        .sum::<Result<usize, _>>()?;
+    if placeholders != extracted {
+        return Err(format!(
+            "HTTP route {} {} has {placeholders} path placeholders but handler {} extracts {extracted}",
+            route.method, route.path, route.handler
+        ));
+    }
+
+    Ok(ResolvedHttpRouteContract {
+        request_type_id,
+        response_type_ids,
+        path_type_ids,
+        query_type_ids,
+        header_type_ids,
+        body_type_id,
+        successes,
+        error_type_id: error_type_id.into(),
+    })
+}
+
+fn resolve_http_type_ids(
+    shapes: &[String],
+    source: &str,
+    type_ids_by_name: &BTreeMap<String, Vec<(String, String)>>,
+    scalar_type_ids: &BTreeMap<String, String>,
+) -> Result<Vec<String>, String> {
+    shapes
+        .iter()
+        .map(|shape| resolve_http_type_id(shape, source, type_ids_by_name, scalar_type_ids))
+        .collect()
+}
+
+fn resolve_http_type_id(
+    shape: &str,
+    source: &str,
+    type_ids_by_name: &BTreeMap<String, Vec<(String, String)>>,
+    scalar_type_ids: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    referenced_http_type(shape, source, type_ids_by_name)?.map_or_else(
+        || {
+            scalar_type_ids
+                .get(shape)
+                .cloned()
+                .ok_or_else(|| format!("HTTP wire shape {shape} has no type ID"))
+        },
+        Ok,
+    )
+}
+
+fn http_path_shape_arity(shape: &str) -> Result<usize, String> {
+    let ty: Type = syn::parse_str(shape)
+        .map_err(|error| format!("failed to parse HTTP path shape {shape}: {error}"))?;
+    Ok(match ty {
+        Type::Tuple(tuple) => tuple.elems.len(),
+        _ => 1,
+    })
+}
+
 fn http_operation(
     route: &HttpRoute,
-    error_type_id: &str,
-    conditional_capability_id: &str,
+    handler: &HttpHandlerContract,
+    resolved: &ResolvedHttpRouteContract,
+    midi_capability_id: &str,
+    native_capability_id: &str,
 ) -> Operation {
     let operation_id = semantic_id(
         "operation",
         &format!("http|{}|{}", route.method, route.path),
     );
     let is_read = route.method == "GET";
-    let availability = if route.availability.is_empty() {
-        available()
-    } else {
+    let route_capability_id = match route.availability.as_slice() {
+        [] => None,
+        [condition] if condition == "feature = \"midi\"" => Some(midi_capability_id),
+        [condition] if condition == "not(target_arch = \"wasm32\")" => Some(native_capability_id),
+        _ => unreachable!("validated HTTP source snapshot has an unknown route condition"),
+    };
+    let availability = if let Some(capability_id) = route_capability_id {
         AvailabilityV2 {
             status: AvailabilityStatus::Conditional,
             when: Some(CapabilityExpression::Ref {
-                capability_id: conditional_capability_id.into(),
+                capability_id: capability_id.into(),
             }),
             on_unavailable: UnavailableBehavior::StructuredError,
             evidence: route.availability.clone(),
+        }
+    } else {
+        AvailabilityV2 {
+            status: AvailabilityStatus::Available,
+            when: None,
+            on_unavailable: UnavailableBehavior::StructuredError,
+            evidence: vec!["unconditional Axum route registration".into()],
         }
     };
     let tests = if is_read {
@@ -1526,7 +2051,7 @@ fn http_operation(
             operation_id,
             format!("{} {}", route.method, route.path),
             "vibelang-http",
-            "crates/vibelang-http/src/lib.rs",
+            &handler.source,
             route.handler.clone(),
             Derivation::RustAst,
             availability.clone(),
@@ -1537,9 +2062,9 @@ fn http_operation(
         } else {
             OperationKind::Mutation
         },
-        request_type_id: None,
-        response_type_ids: Vec::new(),
-        error_type_id: error_type_id.into(),
+        request_type_id: resolved.request_type_id.clone(),
+        response_type_ids: resolved.response_type_ids.clone(),
+        error_type_id: resolved.error_type_id.clone(),
         effects: Vec::new(),
         idempotency: if is_read {
             Idempotency::Yes
@@ -1560,7 +2085,7 @@ fn http_operation(
             reason: "M02 records current stale v1 carriers as compatibility debt".into(),
         },
         consistency: ConsistencyPoint::ResponseSnapshot,
-        security_capability_ids: vec![conditional_capability_id.into()],
+        security_capability_ids: Vec::new(),
         bindings: vec![SurfaceBinding {
             metadata: metadata(
                 binding_id,
@@ -1575,19 +2100,409 @@ fn http_operation(
             details: BindingDetails::Http {
                 method: route.method.clone(),
                 path: route.path.clone(),
-                path_type_ids: Vec::new(),
-                query_type_ids: Vec::new(),
-                header_type_ids: Vec::new(),
-                body_type_id: None,
-                successes: Vec::<HttpSuccess>::new(),
-                error_type_id: error_type_id.into(),
+                path_type_ids: resolved.path_type_ids.clone(),
+                query_type_ids: resolved.query_type_ids.clone(),
+                header_type_ids: resolved.header_type_ids.clone(),
+                body_type_id: resolved.body_type_id.clone(),
+                successes: resolved.successes.clone(),
+                error_type_id: resolved.error_type_id.clone(),
                 protocol_version: "v1".into(),
-                authentication_capability_id: conditional_capability_id.into(),
+                authentication_capability_id: None,
                 idempotency_header: None,
                 revision_header: None,
             },
         }],
     }
+}
+
+fn connect_http_field_bindings(
+    types: &mut [ApiType],
+    operations: &[Operation],
+    http_type_ids: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let raw_type_ids = http_type_ids.values().cloned().collect::<BTreeSet<_>>();
+    let operation_ids_by_type = http_operation_ids_by_type(types, operations, &raw_type_ids)?;
+
+    for api_type in types
+        .iter_mut()
+        .filter(|api_type| raw_type_ids.contains(&api_type.metadata.id))
+    {
+        let operation_ids = operation_ids_by_type
+            .get(&api_type.metadata.id)
+            .cloned()
+            .unwrap_or_default();
+        for field in &mut api_type.fields {
+            field.operation_applicability = if operation_ids.is_empty() {
+                Facet::NotApplicable {
+                    reason: if api_type.metadata.name == "WebSocketEvent" {
+                        "WebSocket envelope fields are event-owned rather than HTTP operation members"
+                    } else {
+                        "reserved legacy DTO field has no registered HTTP route and is explicit compatibility debt"
+                    }
+                    .into(),
+                }
+            } else {
+                Facet::Applicable {
+                    value: operation_ids.iter().cloned().collect(),
+                }
+            };
+            field.bindings = operation_ids
+                .iter()
+                .map(|operation_id| FieldBinding {
+                    operation_id: operation_id.clone(),
+                    effectiveness: http_field_effectiveness(
+                        &api_type.metadata.name,
+                        &field.host_name,
+                        field.direction,
+                    ),
+                })
+                .collect();
+        }
+    }
+    Ok(())
+}
+
+fn http_operation_ids_by_type(
+    types: &[ApiType],
+    operations: &[Operation],
+    raw_type_ids: &BTreeSet<String>,
+) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
+    let mut nested = BTreeMap::<String, BTreeSet<String>>::new();
+    for api_type in types
+        .iter()
+        .filter(|api_type| raw_type_ids.contains(&api_type.metadata.id))
+    {
+        nested.insert(
+            api_type.metadata.id.clone(),
+            api_type
+                .fields
+                .iter()
+                .filter(|field| raw_type_ids.contains(&field.type_id))
+                .map(|field| field.type_id.clone())
+                .collect(),
+        );
+    }
+
+    let mut operation_ids_by_type = BTreeMap::<String, BTreeSet<String>>::new();
+    for operation in operations {
+        let binding = operation
+            .bindings
+            .first()
+            .ok_or_else(|| format!("HTTP operation {} has no binding", operation.metadata.id))?;
+        let BindingDetails::Http {
+            path_type_ids,
+            query_type_ids,
+            header_type_ids,
+            body_type_id,
+            successes,
+            error_type_id,
+            ..
+        } = &binding.details
+        else {
+            return Err(format!(
+                "HTTP operation {} has a non-HTTP binding",
+                operation.metadata.id
+            ));
+        };
+        let mut pending = path_type_ids
+            .iter()
+            .chain(query_type_ids)
+            .chain(header_type_ids)
+            .chain(body_type_id)
+            .chain(successes.iter().map(|success| &success.type_id))
+            .chain(std::iter::once(error_type_id))
+            .filter(|id| raw_type_ids.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut reached = BTreeSet::new();
+        while let Some(type_id) = pending.pop() {
+            if !reached.insert(type_id.clone()) {
+                continue;
+            }
+            if let Some(children) = nested.get(&type_id) {
+                pending.extend(children.iter().cloned());
+            }
+        }
+        for type_id in reached {
+            operation_ids_by_type
+                .entry(type_id)
+                .or_default()
+                .insert(operation.metadata.id.clone());
+        }
+    }
+
+    Ok(operation_ids_by_type)
+}
+
+fn http_field_effectiveness(
+    type_name: &str,
+    field_name: &str,
+    direction: FieldDirection,
+) -> Effectiveness {
+    let dead = is_dead_http_field(type_name, field_name);
+    Effectiveness {
+        status: EffectivenessStatus::CompatibilityDebt,
+        effect_ids: Vec::new(),
+        error_ids: Vec::new(),
+        observable_at: if matches!(direction, FieldDirection::Input) {
+            ObservableAt::Desired
+        } else {
+            ObservableAt::ResponseOnly
+        },
+        migration: Some(MigrationDebt {
+            owner: "vibelang-http".into(),
+            issue: "M11 HTTP v2 effectiveness binding".into(),
+            remove_by: "v2 release-ready gate".into(),
+            diagnostic_id: if dead {
+                "compat.http.dead_declaration"
+            } else {
+                "compat.http.operation_binding_pending"
+            }
+            .into(),
+        }),
+    }
+}
+
+fn validate_http_graph(
+    discovery: &Discovery,
+    manifest: &PublicApiManifestV2,
+) -> Result<(), String> {
+    let http_type_ids = discovery
+        .http
+        .types
+        .iter()
+        .map(|api_type| {
+            (
+                http_type_key(api_type),
+                semantic_id(
+                    "type",
+                    &format!("http|{}|{}", api_type.source, api_type.name),
+                ),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let raw_type_ids = http_type_ids.values().cloned().collect::<BTreeSet<_>>();
+    let mut type_ids_by_name = BTreeMap::<String, Vec<(String, String)>>::new();
+    for api_type in &discovery.http.types {
+        type_ids_by_name
+            .entry(api_type.name.clone())
+            .or_default()
+            .push((
+                api_type.source.clone(),
+                http_type_ids[&http_type_key(api_type)].clone(),
+            ));
+    }
+    for candidates in type_ids_by_name.values_mut() {
+        candidates.sort();
+    }
+    add_http_alias_type_ids(&discovery.http_type_aliases, &mut type_ids_by_name)?;
+    let scalar_type_ids = manifest
+        .types
+        .iter()
+        .filter(|api_type| {
+            api_type.kind == TypeKind::Alias
+                && api_type.metadata.ownership.implementation_owner == "vibelang-http"
+        })
+        .map(|api_type| (api_type.metadata.name.clone(), api_type.metadata.id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let midi_capability_id = semantic_id("capability", "http|feature.midi");
+    let native_capability_id = semantic_id("capability", "http|target.native");
+    let default_error_type_id = &http_type_ids["crates/vibelang-http/src/models.rs|ErrorResponse"];
+    let midi_error_type_id =
+        &http_type_ids["crates/vibelang-http/src/routes/midi.rs|ErrorResponse"];
+
+    let actual_operations = manifest
+        .operations
+        .iter()
+        .filter_map(|operation| {
+            operation
+                .bindings
+                .first()
+                .and_then(|binding| match &binding.details {
+                    BindingDetails::Http { method, path, .. } => {
+                        Some(((method.clone(), path.clone()), operation))
+                    }
+                    _ => None,
+                })
+        })
+        .collect::<BTreeMap<_, _>>();
+    let expected_keys = discovery
+        .http
+        .routes
+        .iter()
+        .map(|route| (route.method.clone(), route.path.clone()))
+        .collect::<BTreeSet<_>>();
+    if actual_operations.keys().cloned().collect::<BTreeSet<_>>() != expected_keys {
+        return Err("HTTP operation/binding set is not the exact source route set".into());
+    }
+
+    for route in &discovery.http.routes {
+        let key = (route.method.clone(), route.path.clone());
+        let actual = actual_operations[&key];
+        if actual.bindings.len() != 1 {
+            return Err(format!(
+                "HTTP operation {} {} must have exactly one source binding",
+                route.method, route.path
+            ));
+        }
+        let handler = &discovery.http_handlers[&route.handler];
+        let error_type_id = if route.handler.starts_with("routes::midi::") {
+            midi_error_type_id
+        } else {
+            default_error_type_id
+        };
+        let resolved = resolve_http_route_contract(
+            route,
+            handler,
+            error_type_id,
+            &type_ids_by_name,
+            &scalar_type_ids,
+        )?;
+        let expected = http_operation(
+            route,
+            handler,
+            &resolved,
+            &midi_capability_id,
+            &native_capability_id,
+        );
+        if actual.request_type_id != expected.request_type_id
+            || actual.response_type_ids != expected.response_type_ids
+            || actual.error_type_id != expected.error_type_id
+            || actual.security_capability_ids != expected.security_capability_ids
+            || actual.metadata.availability != expected.metadata.availability
+            || actual.bindings[0].metadata.availability
+                != expected.bindings[0].metadata.availability
+            || actual.bindings[0].details != expected.bindings[0].details
+        {
+            return Err(format!(
+                "HTTP graph mismatch for {} {}: request/response/extractor/success/condition/security links must match source",
+                route.method, route.path
+            ));
+        }
+    }
+
+    let raw_types = manifest
+        .types
+        .iter()
+        .filter(|api_type| raw_type_ids.contains(&api_type.metadata.id))
+        .map(|api_type| (api_type.metadata.id.clone(), api_type))
+        .collect::<BTreeMap<_, _>>();
+    if raw_types.len() != EXPECTED_HTTP_TYPES {
+        return Err(format!(
+            "HTTP graph has {} source types, expected {EXPECTED_HTTP_TYPES}",
+            raw_types.len()
+        ));
+    }
+    for discovered in &discovery.http.types {
+        let type_id = &http_type_ids[&http_type_key(discovered)];
+        let actual = raw_types
+            .get(type_id)
+            .ok_or_else(|| format!("HTTP source type {} disappeared", discovered.name))?;
+        let expected_fields = discovered
+            .fields
+            .iter()
+            .map(|field| {
+                Ok((
+                    semantic_id(
+                        "field",
+                        &format!(
+                            "http|{}|{}|{}",
+                            discovered.source, discovered.name, field.name
+                        ),
+                    ),
+                    resolve_http_type_id(
+                        &field.rust_type,
+                        &discovered.source,
+                        &type_ids_by_name,
+                        &scalar_type_ids,
+                    )?,
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        let actual_fields = actual
+            .fields
+            .iter()
+            .map(|field| (field.metadata.id.clone(), field.type_id.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if actual_fields != expected_fields {
+            return Err(format!(
+                "HTTP type {} field/type links are not the exact source set",
+                discovered.name
+            ));
+        }
+    }
+
+    let expected_operation_ids =
+        http_operation_ids_by_type(&manifest.types, &manifest.operations, &raw_type_ids)?;
+    let event_payload_ids = manifest
+        .events
+        .iter()
+        .map(|event| event.payload_type_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut field_count = 0usize;
+    let mut disconnected_types = Vec::new();
+    for api_type in raw_types.values() {
+        let expected = expected_operation_ids
+            .get(&api_type.metadata.id)
+            .cloned()
+            .unwrap_or_default();
+        let explicitly_disconnected = event_payload_ids.contains(api_type.metadata.id.as_str())
+            || api_type.metadata.name == "WebSocketEvent"
+            || (!api_type.fields.is_empty()
+                && api_type
+                    .fields
+                    .iter()
+                    .all(|field| is_dead_http_field(&api_type.metadata.name, &field.host_name)));
+        if expected.is_empty() && !explicitly_disconnected {
+            disconnected_types.push(api_type.metadata.name.clone());
+        }
+        for field in &api_type.fields {
+            field_count += 1;
+            let actual = field
+                .bindings
+                .iter()
+                .map(|binding| binding.operation_id.clone())
+                .collect::<BTreeSet<_>>();
+            let applicability_matches = match &field.operation_applicability {
+                Facet::Applicable { value } => {
+                    value.iter().cloned().collect::<BTreeSet<_>>() == expected
+                        && value.len() == expected.len()
+                }
+                Facet::NotApplicable { .. } => expected.is_empty() && explicitly_disconnected,
+            };
+            if actual.len() != field.bindings.len() || actual != expected || !applicability_matches
+            {
+                return Err(format!(
+                    "HTTP field {} has incomplete or orphan operation applicability",
+                    field.metadata.name
+                ));
+            }
+        }
+    }
+    if field_count != EXPECTED_HTTP_FIELDS {
+        return Err(format!(
+            "HTTP graph has {field_count} source fields, expected {EXPECTED_HTTP_FIELDS}"
+        ));
+    }
+    if !disconnected_types.is_empty() {
+        return Err(format!(
+            "HTTP types are disconnected without explicit event/debt semantics: {}",
+            disconnected_types.join(", ")
+        ));
+    }
+
+    let available = manifest
+        .operations
+        .iter()
+        .filter(|operation| operation.metadata.availability.status == AvailabilityStatus::Available)
+        .count();
+    let conditional = manifest.operations.len() - available;
+    if available != 74 || conditional != 22 {
+        return Err(format!(
+            "HTTP route conditions must be exactly 74 unconditional and 22 conditional, got {available}/{conditional}"
+        ));
+    }
+    Ok(())
 }
 
 fn build_consumers(
@@ -2615,10 +3530,17 @@ fn apply_fragments(
         if let (Some(operation_id), Some(effectiveness)) =
             (&record.operation_id, &record.effectiveness)
         {
-            field.bindings.push(FieldBinding {
-                operation_id: operation_id.clone(),
-                effectiveness: effectiveness.clone(),
-            });
+            let binding = field
+                .bindings
+                .iter_mut()
+                .find(|binding| binding.operation_id == *operation_id)
+                .ok_or_else(|| {
+                    format!(
+                        "HTTP semantic record {} claims operation {} outside source-derived applicability",
+                        record.target_id, operation_id
+                    )
+                })?;
+            binding.effectiveness = effectiveness.clone();
         } else if record.operation_id.is_some() || record.effectiveness.is_some() {
             return Err(format!(
                 "HTTP target {} must join operation and effectiveness together",
@@ -3030,37 +3952,77 @@ fn build_debt(
         }
         for field in &api_type.fields {
             let dead = is_dead_http_field(&api_type.metadata.name, &field.host_name);
-            records.push(DebtRecord {
-                id: semantic_id("debt", &format!("http-field|{}", field.metadata.id)),
-                surface: "http".into(),
-                node_id: Some(field.metadata.id.clone()),
-                operation_id: field
+            let operation_ids = if field.bindings.is_empty() {
+                vec![None]
+            } else {
+                field
                     .bindings
-                    .first()
-                    .map(|binding| binding.operation_id.clone()),
-                member: field.serialized_name.clone(),
-                legacy_class: if dead { "dead" } else { "stale" }.into(),
-                owner: "vibelang-http".into(),
-                diagnostic_id: if dead {
-                    "compat.http.dead_declaration"
-                } else {
-                    "compat.http.operation_binding_pending"
-                }
-                .into(),
-                issue: "M11 HTTP v2 effectiveness binding".into(),
-                exit_gate: "M11 must implement or structurally reject this operation-scoped member"
+                    .iter()
+                    .map(|binding| Some(binding.operation_id.clone()))
+                    .collect()
+            };
+            for operation_id in operation_ids {
+                records.push(DebtRecord {
+                    id: semantic_id(
+                        "debt",
+                        &format!(
+                            "http-field|{}|{}",
+                            field.metadata.id,
+                            operation_id.as_deref().unwrap_or("unbound")
+                        ),
+                    ),
+                    surface: "http".into(),
+                    node_id: Some(field.metadata.id.clone()),
+                    operation_id,
+                    member: field.serialized_name.clone(),
+                    legacy_class: if dead { "dead" } else { "stale" }.into(),
+                    owner: "vibelang-http".into(),
+                    diagnostic_id: if dead {
+                        "compat.http.dead_declaration"
+                    } else {
+                        "compat.http.operation_binding_pending"
+                    }
                     .into(),
-                remove_by: "v2 release-ready gate".into(),
-                source_anchor: field.metadata.source_anchors[0].path.clone(),
-                test_anchor: "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
-                    .into(),
-            });
+                    issue: "M11 HTTP v2 effectiveness binding".into(),
+                    exit_gate:
+                        "M11 must implement or structurally reject this operation-scoped member"
+                            .into(),
+                    remove_by: "v2 release-ready gate".into(),
+                    source_anchor: field.metadata.source_anchors[0].path.clone(),
+                    test_anchor: "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+                        .into(),
+                });
+            }
         }
     }
     for operation in &manifest.operations {
-        let BindingDetails::Http { method, path, .. } = &operation.bindings[0].details else {
+        let BindingDetails::Http {
+            method,
+            path,
+            authentication_capability_id,
+            ..
+        } = &operation.bindings[0].details
+        else {
             continue;
         };
+        if authentication_capability_id.is_none() {
+            records.push(DebtRecord {
+                id: semantic_id("debt", &format!("http-authentication|{method}|{path}")),
+                surface: "http".into(),
+                node_id: Some(operation.metadata.id.clone()),
+                operation_id: Some(operation.metadata.id.clone()),
+                member: "authentication".into(),
+                legacy_class: "stale".into(),
+                owner: "vibelang-http".into(),
+                diagnostic_id: "compat.http.no_authentication".into(),
+                issue: "M11 HTTP v2 security policy".into(),
+                exit_gate: "define and enforce an authentication policy before remote exposure"
+                    .into(),
+                remove_by: "v2 release-ready gate".into(),
+                source_anchor: "crates/vibelang-http/src/lib.rs".into(),
+                test_anchor: "crates/vibelang-http/src/lib.rs".into(),
+            });
+        }
         if method == "GET" {
             continue;
         }
@@ -3210,6 +4172,89 @@ fn build_debt(
     })
 }
 
+fn validate_http_debt(debt: &DebtArtifact, manifest: &PublicApiManifestV2) -> Result<(), String> {
+    let http_operation_ids = manifest
+        .operations
+        .iter()
+        .filter(|operation| {
+            operation
+                .bindings
+                .iter()
+                .any(|binding| matches!(binding.details, BindingDetails::Http { .. }))
+        })
+        .map(|operation| operation.metadata.id.clone())
+        .collect::<BTreeSet<_>>();
+    let authentication_debt = debt
+        .records
+        .iter()
+        .filter(|record| record.diagnostic_id == "compat.http.no_authentication")
+        .filter_map(|record| record.operation_id.clone())
+        .collect::<BTreeSet<_>>();
+    if authentication_debt != http_operation_ids {
+        return Err(
+            "HTTP routes without authentication require exact operation-scoped compatibility debt"
+                .into(),
+        );
+    }
+
+    let expected_field_debt = manifest
+        .types
+        .iter()
+        .filter(|api_type| {
+            api_type
+                .metadata
+                .source_anchors
+                .iter()
+                .any(|anchor| anchor.derivation == Derivation::RustAst)
+                && api_type
+                    .metadata
+                    .name
+                    .contains(|character: char| character.is_alphabetic())
+        })
+        .flat_map(|api_type| {
+            api_type.fields.iter().flat_map(|field| {
+                if field.bindings.is_empty() {
+                    vec![(field.metadata.id.clone(), None)]
+                } else {
+                    field
+                        .bindings
+                        .iter()
+                        .map(|binding| {
+                            (
+                                field.metadata.id.clone(),
+                                Some(binding.operation_id.clone()),
+                            )
+                        })
+                        .collect()
+                }
+            })
+        })
+        .collect::<BTreeSet<_>>();
+    let actual_field_debt = debt
+        .records
+        .iter()
+        .filter(|record| {
+            matches!(
+                record.diagnostic_id.as_str(),
+                "compat.http.dead_declaration" | "compat.http.operation_binding_pending"
+            )
+        })
+        .filter_map(|record| {
+            record
+                .node_id
+                .as_ref()
+                .map(|node_id| (node_id.clone(), record.operation_id.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    if actual_field_debt != expected_field_debt {
+        return Err(
+            "HTTP field compatibility debt is not the exact source-derived applicability set"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn add_fixture_cases(
     root: &Path,
@@ -3269,7 +4314,13 @@ fn is_dead_http_field(type_name: &str, field_name: &str) -> bool {
                 "EffectCreate",
                 "id" | "synthdef_name" | "group_path" | "params" | "position"
             )
+            | ("ClockStatusDto", "device_id" | "enabled")
             | ("ClockOutputRequest", "device_id" | "enabled")
+            | ("RecordedNoteDto", "beat" | "note" | "velocity" | "duration")
+            | (
+                "RecordingResultDto",
+                "device_id" | "note_count" | "cc_count" | "duration_beats" | "notes"
+            )
     )
 }
 
@@ -4132,6 +5183,195 @@ mod tests {
                     .unwrap();
                 assert_eq!(transport.error_type_id, model_error.metadata.id);
                 assert_eq!(midi.error_type_id, midi_error.metadata.id);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn typed_http_graph_covers_exact_routes_types_fields_conditions_and_debt() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let mut manifest = build_v2(&discovery).unwrap();
+                apply_fragments(&mut manifest, &discovery.fragments).unwrap();
+                validate_http_graph(&discovery, &manifest).unwrap();
+
+                assert_eq!(manifest.operations.len(), EXPECTED_HTTP_ROUTES);
+                assert_eq!(
+                    discovery
+                        .http
+                        .types
+                        .iter()
+                        .map(|api_type| api_type.fields.len())
+                        .sum::<usize>(),
+                    EXPECTED_HTTP_FIELDS
+                );
+                assert_eq!(
+                    manifest
+                        .operations
+                        .iter()
+                        .filter(|operation| operation.request_type_id.is_some())
+                        .count(),
+                    76
+                );
+                assert!(manifest.operations.iter().all(|operation| {
+                    !operation.response_type_ids.is_empty()
+                        && operation.security_capability_ids.is_empty()
+                        && matches!(
+                            &operation.bindings[0].details,
+                            BindingDetails::Http {
+                                successes,
+                                authentication_capability_id: None,
+                                ..
+                            } if !successes.is_empty()
+                        )
+                }));
+                let available = manifest
+                    .operations
+                    .iter()
+                    .filter(|operation| {
+                        operation.metadata.availability.status == AvailabilityStatus::Available
+                    })
+                    .count();
+                assert_eq!((available, manifest.operations.len() - available), (74, 22));
+
+                let raw_type_ids = discovery
+                    .http
+                    .types
+                    .iter()
+                    .map(|api_type| {
+                        semantic_id(
+                            "type",
+                            &format!("http|{}|{}", api_type.source, api_type.name),
+                        )
+                    })
+                    .collect::<BTreeSet<_>>();
+                let raw_fields = manifest
+                    .types
+                    .iter()
+                    .filter(|api_type| raw_type_ids.contains(&api_type.metadata.id))
+                    .flat_map(|api_type| &api_type.fields)
+                    .collect::<Vec<_>>();
+                assert_eq!(raw_fields.len(), EXPECTED_HTTP_FIELDS);
+                assert!(raw_fields
+                    .iter()
+                    .all(|field| match &field.operation_applicability {
+                        Facet::Applicable { value } =>
+                            !value.is_empty() && !field.bindings.is_empty(),
+                        Facet::NotApplicable { reason } => {
+                            !reason.is_empty() && field.bindings.is_empty()
+                        }
+                    }));
+
+                let accounting = semantic_join_accounting(
+                    &contract_ids(&manifest),
+                    &derive_semantic_requirements(&discovery).unwrap(),
+                    &semantic_fragment_records(&discovery.fragments),
+                );
+                let debt = build_debt(&root(), &manifest, "fixture", &accounting).unwrap();
+                validate_http_debt(&debt, &manifest).unwrap();
+                assert_eq!(
+                    debt.records
+                        .iter()
+                        .filter(|record| record.diagnostic_id == "compat.http.no_authentication")
+                        .count(),
+                    EXPECTED_HTTP_ROUTES
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn disconnected_or_orphan_http_links_and_false_security_fail_closed() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let mut manifest = build_v2(&discovery).unwrap();
+                apply_fragments(&mut manifest, &discovery.fragments).unwrap();
+
+                let mut missing_request = manifest.clone();
+                missing_request
+                    .operations
+                    .iter_mut()
+                    .find(|operation| operation.metadata.name == "POST /voices")
+                    .unwrap()
+                    .request_type_id = None;
+                assert!(validate_http_graph(&discovery, &missing_request).is_err());
+
+                let mut missing_success = manifest.clone();
+                let operation = missing_success
+                    .operations
+                    .iter_mut()
+                    .find(|operation| operation.metadata.name == "GET /voices")
+                    .unwrap();
+                operation.response_type_ids.clear();
+                let BindingDetails::Http { successes, .. } = &mut operation.bindings[0].details
+                else {
+                    unreachable!()
+                };
+                successes.clear();
+                assert!(validate_http_graph(&discovery, &missing_success).is_err());
+
+                let mut disconnected_field = manifest.clone();
+                let field = disconnected_field
+                    .types
+                    .iter_mut()
+                    .find(|api_type| api_type.metadata.name == "VoiceCreate")
+                    .unwrap()
+                    .fields
+                    .iter_mut()
+                    .find(|field| !field.bindings.is_empty())
+                    .unwrap();
+                field.bindings.pop();
+                assert!(validate_http_graph(&discovery, &disconnected_field).is_err());
+
+                let mut orphan_field = manifest.clone();
+                let wrong_operation_id = semantic_id("operation", "http|GET|/ws");
+                let field = orphan_field
+                    .types
+                    .iter_mut()
+                    .find(|api_type| api_type.metadata.name == "VoiceCreate")
+                    .unwrap()
+                    .fields
+                    .iter_mut()
+                    .find(|field| !field.bindings.is_empty())
+                    .unwrap();
+                field.bindings[0].operation_id = wrong_operation_id;
+                assert!(validate_http_graph(&discovery, &orphan_field).is_err());
+
+                let mut false_security = manifest.clone();
+                let generic_capability_id = semantic_id("capability", "legacy|declared-condition");
+                let operation = false_security
+                    .operations
+                    .iter_mut()
+                    .find(|operation| operation.metadata.name == "GET /voices")
+                    .unwrap();
+                operation.security_capability_ids = vec![generic_capability_id.clone()];
+                let BindingDetails::Http {
+                    authentication_capability_id,
+                    ..
+                } = &mut operation.bindings[0].details
+                else {
+                    unreachable!()
+                };
+                *authentication_capability_id = Some(generic_capability_id);
+                assert!(validate_http_graph(&discovery, &false_security).is_err());
+
+                let mut false_condition = manifest;
+                let operation = false_condition
+                    .operations
+                    .iter_mut()
+                    .find(|operation| operation.metadata.name == "GET /recordings")
+                    .unwrap();
+                operation.metadata.availability = available();
+                operation.bindings[0].metadata.availability = available();
+                assert!(validate_http_graph(&discovery, &false_condition).is_err());
             })
             .unwrap()
             .join()

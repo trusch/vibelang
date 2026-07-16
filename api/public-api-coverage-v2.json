@@ -1,14 +1,14 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "1c9eb46baed6c3c9be063c22c18028b0fc015ef1e045011540bee447055da0a8",
+  "contract_digest": "0311a16fa18068b3ff1c94c00266f8a05e04aa4cd192b1a1d7898b4c07958af6",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
     "routes": 96,
     "http_types": 75,
     "http_fields": 297,
-    "source_nodes": 949,
+    "source_nodes": 960,
     "consumer_nodes": 8,
     "orphan_records": 0,
     "unclassified_records": 0
@@ -603,6 +603,22 @@
         "v1:overload:feef91a2332a1453"
       ],
       "node_ids_sha256": "4fbb033afad294f419837d94ca981a6ed7eef750c2136b58d000f5d7e4224e7a"
+    },
+    {
+      "id": "v1:source:06bfddff8f6ca1a5",
+      "path": "crates/vibelang-http/src/routes/melodies.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 7,
+      "node_ids": [
+        "v1:operation:43c33eeae44a2414",
+        "v1:operation:47deee1024a555c4",
+        "v1:operation:499a175ccf60c21c",
+        "v1:operation:76222abdc44fdd47",
+        "v1:operation:94539574507138d5",
+        "v1:operation:d90a9d24765d9be2",
+        "v1:operation:ebf4273487f90c41"
+      ],
+      "node_ids_sha256": "5de0af22acd814503274db1d146d348150d60bfd67b9f864c9ff2fd461f50309"
     },
     {
       "id": "v1:source:0778878959b0813c",
@@ -9091,6 +9107,17 @@
       "node_ids_sha256": "dfcf6704271a17078ce3e3ed5fa66c14037c87b121c18716bbb3f7913b03adc9"
     },
     {
+      "id": "v1:source:1b8a81837f7a389f",
+      "path": "crates/vibelang-http/src/routes/synthdefs.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 2,
+      "node_ids": [
+        "v1:operation:9332970be6d68836",
+        "v1:operation:93f1d198e45d1e5a"
+      ],
+      "node_ids_sha256": "3c8d23eac87fef8c8609d7daabafc14a3c5f9235d91e3359e596f98647cf8485"
+    },
+    {
       "id": "v1:source:1b944dbe46481186",
       "path": "crates/vibelang-std/stdlib/drums/snares/snare_gated.vibe",
       "kind": "mechanical_declaration",
@@ -9149,7 +9176,7 @@
       "id": "v1:source:1d406059d415ef39",
       "path": "crates/vibelang-http/src/lib.rs",
       "kind": "mechanical_declaration",
-      "node_count": 192,
+      "node_count": 98,
       "node_ids": [
         "v1:binding:00be3f56a1ad2716",
         "v1:binding:02117779f9e0c681",
@@ -9247,104 +9274,10 @@
         "v1:binding:f9f4c9bd574a1a22",
         "v1:binding:fe8185f876f18a7c",
         "v1:binding:feeb9ca2e0c7f27f",
-        "v1:operation:00be3f56a1ad2716",
-        "v1:operation:02117779f9e0c681",
-        "v1:operation:0617330331ffa9ad",
-        "v1:operation:078b37799da37b55",
-        "v1:operation:10fb1331eb57d298",
-        "v1:operation:146c58a973c4ea55",
-        "v1:operation:14747b64635583e2",
-        "v1:operation:14e3822bb1c701a3",
-        "v1:operation:178c5f94ca659294",
-        "v1:operation:1b7b07b92ac276c6",
-        "v1:operation:1c7450d981db65a9",
-        "v1:operation:1cbd4c5b32c40fa3",
-        "v1:operation:1f164a3677f466fd",
-        "v1:operation:2571e9d5be35b66c",
-        "v1:operation:27b207db1a90d637",
-        "v1:operation:2b660ea07742f91d",
-        "v1:operation:2e17d3bbcad976c9",
-        "v1:operation:2ef71b5b56ae1150",
-        "v1:operation:3124a7d970f575ae",
-        "v1:operation:335a8b257333908e",
-        "v1:operation:36a2f32ef00f7a3a",
-        "v1:operation:3ac0967888eca45c",
-        "v1:operation:3cbb3d1d7dcaa7d9",
-        "v1:operation:3df290abc2827281",
-        "v1:operation:3fc93291efedb8e2",
-        "v1:operation:42b51957ef8b50bd",
-        "v1:operation:43c33eeae44a2414",
-        "v1:operation:44d30311fb17ccac",
-        "v1:operation:45e91271ccada54d",
-        "v1:operation:47deee1024a555c4",
-        "v1:operation:48d61c36aab3a43d",
-        "v1:operation:48dfbe7678b66232",
-        "v1:operation:4903c6f150fe8f63",
-        "v1:operation:499a175ccf60c21c",
-        "v1:operation:4b3358ebd2a559fc",
-        "v1:operation:4dd4d9f1b254e964",
-        "v1:operation:520a1a5c455ea29e",
-        "v1:operation:553f2d797f311aa7",
-        "v1:operation:557f0e771563a366",
-        "v1:operation:5780123dd2bb58e4",
-        "v1:operation:57ba957feebc8c4e",
-        "v1:operation:57cf213013df8722",
-        "v1:operation:5a4efc86f9255a82",
-        "v1:operation:5ac92e676c5f7522",
-        "v1:operation:5eace6596ac51efa",
-        "v1:operation:61deba72acda3c64",
-        "v1:operation:630491b7ce677a17",
-        "v1:operation:66ae2a46eef0831a",
-        "v1:operation:6b3e3cd0790536f8",
-        "v1:operation:6c36f0770dda3b6b",
-        "v1:operation:70cdeafa503d45d9",
-        "v1:operation:73f9c93f78f9a695",
-        "v1:operation:76222abdc44fdd47",
-        "v1:operation:78a4c0fcef322518",
-        "v1:operation:79b5bbd83188b2b2",
-        "v1:operation:7b943d53c8857974",
-        "v1:operation:7d1e4dcbb5c21363",
-        "v1:operation:85aef1ca87127f8c",
-        "v1:operation:8d8deacd637f7432",
-        "v1:operation:8ecf42af60997339",
-        "v1:operation:8f7e2bcb3d263ffb",
-        "v1:operation:8fd9bca29bb25a68",
-        "v1:operation:9332970be6d68836",
-        "v1:operation:93f1d198e45d1e5a",
-        "v1:operation:94539574507138d5",
-        "v1:operation:96f4cb11f25b9aac",
-        "v1:operation:99ad2d595a908ab4",
-        "v1:operation:9aa2847bcf953672",
-        "v1:operation:9e45a589ec9d4407",
-        "v1:operation:9fff3bb60c004a51",
-        "v1:operation:a065a6f4106327b7",
-        "v1:operation:ad7cc7d8b364950c",
-        "v1:operation:b47f3dda5f2b61af",
-        "v1:operation:b5092b5dd721d3b0",
-        "v1:operation:c0a18c64f34a1d47",
-        "v1:operation:c1dfd765c405a7fb",
-        "v1:operation:c534ffaecd9298d2",
-        "v1:operation:c6e48c67186c6042",
-        "v1:operation:c7a87c5d6ba5b070",
-        "v1:operation:c905777901bab230",
-        "v1:operation:cb0347fc9a2e4a3f",
-        "v1:operation:cbf2a3a429d51e12",
-        "v1:operation:d4fc895506d71306",
-        "v1:operation:d648deeb4b9dbe9b",
-        "v1:operation:d90a9d24765d9be2",
-        "v1:operation:e5c8443207524c87",
-        "v1:operation:ea35436a714ba35f",
-        "v1:operation:ebf4273487f90c41",
-        "v1:operation:ec42799e06d386da",
-        "v1:operation:ec59e659751384f9",
-        "v1:operation:eef5f3c402deff7e",
-        "v1:operation:ef55ec2c5a69ccb4",
-        "v1:operation:f91ea0c6e45be3bc",
-        "v1:operation:f9f4c9bd574a1a22",
-        "v1:operation:fe8185f876f18a7c",
-        "v1:operation:feeb9ca2e0c7f27f"
+        "v1:capability:5a8bb9d608e8b0eb",
+        "v1:capability:9455cae31f14d57a"
       ],
-      "node_ids_sha256": "3b734c2e8e23f97f7d2f787ebd03435e567ee12c32d3c0cb23b0791c8514e1c3"
+      "node_ids_sha256": "cc9a7f4aa13d337aa05dbd39d6cec3a183967b8e08b5b026edd713903327003e"
     },
     {
       "id": "v1:source:1d96eeb4a01bace1",
@@ -10787,7 +10720,7 @@
       "id": "v1:source:2afcbc5e2685db96",
       "path": "crates/vibelang-http/src/routes/midi.rs",
       "kind": "mechanical_declaration",
-      "node_count": 54,
+      "node_count": 72,
       "node_ids": [
         "v1:field:1ab0b7e790f99735",
         "v1:field:1c6d9abd7cc691ea",
@@ -10829,6 +10762,24 @@
         "v1:field:f0452fdc5f127d42",
         "v1:field:f69a492dbe76dc63",
         "v1:field:feb920da082e50ad",
+        "v1:operation:078b37799da37b55",
+        "v1:operation:10fb1331eb57d298",
+        "v1:operation:3ac0967888eca45c",
+        "v1:operation:48d61c36aab3a43d",
+        "v1:operation:4903c6f150fe8f63",
+        "v1:operation:553f2d797f311aa7",
+        "v1:operation:57ba957feebc8c4e",
+        "v1:operation:5a4efc86f9255a82",
+        "v1:operation:61deba72acda3c64",
+        "v1:operation:6b3e3cd0790536f8",
+        "v1:operation:6c36f0770dda3b6b",
+        "v1:operation:70cdeafa503d45d9",
+        "v1:operation:78a4c0fcef322518",
+        "v1:operation:7d1e4dcbb5c21363",
+        "v1:operation:99ad2d595a908ab4",
+        "v1:operation:c534ffaecd9298d2",
+        "v1:operation:f91ea0c6e45be3bc",
+        "v1:operation:fe8185f876f18a7c",
         "v1:type:0bc8dd74dd8ed1f9",
         "v1:type:2289bbdbd8433c60",
         "v1:type:2a2f5d5d2e88b490",
@@ -10844,7 +10795,7 @@
         "v1:type:e1af5ef00931f884",
         "v1:type:f16a14dd21b403a2"
       ],
-      "node_ids_sha256": "cd9f9eb49518e7fec51aabc9c895a5274180cdf972734acc695971dac4d42a4b"
+      "node_ids_sha256": "6406d8600982b6cd8a5e22de9152cf4c0fe27f8a772991a77e94fde80c135044"
     },
     {
       "id": "v1:source:2b2fd51df5fb9b4f",
@@ -11319,6 +11270,19 @@
         "v1:overload:b5f0966fadfb2773"
       ],
       "node_ids_sha256": "8836814f955ae6a27af3599a2e0d37b523e6a7e716dd43608829eb8236df965d"
+    },
+    {
+      "id": "v1:source:35022991ed9279a5",
+      "path": "crates/vibelang-http/src/routes/recordings.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 4,
+      "node_ids": [
+        "v1:operation:8d8deacd637f7432",
+        "v1:operation:8ecf42af60997339",
+        "v1:operation:ad7cc7d8b364950c",
+        "v1:operation:c0a18c64f34a1d47"
+      ],
+      "node_ids_sha256": "77abfbacfd78867d6a20da0e346816d53798e30d35ea919b5168e30781ae8064"
     },
     {
       "id": "v1:source:356962f9bb17e440",
@@ -14701,7 +14665,7 @@
       "id": "v1:source:59b824454d8c1d84",
       "path": "crates/vibelang-http/src/routes/fades.rs",
       "kind": "mechanical_declaration",
-      "node_count": 35,
+      "node_count": 42,
       "node_ids": [
         "v1:field:0e83b4d2eb66fd5b",
         "v1:field:1a132364bf01df39",
@@ -14731,6 +14695,13 @@
         "v1:field:cf28e9dc6335bcfe",
         "v1:field:d47de5892c36dc95",
         "v1:field:fa8048632194b8e4",
+        "v1:operation:146c58a973c4ea55",
+        "v1:operation:14e3822bb1c701a3",
+        "v1:operation:2571e9d5be35b66c",
+        "v1:operation:3fc93291efedb8e2",
+        "v1:operation:42b51957ef8b50bd",
+        "v1:operation:ec42799e06d386da",
+        "v1:operation:ef55ec2c5a69ccb4",
         "v1:type:732d289aff9d7576",
         "v1:type:78e2e513f71372be",
         "v1:type:9b091ba831f9caf4",
@@ -14739,7 +14710,7 @@
         "v1:type:e10e472ee16be827",
         "v1:type:fc103cf218f3a7cb"
       ],
-      "node_ids_sha256": "a01747c6155ea284d3cc997e62f7ba7be74442b0ba36c19e99a6b924e2d0a2ee"
+      "node_ids_sha256": "68521c8ca2e165dc45a8ba5e1503ea757bbd6ad2eae115c8169ce59c05196831"
     },
     {
       "id": "v1:source:59d3b15ecb720108",
@@ -17526,6 +17497,20 @@
       "node_ids_sha256": "0a57ae00a74d3500a6818505ff44561d1d10aef3e931c81f45b9bae8edd52338"
     },
     {
+      "id": "v1:source:7b280fc403eb5a1a",
+      "path": "crates/vibelang-http/src/routes/transport.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 5,
+      "node_ids": [
+        "v1:operation:1c7450d981db65a9",
+        "v1:operation:27b207db1a90d637",
+        "v1:operation:5ac92e676c5f7522",
+        "v1:operation:c6e48c67186c6042",
+        "v1:operation:f9f4c9bd574a1a22"
+      ],
+      "node_ids_sha256": "7fdc422716c43d5bb18560a1b277b458037b3947377afe090ebb0d951d7ebc5d"
+    },
+    {
       "id": "v1:source:7c226ed882d49177",
       "path": "crates/vibelang-std/stdlib/fx/transitions/transition_glitch.vibe",
       "kind": "mechanical_declaration",
@@ -18062,6 +18047,23 @@
         "v1:overload:95994f6a7f754cf2"
       ],
       "node_ids_sha256": "3880fa8df8dd5dc2f85514c9da2a24ca66eac1a78ee73f85b4ce380084976312"
+    },
+    {
+      "id": "v1:source:807e6cd36920d49d",
+      "path": "crates/vibelang-http/src/routes/groups.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 8,
+      "node_ids": [
+        "v1:operation:02117779f9e0c681",
+        "v1:operation:335a8b257333908e",
+        "v1:operation:4b3358ebd2a559fc",
+        "v1:operation:5780123dd2bb58e4",
+        "v1:operation:66ae2a46eef0831a",
+        "v1:operation:9aa2847bcf953672",
+        "v1:operation:c905777901bab230",
+        "v1:operation:e5c8443207524c87"
+      ],
+      "node_ids_sha256": "fbd0f5d7c2a1e60efb7a437bb388f597a53ecef3df36161a55ad91c74586d6ff"
     },
     {
       "id": "v1:source:808d20bc8c0caee0",
@@ -19020,7 +19022,7 @@
       "id": "v1:source:8706c81ef9b0bacd",
       "path": "crates/vibelang-http/src/websocket.rs",
       "kind": "mechanical_declaration",
-      "node_count": 20,
+      "node_count": 21,
       "node_ids": [
         "v1:event:46ced37429aeb44e",
         "v1:event:5db44d63085d4f6d",
@@ -19032,6 +19034,7 @@
         "v1:field:2cb62b1ebc160370",
         "v1:field:6a6507c7f306491d",
         "v1:field:f5d933103965eb68",
+        "v1:operation:00be3f56a1ad2716",
         "v1:type:000b70566a32dbbd",
         "v1:type:1b5ff06266dcdae9",
         "v1:type:230d71c85d95caf7",
@@ -19043,7 +19046,7 @@
         "v1:type:d6fbf72967f28d5c",
         "v1:type:fd7e8f345f2d990c"
       ],
-      "node_ids_sha256": "7ad099d430f0c051e4b3fc707a74fb94815a210525598f4dc037fb24a9e1b59d"
+      "node_ids_sha256": "b62c2d219023d23c77152a5f3853868372855a0b00c9e79af953e38a86f0f47e"
     },
     {
       "id": "v1:source:8751f8b85867a222",
@@ -19312,16 +19315,35 @@
       "id": "v1:source:8aa68b8f8f3d93e3",
       "path": "crates/vibelang-http/src/routes/eval.rs",
       "kind": "mechanical_declaration",
-      "node_count": 6,
+      "node_count": 7,
       "node_ids": [
         "v1:field:1343f683fe42f3b0",
         "v1:field:269683ba27b34907",
         "v1:field:7597a8e38c2e7d71",
         "v1:field:ca96de648b444aef",
+        "v1:operation:57cf213013df8722",
         "v1:type:7f473e0605a8c272",
         "v1:type:ff6ec8e28877ac7e"
       ],
-      "node_ids_sha256": "7afb3fe7ab2a7717138665627e30440a299cebcbc4c78af64b9b55ae99b3b718"
+      "node_ids_sha256": "987d4ad98d038859d08b907231ff5984348f8397a8d133e1536a32983f7bcf5d"
+    },
+    {
+      "id": "v1:source:8bdbf09da674104f",
+      "path": "crates/vibelang-http/src/routes/sequences.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 9,
+      "node_ids": [
+        "v1:operation:1f164a3677f466fd",
+        "v1:operation:3124a7d970f575ae",
+        "v1:operation:36a2f32ef00f7a3a",
+        "v1:operation:45e91271ccada54d",
+        "v1:operation:520a1a5c455ea29e",
+        "v1:operation:73f9c93f78f9a695",
+        "v1:operation:b47f3dda5f2b61af",
+        "v1:operation:c7a87c5d6ba5b070",
+        "v1:operation:d4fc895506d71306"
+      ],
+      "node_ids_sha256": "df447dddeb65210bb4d2ccb6816a3f610e1f768d97a32b9797389101cfb89b98"
     },
     {
       "id": "v1:source:8c07109c97fef177",
@@ -21167,9 +21189,12 @@
       "id": "v1:source:a02beba522eaa84e",
       "path": "api/http-api-snapshot-v1.json",
       "kind": "mechanical_declaration",
-      "node_count": 26,
+      "node_count": 29,
       "node_ids": [
+        "v1:type:0b2a7f62d9ca462d",
+        "v1:type:1c04d639038ec149",
         "v1:type:2bee2b80328b98dd",
+        "v1:type:2cd1ae80334cbcbb",
         "v1:type:2e0df731aa765b02",
         "v1:type:312757d5e314e4fa",
         "v1:type:32e5472f1ebdaf64",
@@ -21196,7 +21221,7 @@
         "v1:type:e8ac75ce1d7b52cd",
         "v1:type:ed7b26dd59d98368"
       ],
-      "node_ids_sha256": "512ff9dabb984a4c04aa673407568aa32f39ef6e2f18c72cf33661a876ced3a9"
+      "node_ids_sha256": "c94322434b4133d09ffba294678d632687a2a14b8485d84af5d1fd6d41255dd1"
     },
     {
       "id": "v1:source:a03c812a7daa548b",
@@ -22505,6 +22530,23 @@
       "node_ids_sha256": "fe5eecb129bfc2017d1d7de0ee530a7575be1e7882611de84e099a474f318203"
     },
     {
+      "id": "v1:source:abe897c1eb332e30",
+      "path": "crates/vibelang-http/src/routes/patterns.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 8,
+      "node_ids": [
+        "v1:operation:1cbd4c5b32c40fa3",
+        "v1:operation:2e17d3bbcad976c9",
+        "v1:operation:3cbb3d1d7dcaa7d9",
+        "v1:operation:7b943d53c8857974",
+        "v1:operation:85aef1ca87127f8c",
+        "v1:operation:a065a6f4106327b7",
+        "v1:operation:b5092b5dd721d3b0",
+        "v1:operation:cb0347fc9a2e4a3f"
+      ],
+      "node_ids_sha256": "2aab4e364879474d1225b8e536cd9eed3cca84649e7b225c21bebe95bb01ec64"
+    },
+    {
       "id": "v1:source:ac2037f8034584cc",
       "path": "api/baselines/public-artifacts-v1.json",
       "kind": "mechanical_declaration",
@@ -23013,6 +23055,27 @@
         "v1:overload:fed9f0218a4e7f8a"
       ],
       "node_ids_sha256": "739eb4db20eef882cb33920e9aef2be623dd74022f84c149869cb498c27a5b58"
+    },
+    {
+      "id": "v1:source:af92f12c75bdef88",
+      "path": "crates/vibelang-http/src/routes/voices.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 12,
+      "node_ids": [
+        "v1:operation:0617330331ffa9ad",
+        "v1:operation:14747b64635583e2",
+        "v1:operation:178c5f94ca659294",
+        "v1:operation:2b660ea07742f91d",
+        "v1:operation:44d30311fb17ccac",
+        "v1:operation:4dd4d9f1b254e964",
+        "v1:operation:630491b7ce677a17",
+        "v1:operation:8fd9bca29bb25a68",
+        "v1:operation:9fff3bb60c004a51",
+        "v1:operation:d648deeb4b9dbe9b",
+        "v1:operation:eef5f3c402deff7e",
+        "v1:operation:feeb9ca2e0c7f27f"
+      ],
+      "node_ids_sha256": "351ea8ec6cd3f90b07d49f8b844e538cc47aad6bdc71572889bdc0f7956bf661"
     },
     {
       "id": "v1:source:af96315527293074",
@@ -26744,6 +26807,19 @@
       "node_ids_sha256": "b783163692375d0f437331eff7fd44700ef76e9b99aa35632f968ccd062437af"
     },
     {
+      "id": "v1:source:df76c477e891d9d8",
+      "path": "crates/vibelang-http/src/routes/samples.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 4,
+      "node_ids": [
+        "v1:operation:557f0e771563a366",
+        "v1:operation:9e45a589ec9d4407",
+        "v1:operation:c1dfd765c405a7fb",
+        "v1:operation:ea35436a714ba35f"
+      ],
+      "node_ids_sha256": "1e211fc793f0f4664e6537db95a660f80107a632bba3262baeea2c5ced5a4850"
+    },
+    {
       "id": "v1:source:dfe0bac4f70d6e98",
       "path": "crates/vibelang-std/stdlib/effects/delays/reverse_delay.vibe",
       "kind": "mechanical_declaration",
@@ -28121,6 +28197,20 @@
       "node_ids_sha256": "1bdede6c32015c496364b170ef68edaa6940b332b96fdecdaa67d02b0c83dc0c"
     },
     {
+      "id": "v1:source:eefe75231b794afb",
+      "path": "crates/vibelang-http/src/routes/effects.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 5,
+      "node_ids": [
+        "v1:operation:3df290abc2827281",
+        "v1:operation:5eace6596ac51efa",
+        "v1:operation:79b5bbd83188b2b2",
+        "v1:operation:96f4cb11f25b9aac",
+        "v1:operation:cbf2a3a429d51e12"
+      ],
+      "node_ids_sha256": "9084bfa4efddff6cd12e97d293877ee9a613baac901af9fb84e1ce75c2e1c542"
+    },
+    {
       "id": "v1:source:ef5d54d8ecc95fbd",
       "path": "crates/vibelang-std/stdlib/effects/modulation/ring_mod_modulated.vibe",
       "kind": "mechanical_declaration",
@@ -28729,6 +28819,20 @@
       "node_ids_sha256": "9ca5af94ec71fce5f933e1d709ede2220af918956c1c54f3dafb82f2613a45ae"
     },
     {
+      "id": "v1:source:f693e7214bcd8b8f",
+      "path": "crates/vibelang-http/src/routes/live.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 5,
+      "node_ids": [
+        "v1:operation:1b7b07b92ac276c6",
+        "v1:operation:2ef71b5b56ae1150",
+        "v1:operation:48dfbe7678b66232",
+        "v1:operation:8f7e2bcb3d263ffb",
+        "v1:operation:ec59e659751384f9"
+      ],
+      "node_ids_sha256": "c92f439abeac9b8a5fe81027451dd2d9d3842048d4658ac6cd2fb050997f0ddf"
+    },
+    {
       "id": "v1:source:f72b00a9d1a7c01c",
       "path": "crates/vibelang-std/stdlib/cv/triggers/cv_euclidean.vibe",
       "kind": "mechanical_declaration",
@@ -29278,8 +29382,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 12987,
-      "eligible_count": 12987,
+      "included_count": 12990,
+      "eligible_count": 12990,
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29300,8 +29404,8 @@
       "projection_paths": [
         "api/http-api-snapshot-v1.json"
       ],
-      "included_count": 617,
-      "eligible_count": 617,
+      "included_count": 620,
+      "eligible_count": 620,
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0

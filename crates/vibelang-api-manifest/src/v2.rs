@@ -776,6 +776,7 @@ pub struct Field {
     pub type_id: String,
     pub default: Option<Value>,
     pub value_contract: Facet<ValueContract>,
+    pub operation_applicability: Facet<Vec<String>>,
     pub bindings: Vec<FieldBinding>,
     pub observation: Facet<ObservationContract>,
 }
@@ -898,7 +899,7 @@ pub enum BindingDetails {
         successes: Vec<HttpSuccess>,
         error_type_id: String,
         protocol_version: String,
-        authentication_capability_id: String,
+        authentication_capability_id: Option<String>,
         idempotency_header: Option<String>,
         revision_header: Option<String>,
     },
@@ -1377,9 +1378,47 @@ impl PublicApiManifestV2 {
             for field in &api_type.fields {
                 validate_metadata(&field.metadata, "field", &mut ids, &mut aliases)?;
                 field.value_contract.validate(&field.metadata.id)?;
+                field.operation_applicability.validate(&field.metadata.id)?;
                 field.observation.validate(&field.metadata.id)?;
+                ensure_sorted("field bindings", &field.bindings, |binding| {
+                    &binding.operation_id
+                })?;
+                let mut operation_ids = BTreeSet::new();
                 for binding in &field.bindings {
+                    if !operation_ids.insert(&binding.operation_id) {
+                        return Err(ManifestError::new(
+                            ErrorCode::DuplicateId,
+                            field.metadata.id.clone(),
+                            "a field may bind to an operation only once",
+                        ));
+                    }
                     validate_effectiveness(&binding.effectiveness, &field.metadata.id)?;
+                }
+                match &field.operation_applicability {
+                    Facet::Applicable { value }
+                        if value.is_empty()
+                            || value.iter().collect::<BTreeSet<_>>().len() != value.len()
+                            || value
+                                != &field
+                                    .bindings
+                                    .iter()
+                                    .map(|binding| binding.operation_id.clone())
+                                    .collect::<Vec<_>>() =>
+                    {
+                        return Err(ManifestError::new(
+                            ErrorCode::InvalidValue,
+                            field.metadata.id.clone(),
+                            "applicable field operation IDs must be nonempty, unique, sorted, and match bindings exactly",
+                        ));
+                    }
+                    Facet::NotApplicable { .. } if !field.bindings.is_empty() => {
+                        return Err(ManifestError::new(
+                            ErrorCode::InvalidValue,
+                            field.metadata.id.clone(),
+                            "not-applicable fields cannot carry operation bindings",
+                        ));
+                    }
+                    _ => {}
                 }
             }
             ensure_sorted("variants", &api_type.variants, |value| &value.id)?;
@@ -1416,8 +1455,102 @@ impl PublicApiManifestV2 {
                 validate_unique_id(&effect.id, "effect", &mut ids)?;
             }
             ensure_sorted("bindings", &operation.bindings, |value| &value.metadata.id)?;
+            let mut has_http_binding = false;
+            let mut http_authentication_capability_ids = BTreeSet::new();
             for binding in &operation.bindings {
                 validate_metadata(&binding.metadata, "binding", &mut ids, &mut aliases)?;
+                if let BindingDetails::Http {
+                    path_type_ids,
+                    query_type_ids,
+                    header_type_ids,
+                    body_type_id,
+                    successes,
+                    error_type_id,
+                    authentication_capability_id,
+                    ..
+                } = &binding.details
+                {
+                    has_http_binding = true;
+                    if let Some(id) = authentication_capability_id {
+                        http_authentication_capability_ids.insert(id);
+                    }
+                    if successes.is_empty() {
+                        return Err(ManifestError::new(
+                            ErrorCode::MissingFacet,
+                            binding.metadata.id.clone(),
+                            "HTTP bindings require at least one success status and shape",
+                        ));
+                    }
+                    let request_ids = path_type_ids
+                        .iter()
+                        .chain(query_type_ids)
+                        .chain(header_type_ids)
+                        .chain(body_type_id)
+                        .collect::<BTreeSet<_>>();
+                    if request_ids.is_empty() != operation.request_type_id.is_none()
+                        || operation
+                            .request_type_id
+                            .as_ref()
+                            .is_some_and(|id| !request_ids.contains(id))
+                    {
+                        return Err(ManifestError::new(
+                            ErrorCode::MissingFacet,
+                            binding.metadata.id.clone(),
+                            "HTTP request extractors and operation request_type_id must be connected",
+                        ));
+                    }
+                    let success_ids = successes
+                        .iter()
+                        .map(|success| &success.type_id)
+                        .collect::<BTreeSet<_>>();
+                    let success_pairs = successes
+                        .iter()
+                        .map(|success| (success.status, &success.type_id))
+                        .collect::<BTreeSet<_>>();
+                    if success_pairs.len() != successes.len()
+                        || operation.response_type_ids.iter().collect::<BTreeSet<_>>()
+                            != success_ids
+                    {
+                        return Err(ManifestError::new(
+                            ErrorCode::MissingFacet,
+                            binding.metadata.id.clone(),
+                            "HTTP success shapes and operation response_type_ids must match exactly",
+                        ));
+                    }
+                    if error_type_id != &operation.error_type_id {
+                        return Err(ManifestError::new(
+                            ErrorCode::InvalidValue,
+                            binding.metadata.id.clone(),
+                            "HTTP binding and operation error types must match",
+                        ));
+                    }
+                    if authentication_capability_id.as_ref().is_some_and(|id| {
+                        !operation
+                            .security_capability_ids
+                            .iter()
+                            .any(|security| security == id)
+                    }) {
+                        return Err(ManifestError::new(
+                            ErrorCode::InvalidValue,
+                            binding.metadata.id.clone(),
+                            "HTTP authentication capability must be an operation security capability",
+                        ));
+                    }
+                }
+            }
+            let security_capability_ids = operation
+                .security_capability_ids
+                .iter()
+                .collect::<BTreeSet<_>>();
+            if has_http_binding
+                && (security_capability_ids.len() != operation.security_capability_ids.len()
+                    || security_capability_ids != http_authentication_capability_ids)
+            {
+                return Err(ManifestError::new(
+                    ErrorCode::InvalidValue,
+                    operation.metadata.id.clone(),
+                    "HTTP operation security capabilities must match binding authentication capabilities exactly",
+                ));
             }
         }
         for event in &self.events {
@@ -1567,7 +1700,8 @@ impl PublicApiManifestV2 {
                             .chain(header_type_ids)
                             .chain(body_type_id)
                             .chain(successes.iter().map(|value| &value.type_id))
-                            .chain([error_type_id, authentication_capability_id])
+                            .chain(std::iter::once(error_type_id))
+                            .chain(authentication_capability_id)
                         {
                             require(&binding.metadata.id, id)?;
                         }

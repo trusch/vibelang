@@ -16,10 +16,11 @@ use vibelang_api_manifest::{
         ApiType, AvailabilityStatus, AvailabilityV2, BindingDetails, Capability,
         CapabilityExpression, ConsistencyPoint, Consumer, Derivation, Eligibility, Event,
         EventDelivery, EventOrdering, Facet, FailureContract, FailureDelivery, FailureStage,
-        FallbackPolicy, Field, FieldDirection, Generator, Idempotency, LossDetection, NodeMetadata,
-        Operation, OperationKind, OverloadV2, PanicExposure, PriorState, ProvenanceAnchor,
-        PublicApiManifestV2, RevisionRelation, Stability, StabilityLevel, SurfaceBinding, TypeKind,
-        UnavailableBehavior, VersionedPublicApiManifest, SCHEMA_URI_V2, SCHEMA_VERSION_V2,
+        FallbackPolicy, Field, FieldDirection, Generator, HttpSuccess, Idempotency, LossDetection,
+        NodeMetadata, Operation, OperationKind, OverloadV2, PanicExposure, PriorState,
+        ProvenanceAnchor, PublicApiManifestV2, RevisionRelation, Stability, StabilityLevel,
+        SurfaceBinding, TypeKind, UnavailableBehavior, VersionedPublicApiManifest, SCHEMA_URI_V2,
+        SCHEMA_VERSION_V2,
     },
     Anchor, DuplicateNameHandling, EntryDetails, ErrorCode, PublicApiManifest, StdlibDeclaration,
     UgenInput,
@@ -201,6 +202,9 @@ fn manifest_with_all_metadata_owners() -> PublicApiManifestV2 {
             value_contract: Facet::NotApplicable {
                 reason: "fixture field".into(),
             },
+            operation_applicability: Facet::NotApplicable {
+                reason: "fixture field".into(),
+            },
             bindings: Vec::new(),
             observation: Facet::NotApplicable {
                 reason: "fixture field".into(),
@@ -276,6 +280,31 @@ fn manifest_with_all_metadata_owners() -> PublicApiManifestV2 {
             reason: "fixture consumer".into(),
         },
     });
+    manifest
+}
+
+fn manifest_with_http_binding() -> PublicApiManifestV2 {
+    let mut manifest = manifest_with_all_metadata_owners();
+    let type_id = manifest.types[0].metadata.id.clone();
+    let operation = &mut manifest.operations[0];
+    operation.response_type_ids = vec![type_id.clone()];
+    operation.bindings[0].details = BindingDetails::Http {
+        method: "GET".into(),
+        path: "/fixture".into(),
+        path_type_ids: Vec::new(),
+        query_type_ids: Vec::new(),
+        header_type_ids: Vec::new(),
+        body_type_id: None,
+        successes: vec![HttpSuccess {
+            status: 200,
+            type_id: type_id.clone(),
+        }],
+        error_type_id: type_id,
+        protocol_version: "v1".into(),
+        authentication_capability_id: None,
+        idempotency_header: None,
+        revision_header: None,
+    };
     manifest
 }
 
@@ -659,6 +688,75 @@ fn duplicate_semantic_ownership_and_missing_required_facets_fail() {
         fragment_set().validate(&required).unwrap_err().code,
         ErrorCode::MissingFacet
     );
+}
+
+#[test]
+fn http_bindings_require_connected_request_success_and_authentication_links() {
+    let manifest = manifest_with_http_binding();
+    manifest.validate().unwrap();
+
+    let mut missing_success = manifest.clone();
+    let BindingDetails::Http { successes, .. } =
+        &mut missing_success.operations[0].bindings[0].details
+    else {
+        unreachable!()
+    };
+    successes.clear();
+    assert_eq!(
+        missing_success.validate().unwrap_err().code,
+        ErrorCode::MissingFacet
+    );
+
+    let mut missing_request = manifest.clone();
+    let type_id = missing_request.types[0].metadata.id.clone();
+    let BindingDetails::Http { path_type_ids, .. } =
+        &mut missing_request.operations[0].bindings[0].details
+    else {
+        unreachable!()
+    };
+    path_type_ids.push(type_id);
+    assert_eq!(
+        missing_request.validate().unwrap_err().code,
+        ErrorCode::MissingFacet
+    );
+
+    let mut false_authentication = manifest.clone();
+    let capability_id = false_authentication.capabilities[0].metadata.id.clone();
+    let BindingDetails::Http {
+        authentication_capability_id,
+        ..
+    } = &mut false_authentication.operations[0].bindings[0].details
+    else {
+        unreachable!()
+    };
+    *authentication_capability_id = Some(capability_id.clone());
+    assert_eq!(
+        false_authentication.validate().unwrap_err().code,
+        ErrorCode::InvalidValue
+    );
+
+    let mut false_security = manifest.clone();
+    false_security.operations[0]
+        .security_capability_ids
+        .push(capability_id.clone());
+    assert_eq!(
+        false_security.validate().unwrap_err().code,
+        ErrorCode::InvalidValue
+    );
+
+    let mut authenticated = manifest;
+    authenticated.operations[0]
+        .security_capability_ids
+        .push(capability_id.clone());
+    let BindingDetails::Http {
+        authentication_capability_id,
+        ..
+    } = &mut authenticated.operations[0].bindings[0].details
+    else {
+        unreachable!()
+    };
+    *authentication_capability_id = Some(capability_id);
+    authenticated.validate().unwrap();
 }
 
 #[test]

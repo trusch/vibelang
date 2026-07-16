@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-package-index/v1",
   "schema_version": 1,
-  "contract_digest": "1c9eb46baed6c3c9be063c22c18028b0fc015ef1e045011540bee447055da0a8",
+  "contract_digest": "0311a16fa18068b3ff1c94c00266f8a05e04aa4cd192b1a1d7898b4c07958af6",
   "files": [
     {
       "path": "Cargo.lock",
