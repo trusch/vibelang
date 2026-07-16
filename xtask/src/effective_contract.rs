@@ -1,9 +1,11 @@
 use crate::{public_api, public_artifacts};
+use quote::ToTokens;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use syn::{Fields, ImplItem, Item, Visibility};
 use vibelang_api_manifest::canonical::{canonical_sha256_hex, sha256_hex};
 use vibelang_api_manifest::compatibility::{
     CompatibilityChange, CompatibilityClass, CompatibilityReport,
@@ -17,8 +19,8 @@ use vibelang_api_manifest::v2::{
     semantic_id, validate_stable_id, Alias, AliasKind, ApiEntryV2, ApiType, AvailabilityStatus,
     AvailabilityV2, BindingDetails, CancellationContract, Capability, CapabilityExpression,
     CapabilityState, ConsistencyPoint, Consumer, ConsumerExclusion, CoverageRecord, Derivation,
-    EffectTiming, Eligibility, EnumVariant, Event, EventDelivery, EventOrdering, Facet,
-    FailureContract, FailureDelivery, FailureStage, FallbackPolicy, Field, FieldBinding,
+    EffectTiming, Eligibility, EnumVariant, Event, EventDelivery, EventOrdering, ExclusionReason,
+    Facet, FailureContract, FailureDelivery, FailureStage, FallbackPolicy, Field, FieldBinding,
     FieldDirection, Generator, HttpSuccess, Idempotency, LifecycleContract, LifecycleEffect,
     LifecyclePhase, LifecycleRole, LossDetection, NodeMetadata, ObservationContract, Operation,
     OperationKind, Ownership, PackageContract, PanicExposure, ParameterV2, PriorState,
@@ -29,6 +31,7 @@ use vibelang_api_manifest::v2::{
 use vibelang_api_manifest::{
     to_pretty_json, Anchor, ApiEntry, Availability, BoundarySemantics, PublicApiManifest,
 };
+use walkdir::WalkDir;
 
 const V2_PATH: &str = "api/public-api-manifest-v2.json";
 const COVERAGE_PATH: &str = "api/public-api-coverage-v2.json";
@@ -51,16 +54,6 @@ const EXPECTED_HTTP_ROUTES: usize = 96;
 const EXPECTED_HTTP_TYPES: usize = 75;
 const EXPECTED_HTTP_FIELDS: usize = 297;
 
-const WEBSOCKET_EVENTS: &[&str] = &[
-    "hello",
-    "playback.bar",
-    "playback.tick",
-    "transport.beat",
-    "transport.bpm",
-    "transport.started",
-    "transport.stopped",
-];
-
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     let discovery = discover(root)?;
     let first = compose(root, &discovery)?;
@@ -79,12 +72,846 @@ pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MechanicalDisposition {
+    Included,
+    Excluded(ExclusionReason),
+}
+
+#[derive(Debug, Clone)]
+struct RawMechanicalDeclaration {
+    surface: String,
+    kind: String,
+    name: String,
+    source_anchors: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone)]
+struct MechanicalDeclaration {
+    id: String,
+    surface: String,
+    kind: String,
+    name: String,
+    owner: String,
+    source_anchors: Vec<(String, String)>,
+    contract_node: bool,
+    consumers: BTreeMap<String, MechanicalDisposition>,
+}
+
+fn discover_mechanical_declarations(
+    root: &Path,
+    baseline: &ArtifactBaseline,
+) -> Result<Vec<MechanicalDeclaration>, String> {
+    let mut raw = Vec::new();
+    discover_cli_declarations(root, &mut raw)?;
+    discover_wasm_declarations(root, &mut raw)?;
+    discover_websocket_declarations(root, &mut raw)?;
+    discover_lsp_declarations(root, &mut raw)?;
+    discover_vscode_declarations(root, &mut raw)?;
+    discover_emacs_declarations(root, &mut raw)?;
+    discover_markdown_declarations(root, baseline, &mut raw)?;
+    discover_baseline_file_declarations(baseline, &mut raw)?;
+
+    let failures = mechanical_classification_failures(&raw);
+    if !failures.is_empty() {
+        return Err(format!(
+            "{} discovered mechanical declaration(s) lack ownership/classification: {}",
+            failures.len(),
+            failures.join(", ")
+        ));
+    }
+    let mut declarations = raw
+        .iter()
+        .cloned()
+        .map(classify_mechanical_declaration)
+        .collect::<Result<Vec<_>, _>>()?;
+    let missing = missing_mechanical_classifications(&raw, &declarations)?;
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} discovered eligible mechanical declaration(s) have no ownership/classification: {}",
+            missing.len(),
+            missing.join(", ")
+        ));
+    }
+    declarations.sort_by(|left, right| left.id.cmp(&right.id));
+    for pair in declarations.windows(2) {
+        if pair[0].id == pair[1].id {
+            return Err(format!(
+                "duplicate source-derived mechanical declaration ID {}",
+                pair[0].id
+            ));
+        }
+    }
+    Ok(declarations)
+}
+
+fn missing_mechanical_classifications(
+    raw: &[RawMechanicalDeclaration],
+    classified: &[MechanicalDeclaration],
+) -> Result<Vec<String>, String> {
+    let classified_ids = classified
+        .iter()
+        .map(|declaration| declaration.id.as_str())
+        .collect::<BTreeSet<_>>();
+    raw.iter()
+        .map(|declaration| {
+            let classified = classify_mechanical_declaration(declaration.clone())?;
+            Ok((
+                classified.id,
+                format!(
+                    "{}:{}:{}",
+                    declaration.surface, declaration.kind, declaration.name
+                ),
+            ))
+        })
+        .filter_map(|result| match result {
+            Ok((id, _)) if classified_ids.contains(id.as_str()) => None,
+            Ok((_, name)) => Some(Ok(name)),
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
+}
+
+fn mechanical_classification_failures(raw: &[RawMechanicalDeclaration]) -> Vec<String> {
+    raw.iter()
+        .filter(|declaration| mechanical_class(&declaration.surface, &declaration.kind).is_none())
+        .map(|declaration| {
+            format!(
+                "{}:{}:{}",
+                declaration.surface, declaration.kind, declaration.name
+            )
+        })
+        .collect()
+}
+
+fn mechanical_class(
+    surface: &str,
+    kind: &str,
+) -> Option<(
+    &'static str,
+    Option<&'static str>,
+    bool,
+    Option<ExclusionReason>,
+)> {
+    match (surface, kind) {
+        ("cli", "command" | "argument") => Some(("vibelang-cli", Some("cli"), true, None)),
+        (
+            "wasm",
+            "class" | "method" | "function" | "compatibility_shim" | "interface" | "result_member"
+            | "host_bridge" | "host_bridge_method",
+        ) => Some(("vibelang-wasm", Some("wasm"), true, None)),
+        ("wasm", "start_hook") => Some((
+            "vibelang-wasm",
+            Some("wasm"),
+            false,
+            Some(ExclusionReason::NotApplicable),
+        )),
+        ("websocket", "event" | "action") => Some(("vibelang-http", None, true, None)),
+        ("lsp", "diagnostic_rule" | "token_type" | "token_modifier") => {
+            Some(("vibelang-lsp", Some("rhai_editor"), true, None))
+        }
+        ("vscode", "command" | "setting") => {
+            Some(("vibelang-vscode", Some("rhai_editor"), true, None))
+        }
+        ("emacs", "command" | "setting") => {
+            Some(("vibelang-emacs", Some("rhai_editor"), true, None))
+        }
+        ("docs", "contract_block") => Some(("vibelang-docs", Some("docs"), true, None)),
+        ("docs", "non_contract_block") => Some((
+            "vibelang-docs",
+            Some("docs"),
+            false,
+            Some(ExclusionReason::NotApplicable),
+        )),
+        ("fixtures", "fixture") => Some(("vibelang-tests", Some("fixtures"), true, None)),
+        ("packages", "manifest") => Some(("vibelang-packaging", Some("packages"), true, None)),
+        ("packages", "lockfile") => Some((
+            "vibelang-packaging",
+            Some("packages"),
+            false,
+            Some(ExclusionReason::NotApplicable),
+        )),
+        _ => None,
+    }
+}
+
+fn classify_mechanical_declaration(
+    raw: RawMechanicalDeclaration,
+) -> Result<MechanicalDeclaration, String> {
+    let (owner, consumer, contract_node, exclusion) = mechanical_class(&raw.surface, &raw.kind)
+        .ok_or_else(|| format!("unclassified mechanical declaration {}", raw.name))?;
+    let id = if raw.surface == "websocket" && raw.kind == "event" {
+        semantic_id("event", &format!("websocket|{}", raw.name))
+    } else {
+        semantic_id(
+            "type",
+            &format!(
+                "mechanical|{}|{}|{}|{}",
+                raw.surface, raw.kind, raw.source_anchors[0].0, raw.name
+            ),
+        )
+    };
+    let mut consumers = BTreeMap::new();
+    if contract_node {
+        consumers.insert("manifest".into(), MechanicalDisposition::Included);
+    }
+    if let Some(consumer) = consumer {
+        consumers.insert(
+            consumer.into(),
+            exclusion.map_or(
+                MechanicalDisposition::Included,
+                MechanicalDisposition::Excluded,
+            ),
+        );
+    }
+    Ok(MechanicalDeclaration {
+        id,
+        surface: raw.surface,
+        kind: raw.kind,
+        name: raw.name,
+        owner: owner.into(),
+        source_anchors: raw.source_anchors,
+        contract_node,
+        consumers,
+    })
+}
+
+fn raw_declaration(
+    surface: &str,
+    kind: &str,
+    name: impl Into<String>,
+    path: &str,
+    symbol: impl Into<String>,
+) -> RawMechanicalDeclaration {
+    RawMechanicalDeclaration {
+        surface: surface.into(),
+        kind: kind.into(),
+        name: name.into(),
+        source_anchors: vec![(path.into(), symbol.into())],
+    }
+}
+
+fn discover_cli_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    const PATH: &str = "crates/vibelang-cli/src/main.rs";
+    let source = read(root, PATH)?;
+    let file = syn::parse_file(&source).map_err(|error| format!("{PATH}: {error}"))?;
+    for item in file.items {
+        match item {
+            Item::Struct(item) if item.ident == "Cli" => {
+                let Fields::Named(fields) = item.fields else {
+                    continue;
+                };
+                for field in fields.named {
+                    let Some(name) = field.ident.map(|ident| ident.to_string()) else {
+                        continue;
+                    };
+                    if name != "command" {
+                        declarations.push(raw_declaration(
+                            "cli",
+                            "argument",
+                            name.clone(),
+                            PATH,
+                            format!("Cli::{name}"),
+                        ));
+                    }
+                }
+            }
+            Item::Enum(item) if item.ident == "Commands" => {
+                for variant in item.variants {
+                    let command = to_kebab_case(&variant.ident.to_string());
+                    declarations.push(raw_declaration(
+                        "cli",
+                        "command",
+                        command,
+                        PATH,
+                        format!("Commands::{}", variant.ident),
+                    ));
+                    let Fields::Named(fields) = variant.fields else {
+                        continue;
+                    };
+                    for field in fields.named {
+                        let Some(name) = field.ident.map(|ident| ident.to_string()) else {
+                            continue;
+                        };
+                        declarations.push(raw_declaration(
+                            "cli",
+                            "argument",
+                            format!("{}::{name}", variant.ident),
+                            PATH,
+                            format!("Commands::{}::{name}", variant.ident),
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    declarations.push(raw_declaration(
+        "cli",
+        "command",
+        "help",
+        PATH,
+        "Clap Parser implicit help subcommand",
+    ));
+    Ok(())
+}
+
+fn discover_wasm_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    const PATH: &str = "crates/vibelang-wasm/src/lib.rs";
+    let source = read(root, PATH)?;
+    let file = syn::parse_file(&source).map_err(|error| format!("{PATH}: {error}"))?;
+    for item in &file.items {
+        match item {
+            Item::Struct(item) if has_attribute(&item.attrs, "wasm_bindgen") => {
+                declarations.push(raw_declaration(
+                    "wasm",
+                    "class",
+                    item.ident.to_string(),
+                    PATH,
+                    item.ident.to_string(),
+                ));
+            }
+            Item::Struct(item)
+                if item.ident == "ExecutionResult" || item.ident == "CompiledSynthdef" =>
+            {
+                let interface = item.ident.to_string();
+                declarations.push(raw_declaration(
+                    "wasm",
+                    "interface",
+                    interface.clone(),
+                    PATH,
+                    interface.clone(),
+                ));
+                for field in &item.fields {
+                    let Some(field) = &field.ident else { continue };
+                    declarations.push(raw_declaration(
+                        "wasm",
+                        "result_member",
+                        format!("{interface}.{field}"),
+                        PATH,
+                        format!("{interface}::{field}"),
+                    ));
+                }
+            }
+            Item::Impl(item) if has_attribute(&item.attrs, "wasm_bindgen") => {
+                let class = item.self_ty.to_token_stream().to_string().replace(' ', "");
+                for impl_item in &item.items {
+                    let ImplItem::Fn(function) = impl_item else {
+                        continue;
+                    };
+                    if !matches!(function.vis, Visibility::Public(_)) {
+                        continue;
+                    }
+                    let name = wasm_export_name(&function.sig.ident.to_string(), &function.attrs);
+                    declarations.push(raw_declaration(
+                        "wasm",
+                        "method",
+                        format!("{class}.{name}"),
+                        PATH,
+                        format!("{class}::{}", function.sig.ident),
+                    ));
+                }
+            }
+            Item::Fn(function)
+                if has_attribute(&function.attrs, "wasm_bindgen")
+                    && matches!(function.vis, Visibility::Public(_)) =>
+            {
+                let attributes = attributes_text(&function.attrs);
+                let kind = if attributes.contains("start") {
+                    "start_hook"
+                } else {
+                    "function"
+                };
+                declarations.push(raw_declaration(
+                    "wasm",
+                    kind,
+                    wasm_export_name(&function.sig.ident.to_string(), &function.attrs),
+                    PATH,
+                    function.sig.ident.to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    if !source.contains("JsValue::from_str(\"vibelangBridge\")") {
+        return Err("WASM host bridge global is no longer mechanically discoverable".into());
+    }
+    declarations.push(raw_declaration(
+        "wasm",
+        "host_bridge",
+        "globalThis.vibelangBridge",
+        PATH,
+        "JsValue::from_str(\"vibelangBridge\")",
+    ));
+    let bridge_methods = source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("async fn "))
+        .filter_map(|tail| {
+            tail.split_once('(')
+                .map(|(name, _)| name.trim().to_string())
+        })
+        .filter(|name| name.chars().any(char::is_uppercase))
+        .collect::<BTreeSet<_>>();
+    if bridge_methods.is_empty() {
+        return Err("WASM host bridge has no mechanically discovered methods".into());
+    }
+    for method in bridge_methods {
+        declarations.push(raw_declaration(
+            "wasm",
+            "host_bridge_method",
+            format!("globalThis.vibelangBridge.{method}"),
+            PATH,
+            method,
+        ));
+    }
+    const TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
+    let generated_types = read(root, TYPES_PATH)?;
+    let source_exports = declarations
+        .iter()
+        .filter(|declaration| declaration.surface == "wasm" && declaration.kind == "function")
+        .map(|declaration| declaration.name.clone())
+        .collect::<BTreeSet<_>>();
+    for line in generated_types.lines() {
+        let line = line.trim();
+        let signature = line
+            .strip_prefix("export function ")
+            .or_else(|| line.strip_prefix("export default function "));
+        let Some(signature) = signature else {
+            continue;
+        };
+        let Some((name, _)) = signature.split_once('(') else {
+            continue;
+        };
+        if !source_exports.contains(name) {
+            declarations.push(raw_declaration(
+                "wasm",
+                "compatibility_shim",
+                name,
+                TYPES_PATH,
+                format!("generated wasm-bindgen module export {name}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn discover_websocket_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    const PATH: &str = "crates/vibelang-http/src/websocket.rs";
+    let source = read(root, PATH)?;
+    for event in string_array_after(&source, "\"events\":")? {
+        declarations.push(raw_declaration(
+            "websocket",
+            "event",
+            event.clone(),
+            PATH,
+            format!("advertised event {event}"),
+        ));
+    }
+    for action in string_array_after(&source, "\"commands\":")? {
+        declarations.push(raw_declaration(
+            "websocket",
+            "action",
+            action.clone(),
+            PATH,
+            format!("advertised command {action}"),
+        ));
+    }
+    Ok(())
+}
+
+fn discover_lsp_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    const TOKENS: &str = "crates/vibelang-lsp/src/features/semantic_tokens.rs";
+    let source = read(root, TOKENS)?;
+    for (constant, kind, prefix) in [
+        ("TOKEN_TYPES", "token_type", "SemanticTokenType::"),
+        (
+            "TOKEN_MODIFIERS",
+            "token_modifier",
+            "SemanticTokenModifier::",
+        ),
+    ] {
+        let body = const_array_body(&source, constant)?;
+        for line in body.lines() {
+            let Some((_, tail)) = line.split_once(prefix) else {
+                continue;
+            };
+            let name = tail
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() {
+                declarations.push(raw_declaration(
+                    "lsp",
+                    kind,
+                    format!("{constant}.{name}"),
+                    TOKENS,
+                    format!("{constant}::{name}"),
+                ));
+            }
+        }
+    }
+
+    const ANALYSIS: &str = "crates/vibelang-lsp/src/analysis/mod.rs";
+    let source = read(root, ANALYSIS)?;
+    let lint_block = source
+        .split_once("// Run linting passes")
+        .and_then(|(_, tail)| tail.split_once("result\n"))
+        .map(|(block, _)| block)
+        .ok_or_else(|| "LSP diagnostic rule invocation block disappeared".to_string())?;
+    for line in lint_block.lines() {
+        let line = line.trim();
+        if let Some((name, _)) = line.split_once('(') {
+            if name.starts_with("lint_") {
+                declarations.push(raw_declaration(
+                    "lsp",
+                    "diagnostic_rule",
+                    name,
+                    ANALYSIS,
+                    name,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn discover_vscode_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    const PACKAGE: &str = "vscode-extension/package.json";
+    let package: Value = serde_json::from_str(&read(root, PACKAGE)?)
+        .map_err(|error| format!("{PACKAGE}: {error}"))?;
+    let contributed = package["contributes"]["commands"]
+        .as_array()
+        .ok_or_else(|| "VS Code package has no contributed commands".to_string())?
+        .iter()
+        .filter_map(|command| command["command"].as_str().map(str::to_string))
+        .collect::<BTreeSet<_>>();
+    let mut registered: BTreeMap<String, String> = BTreeMap::new();
+    for entry in WalkDir::new(root.join("vscode-extension/src")) {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some("ts")
+        {
+            continue;
+        }
+        let relative = relative_path(root, entry.path())?;
+        let source = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+        for command in quoted_arguments_after(&source, "registerCommand") {
+            registered.insert(command, relative.clone());
+        }
+    }
+    let registered_names = registered.keys().cloned().collect::<BTreeSet<_>>();
+    if contributed != registered_names {
+        return Err(format!(
+            "VS Code contributed/registered command drift: contributed-only={:?}, registered-only={:?}",
+            contributed.difference(&registered_names).collect::<Vec<_>>(),
+            registered_names.difference(&contributed).collect::<Vec<_>>()
+        ));
+    }
+    for command in contributed {
+        let mut declaration = raw_declaration(
+            "vscode",
+            "command",
+            command.clone(),
+            PACKAGE,
+            format!("contributes.commands.{command}"),
+        );
+        declaration.source_anchors.push((
+            registered[&command].clone(),
+            format!("registerCommand({command})"),
+        ));
+        declarations.push(declaration);
+    }
+    let settings = package["contributes"]["configuration"]["properties"]
+        .as_object()
+        .ok_or_else(|| "VS Code package has no contributed settings".to_string())?;
+    for setting in settings.keys() {
+        declarations.push(raw_declaration(
+            "vscode",
+            "setting",
+            setting,
+            PACKAGE,
+            format!("contributes.configuration.properties.{setting}"),
+        ));
+    }
+    Ok(())
+}
+
+fn discover_emacs_declarations(
+    root: &Path,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    for entry in WalkDir::new(root.join("emacs")).max_depth(1) {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some("el")
+        {
+            continue;
+        }
+        let relative = relative_path(root, entry.path())?;
+        let source = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+        let lines = source.lines().collect::<Vec<_>>();
+        for (index, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            if let Some(name) = lisp_form_name(trimmed, "(defcustom ") {
+                declarations.push(raw_declaration(
+                    "emacs",
+                    "setting",
+                    name,
+                    &relative,
+                    format!("defcustom {name}"),
+                ));
+            }
+            if !trimmed.starts_with("(interactive") {
+                continue;
+            }
+            let command = lines[..=index].iter().rev().find_map(|candidate| {
+                let candidate = candidate.trim_start();
+                ["(defun ", "(define-minor-mode ", "(define-derived-mode "]
+                    .iter()
+                    .find_map(|prefix| lisp_form_name(candidate, prefix))
+            });
+            if let Some(command) = command {
+                declarations.push(raw_declaration(
+                    "emacs",
+                    "command",
+                    command,
+                    &relative,
+                    format!("interactive {command}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn discover_markdown_declarations(
+    root: &Path,
+    baseline: &ArtifactBaseline,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    let docs = baseline
+        .categories
+        .get("docs")
+        .ok_or_else(|| "M00 baseline has no docs category".to_string())?;
+    for file in &docs.files {
+        let source = read(root, &file.path)?;
+        let mut fence_index = 0usize;
+        for (line_index, line) in source.lines().enumerate() {
+            let Some(language) = line.trim().strip_prefix("```") else {
+                continue;
+            };
+            if language.is_empty() {
+                continue;
+            }
+            fence_index += 1;
+            let language = language.split_whitespace().next().unwrap_or(language);
+            let kind = if matches!(
+                language,
+                "rhai" | "vibe" | "bash" | "sh" | "shell" | "console"
+            ) {
+                "contract_block"
+            } else {
+                "non_contract_block"
+            };
+            declarations.push(raw_declaration(
+                "docs",
+                kind,
+                format!("{}#{fence_index}:{language}", file.path),
+                &file.path,
+                format!("fenced block at line {}", line_index + 1),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn discover_baseline_file_declarations(
+    baseline: &ArtifactBaseline,
+    declarations: &mut Vec<RawMechanicalDeclaration>,
+) -> Result<(), String> {
+    let fixtures = baseline
+        .categories
+        .get("fixtures")
+        .ok_or_else(|| "M00 baseline has no fixtures category".to_string())?;
+    for file in &fixtures.files {
+        declarations.push(raw_declaration(
+            "fixtures",
+            "fixture",
+            &file.path,
+            &file.path,
+            "M00 executable/negative fixture",
+        ));
+    }
+    let packages = baseline
+        .categories
+        .get("packages")
+        .ok_or_else(|| "M00 baseline has no packages category".to_string())?;
+    for file in &packages.files {
+        let kind = if file.path.ends_with("Cargo.lock") || file.path.ends_with("package-lock.json")
+        {
+            "lockfile"
+        } else if file.path.ends_with("Cargo.toml") || file.path.ends_with("package.json") {
+            "manifest"
+        } else {
+            return Err(format!("unclassified package inventory path {}", file.path));
+        };
+        declarations.push(raw_declaration(
+            "packages",
+            kind,
+            &file.path,
+            &file.path,
+            format!("package inventory {}", file.path),
+        ));
+    }
+    Ok(())
+}
+
+fn has_attribute(attributes: &[syn::Attribute], name: &str) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| attribute.path().is_ident(name))
+}
+
+fn attributes_text(attributes: &[syn::Attribute]) -> String {
+    attributes
+        .iter()
+        .map(|attribute| attribute.meta.to_token_stream().to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn wasm_export_name(rust_name: &str, attributes: &[syn::Attribute]) -> String {
+    let text = attributes_text(attributes);
+    let marker = "js_name =";
+    if let Some(value) = text.split_once(marker).map(|(_, tail)| tail) {
+        return value
+            .split(|character: char| character == ',' || character == ')')
+            .next()
+            .unwrap_or(rust_name)
+            .trim()
+            .trim_matches('"')
+            .to_string();
+    }
+    to_lower_camel(rust_name)
+}
+
+fn to_lower_camel(value: &str) -> String {
+    let mut output = String::new();
+    let mut uppercase = false;
+    for character in value.chars() {
+        if character == '_' {
+            uppercase = true;
+        } else if uppercase {
+            output.push(character.to_ascii_uppercase());
+            uppercase = false;
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn to_kebab_case(value: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in value.chars().enumerate() {
+        if character.is_ascii_uppercase() {
+            if index != 0 {
+                output.push('-');
+            }
+            output.push(character.to_ascii_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn string_array_after(source: &str, marker: &str) -> Result<Vec<String>, String> {
+    let tail = source
+        .split_once(marker)
+        .map(|(_, tail)| tail)
+        .ok_or_else(|| format!("source has no {marker} declaration"))?;
+    let body = tail
+        .split_once('[')
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(body, _)| body)
+        .ok_or_else(|| format!("source has malformed {marker} array"))?;
+    let mut values = BTreeSet::new();
+    for part in body.split(',') {
+        let value = part.trim().trim_matches('"');
+        if !value.is_empty() {
+            values.insert(value.to_string());
+        }
+    }
+    if values.is_empty() {
+        return Err(format!("source has empty {marker} array"));
+    }
+    Ok(values.into_iter().collect())
+}
+
+fn const_array_body<'a>(source: &'a str, constant: &str) -> Result<&'a str, String> {
+    source
+        .split_once(&format!("const {constant}:"))
+        .and_then(|(_, tail)| tail.split_once("&["))
+        .and_then(|(_, tail)| tail.split_once("];"))
+        .map(|(body, _)| body)
+        .ok_or_else(|| format!("LSP constant {constant} is not a source array"))
+}
+
+fn quoted_arguments_after(source: &str, marker: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut remainder = source;
+    while let Some((_, tail)) = remainder.split_once(marker) {
+        let Some(open) = tail.find('(') else { break };
+        let tail = tail[open + 1..].trim_start();
+        let Some(quote) = tail
+            .chars()
+            .next()
+            .filter(|character| *character == '\'' || *character == '"')
+        else {
+            remainder = &tail[tail.len().min(1)..];
+            continue;
+        };
+        let tail = &tail[quote.len_utf8()..];
+        let Some(end) = tail.find(quote) else { break };
+        values.push(tail[..end].to_string());
+        remainder = &tail[end + quote.len_utf8()..];
+    }
+    values
+}
+
+fn relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    path.strip_prefix(root)
+        .map_err(|error| error.to_string())
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn lisp_form_name<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
+    line.strip_prefix(prefix)?.split_whitespace().next()
+}
+
 struct Discovery {
     v1: PublicApiManifest,
     v1_json: String,
     http: HttpSnapshot,
     baseline: ArtifactBaseline,
     fragments: FragmentSet,
+    mechanical: Vec<MechanicalDeclaration>,
 }
 
 fn discover(root: &Path) -> Result<Discovery, String> {
@@ -114,6 +941,7 @@ fn discover(root: &Path) -> Result<Discovery, String> {
         .map_err(|error| format!("{BASELINE_PATH}: {error}"))?;
     validate_accepted_projections(root, &baseline)?;
     let fragments = load_fragments(root)?;
+    let mechanical = discover_mechanical_declarations(root, &baseline)?;
 
     Ok(Discovery {
         v1,
@@ -121,6 +949,7 @@ fn discover(root: &Path) -> Result<Discovery, String> {
         http,
         baseline,
         fragments,
+        mechanical,
     })
 }
 
@@ -156,6 +985,14 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
 }
 
 fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
+    let websocket_events = discovery
+        .mechanical
+        .iter()
+        .filter(|declaration| declaration.surface == "websocket" && declaration.kind == "event")
+        .collect::<Vec<_>>();
+    if websocket_events.is_empty() {
+        return Err("WebSocket mechanical discovery produced no events".into());
+    }
     let conditional_capability_id = semantic_id("capability", "legacy|declared-condition");
     let capabilities = vec![Capability {
         metadata: metadata(
@@ -254,10 +1091,10 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let event_type_ids = WEBSOCKET_EVENTS
+    let event_type_ids = websocket_events
         .iter()
         .map(|event| {
-            let shape = format!("websocket payload {event}");
+            let shape = format!("websocket payload {}", event.name);
             (shape.clone(), semantic_id("type", &format!("{shape}|v1")))
         })
         .collect::<BTreeMap<_, _>>();
@@ -293,15 +1130,15 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             variants: Vec::new(),
         });
     }
-    for event in WEBSOCKET_EVENTS {
-        let shape = format!("websocket payload {event}");
+    for event in &websocket_events {
+        let shape = format!("websocket payload {}", event.name);
         types.push(ApiType {
             metadata: metadata(
                 event_type_ids[&shape].clone(),
                 shape.clone(),
                 "vibelang-http",
                 "crates/vibelang-http/src/websocket.rs",
-                format!("WebSocketEvent::{event}"),
+                format!("WebSocketEvent::{}", event.name),
                 Derivation::RustAst,
                 available(),
                 Vec::new(),
@@ -310,6 +1147,13 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             fields: Vec::new(),
             variants: Vec::new(),
         });
+    }
+    for declaration in discovery
+        .mechanical
+        .iter()
+        .filter(|declaration| declaration.contract_node && declaration.kind != "event")
+    {
+        types.push(mechanical_type(declaration));
     }
     types.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
 
@@ -334,20 +1178,20 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         .collect::<Vec<_>>();
     operations.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
 
-    let mut events = WEBSOCKET_EVENTS
+    let mut events = websocket_events
         .iter()
         .map(|event| Event {
             metadata: metadata(
-                semantic_id("event", &format!("websocket|{event}")),
-                (*event).to_string(),
+                event.id.clone(),
+                event.name.clone(),
                 "vibelang-http",
                 "crates/vibelang-http/src/websocket.rs",
-                format!("WebSocketEvent::{event}"),
+                format!("WebSocketEvent::{}", event.name),
                 Derivation::RustAst,
                 available(),
                 Vec::new(),
             ),
-            payload_type_id: event_type_ids[&format!("websocket payload {event}")].clone(),
+            payload_type_id: event_type_ids[&format!("websocket payload {}", event.name)].clone(),
             producer_operation_id: None,
             protocol_version: "v1".into(),
             ordering: EventOrdering::Unordered,
@@ -359,7 +1203,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         .collect::<Vec<_>>();
     events.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
 
-    let consumers = build_consumers(
+    let (consumers, consumer_accounting) = build_consumers(
         discovery,
         &consumer_ids,
         &entries,
@@ -367,7 +1211,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         &operations,
         &events,
     )?;
-    let coverage = build_manifest_coverage(discovery, &consumer_ids)?;
+    let coverage = build_manifest_coverage(&consumer_ids, &consumer_accounting)?;
 
     let mut stats = discovery.v1.stats.clone();
     stats.insert("http_routes".into(), discovery.http.routes.len() as u64);
@@ -403,6 +1247,41 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         coverage,
         stats,
     })
+}
+
+fn mechanical_type(declaration: &MechanicalDeclaration) -> ApiType {
+    let derivation = match declaration.surface.as_str() {
+        "fixtures" => Derivation::BehavioralFixture,
+        "docs" | "packages" | "vscode" | "emacs" => Derivation::Catalog,
+        _ => Derivation::RustAst,
+    };
+    ApiType {
+        metadata: NodeMetadata {
+            id: declaration.id.clone(),
+            name: format!(
+                "mechanical {} {} {}",
+                declaration.surface, declaration.kind, declaration.name
+            ),
+            aliases: Vec::new(),
+            stability: stable(),
+            availability: available(),
+            ownership: ownership(&declaration.owner),
+            source_anchors: declaration
+                .source_anchors
+                .iter()
+                .map(|(path, symbol)| ProvenanceAnchor {
+                    path: path.clone(),
+                    symbol: symbol.clone(),
+                    line: None,
+                    derivation,
+                })
+                .collect(),
+            test_anchors: Vec::new(),
+        },
+        kind: TypeKind::Alias,
+        fields: Vec::new(),
+        variants: Vec::new(),
+    }
 }
 
 fn entry_v2(
@@ -703,51 +1582,109 @@ fn build_consumers(
     types: &[ApiType],
     operations: &[Operation],
     events: &[Event],
-) -> Result<Vec<Consumer>, String> {
+) -> Result<(Vec<Consumer>, BTreeMap<String, ConsumerAccounting>), String> {
+    let manifest_ids = entries
+        .iter()
+        .flat_map(|entry| {
+            std::iter::once(entry.metadata.id.clone()).chain(
+                entry
+                    .overloads
+                    .iter()
+                    .map(|overload| overload.metadata.id.clone()),
+            )
+        })
+        .chain(types.iter().flat_map(|api_type| {
+            std::iter::once(api_type.metadata.id.clone())
+                .chain(
+                    api_type
+                        .fields
+                        .iter()
+                        .map(|field| field.metadata.id.clone()),
+                )
+                .chain(api_type.variants.iter().map(|variant| variant.id.clone()))
+        }))
+        .chain(operations.iter().flat_map(|operation| {
+            std::iter::once(operation.metadata.id.clone()).chain(
+                operation
+                    .bindings
+                    .iter()
+                    .map(|binding| binding.metadata.id.clone()),
+            )
+        }))
+        .chain(events.iter().map(|event| event.metadata.id.clone()))
+        .collect::<BTreeSet<_>>();
+    let http_ids = types
+        .iter()
+        .filter(|api_type| {
+            api_type.metadata.source_anchors.iter().any(|anchor| {
+                anchor.path == V1_HTTP_PATH
+                    || discovery
+                        .http
+                        .types
+                        .iter()
+                        .any(|raw| raw.source == anchor.path)
+            })
+        })
+        .flat_map(|api_type| {
+            std::iter::once(api_type.metadata.id.clone())
+                .chain(
+                    api_type
+                        .fields
+                        .iter()
+                        .map(|field| field.metadata.id.clone()),
+                )
+                .chain(api_type.variants.iter().map(|variant| variant.id.clone()))
+        })
+        .chain(operations.iter().flat_map(|operation| {
+            std::iter::once(operation.metadata.id.clone()).chain(
+                operation
+                    .bindings
+                    .iter()
+                    .map(|binding| binding.metadata.id.clone()),
+            )
+        }))
+        .collect::<BTreeSet<_>>();
+    let editor = editor_consumer_accounting(discovery)?;
     let mut consumers = Vec::new();
+    let mut accounting = BTreeMap::new();
     for (category, baseline) in &discovery.baseline.categories {
         let id = consumer_ids[category].clone();
-        let mut included_ids = match category.as_str() {
-            "manifest" => entries
-                .iter()
-                .flat_map(|entry| {
-                    std::iter::once(entry.metadata.id.clone()).chain(
-                        entry
-                            .overloads
-                            .iter()
-                            .map(|value| value.metadata.id.clone()),
-                    )
-                })
-                .collect(),
-            "http" => types
-                .iter()
-                .flat_map(|api_type| {
-                    std::iter::once(api_type.metadata.id.clone())
-                        .chain(
-                            api_type
-                                .fields
-                                .iter()
-                                .map(|field| field.metadata.id.clone()),
-                        )
-                        .chain(api_type.variants.iter().map(|variant| variant.id.clone()))
-                })
-                .chain(operations.iter().flat_map(|operation| {
-                    std::iter::once(operation.metadata.id.clone()).chain(
-                        operation
-                            .bindings
-                            .iter()
-                            .map(|binding| binding.metadata.id.clone()),
-                    )
-                }))
-                .collect(),
-            "wasm" => events
-                .iter()
-                .map(|event| event.metadata.id.clone())
-                .collect(),
-            _ => Vec::new(),
+        let mut current = match category.as_str() {
+            "manifest" => ConsumerAccounting::included(manifest_ids.clone()),
+            "http" => ConsumerAccounting::included(http_ids.clone()),
+            "rhai_editor" => editor.clone(),
+            _ => ConsumerAccounting::default(),
         };
-        included_ids.sort();
-        included_ids.dedup();
+        for declaration in &discovery.mechanical {
+            let Some(disposition) = declaration.consumers.get(category) else {
+                continue;
+            };
+            match disposition {
+                MechanicalDisposition::Included => {
+                    current.included.insert(declaration.id.clone());
+                }
+                MechanicalDisposition::Excluded(reason) => {
+                    current
+                        .exclusions
+                        .insert(declaration.id.clone(), (*reason, declaration.owner.clone()));
+                }
+            }
+        }
+        if current.included.is_empty() && current.exclusions.is_empty() {
+            return Err(format!(
+                "consumer {category} has no source-derived eligible declarations or exclusions"
+            ));
+        }
+        let included_ids = current.included.iter().cloned().collect::<Vec<_>>();
+        let exclusions = current
+            .exclusions
+            .iter()
+            .map(|(id, (reason, owner))| ConsumerExclusion {
+                id: id.clone(),
+                reason: *reason,
+                owner: owner.clone(),
+            })
+            .collect();
         let package = if category == "packages" {
             Facet::Applicable {
                 value: PackageContract {
@@ -783,59 +1720,225 @@ fn build_consumers(
                 .collect(),
             eligibility: Eligibility {
                 surfaces: vec![category.clone()],
-                kinds: vec!["v1_compatibility_projection".into()],
+                kinds: vec!["source_derived_mechanical_declaration".into()],
                 stability_levels: [StabilityLevel::Stable].into_iter().collect(),
                 capability_ids: Vec::new(),
             },
             included_ids,
-            exclusions: Vec::<ConsumerExclusion>::new(),
+            exclusions,
             package,
         });
+        accounting.insert(category.clone(), current);
     }
     consumers.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
-    Ok(consumers)
+    Ok((consumers, accounting))
 }
 
 fn build_manifest_coverage(
-    discovery: &Discovery,
     consumer_ids: &BTreeMap<String, String>,
+    accounting: &BTreeMap<String, ConsumerAccounting>,
 ) -> Result<BTreeMap<String, CoverageRecord>, String> {
     let mut coverage = BTreeMap::new();
-    for (category, baseline) in &discovery.baseline.categories {
-        let denominator = match category.as_str() {
-            "manifest" => (EXPECTED_ENTRIES + EXPECTED_OVERLOADS) as u64,
-            "http" => (EXPECTED_HTTP_ROUTES + EXPECTED_HTTP_TYPES + EXPECTED_HTTP_FIELDS) as u64,
-            _ => baseline.files.len() as u64,
-        };
-        let stale_ids = match category.as_str() {
-            "rhai_editor" => vec![
-                "a2_k_kr",
-                "k2_a_ar",
-                "lag2_ud_ar",
-                "lag2_ud_kr",
-                "lag3_ud_ar",
-                "lag3_ud_kr",
-                "t2_a_ar",
-                "t2_k_kr",
-            ]
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
-            _ => Vec::new(),
-        };
+    for (category, consumer) in accounting {
+        let denominator = consumer.eligible_count() as u64;
+        let mut exclusions_by_reason = BTreeMap::new();
+        for (reason, _) in consumer.exclusions.values() {
+            *exclusions_by_reason
+                .entry(exclusion_reason_name(*reason).into())
+                .or_insert(0) += 1;
+        }
         coverage.insert(
             consumer_ids[category].clone(),
             CoverageRecord {
-                numerator: denominator,
+                numerator: consumer.included.len() as u64,
                 denominator,
-                exclusions_by_reason: BTreeMap::new(),
-                unresolved_ids: Vec::new(),
-                stale_ids,
+                exclusions_by_reason,
+                unresolved_ids: consumer.unresolved.iter().cloned().collect(),
+                stale_ids: consumer.stale.iter().cloned().collect(),
                 base_denominator: Some(denominator),
             },
         );
     }
     Ok(coverage)
+}
+
+#[derive(Debug, Clone, Default)]
+struct ConsumerAccounting {
+    included: BTreeSet<String>,
+    exclusions: BTreeMap<String, (ExclusionReason, String)>,
+    unresolved: BTreeSet<String>,
+    stale: BTreeSet<String>,
+}
+
+impl ConsumerAccounting {
+    fn included(included: BTreeSet<String>) -> Self {
+        Self {
+            included,
+            ..Self::default()
+        }
+    }
+
+    fn eligible_count(&self) -> usize {
+        self.included.len() + self.exclusions.len() + self.unresolved.len()
+    }
+}
+
+fn exclusion_reason_name(reason: ExclusionReason) -> &'static str {
+    match reason {
+        ExclusionReason::IntentionalCuration => "intentional_curation",
+        ExclusionReason::UnsupportedHost => "unsupported_host",
+        ExclusionReason::Deprecated => "deprecated",
+        ExclusionReason::NotApplicable => "not_applicable",
+    }
+}
+
+fn editor_consumer_accounting(discovery: &Discovery) -> Result<ConsumerAccounting, String> {
+    let mut accounting = ConsumerAccounting::default();
+    for entry in discovery.v1.entries.iter().filter(|entry| {
+        matches!(
+            entry.surface.as_str(),
+            "rhai" | "dsp_rhai" | "rhai_extension"
+        ) && entry.kind == "function"
+            && !matches!(
+                entry.availability.status.as_str(),
+                "quarantined" | "documentation_only"
+            )
+    }) {
+        accounting
+            .included
+            .extend(entry.overloads.iter().map(|overload| overload.id.clone()));
+    }
+
+    let stdlib: Value = serde_json::from_str(&read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
+        "vscode-extension/src/data/stdlib.json",
+    )?)
+    .map_err(|error| error.to_string())?;
+    let stdlib_names = stdlib["synthdefs"]
+        .as_array()
+        .ok_or_else(|| "editor stdlib projection has no synthdefs".to_string())?
+        .iter()
+        .filter_map(|entry| entry["name"].as_str())
+        .collect::<BTreeSet<_>>();
+    for entry in discovery
+        .v1
+        .entries
+        .iter()
+        .filter(|entry| entry.surface == "stdlib")
+    {
+        if stdlib_names.contains(entry.registered_name.as_str()) {
+            accounting.included.insert(entry.id.clone());
+        }
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let mut projected_ugens = BTreeSet::new();
+    for entry in WalkDir::new(root.join("vscode-extension/ugen_manifests")) {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some("json")
+        {
+            continue;
+        }
+        let value: Value = serde_json::from_str(
+            &fs::read_to_string(entry.path()).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        for function in value
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|ugen| ugen["functions"].as_array().into_iter().flatten())
+            .filter_map(Value::as_str)
+        {
+            projected_ugens.insert(function.to_string());
+        }
+    }
+    let callable_ugens = discovery
+        .v1
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.surface == "dsp_ugen"
+                && matches!(
+                    &entry.details,
+                    vibelang_api_manifest::EntryDetails::Ugen { callable: true, .. }
+                )
+        })
+        .map(|entry| (entry.registered_name.as_str(), entry.id.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    for (name, id) in &callable_ugens {
+        if projected_ugens.contains(*name) {
+            accounting.included.insert((*id).into());
+        } else {
+            accounting.exclusions.insert(
+                (*id).into(),
+                (
+                    ExclusionReason::IntentionalCuration,
+                    "vibelang-tools".into(),
+                ),
+            );
+        }
+    }
+    let known_stale: Value = serde_json::from_str(&read(
+        root,
+        "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json",
+    )?)
+    .map_err(|error| error.to_string())?;
+    let known_stale = known_stale["labels"]
+        .as_array()
+        .ok_or_else(|| "invalid-UGen negative fixture has no labels".to_string())?
+        .iter()
+        .filter_map(|label| label["completion"].as_str())
+        .collect::<BTreeSet<_>>();
+    let non_callable_ugens = discovery
+        .v1
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.surface == "dsp_ugen"
+                && matches!(
+                    &entry.details,
+                    vibelang_api_manifest::EntryDetails::Ugen {
+                        callable: false,
+                        ..
+                    }
+                )
+        })
+        .map(|entry| entry.registered_name.as_str())
+        .collect::<BTreeSet<_>>();
+    for label in projected_ugens
+        .iter()
+        .filter(|label| !callable_ugens.contains_key(label.as_str()))
+    {
+        if known_stale.contains(label.as_str()) {
+            accounting.stale.insert(label.clone());
+            continue;
+        }
+        let stem = ["_ar", "_kr", "_ir", "_tr", "_channel"]
+            .iter()
+            .find_map(|suffix| label.strip_suffix(suffix))
+            .unwrap_or(label);
+        if non_callable_ugens.contains(stem) {
+            accounting.exclusions.insert(
+                semantic_id("type", &format!("editor|unsupported-ugen-label|{label}")),
+                (ExclusionReason::UnsupportedHost, "vibelang-tools".into()),
+            );
+        } else {
+            return Err(format!(
+                "projected UGen label {label} is neither callable, explicitly unavailable, nor known-stale"
+            ));
+        }
+    }
+    accounting.unresolved.extend(
+        discovery
+            .v1
+            .entries
+            .iter()
+            .filter(|entry| matches!(entry.kind.as_str(), "property_get" | "property_set"))
+            .map(|entry| entry.id.clone()),
+    );
+    Ok(accounting)
 }
 
 fn validate_fragment_join(
@@ -1069,6 +2172,8 @@ struct ConsumerCoverage {
     id: String,
     projection_paths: Vec<String>,
     included_count: u64,
+    eligible_count: u64,
+    excluded_count: u64,
     unresolved_count: u64,
     unclassified_count: u64,
 }
@@ -1097,6 +2202,14 @@ fn build_coverage(
                 .insert(metadata.id.clone());
         }
     });
+    for declaration in &discovery.mechanical {
+        for (path, _) in &declaration.source_anchors {
+            source_nodes
+                .entry(path.clone())
+                .or_default()
+                .insert(declaration.id.clone());
+        }
+    }
     for (domain, path, targets) in fragment_targets(&discovery.fragments) {
         source_nodes.entry(path.into()).or_default().extend(targets);
         if domain.is_empty() {
@@ -1128,12 +2241,17 @@ fn build_coverage(
     let consumers = manifest
         .consumers
         .iter()
-        .map(|consumer| ConsumerCoverage {
-            id: consumer.metadata.id.clone(),
-            projection_paths: consumer.source_projections.clone(),
-            included_count: consumer.included_ids.len() as u64,
-            unresolved_count: 0,
-            unclassified_count: 0,
+        .map(|consumer| {
+            let coverage = &manifest.coverage[&consumer.metadata.id];
+            ConsumerCoverage {
+                id: consumer.metadata.id.clone(),
+                projection_paths: consumer.source_projections.clone(),
+                included_count: coverage.numerator,
+                eligible_count: coverage.denominator,
+                excluded_count: coverage.exclusions_by_reason.values().sum(),
+                unresolved_count: coverage.unresolved_ids.len() as u64,
+                unclassified_count: 0,
+            }
         })
         .collect::<Vec<_>>();
     let semantic_fragments = fragment_targets(&discovery.fragments)
@@ -2400,6 +3518,123 @@ mod tests {
                     .unwrap();
                 assert_eq!(transport.error_type_id, model_error.metadata.id);
                 assert_eq!(midi.error_type_id, midi_error.metadata.id);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn source_discovery_covers_every_m02_surface_and_wasm_is_not_websocket() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let surfaces = discovery
+                    .mechanical
+                    .iter()
+                    .map(|declaration| declaration.surface.as_str())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    surfaces,
+                    [
+                        "cli",
+                        "docs",
+                        "emacs",
+                        "fixtures",
+                        "lsp",
+                        "packages",
+                        "vscode",
+                        "wasm",
+                        "websocket",
+                    ]
+                    .into_iter()
+                    .collect()
+                );
+                assert_eq!(
+                    discovery
+                        .mechanical
+                        .iter()
+                        .filter(|declaration| {
+                            declaration.surface == "websocket" && declaration.kind == "event"
+                        })
+                        .count(),
+                    7
+                );
+
+                let manifest = build_v2(&discovery).unwrap();
+                let wasm = manifest
+                    .consumers
+                    .iter()
+                    .find(|consumer| consumer.eligibility.surfaces == ["wasm"])
+                    .unwrap();
+                let event_ids = manifest
+                    .events
+                    .iter()
+                    .map(|event| event.metadata.id.as_str())
+                    .collect::<BTreeSet<_>>();
+                assert!(!wasm.included_ids.is_empty());
+                assert!(wasm
+                    .included_ids
+                    .iter()
+                    .all(|id| !event_ids.contains(id.as_str())));
+                for surface in ["cli", "docs", "fixtures", "packages", "rhai_editor"] {
+                    let consumer = manifest
+                        .consumers
+                        .iter()
+                        .find(|consumer| consumer.eligibility.surfaces == [surface])
+                        .unwrap();
+                    assert!(!consumer.included_ids.is_empty(), "{surface}");
+                    let coverage = &manifest.coverage[&consumer.metadata.id];
+                    assert_eq!(coverage.numerator, consumer.included_ids.len() as u64);
+                    assert!(coverage.denominator >= coverage.numerator, "{surface}");
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn one_new_discovered_item_without_classification_is_exactly_one_failure() {
+        let discovered = vec![
+            raw_declaration(
+                "cli",
+                "command",
+                "known",
+                "crates/vibelang-cli/src/main.rs",
+                "Commands::Known",
+            ),
+            raw_declaration(
+                "cli",
+                "command",
+                "newly_discovered",
+                "crates/vibelang-cli/src/main.rs",
+                "Commands::NewlyDiscovered",
+            ),
+        ];
+        let classified = vec![classify_mechanical_declaration(discovered[0].clone()).unwrap()];
+        let failures = missing_mechanical_classifications(&discovered, &classified).unwrap();
+        assert_eq!(failures, ["cli:command:newly_discovered"]);
+    }
+
+    #[test]
+    fn source_derived_consumer_coverage_counts_inclusions_exclusions_and_unresolved() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+                for consumer in &manifest.consumers {
+                    let coverage = &manifest.coverage[&consumer.metadata.id];
+                    assert_eq!(coverage.numerator, consumer.included_ids.len() as u64);
+                    assert_eq!(
+                        coverage.denominator,
+                        coverage.numerator
+                            + consumer.exclusions.len() as u64
+                            + coverage.unresolved_ids.len() as u64
+                    );
+                }
             })
             .unwrap()
             .join()

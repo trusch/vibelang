@@ -1,14 +1,14 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "745979a1c25b21be237792ef50beec2ccb629fa5ce98082944681725a1bcb88a",
+  "contract_digest": "e59a75a3107fd8e35ead3b6bab29afdb3e9b0115e446e84b8964e484810b541a",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
     "routes": 96,
     "http_types": 75,
     "http_fields": 297,
-    "source_nodes": 880,
+    "source_nodes": 949,
     "consumer_nodes": 8,
     "orphan_records": 0,
     "unclassified_records": 0
@@ -340,6 +340,16 @@
         "v1:overload:e922f30b03f430b7"
       ],
       "node_ids_sha256": "a23079eb2f9efd84deaecf935dfde7010043dc28a23e146e5d484b1115662a3a"
+    },
+    {
+      "id": "v1:source:03d4d4780c6878e8",
+      "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:370484735407a13f"
+      ],
+      "node_ids_sha256": "f22bbd2d5ab28b240485c1e6c7b8867b6334988c347af2399b54b4bd0470d642"
     },
     {
       "id": "v1:source:03de78ab7d67658a",
@@ -787,6 +797,16 @@
         "v1:overload:a5a070ac969e3eb3"
       ],
       "node_ids_sha256": "b241a126499faae4e09a715f5764cb1725154ff33669609c0ed8aad12924a08d"
+    },
+    {
+      "id": "v1:source:0d0b235fe2a94b47",
+      "path": "Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:284ea117000b57cc"
+      ],
+      "node_ids_sha256": "d31dbb74eec7093c548c1eed0739cd870d3778acd3928e2258db5b3c9058fb49"
     },
     {
       "id": "v1:source:0e0605917ba33e63",
@@ -8272,6 +8292,61 @@
       "node_ids_sha256": "a19b31cb1365247205d48db7cdc8f2bac111b1755088ebbf0617abbc4e68ed9c"
     },
     {
+      "id": "v1:source:11c47410fd78f35a",
+      "path": "emacs/vibelang-mode.el",
+      "kind": "mechanical_declaration",
+      "node_count": 46,
+      "node_ids": [
+        "v1:type:013cf30dc151834f",
+        "v1:type:1519ed0aa20b3619",
+        "v1:type:1715fb01787f3b2b",
+        "v1:type:1be9db38fd4bd475",
+        "v1:type:22717b2f791d6bed",
+        "v1:type:332fe34ad53dd2a2",
+        "v1:type:34eccc589020187b",
+        "v1:type:35697306e681e59d",
+        "v1:type:35d8694eb4510ce6",
+        "v1:type:360d0881db9b291f",
+        "v1:type:43229ae7f29745db",
+        "v1:type:5224d4bbea687d38",
+        "v1:type:548e786aec0206d7",
+        "v1:type:5f5da19ca6b7d283",
+        "v1:type:692177c46ad2d6e3",
+        "v1:type:70d2f5a116b3c65d",
+        "v1:type:784dff5fc361b539",
+        "v1:type:7f914c01657ab537",
+        "v1:type:88a2332a49a7b361",
+        "v1:type:8901d4cb5b988e96",
+        "v1:type:8b64db7df9135330",
+        "v1:type:92b3ce23d42ab69e",
+        "v1:type:973b21ebb52b1423",
+        "v1:type:99c39207a1260729",
+        "v1:type:a4a7a8d81d448cdb",
+        "v1:type:a691ccddfe09e65f",
+        "v1:type:a9f307bc696a0cca",
+        "v1:type:aaa646af57840507",
+        "v1:type:aada156ade5115c8",
+        "v1:type:b1d609cb61766cea",
+        "v1:type:b7ae108ea53bd1ef",
+        "v1:type:c197937357dd392b",
+        "v1:type:ca15cb9f347ddf22",
+        "v1:type:d347ffde78dd6c82",
+        "v1:type:de2d0226012580b9",
+        "v1:type:e0d15adb60754972",
+        "v1:type:e2dd9dbc7c74e87f",
+        "v1:type:e4b4b2bc533f6aef",
+        "v1:type:e50ac8a9099073d4",
+        "v1:type:e564fcb9369468b3",
+        "v1:type:eadf654f44fe23dc",
+        "v1:type:eff1f10ef9493f8a",
+        "v1:type:f4e21c9213abbeb7",
+        "v1:type:f6302fd5c1311628",
+        "v1:type:f9ff288b34f08d88",
+        "v1:type:fc69975bcf74ab2f"
+      ],
+      "node_ids_sha256": "f9ed2fb94434a46e869777f6f5c25a3817eebf9f528855288b743636af01d209"
+    },
+    {
       "id": "v1:source:120d0a92f95e8040",
       "path": "crates/vibelang-std/stdlib/bass/sub/sub_deep.vibe",
       "kind": "mechanical_declaration",
@@ -8440,6 +8515,16 @@
         "v1:overload:6f78db95bc60006a"
       ],
       "node_ids_sha256": "dd55fa3d8e9b8403517f26d5133d026300c12ff2b29e7483ff70bfbe97f3a301"
+    },
+    {
+      "id": "v1:source:16fce42a5e2c2db5",
+      "path": "crates/vibelang-core/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:90412d0048d6dcb8"
+      ],
+      "node_ids_sha256": "2d6ea2c1ce061b521ddf8d981f8b46574b6d44a09039c4a5b5d76115f854bb96"
     },
     {
       "id": "v1:source:173b9033f84a294f",
@@ -9651,6 +9736,16 @@
       "node_ids_sha256": "909e2a6d32e0e90756a13fe3bc79d92599652f43539a1a303646c6c3cd67460e"
     },
     {
+      "id": "v1:source:205589a3274c3594",
+      "path": "tests/fixtures/api-unification/v1/golden/07_midi.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:adb97e5d19e221ad"
+      ],
+      "node_ids_sha256": "d22b73470adcacc035d95aeb130d80b531fadcbc25c85efab4194ce481c1c2c1"
+    },
+    {
       "id": "v1:source:207ea0694916d866",
       "path": "crates/vibelang-std/stdlib/fx/stingers/stinger_synth.vibe",
       "kind": "mechanical_declaration",
@@ -10039,6 +10134,26 @@
       "node_ids_sha256": "b986f22997dff5fd9a53e03a834f7931c23c9f3780f7d2e09a57b53f4977a9f0"
     },
     {
+      "id": "v1:source:2350fbe5090b3082",
+      "path": "vscode-extension/src/views/sessionExplorer.ts",
+      "kind": "mechanical_declaration",
+      "node_count": 11,
+      "node_ids": [
+        "v1:type:067aefd8702d59a2",
+        "v1:type:0f8816a7e47e5891",
+        "v1:type:26565185fdecc568",
+        "v1:type:53668ccf3ba55059",
+        "v1:type:6f6d2dca4eb038a2",
+        "v1:type:8979e390c90d4d67",
+        "v1:type:8c87b64c22ba70b5",
+        "v1:type:a59158a0fef76ea2",
+        "v1:type:b6d95ada9de8f764",
+        "v1:type:bac8cda0b261849e",
+        "v1:type:bb09913d8d1ecc0c"
+      ],
+      "node_ids_sha256": "a7864c9c75ff67d81492fc515b5f5efa27d8b260651407feceda0d39bd5b7318"
+    },
+    {
       "id": "v1:source:23634b3e141be126",
       "path": "crates/vibelang-std/stdlib/fx/sweeps/sweep_filter_up.vibe",
       "kind": "mechanical_declaration",
@@ -10048,6 +10163,19 @@
         "v1:overload:25f751e803556e4f"
       ],
       "node_ids_sha256": "544f44361b571ae38b5dcd49d08862dfd04cf85cd06152c0a8f4a0ffc3530852"
+    },
+    {
+      "id": "v1:source:23823aa6e6e14e1d",
+      "path": "api/README.md",
+      "kind": "mechanical_declaration",
+      "node_count": 4,
+      "node_ids": [
+        "v1:type:009dd7ee8ecf53c0",
+        "v1:type:63877cc92a749f6a",
+        "v1:type:887b71266875f875",
+        "v1:type:fe1d3c8d471d66db"
+      ],
+      "node_ids_sha256": "45ab9ec5e9122acba36790dcda84fe90a53a32d5e3e289c32de35453395d16a4"
     },
     {
       "id": "v1:source:2396ce537af77699",
@@ -10237,6 +10365,16 @@
       "node_ids_sha256": "9f90ccb3e3ac287fb8c0dd6851c846a018eb9acc0c64adceb01c8bcacba2d029"
     },
     {
+      "id": "v1:source:2421d5a5057fdae4",
+      "path": "tests/fixtures/api-unification/v1/golden/07_midi.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:9ccc3c693de310a9"
+      ],
+      "node_ids_sha256": "a8ed9f09b25699ab0c3737114d49b78bc2c01da53e2731a077382a04580ef1f1"
+    },
+    {
       "id": "v1:source:24287d6b141767bc",
       "path": "crates/vibelang-std/stdlib/leads/stabs/stab_super.vibe",
       "kind": "mechanical_declaration",
@@ -10257,6 +10395,87 @@
         "v1:overload:7bb03e0eae893c88"
       ],
       "node_ids_sha256": "723da609c2b680d005361df1eb4dc7887fd125e355ed1eb8a189a575088b1847"
+    },
+    {
+      "id": "v1:source:25bc08446b8c8f28",
+      "path": "vscode-extension/package.json",
+      "kind": "mechanical_declaration",
+      "node_count": 72,
+      "node_ids": [
+        "v1:type:00cdf649af21d2dc",
+        "v1:type:02a10e32f83a85cd",
+        "v1:type:047f094a05a4c9d1",
+        "v1:type:058bb5ef9272bcd0",
+        "v1:type:067aefd8702d59a2",
+        "v1:type:0cf34aadf92c9d79",
+        "v1:type:0f45c295d625fd2d",
+        "v1:type:0f6e272aea67680d",
+        "v1:type:0f8816a7e47e5891",
+        "v1:type:10109c2431267a98",
+        "v1:type:1c4d99ad810f15bb",
+        "v1:type:24389d1f0d471e3c",
+        "v1:type:26296e26856d5963",
+        "v1:type:26565185fdecc568",
+        "v1:type:27de52802f1efaea",
+        "v1:type:2a0f28cdbdb55aa9",
+        "v1:type:2fab55bd14f71803",
+        "v1:type:321a91826f293c77",
+        "v1:type:35b81217e196a5ad",
+        "v1:type:3e082b0b74b0a875",
+        "v1:type:3ffe02876daaa585",
+        "v1:type:4d600792c22f4232",
+        "v1:type:4e472de13aa3a69a",
+        "v1:type:53668ccf3ba55059",
+        "v1:type:539ca839e888a770",
+        "v1:type:54b98717177c4848",
+        "v1:type:5828f5fc35915348",
+        "v1:type:5894b3d1cf1d5a94",
+        "v1:type:5a794837a9e654bc",
+        "v1:type:67c51f59816f0b61",
+        "v1:type:68ad3a59a94d5596",
+        "v1:type:68d9223eae7d13c2",
+        "v1:type:6b77b91bf13994d9",
+        "v1:type:6d14b135a898fea7",
+        "v1:type:6f6d2dca4eb038a2",
+        "v1:type:794a8e480f5073e5",
+        "v1:type:797172c99268ea2a",
+        "v1:type:83f3cc88b5936a62",
+        "v1:type:873f2acb96550d37",
+        "v1:type:8847816d34426b05",
+        "v1:type:8979e390c90d4d67",
+        "v1:type:8c87b64c22ba70b5",
+        "v1:type:90b16a4920563e56",
+        "v1:type:940c5e6ef94f01a6",
+        "v1:type:96ad370d245e58b8",
+        "v1:type:9e762cc0a6906d64",
+        "v1:type:a59158a0fef76ea2",
+        "v1:type:a5ebe0cc5c3760b6",
+        "v1:type:acf7beaf2c00dc44",
+        "v1:type:ada11d530da5c887",
+        "v1:type:ae3696928cb8228d",
+        "v1:type:b0b02b414b867577",
+        "v1:type:b21b94be809ba02d",
+        "v1:type:b6d95ada9de8f764",
+        "v1:type:bac8cda0b261849e",
+        "v1:type:bb09913d8d1ecc0c",
+        "v1:type:c04b4e2bcd5db6bb",
+        "v1:type:c4a57c8bbc25fcf7",
+        "v1:type:ccae857782340ed8",
+        "v1:type:d36b42cd4aee7586",
+        "v1:type:daea8d5b16d49d8c",
+        "v1:type:e248f15995f3e119",
+        "v1:type:e2fa36f2537aa760",
+        "v1:type:e30ed0b05f539547",
+        "v1:type:ea320301d07a69e5",
+        "v1:type:eee8fd5907ed5bec",
+        "v1:type:efbb3dae9a77b3d7",
+        "v1:type:f178c7a98f6a3459",
+        "v1:type:f1c3430e368a44c5",
+        "v1:type:f2065c46cdaeb419",
+        "v1:type:f8540977a747b7f9",
+        "v1:type:fc33737692b52ede"
+      ],
+      "node_ids_sha256": "28142dce0d1d6a65edc94dff3cb7883b78c22a92e03d830942d00d21b8827da5"
     },
     {
       "id": "v1:source:25eb6af134ded3d7",
@@ -10423,6 +10642,17 @@
         "v1:overload:defe700f286b464d"
       ],
       "node_ids_sha256": "b9f894f7e78cd263db522bbe46bde15f5e3f88689318546f870a98a728d9f464"
+    },
+    {
+      "id": "v1:source:2773f2aa856fe1e5",
+      "path": "emacs/vibelang-indent.el",
+      "kind": "mechanical_declaration",
+      "node_count": 2,
+      "node_ids": [
+        "v1:type:049767de3b3be13a",
+        "v1:type:f6a3b62fce3332ea"
+      ],
+      "node_ids_sha256": "e398d16e78d192abe4cbbc30563ff50ab68700f9971e0d5b72338f69ef4f7732"
     },
     {
       "id": "v1:source:27c00809a812d888",
@@ -10854,6 +11084,46 @@
       "node_ids_sha256": "810d91d0a6c9c48b31377cf30f3be49cb34d23ff1589fc855bfa3f0ed4da28cb"
     },
     {
+      "id": "v1:source:31942940fc65d75b",
+      "path": "emacs/vibelang-sidebar.el",
+      "kind": "mechanical_declaration",
+      "node_count": 18,
+      "node_ids": [
+        "v1:type:1d8602df5045d465",
+        "v1:type:33b0e0164d192163",
+        "v1:type:7651f48f0a4be1b3",
+        "v1:type:7da55201319117dc",
+        "v1:type:89f86a84dff1a9a3",
+        "v1:type:8e70a48c187d0d23",
+        "v1:type:a31bdea98c7ecca8",
+        "v1:type:a6b9a6ccdf7a1a92",
+        "v1:type:b5c03b2bd60c7d92",
+        "v1:type:b8529bc8dde43fd0",
+        "v1:type:bc68cf06eb020642",
+        "v1:type:bcb75a9575adb13c",
+        "v1:type:ccd3eebae1d1b26c",
+        "v1:type:d38194d704f09734",
+        "v1:type:eecff2cf8612f97e",
+        "v1:type:f3c9fd12f7e36dc8",
+        "v1:type:fbdefb5e5ea441f7",
+        "v1:type:fdfbd2a542129e75"
+      ],
+      "node_ids_sha256": "240759d194f84817595c350f847dc066cd8379cabef895bdce4d78cbce524aaf"
+    },
+    {
+      "id": "v1:source:321106e48248b8ac",
+      "path": "crates/vibelang-lsp/src/analysis/mod.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 4,
+      "node_ids": [
+        "v1:type:21b254e61e58e5e2",
+        "v1:type:50fe331a7bcc8278",
+        "v1:type:84335da839803ec9",
+        "v1:type:e6bd7d1aa1ef839f"
+      ],
+      "node_ids_sha256": "a64ab7d4d29e48dbb638e77afa3445bfd04c5efcbe9465ad2f226047c763ef27"
+    },
+    {
       "id": "v1:source:325ec3402138a293",
       "path": "crates/vibelang-rhai/src/api/pattern.rs",
       "kind": "mechanical_declaration",
@@ -11060,6 +11330,16 @@
         "v1:overload:5d97b6298b4f523f"
       ],
       "node_ids_sha256": "c781b41e60a5530c16a4dcdb5e604cc4c5b8f6214ff2f92a9c45e2ed0fff857c"
+    },
+    {
+      "id": "v1:source:35d2d7fb34431338",
+      "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:7881ba5e2f98b457"
+      ],
+      "node_ids_sha256": "4d7158e7a41d8df921b1dc75dd7a9d366392415989aa6e0568f641e84d430df0"
     },
     {
       "id": "v1:source:36377ebd596432bf",
@@ -11301,6 +11581,16 @@
       "node_ids_sha256": "93f3d68c2cf0508511c1e225a47b813d397932c71dc7a78be33e8fb83ee25981"
     },
     {
+      "id": "v1:source:390554e43d615111",
+      "path": "crates/vibelang-sfz/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:9867b78dcc463e9c"
+      ],
+      "node_ids_sha256": "9c2ecc387c9a60fe8f87ab0f3ac5c1ac5e897f43298b9fc3840e5c7af62e6b84"
+    },
+    {
       "id": "v1:source:395d1b091c6f1d8a",
       "path": "crates/vibelang-std/stdlib/bass/wobble/wobble_classic.vibe",
       "kind": "mechanical_declaration",
@@ -11350,6 +11640,26 @@
         "v1:overload:f5cb7011268b31e0"
       ],
       "node_ids_sha256": "9d771ce76460e252cd4435ce80397f04d9b26ffdcc8eff33cccca096b4d11970"
+    },
+    {
+      "id": "v1:source:3b2684e2b26b3f3d",
+      "path": "api/baselines/known-defects-v1.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:441702b5f0595725"
+      ],
+      "node_ids_sha256": "5db473574b35b6010d863ded762e98122972a81e032ad86180a8c6398dd2fbe9"
+    },
+    {
+      "id": "v1:source:3b460aaa63decb0a",
+      "path": "crates/vibelang-wasm/package.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:7818d185d1d322cc"
+      ],
+      "node_ids_sha256": "6e75b2e7e245c208fa7742d14a02fe6b61dc18343d50cb5e68fb5715cec4fe0e"
     },
     {
       "id": "v1:source:3b6074c5d1b6a494",
@@ -11487,6 +11797,16 @@
         "v1:overload:38e56c5faf74a41f"
       ],
       "node_ids_sha256": "9f370dae45f594b2b7f6182d3cca439082d8d5840895b4a3725b6c95499d61d0"
+    },
+    {
+      "id": "v1:source:3e6d1aaa13fc3c8b",
+      "path": "emacs/vibelang-visualization.el",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:eb3f20262f1ade26"
+      ],
+      "node_ids_sha256": "4bab27bbdc1117f40ac4c7dd8cf8ca5b479751e04570743e59f478855d9bed4b"
     },
     {
       "id": "v1:source:3e7237e041a017a1",
@@ -11790,6 +12110,16 @@
       "node_ids_sha256": "515661c7afcfa715e568c815356dd72ce3d591af87db36d2e0250885b0bac688"
     },
     {
+      "id": "v1:source:419e0795a69dac44",
+      "path": "Cargo.lock",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:8a9d081e3e9485ee"
+      ],
+      "node_ids_sha256": "4f600fb13fbcf71adac159ce8aa4921f366a915cf2ef677ffe3b1cbdeaad0710"
+    },
+    {
       "id": "v1:source:41af91cbf4946c04",
       "path": "crates/vibelang-std/stdlib/effects/modulation/harmonic_tremolo.vibe",
       "kind": "mechanical_declaration",
@@ -11867,6 +12197,16 @@
       "node_ids_sha256": "c26b8b62959358288c7e29049dc00817ed3def24921bb8667900babd92fc8d2d"
     },
     {
+      "id": "v1:source:43600f6ab8370234",
+      "path": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:13f7a9f5f9942587"
+      ],
+      "node_ids_sha256": "f7024c5a3a3d087266fd20d886e646fa89140d443314d3f065200f43f281e5fd"
+    },
+    {
       "id": "v1:source:43b230ae1f8aaa44",
       "path": "crates/vibelang-std/stdlib/processors/filters/lowpass_stereo.vibe",
       "kind": "mechanical_declaration",
@@ -11876,6 +12216,16 @@
         "v1:overload:172d6481d539b8c5"
       ],
       "node_ids_sha256": "c9393b2e504c4bfd12c1d3834d0f68ed063c7194d5f0a2fbabf4c5ea1d56c440"
+    },
+    {
+      "id": "v1:source:43daf34c2446e549",
+      "path": "docs/interfaces/http-and-websocket.md",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:4d85e1912fa614c1"
+      ],
+      "node_ids_sha256": "3df6ec97424345d6e7344ac743da0bdee492194c518bc8fa385af58a42c0ab8e"
     },
     {
       "id": "v1:source:43df129630d50a0b",
@@ -11995,6 +12345,22 @@
         "v1:overload:505bb3185ffc3a5b"
       ],
       "node_ids_sha256": "cce60f4a46074d3da16b6e60afb0bee019c48458291ddc15ba42d56340ed5c18"
+    },
+    {
+      "id": "v1:source:452475fcb23813c5",
+      "path": "vscode-extension/src/views/transportBar.ts",
+      "kind": "mechanical_declaration",
+      "node_count": 7,
+      "node_ids": [
+        "v1:type:0f6e272aea67680d",
+        "v1:type:2a0f28cdbdb55aa9",
+        "v1:type:54b98717177c4848",
+        "v1:type:6b77b91bf13994d9",
+        "v1:type:794a8e480f5073e5",
+        "v1:type:96ad370d245e58b8",
+        "v1:type:e2fa36f2537aa760"
+      ],
+      "node_ids_sha256": "cb89529b8be771f9173c0c36208fa91acd8be72252cb95e7c820867558f015f0"
     },
     {
       "id": "v1:source:453d2c69775fd0ff",
@@ -12146,6 +12512,16 @@
         "v1:overload:70c3c971c92e240a"
       ],
       "node_ids_sha256": "6acf8b69492b2af568aded90fb1f14753441a6ff01b3699a9f104694615f3ae5"
+    },
+    {
+      "id": "v1:source:46c238a834fcf634",
+      "path": "crates/vibelang-rhai/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:591dfc958413d7fc"
+      ],
+      "node_ids_sha256": "6d08d304608638b4e4aaf97f6bd492f3f83460d3409a5f8a956da50ca30afe9b"
     },
     {
       "id": "v1:source:46c58e057f029c69",
@@ -12460,6 +12836,17 @@
       "node_ids_sha256": "e3cee26bdd51287af4ea41059916a1444cd0b31a2b25403618dd8b49a546bb02"
     },
     {
+      "id": "v1:source:4b966f3e60059f65",
+      "path": "crates/vibelang-wasm/types/index.d.ts",
+      "kind": "mechanical_declaration",
+      "node_count": 2,
+      "node_ids": [
+        "v1:type:00ca2c83ebe53f21",
+        "v1:type:e8c1bc731f35facf"
+      ],
+      "node_ids_sha256": "009cb1a06acf3150e48fbcc476ae2f2ca480a8841470d7bdf8987f8878aef4e6"
+    },
+    {
       "id": "v1:source:4c0762627c9636c1",
       "path": "crates/vibelang-std/stdlib/effects/dynamics/ducking.vibe",
       "kind": "mechanical_declaration",
@@ -12622,6 +13009,16 @@
         "v1:overload:d62184897cb8a052"
       ],
       "node_ids_sha256": "1f4438f70c649880a31db26722a70ed536346a8cc6199119bf0adcac08f0be4a"
+    },
+    {
+      "id": "v1:source:4e1215aafbe81412",
+      "path": "crates/vibelang-wasm/package-lock.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:b4677636e654f412"
+      ],
+      "node_ids_sha256": "76ff29320f568ef6dc28c81a7582a26c73dd40e39db6c427f2dfc6ee170dfdd9"
     },
     {
       "id": "v1:source:4e2c2c098bbee415",
@@ -13405,6 +13802,53 @@
       "node_ids_sha256": "596ce2aae11fed99ee54fc55a4c522beb2459b52c40d97bcb4282f13f56c3d35"
     },
     {
+      "id": "v1:source:4e4adc1785981701",
+      "path": "crates/vibelang-wasm/src/lib.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 38,
+      "node_ids": [
+        "v1:type:028ac6532244dab3",
+        "v1:type:0470e3a5deda2ebb",
+        "v1:type:0a948083ebddaad8",
+        "v1:type:0b6b795189ce058e",
+        "v1:type:1a944a60fe5b803f",
+        "v1:type:1c1ec95bf6a20e48",
+        "v1:type:22ee8efb26123f38",
+        "v1:type:2784c4a39fce9aac",
+        "v1:type:2abfba1ede0624b0",
+        "v1:type:2b2e9a7cd64bdf24",
+        "v1:type:38283ace440f989b",
+        "v1:type:478eaab47049422d",
+        "v1:type:519203138aa65b44",
+        "v1:type:5a513275b9910cd2",
+        "v1:type:676c6daccd07d731",
+        "v1:type:6a22fa252a498137",
+        "v1:type:73bac6272a88199a",
+        "v1:type:799492bf29d147ab",
+        "v1:type:7b263fc96b0d8d1e",
+        "v1:type:87adf053caaffe00",
+        "v1:type:890fc8c90e9dd3f8",
+        "v1:type:89f7400090e10c7c",
+        "v1:type:91962e0b48bd2b0c",
+        "v1:type:98a1aa73aa319bef",
+        "v1:type:9ace38ed5366eacf",
+        "v1:type:a929966177be2444",
+        "v1:type:ae4c04b444ab8cbe",
+        "v1:type:b5e5bad3825f97b2",
+        "v1:type:b80bb8630be2f851",
+        "v1:type:bbd768a6c5422565",
+        "v1:type:c8a356a3516bedd4",
+        "v1:type:cfa4d175355b75f8",
+        "v1:type:d1ce1d9c0d57eb18",
+        "v1:type:d57e8254bbbc5c64",
+        "v1:type:e2a373d2827116a4",
+        "v1:type:f1db73cf2909b910",
+        "v1:type:f54b27fc6fc36660",
+        "v1:type:febe854bfee00143"
+      ],
+      "node_ids_sha256": "af96be005ff5ec5b09059eed89bc01a854f6dd7afd8d752392bd40cf47a1427f"
+    },
+    {
       "id": "v1:source:4e8f471e32210442",
       "path": "crates/vibelang-std/stdlib/drums/machines/machinedrum_snare.vibe",
       "kind": "mechanical_declaration",
@@ -13830,6 +14274,16 @@
       "node_ids_sha256": "5dbf05a27ed6e2d25cfbae78a92df3c6515739817c4f09dfae3ffd7c87304c7c"
     },
     {
+      "id": "v1:source:533754995b98c0c0",
+      "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:d0990be36a24972b"
+      ],
+      "node_ids_sha256": "7cbc49e430327305ab0c1d6ad7eb5d3fbe0c70935e253f8be25fe2478cd552b4"
+    },
+    {
       "id": "v1:source:537bb42e2cc358dc",
       "path": "crates/vibelang-std/stdlib/fx/stingers/stinger_bright.vibe",
       "kind": "mechanical_declaration",
@@ -14052,6 +14506,29 @@
       "node_ids_sha256": "123e072a71ae28e8080e59caa8688e8d2350d35d604547acfe46597ab4764ff9"
     },
     {
+      "id": "v1:source:57503c7c8b152db3",
+      "path": "vscode-extension/src/extension.ts",
+      "kind": "mechanical_declaration",
+      "node_count": 14,
+      "node_ids": [
+        "v1:type:047f094a05a4c9d1",
+        "v1:type:058bb5ef9272bcd0",
+        "v1:type:10109c2431267a98",
+        "v1:type:35b81217e196a5ad",
+        "v1:type:3e082b0b74b0a875",
+        "v1:type:4d600792c22f4232",
+        "v1:type:4e472de13aa3a69a",
+        "v1:type:5828f5fc35915348",
+        "v1:type:68d9223eae7d13c2",
+        "v1:type:797172c99268ea2a",
+        "v1:type:83f3cc88b5936a62",
+        "v1:type:873f2acb96550d37",
+        "v1:type:a5ebe0cc5c3760b6",
+        "v1:type:f178c7a98f6a3459"
+      ],
+      "node_ids_sha256": "a1a5d993e0e75b12d1c4ffb4a33a1686b976b137dc30567008b1048c94be942c"
+    },
+    {
       "id": "v1:source:57b630b45d3458b7",
       "path": "crates/vibelang-std/stdlib/cv/seq/cv_seq_random.vibe",
       "kind": "mechanical_declaration",
@@ -14061,6 +14538,16 @@
         "v1:overload:de00ad4484f8980f"
       ],
       "node_ids_sha256": "b4e336e2788e5a16bb756ba9ab3a5cc7a569d6d89e2dd23f665a63adb7c9cf8f"
+    },
+    {
+      "id": "v1:source:57deaef5a800f17f",
+      "path": "api/baselines/authoring-families-v1.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:878312f5378eff51"
+      ],
+      "node_ids_sha256": "b7f5d90f18f1c8bceb35e111d862b393e4c8eb0b642666274166966ce43b2e07"
     },
     {
       "id": "v1:source:58771b5b2fda21d0",
@@ -15051,6 +15538,16 @@
       "node_ids_sha256": "5f1b6cd46257d20e6a9dd557167970eacca32bb1c16fb257537d82d9b44d53f9"
     },
     {
+      "id": "v1:source:5e27fe01774c5978",
+      "path": "tests/fixtures/api-unification/v1/negative/push-pull-diagnostic-mismatch.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:d0263b72b29ada15"
+      ],
+      "node_ids_sha256": "510ee2886fc613cbc366f8ea980ceef3a9639342a94ecb1153fe29c320f95634"
+    },
+    {
       "id": "v1:source:5e9385ae1ed4062c",
       "path": "crates/vibelang-std/stdlib/strings/solo_cello.vibe",
       "kind": "mechanical_declaration",
@@ -16025,6 +16522,16 @@
       "node_ids_sha256": "f153509af11b4f87f09ba7bf53a05af80de2e627ed2953954fde18d4744b6c67"
     },
     {
+      "id": "v1:source:65bf116fd5c29889",
+      "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:094be226a4583649"
+      ],
+      "node_ids_sha256": "1c747a85b87e28bbc0264cb220846e11c553bebee9f29cf9d51f683908350295"
+    },
+    {
       "id": "v1:source:65c3044eedabd1c1",
       "path": "crates/vibelang-std/stdlib/instruments/eurorack/wogglebug.vibe",
       "kind": "mechanical_declaration",
@@ -16067,6 +16574,29 @@
         "v1:overload:5d594bfc19114263"
       ],
       "node_ids_sha256": "8b8073c9d95ea00fcdc81e4a5768215f93cf01ca4a4e49a7f99eedb864877a6f"
+    },
+    {
+      "id": "v1:source:66c9ca9e9a2dfbee",
+      "path": "emacs/vibelang-websocket.el",
+      "kind": "mechanical_declaration",
+      "node_count": 14,
+      "node_ids": [
+        "v1:type:370d77326a6bd55f",
+        "v1:type:468841e4fb4e2bd5",
+        "v1:type:482bd66c6727859d",
+        "v1:type:4e41ea3d9a6872e7",
+        "v1:type:54ec84c2f146ded7",
+        "v1:type:5637801cd29aed2c",
+        "v1:type:57d887e405b31296",
+        "v1:type:5f1ec1f7ab79a8fd",
+        "v1:type:70d29fb000b60b13",
+        "v1:type:7c895eb714adef09",
+        "v1:type:8ee669522c6130c9",
+        "v1:type:90fb6a16acf2165f",
+        "v1:type:d013a6266b6c074f",
+        "v1:type:e5cb422d67f3ae1f"
+      ],
+      "node_ids_sha256": "2e0a5f91f85228ac0573000107f9179f79e740a2309518a947241d2db42edf0f"
     },
     {
       "id": "v1:source:6790d9c58878c6b8",
@@ -16185,6 +16715,16 @@
         "v1:overload:1df5ea0348134448"
       ],
       "node_ids_sha256": "3921d7157cdf1c4d7821c17884e4e1f56a77bc2f2c76704d57aac55c96786609"
+    },
+    {
+      "id": "v1:source:6992e1fb063490b3",
+      "path": "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:eb6b507be67ec671"
+      ],
+      "node_ids_sha256": "b1fcafcc8acb641e1c54226551b8679b4abbc8ace394035a48d57a9a56368186"
     },
     {
       "id": "v1:source:69b4c06413eb5600",
@@ -16582,6 +17122,16 @@
       "node_ids_sha256": "81189deef2021fa719fb99368d1223e92385ac1784ae8881c0dbf4fe247a0b2b"
     },
     {
+      "id": "v1:source:72b8be0d430edec0",
+      "path": "tests/fixtures/api-unification/v1/negative/semantic-token-mismatch.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:37db3b0ac0bb2ce5"
+      ],
+      "node_ids_sha256": "c8c7220524956922feb342d74667789436333c7007f65d83125bba301f64dff4"
+    },
+    {
       "id": "v1:source:72f488408213f0c7",
       "path": "crates/vibelang-std/stdlib/cv/util/cv_max.vibe",
       "kind": "mechanical_declaration",
@@ -16591,6 +17141,16 @@
         "v1:overload:fb2c78f31e805bfd"
       ],
       "node_ids_sha256": "120e87b4f476b28754ba5f7d3aaf897e855b973266bd9e983da9540090ed806f"
+    },
+    {
+      "id": "v1:source:7314b456a8fcfb0d",
+      "path": "tests/fixtures/api-unification/v1/negative/stale-commands.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:cf176ad49d815df5"
+      ],
+      "node_ids_sha256": "3e267fffaadac10c9c86f1d0d973faf3e80d9989a320a88a60498ebe732274c4"
     },
     {
       "id": "v1:source:731ad26f2ed7345b",
@@ -16643,6 +17203,16 @@
       "node_ids_sha256": "776b9a8b286a79ee1ee89b6dfd38a889de727c6e12b6651b2be84bc396b7cc20"
     },
     {
+      "id": "v1:source:7482a610ac11308c",
+      "path": "tests/fixtures/api-unification/v1/negative/stale-success.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:dfb6c7675f9c62a1"
+      ],
+      "node_ids_sha256": "318e470e57f68d64291ea687ba8a79ca8db1578f699ebc193403f36ac32b5e79"
+    },
+    {
       "id": "v1:source:74a9fcbd87abdc79",
       "path": "crates/vibelang-std/stdlib/world/steel_drum.vibe",
       "kind": "mechanical_declaration",
@@ -16674,6 +17244,16 @@
         "v1:overload:a6b5d33d8a05e71d"
       ],
       "node_ids_sha256": "78385fb7d2ec7b11ad408ade6e75567d992695baeed18e5d59ff06ec72389b35"
+    },
+    {
+      "id": "v1:source:759d13696fd18b52",
+      "path": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:e1ac31ae3981c09b"
+      ],
+      "node_ids_sha256": "4e1a598a8cf6d1d46da63bdebb010256f2e6746e295deec4e42439a3d588b8b0"
     },
     {
       "id": "v1:source:764978c5f31555cb",
@@ -16925,6 +17505,16 @@
       "node_ids_sha256": "f77d1297d8d718c8a6f3375010150b2a627198e8d308a388faef3abc344e451b"
     },
     {
+      "id": "v1:source:79d88e467d5cbf1f",
+      "path": "docs/interfaces/lsp-and-editors.md",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:827e2defe12f2600"
+      ],
+      "node_ids_sha256": "4eebcae7139fe39b4b2307965b1e7b9ec2b2107105c98ef12699e5cd17c698be"
+    },
+    {
       "id": "v1:source:7b24e52e01ed5f9d",
       "path": "crates/vibelang-std/stdlib/drums/latin/agogo_high.vibe",
       "kind": "mechanical_declaration",
@@ -16993,6 +17583,16 @@
       "node_ids_sha256": "7f1f64b501f8c46b097a4fcdc2f5ce4236ec034f9079276510a4a6d4765190d0"
     },
     {
+      "id": "v1:source:7ce9f3a5993d0019",
+      "path": "landing-page/src/audio/package.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:442760af9acfebd4"
+      ],
+      "node_ids_sha256": "0f3bde6180f0bf39fa36b98bc1c9b2c399f77d88298916bc28e086b9cc998912"
+    },
+    {
       "id": "v1:source:7d1a47fdecf9788f",
       "path": "crates/vibelang-std/stdlib/effects/modulation/vibrato.vibe",
       "kind": "mechanical_declaration",
@@ -17024,6 +17624,16 @@
         "v1:overload:ff9b01db79a8a61d"
       ],
       "node_ids_sha256": "5b95dca46dd13f705096e857f85c19f78b67cb19fcab619c1fe571867c2922e9"
+    },
+    {
+      "id": "v1:source:7dded544bea22008",
+      "path": "tests/fixtures/api-unification/v1/golden/04_routes.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:5b62ba9906162269"
+      ],
+      "node_ids_sha256": "e5fa18927d7fb8526fe4d027ca9e60e7d29961ff66ffac2407c527eade122e5f"
     },
     {
       "id": "v1:source:7dec41146a7fd910",
@@ -17633,6 +18243,16 @@
         "v1:overload:8bf8be8d444a2d24"
       ],
       "node_ids_sha256": "bc946b6ca7a5c201e341738068a62029aa128881d3e3870701f382c4cdae2140"
+    },
+    {
+      "id": "v1:source:816cdc63733b2ec4",
+      "path": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:b8157127b5d03813"
+      ],
+      "node_ids_sha256": "4683848fc694a22c5a03bf76d8481a03839372d8e2e78d5af955106e448d58d1"
     },
     {
       "id": "v1:source:81d7bceba0f18a03",
@@ -18365,6 +18985,16 @@
       "node_ids_sha256": "e42dfa3ec6f938bf60b8e1bbe4fc7cf861a58e8f773eea7f1870ae84f22b3e6e"
     },
     {
+      "id": "v1:source:8656e6eeb90e35a0",
+      "path": "tests/fixtures/api-unification/v1/golden/04_routes.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:e9b8fa88b9f70c05"
+      ],
+      "node_ids_sha256": "d762e8afbaf799cda85223e25002b25de1f8ebb5121097b86edbffef43f3a3ad"
+    },
+    {
       "id": "v1:source:8690efd0b57d1e82",
       "path": "crates/vibelang-std/stdlib/drums/latin/timbale_rim.vibe",
       "kind": "mechanical_declaration",
@@ -18390,7 +19020,7 @@
       "id": "v1:source:8706c81ef9b0bacd",
       "path": "crates/vibelang-http/src/websocket.rs",
       "kind": "mechanical_declaration",
-      "node_count": 18,
+      "node_count": 20,
       "node_ids": [
         "v1:event:46ced37429aeb44e",
         "v1:event:5db44d63085d4f6d",
@@ -18405,13 +19035,15 @@
         "v1:type:000b70566a32dbbd",
         "v1:type:1b5ff06266dcdae9",
         "v1:type:230d71c85d95caf7",
+        "v1:type:5a5d2f5d3c09a7f3",
         "v1:type:853008679c473fad",
+        "v1:type:85bc6367ca702fc6",
         "v1:type:95872e935943467f",
         "v1:type:a65be3f7b40400f9",
         "v1:type:d6fbf72967f28d5c",
         "v1:type:fd7e8f345f2d990c"
       ],
-      "node_ids_sha256": "93008d5fa5c84bafe7f0fa028f9d325d8a7a5b834593b10a0a5316ee2a1e8867"
+      "node_ids_sha256": "7ad099d430f0c051e4b3fc707a74fb94815a210525598f4dc037fb24a9e1b59d"
     },
     {
       "id": "v1:source:8751f8b85867a222",
@@ -18423,6 +19055,16 @@
         "v1:overload:03c0554c9ab6ce4c"
       ],
       "node_ids_sha256": "2da644807be8bc3cbc09132d66690d57fde1b7d9e5892c393c34455780888b18"
+    },
+    {
+      "id": "v1:source:875404b72d22bf8f",
+      "path": "crates/vibelang-dsp/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:83d0ade237032b6c"
+      ],
+      "node_ids_sha256": "78bc330274212f61ab530f34e4da5eeefc6142c186b24c8e68d4bceb9f6f01b8"
     },
     {
       "id": "v1:source:87a8c4b76f627de3",
@@ -18520,6 +19162,16 @@
       "node_ids_sha256": "3a2f0cb9698c609c896bcd5454965f49d29e2991cb47a29fc90049ac96bcfa38"
     },
     {
+      "id": "v1:source:8840eb09544474d7",
+      "path": "crates/vibelang-lsp/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:0b48a8cfba173dfc"
+      ],
+      "node_ids_sha256": "0189597afa3b37ae7d81d530c969a2a13ab276981a528faf600422e2a68953ad"
+    },
+    {
       "id": "v1:source:888dfed3102ffc0b",
       "path": "crates/vibelang-std/stdlib/effects/pitch/shepherd_tone_fx.vibe",
       "kind": "mechanical_declaration",
@@ -18584,6 +19236,16 @@
         "v1:overload:2e592649b5b91fd9"
       ],
       "node_ids_sha256": "e0a0fd93563cc842414235dcd19d272214cb6a8802cb12c2389977f0fad5b510"
+    },
+    {
+      "id": "v1:source:897e353b46586f6d",
+      "path": "tests/fixtures/api-unification/v1/golden/08_transport.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:bb8c1835e3774cf1"
+      ],
+      "node_ids_sha256": "b3b95b1cf9d39ce108ebdaa09366b22c0bcd255583d8ea758e084421a3bde491"
     },
     {
       "id": "v1:source:89b01da8c43ec751",
@@ -18781,6 +19443,16 @@
         "v1:overload:ea150ea206563580"
       ],
       "node_ids_sha256": "3b64474f81b192f214b3983836532bb41ed6ae3e852174fbce75a1ca7b9cf84f"
+    },
+    {
+      "id": "v1:source:8cdabcf74629f2ee",
+      "path": "docs/reference/README.md",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:d0b4ff1e36f57a65"
+      ],
+      "node_ids_sha256": "33d1dc536932a628f81c7f9fee8686dc748ce4d97c6ce1a26ccc1e133affeaa8"
     },
     {
       "id": "v1:source:8d4566a7b5f871e0",
@@ -19711,6 +20383,16 @@
       "node_ids_sha256": "b9b8472f68b756f3da8050d39f6b26ea33dbb688dbb033b3a739ee4d832a9c64"
     },
     {
+      "id": "v1:source:955b328d204f4628",
+      "path": "vscode-extension/package-lock.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:894d4bbfd8029bca"
+      ],
+      "node_ids_sha256": "d09693039092ae4e77d06d1771b7a3c1e72baec7407bf8b1b35cccab8e1acfef"
+    },
+    {
       "id": "v1:source:95949d2bab0b9bfc",
       "path": "crates/vibelang-std/stdlib/drums/cymbals/crash_bright.vibe",
       "kind": "mechanical_declaration",
@@ -20108,6 +20790,16 @@
       "node_ids_sha256": "e94c5dc1e2da626fa6cb18845c33cc427e954a14af8e22e71f7ec82b6c8ff072"
     },
     {
+      "id": "v1:source:9cbe68c6b815bca0",
+      "path": "crates/vibelang-http/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:715dfca46d491aa0"
+      ],
+      "node_ids_sha256": "b5e2b3c609bda8366574263104bbde8b2683bc89e523264adddced797849de08"
+    },
+    {
       "id": "v1:source:9d5fb8c054e0ea7f",
       "path": "api/contract/http.toml",
       "kind": "semantic_fragment",
@@ -20428,6 +21120,26 @@
         "v1:overload:c3857cebd391f5ae"
       ],
       "node_ids_sha256": "7f3ba5cccd0fe024046ada05e148f9df68b64de9af60adad0d67a847b4961e2d"
+    },
+    {
+      "id": "v1:source:9e364c43a1210da3",
+      "path": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:ff71c13ea74eef41"
+      ],
+      "node_ids_sha256": "1c1e39c5c0db989d8ce738c73e2f01dfa60d3a6cf8a989d5f8deb2e26668ea14"
+    },
+    {
+      "id": "v1:source:9eddd8b2ec4a8918",
+      "path": "crates/vibelang-wasm/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:e3773dff1bbb0558"
+      ],
+      "node_ids_sha256": "aa3a66eb6e14c44038559fd41b07ae69b2d56ed246efd6d3dc9c82f3d22901f2"
     },
     {
       "id": "v1:source:9f512f9d25c12284",
@@ -20972,6 +21684,17 @@
         "v1:overload:f9e80ba593cbe23f"
       ],
       "node_ids_sha256": "c26f3cf9204ac339f4a101392907471a90aedb4a8a409fa7c70caee7762b6a7c"
+    },
+    {
+      "id": "v1:source:a458010bd87b8073",
+      "path": "docs/interfaces/wasm.md",
+      "kind": "mechanical_declaration",
+      "node_count": 2,
+      "node_ids": [
+        "v1:type:6919417b9fe1766e",
+        "v1:type:94a02f844566ce3d"
+      ],
+      "node_ids_sha256": "ba976ddae093c051bc7e2e3eecff8f2a4aa556c71f89eac2ad10c04f0b58ca76"
     },
     {
       "id": "v1:source:a45e5d16791286ce",
@@ -22325,6 +23048,16 @@
       "node_ids_sha256": "ab7adbfb76225390115966252d1992f862dd3aa49d0af4c6ec0c223f8b855fb9"
     },
     {
+      "id": "v1:source:b06a2d37c96e3bd8",
+      "path": "crates/vibelang-keys/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:eda6743caf5a41b4"
+      ],
+      "node_ids_sha256": "6e51133029771380811bef417cfecaaf9326c0fdc94b6418e2cd6ed4d7c96ce4"
+    },
+    {
       "id": "v1:source:b08a714b3e89b902",
       "path": "crates/vibelang-std/stdlib/bass/acoustic/bass_fretless.vibe",
       "kind": "mechanical_declaration",
@@ -22433,6 +23166,16 @@
         "v1:overload:9ddf93ca57dccbec"
       ],
       "node_ids_sha256": "c817890eb044ea6b84f0ed47786ee46e8fa1053196097d5d66cfe6ab457bedbf"
+    },
+    {
+      "id": "v1:source:b2bedb700d96e432",
+      "path": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:85681f1266b6e2bf"
+      ],
+      "node_ids_sha256": "f9aef491d1507d58a8270da5758b31ccdf387c27007e8672a50545665603d992"
     },
     {
       "id": "v1:source:b2d18097b7462a32",
@@ -23323,6 +24066,16 @@
       "node_ids_sha256": "c05067e7b45c8624acd99739752216b9c6f4acc14ed051e09fba69c4368a6ad1"
     },
     {
+      "id": "v1:source:b7098b5bce29f6f7",
+      "path": "landing-page/package-lock.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:e342aad083b80c6c"
+      ],
+      "node_ids_sha256": "00980bfacc0a2dadf7b7abf7a5305ff8e02cf704e5f264074945dc5ca1028493"
+    },
+    {
       "id": "v1:source:b7296a75d990e98f",
       "path": "crates/vibelang-std/stdlib/modern/future_bass.vibe",
       "kind": "mechanical_declaration",
@@ -23698,6 +24451,16 @@
         "v1:overload:e62e36bb675e4ee4"
       ],
       "node_ids_sha256": "024ad2a1244a3138fabfb5d2062ffaf4600926c2717da194b08d143635ecaee4"
+    },
+    {
+      "id": "v1:source:b92b71fab78cbd99",
+      "path": "tests/fixtures/api-unification/v1/golden/08_transport.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:54b99df3a4850c29"
+      ],
+      "node_ids_sha256": "b4adf98f449bc39f8db48bc82dcfe0dde71b5546ec7d9953271b2ca5609c195f"
     },
     {
       "id": "v1:source:b95ebfe93c507ed2",
@@ -24085,6 +24848,48 @@
         "v1:overload:26945c80f20169fa"
       ],
       "node_ids_sha256": "4755770b4f07658ea595862c96ecf69fb843da473db23f5217679c6eb6af1c4d"
+    },
+    {
+      "id": "v1:source:c11cc0974ae47f91",
+      "path": "crates/vibelang-cli/src/main.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 33,
+      "node_ids": [
+        "v1:type:14b68a0de588e346",
+        "v1:type:1891747ca3bf2b03",
+        "v1:type:1a5bcb4ca895334a",
+        "v1:type:2399eeb990628fb0",
+        "v1:type:24029bddca90e616",
+        "v1:type:26ee83519980f90d",
+        "v1:type:2dace45a01d7382b",
+        "v1:type:2ed8fdfe75056bdd",
+        "v1:type:3674b416a051eb0c",
+        "v1:type:3684b2736ffce861",
+        "v1:type:4a24bbc2c34c875a",
+        "v1:type:4c0a029c25172009",
+        "v1:type:530788ca25504d80",
+        "v1:type:64a82a53ec85985e",
+        "v1:type:6cd57484455942d8",
+        "v1:type:726c7193341b0ed3",
+        "v1:type:78e63fea14da3415",
+        "v1:type:8052686790e2b3a1",
+        "v1:type:8a2297c09b228fb1",
+        "v1:type:8a8016e0919e151b",
+        "v1:type:8d2c565487738e4c",
+        "v1:type:a3e1a760a012354c",
+        "v1:type:ab18e9bfbe24652a",
+        "v1:type:b02b084e6e56559e",
+        "v1:type:baa38e6eecf7ddd6",
+        "v1:type:bb36d01bde0903ca",
+        "v1:type:c03be9a4ad0b08ba",
+        "v1:type:c2cdf701441e29e0",
+        "v1:type:c37dbaca64f909db",
+        "v1:type:df7d10166ef616e6",
+        "v1:type:f54bdb03b3452ba3",
+        "v1:type:f617f353334105ca",
+        "v1:type:f972d764c5113aaa"
+      ],
+      "node_ids_sha256": "e1940c5e684de8c25e0a84c6453d762eac6c18919be9cd9cfee04635711242df"
     },
     {
       "id": "v1:source:c1dd63bb10f2c459",
@@ -24606,6 +25411,16 @@
       "node_ids_sha256": "7d11b44f0462ae32933cb32de5452e33f41671dc0631b5c7f311fcb5cbe1d61f"
     },
     {
+      "id": "v1:source:c5cba92e26a027fd",
+      "path": "landing-page/package.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:3023669c79a28a94"
+      ],
+      "node_ids_sha256": "1fa3b82866675594a9173570ecc5771d22f068e9afd896505d49d628b25de5c3"
+    },
+    {
       "id": "v1:source:c6092b35415d9469",
       "path": "crates/vibelang-std/stdlib/fx/downers/downer_filtered.vibe",
       "kind": "mechanical_declaration",
@@ -24659,6 +25474,16 @@
         "v1:overload:de2ca828da0b9905"
       ],
       "node_ids_sha256": "4a25b6d59f8b616c1cd7b57843c29eca5642c6612d29fb7d7250b3eb12eb8036"
+    },
+    {
+      "id": "v1:source:c7d3faf21d214d3d",
+      "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:e2e3ae474edf9709"
+      ],
+      "node_ids_sha256": "dccfca35b16f8a92d55ab03a8055bd92416184785a945a0c991aab7b41a48f6c"
     },
     {
       "id": "v1:source:c7ee9878af25e183",
@@ -24791,6 +25616,16 @@
         "v1:overload:8d73612e5069d97f"
       ],
       "node_ids_sha256": "96cf58e1e773496098383e8784d58193b0fccf1f3f0eef241cac074b81a5a507"
+    },
+    {
+      "id": "v1:source:cae37f369fb1ada1",
+      "path": "crates/vibelang-std/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:86370f001d16916c"
+      ],
+      "node_ids_sha256": "de59901277e42a9bc7a1c3f6a8c0dc812b8140c96edae781cef7b056a52ae6ce"
     },
     {
       "id": "v1:source:cb000cc8a34d2605",
@@ -25180,6 +26015,20 @@
       "node_ids_sha256": "ace1ca0140987da797b8cd16d396d9d85e55651d33b679c0a95021d927ce9073"
     },
     {
+      "id": "v1:source:ce1eac747fcd2ae6",
+      "path": "emacs/vibelang-lsp.el",
+      "kind": "mechanical_declaration",
+      "node_count": 5,
+      "node_ids": [
+        "v1:type:6e23c4898ff03f5f",
+        "v1:type:836a20744c717ea0",
+        "v1:type:8b94c6a4b7d58c52",
+        "v1:type:907665efed594e02",
+        "v1:type:ddacd9e7d1e77aa3"
+      ],
+      "node_ids_sha256": "576e245e963cf36e40afe4a1c503659dd338c880dda3fd8dd97c0cc067850974"
+    },
+    {
       "id": "v1:source:ce239e6f8f158c0c",
       "path": "crates/vibelang-std/stdlib/bass/genre/bass_karplus.vibe",
       "kind": "mechanical_declaration",
@@ -25318,6 +26167,16 @@
         "v1:overload:dafc8fb32ce5e0c8"
       ],
       "node_ids_sha256": "1e78910c6f4e399e6f28f9a07876068e059fa7922595199cab7ee02e5a342ce6"
+    },
+    {
+      "id": "v1:source:d1da74218dc44718",
+      "path": "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:9d6a47f4888c9811"
+      ],
+      "node_ids_sha256": "1ab4ffaa37e8e6424eb284ca8c909407822361be068fbd0326cd3d6e43f1d182"
     },
     {
       "id": "v1:source:d1e9a07b4f84ecf4",
@@ -25608,6 +26467,16 @@
       "node_ids_sha256": "43b03acbb748160e17ea7bec3f142a77dcc29d7b3e586f03a624bf3c776b9a26"
     },
     {
+      "id": "v1:source:d902668fecc6e4e5",
+      "path": "emacs/vibelang-transient.el",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:090dbdcf4682e073"
+      ],
+      "node_ids_sha256": "ad1f032645d5d61d69bb218e66851ea77bfe7614bf0fdd9a2cc87fae26a6ece1"
+    },
+    {
       "id": "v1:source:d91d2b7b36c1b6be",
       "path": "crates/vibelang-std/stdlib/drums/snares/snare_acoustic.vibe",
       "kind": "mechanical_declaration",
@@ -25794,6 +26663,18 @@
         "v1:overload:d49c1cb3087665c3"
       ],
       "node_ids_sha256": "f64947815e6ef5da4704a147aa8200cf2defe3eb627064d0d780e5eae298342c"
+    },
+    {
+      "id": "v1:source:dd44041861168615",
+      "path": "docs/reference/runtime-objects.md",
+      "kind": "mechanical_declaration",
+      "node_count": 3,
+      "node_ids": [
+        "v1:type:3394889379b5dde8",
+        "v1:type:d6bc97e05af38d81",
+        "v1:type:fd7d3ddb667580ef"
+      ],
+      "node_ids_sha256": "7004bfbf7f5200fb941cfbc0b40b997b6179f2b66767421c1a869475608b1841"
     },
     {
       "id": "v1:source:dd5adadeb2d9fe24",
@@ -26011,6 +26892,27 @@
         "v1:overload:85b8ccff3ea4206a"
       ],
       "node_ids_sha256": "9e3f1b7be24d339d354ce3a8bcdb9957f0a01fb27d9c0c44646e61a29fb6e830"
+    },
+    {
+      "id": "v1:source:e11321dbaf76c455",
+      "path": "xtask/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:2689d1046c2c8f8c"
+      ],
+      "node_ids_sha256": "5e3d18542c28413a1ba0a156200d0c771c9dfaa84f34187118edb476395a6ea3"
+    },
+    {
+      "id": "v1:source:e1a754d658054806",
+      "path": "docs/interfaces/cli-and-config.md",
+      "kind": "mechanical_declaration",
+      "node_count": 2,
+      "node_ids": [
+        "v1:type:080490f6e2f75000",
+        "v1:type:c97aa1c41b6d1b60"
+      ],
+      "node_ids_sha256": "836453bb58a6d2f4ddf49e2a2ea68f8b3cc2b2dba760b3361f6b4a68c23cac6f"
     },
     {
       "id": "v1:source:e1ae7360712f0067",
@@ -26715,6 +27617,16 @@
       "node_ids_sha256": "554f8ca93cb50835630f0cd8a965fa3e569f7830b9373683f23f1b55669183eb"
     },
     {
+      "id": "v1:source:e68930174a39eef2",
+      "path": "crates/vibelang-api-manifest/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:fc8b8fcd073e522c"
+      ],
+      "node_ids_sha256": "1e0906de3573ab34b71996776c3e667c417e5afd0bf8b800e9a86e8dbe318faa"
+    },
+    {
       "id": "v1:source:e7113c7264969267",
       "path": "crates/vibelang-dsp/ugen_manifests/inout.json",
       "kind": "mechanical_declaration",
@@ -26904,6 +27816,16 @@
         "v1:overload:a2f832ea9228e6d0"
       ],
       "node_ids_sha256": "c653981b1a19d36b861b4acc8a26efc108c99a21549868997abacb73a24a05ab"
+    },
+    {
+      "id": "v1:source:eb6d78105a16c2ec",
+      "path": "crates/vibelang-cli/Cargo.toml",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:4f45b74c2a2c527a"
+      ],
+      "node_ids_sha256": "c73f9a136335da6b1e9677b42ee74536912f2631445b863e4a3190fd4f385f1d"
     },
     {
       "id": "v1:source:eb7ca1146a60f0cf",
@@ -27187,6 +28109,16 @@
         "v1:overload:799fb6d654ad3a0c"
       ],
       "node_ids_sha256": "04edc588989c7faea94cc6c155d2aba1c4926e61d1b93aa7ae693d3f109589d2"
+    },
+    {
+      "id": "v1:source:eeeb0fa3a1995839",
+      "path": "api/baselines/failure-injection-seams-v1.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:fe15f28469165859"
+      ],
+      "node_ids_sha256": "1bdede6c32015c496364b170ef68edaa6940b332b96fdecdaa67d02b0c83dc0c"
     },
     {
       "id": "v1:source:ef5d54d8ecc95fbd",
@@ -27819,6 +28751,36 @@
       "node_ids_sha256": "0ea236a496416c07afe5c3e151a77c6108c6b2c71e14d77456f9d7e49d2e3eff"
     },
     {
+      "id": "v1:source:f7bdaa73eab914a2",
+      "path": "crates/vibelang-lsp/src/features/semantic_tokens.rs",
+      "kind": "mechanical_declaration",
+      "node_count": 21,
+      "node_ids": [
+        "v1:type:243a6b20b6a1a0a2",
+        "v1:type:2cfb91a087a21fbd",
+        "v1:type:4904de12e724c30f",
+        "v1:type:5b8f31ec436dfac3",
+        "v1:type:70b8ede7a3072619",
+        "v1:type:7278b5e47ba1219b",
+        "v1:type:803f393df27cd20b",
+        "v1:type:9302b2ba8433746c",
+        "v1:type:96848a912df1e7e8",
+        "v1:type:9df4201b994c71d5",
+        "v1:type:a910513a5a3242a6",
+        "v1:type:c2ce9c1ae2f4772e",
+        "v1:type:cb219999f6844583",
+        "v1:type:d965834ff6f8c2de",
+        "v1:type:e33679166b1d934a",
+        "v1:type:e6d16318602d1464",
+        "v1:type:e9fe92d44da85753",
+        "v1:type:f02e268025e98bbf",
+        "v1:type:f55bccaedc70018e",
+        "v1:type:faa9d5cfdce4c74a",
+        "v1:type:ff9e3b69ffaff352"
+      ],
+      "node_ids_sha256": "a1d33cc6f2ff54e81baaf684faa11a48f19c45cf0ca0ae02d833a448c950ce98"
+    },
+    {
       "id": "v1:source:f7d3c88fbbd4ef3e",
       "path": "crates/vibelang-std/stdlib/orchestral/wind_chimes.vibe",
       "kind": "mechanical_declaration",
@@ -28166,6 +29128,16 @@
       "node_ids_sha256": "1f7ab45a297d3815f1b05256ca257903f64cb0aa22013169a50c45ac26a0f423"
     },
     {
+      "id": "v1:source:fda28e5523e5ff90",
+      "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:75b5e9f32998adb3"
+      ],
+      "node_ids_sha256": "a9c0300339a5dbd294e9b300c2b5b7e94edd04b817f2b7bedcaf6f69cc612de2"
+    },
+    {
       "id": "v1:source:fe17ad8261f3613d",
       "path": "crates/vibelang-std/stdlib/drums/kicks/kick_boomy.vibe",
       "kind": "mechanical_declaration",
@@ -28248,7 +29220,9 @@
         "docs/reference/runtime-model.md",
         "docs/reference/runtime-objects.md"
       ],
-      "included_count": 0,
+      "included_count": 8,
+      "eligible_count": 14,
+      "excluded_count": 6,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28282,7 +29256,9 @@
         "tests/fixtures/api-unification/v1/negative/stale-success.json",
         "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json"
       ],
-      "included_count": 0,
+      "included_count": 26,
+      "eligible_count": 26,
+      "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28291,7 +29267,9 @@
       "projection_paths": [
         "crates/vibelang-wasm/types/index.d.ts"
       ],
-      "included_count": 7,
+      "included_count": 39,
+      "eligible_count": 40,
+      "excluded_count": 1,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28300,7 +29278,9 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 12057,
+      "included_count": 12987,
+      "eligible_count": 12987,
+      "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28309,7 +29289,9 @@
       "projection_paths": [
         "docs/reference/generated/cli-help.txt"
       ],
-      "included_count": 0,
+      "included_count": 33,
+      "eligible_count": 33,
+      "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28318,7 +29300,9 @@
       "projection_paths": [
         "api/http-api-snapshot-v1.json"
       ],
-      "included_count": 615,
+      "included_count": 617,
+      "eligible_count": 617,
+      "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28347,7 +29331,9 @@
         "vscode-extension/package.json",
         "xtask/Cargo.toml"
       ],
-      "included_count": 0,
+      "included_count": 17,
+      "eligible_count": 21,
+      "excluded_count": 4,
       "unresolved_count": 0,
       "unclassified_count": 0
     },
@@ -28406,8 +29392,10 @@
         "vscode-extension/ugen_manifests/reverb.json",
         "vscode-extension/ugen_manifests/triggers.json"
       ],
-      "included_count": 0,
-      "unresolved_count": 0,
+      "included_count": 2141,
+      "eligible_count": 3141,
+      "excluded_count": 725,
+      "unresolved_count": 275,
       "unclassified_count": 0
     }
   ],
