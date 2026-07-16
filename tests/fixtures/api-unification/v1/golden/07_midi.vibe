@@ -1,0 +1,5 @@
+let target = voice("midi_target").synth("baseline_midi").apply();
+let device = midi_device("v1-baseline-device-that-does-not-exist");
+
+device.keys().channel(1).range_midi(24, 96).to(target);
+device.looper().channel(2).silence(2.0).quantize(0.25).to(target);

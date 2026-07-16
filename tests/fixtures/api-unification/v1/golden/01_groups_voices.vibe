@@ -1,0 +1,10 @@
+set_tempo(123);
+
+group("Drums").gain(0.5).body(|| {
+    voice("kick").synth("baseline_kick").gain(0.25);
+    voice("monitor").synth("baseline_monitor").run();
+});
+
+group("Drums").body(|| {
+    voice("snare").synth("baseline_snare");
+});

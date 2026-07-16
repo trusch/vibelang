@@ -1,0 +1,20 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "wasm_bridge_false_success",
+  "expected_current_outcome": "ExecutionResult.success_remains_true_after_bridge_or_reload_delivery_failure",
+  "cases": [
+    "missing bridge returns Ok",
+    "bridge discovery uses globalThis while invocation uses window",
+    "bridge resolved value is ignored",
+    "bridge rejection is logged and does not change ExecutionResult.success",
+    "reload send failure is logged and does not change ExecutionResult.success",
+    "execute before initialization can return success without application"
+  ],
+  "source_assertions": [
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "success: true," },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "Failed to load synthdef {}" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "Failed to apply state: {}" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "js_namespace = [\"window\", \"vibelangBridge\"]" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str(\"vibelangBridge\"))" }
+  ]
+}

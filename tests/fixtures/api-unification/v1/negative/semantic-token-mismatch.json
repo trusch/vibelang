@@ -1,0 +1,12 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "semantic_token_mismatch",
+  "expected_current_outcome": "emitted_numeric_token_indices_are_decoded_against_a_different_advertised_legend",
+  "emitter_legend": ["namespace", "type", "class", "function", "method", "property", "variable", "string", "number", "keyword", "operator", "comment", "macro", "parameter", "enumMember"],
+  "advertised_legend": ["function", "variable", "string", "number", "keyword", "comment", "type", "parameter", "property", "method", "synthdef", "voice", "pattern", "melody", "group", "note", "patternToken"],
+  "source_assertions": [
+    { "path": "crates/vibelang-lsp/src/features/semantic_tokens.rs", "contains": "SemanticTokenType::NAMESPACE,   // 0: groups" },
+    { "path": "crates/vibelang-lsp/src/server.rs", "contains": "SemanticTokenType::FUNCTION," },
+    { "path": "crates/vibelang-lsp/src/server.rs", "contains": "SemanticTokenType::new(\"patternToken\")" }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-known-defect-baseline/1",
+  "schema_version": 1,
+  "accepted_base": "9aff9b40db1597364279f9aacf47d436718a031e",
+  "policy": "negative fixtures freeze defects without endorsing or correcting them",
+  "defects": [
+    { "id": "ignored_fields", "fixture": "tests/fixtures/api-unification/v1/negative/ignored-fields.json" },
+    { "id": "stale_success", "fixture": "tests/fixtures/api-unification/v1/negative/stale-success.json" },
+    { "id": "invalid_ugen_labels", "fixture": "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json" },
+    { "id": "semantic_token_mismatch", "fixture": "tests/fixtures/api-unification/v1/negative/semantic-token-mismatch.json" },
+    { "id": "push_pull_diagnostic_mismatch", "fixture": "tests/fixtures/api-unification/v1/negative/push-pull-diagnostic-mismatch.json" },
+    { "id": "stale_commands", "fixture": "tests/fixtures/api-unification/v1/negative/stale-commands.json" },
+    { "id": "wasm_bridge_false_success", "fixture": "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json" }
+  ]
+}

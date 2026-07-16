@@ -77,3 +77,8 @@ echo "vscode-extension package main is compiled and present: $vscode_main"
 
 npm --prefix crates/vibelang-wasm ci --ignore-scripts --no-audit --no-fund
 npm --prefix crates/vibelang-wasm run check:types
+
+python3 scripts/v1-baselines.py "$mode"
+if [[ "$mode" == "check" ]]; then
+  python3 scripts/v1-baselines.py test-drift
+fi

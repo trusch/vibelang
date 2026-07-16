@@ -1,0 +1,9 @@
+group("A").body(|| {});
+group("B").body(|| {});
+
+let first = voice("route_first").synth("baseline_route").apply();
+let second = voice("route_second").synth("baseline_route").apply();
+
+first.output("out").to(group("A"));
+second.output("out").to(group("B"));
+first.output("out").to_main();

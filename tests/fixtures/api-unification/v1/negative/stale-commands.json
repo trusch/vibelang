@@ -1,0 +1,21 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "stale_commands",
+  "expected_current_outcome": "prominent_consumer_or_documentation_command_does_not_match_current_cli",
+  "commands": [
+    { "path": "examples/tutorials/README.md", "stale": "vibelang run -w", "current": "vibe run" },
+    { "path": "crates/vibelang-keys/README.md", "stale": "vibe --midi-input", "current": "no matching flag" },
+    { "path": "emacs/vibelang-lsp.el", "stale": "vibelang lsp", "current": "vibe lsp" },
+    { "path": "emacs/README.md", "stale": "vibelang lsp", "current": "vibe lsp" },
+    { "path": "vscode-extension/src/extension.ts", "stale": "--api", "current": "API enabled by default" },
+    { "path": "vscode-extension/src/views/soundDesigner.ts", "stale": "vibelang --api", "current": "vibe run" }
+  ],
+  "source_assertions": [
+    { "path": "examples/tutorials/README.md", "contains": "vibelang run -w" },
+    { "path": "crates/vibelang-keys/README.md", "contains": "vibe --midi-input" },
+    { "path": "emacs/vibelang-lsp.el", "contains": "'(\"vibelang\" \"lsp\")" },
+    { "path": "emacs/README.md", "contains": "`vibelang lsp`" },
+    { "path": "vscode-extension/src/extension.ts", "contains": "const args = [path.basename(vibeFile), '--api'];" },
+    { "path": "vscode-extension/src/views/soundDesigner.ts", "contains": "Run \"vibelang --api\" first." }
+  ]
+}

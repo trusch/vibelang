@@ -71,3 +71,10 @@ The same command owns the manifest-backed
 `docs/reference/generated/stdlib.md` adapter. The generator records current v1
 behavior; it does not normalize or repair permissive runtime semantics. The 25
 demand-rate identities remain explicit quarantined, non-callable records.
+
+## Frozen v1 baseline
+
+M00's reproducible byte/count inventory, authoring goldens, known-defect
+fixtures, and failure-phase seam map live under [`api/baselines`](baselines/README.md).
+They describe the observed v1 implementation and are not endorsements of its
+ignored inputs, stale success carriers, or warning-only failures.

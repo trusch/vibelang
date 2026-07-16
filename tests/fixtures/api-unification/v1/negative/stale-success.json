@@ -1,0 +1,21 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "stale_success",
+  "expected_current_outcome": "queue_or_evaluation_acceptance_is_returned_without_applied_revision",
+  "operation_selector": "every method != GET in api/http-api-snapshot-v1.json",
+  "observed_operation_count": 69,
+  "representative_carriers": [
+    "memberless 200/201/204",
+    "pre-application TransportState",
+    "pre-application Group/Voice/Pattern/Melody/Sequence/Effect entity",
+    "fixed-delay Sample entity",
+    "EvalResponse.success",
+    "AddKeyboardRouteResponse.message"
+  ],
+  "source_assertions": [
+    { "path": "crates/vibelang-http/src/lib.rs", "contains": "pub async fn send(&self, msg: Message)" },
+    { "path": "crates/vibelang-http/src/routes/eval.rs", "contains": "pub struct EvalResponse" },
+    { "path": "crates/vibelang-http/src/routes/samples.rs", "contains": "tokio::time::sleep" },
+    { "path": "crates/vibelang-http/src/routes/midi.rs", "contains": "pub struct AddKeyboardRouteResponse" }
+  ]
+}

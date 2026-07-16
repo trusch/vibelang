@@ -1,0 +1,13 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "push_pull_diagnostic_mismatch",
+  "expected_current_outcome": "same_document_can_receive_different_diagnostic_sets",
+  "push_only_sources": ["validation_engine", "unknown_synthdef", "unknown_effect"],
+  "shared_sources": ["syntax", "semantic", "lint"],
+  "pull_sources": ["syntax", "semantic", "lint"],
+  "source_assertions": [
+    { "path": "crates/vibelang-lsp/src/server.rs", "contains": "all_diagnostics.extend(validation_diagnostics);" },
+    { "path": "crates/vibelang-lsp/src/server.rs", "contains": "message: format!(\n                            \"Unknown synthdef '{}'" },
+    { "path": "crates/vibelang-lsp/src/server.rs", "contains": "let mut diagnostics = Vec::new();" }
+  ]
+}
