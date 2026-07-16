@@ -13,8 +13,8 @@ use vibelang_api_manifest::compatibility::{
 };
 use vibelang_api_manifest::fragments::{
     parse_authoring_fragment, parse_consumers_fragment, parse_http_fragment,
-    parse_runtime_fragment, parse_wasm_fragment, parse_websocket_fragment, DiscoveredSemanticNode,
-    FragmentSet, SemanticFacet,
+    parse_runtime_fragment, parse_wasm_fragment, parse_websocket_fragment,
+    ConsumerDenominatorBaselineSet, DiscoveredSemanticNode, FragmentSet, SemanticFacet,
 };
 use vibelang_api_manifest::v2::{
     semantic_id, validate_stable_id, Alias, AliasKind, ApiEntryV2, ApiType, Atomicity,
@@ -50,6 +50,8 @@ const ACCEPTED_V1_MANIFEST_SHA256: &str =
     "1dea4d106f11ebc916b9bd8bdade70973df0166d8040deb60aa1f2e60f244e05";
 const ACCEPTED_V1_HTTP_SHA256: &str =
     "6f8a1de4d29e424715ffe1622f681312408fcda16234e39d859c3ec1f458cb2a";
+const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
+    "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
 const EXPECTED_ENTRIES: usize = 3_626;
 const EXPECTED_OVERLOADS: usize = 8_431;
@@ -59,14 +61,23 @@ const EXPECTED_HTTP_FIELDS: usize = 297;
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     let discovery = discover(root)?;
-    let first = compose(root, &discovery)?;
-    let second = compose(root, &discovery)?;
+    generate_discovered(root, root, &discovery, check)
+}
+
+fn generate_discovered(
+    source_root: &Path,
+    output_root: &Path,
+    discovery: &Discovery,
+    check: bool,
+) -> Result<(), String> {
+    let first = compose(source_root, discovery)?;
+    let second = compose(source_root, discovery)?;
     if first != second {
         return Err("effective-contract double generation produced different bytes".into());
     }
 
     for (path, content) in first {
-        write_or_check(root, path, &content, check)?;
+        write_or_check(output_root, path, &content, check)?;
     }
     println!(
         "effective contract: {EXPECTED_ENTRIES} entries, {EXPECTED_OVERLOADS} overloads, {EXPECTED_HTTP_ROUTES} routes, {EXPECTED_HTTP_TYPES} HTTP types, {EXPECTED_HTTP_FIELDS} HTTP fields, zero orphan/unclassified records"
@@ -1842,7 +1853,11 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         &operations,
         &events,
     )?;
-    let coverage = build_manifest_coverage(&consumer_ids, &consumer_accounting)?;
+    let coverage = build_manifest_coverage(
+        &consumer_ids,
+        &consumer_accounting,
+        &discovery.fragments.consumers.denominator_baseline,
+    )?;
 
     let mut stats = discovery.v1.stats.clone();
     stats.insert("http_routes".into(), discovery.http.routes.len() as u64);
@@ -2953,10 +2968,57 @@ fn build_consumers(
 fn build_manifest_coverage(
     consumer_ids: &BTreeMap<String, String>,
     accounting: &BTreeMap<String, ConsumerAccounting>,
+    baseline: &ConsumerDenominatorBaselineSet,
 ) -> Result<BTreeMap<String, CoverageRecord>, String> {
+    baseline.validate().map_err(|error| error.to_string())?;
+    if baseline.sha256 != ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256 {
+        return Err(format!(
+            "consumer denominator baseline {} is not accepted; legitimate advancement requires an explicit, separately audited update of the accepted digest {}",
+            baseline.sha256, ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256
+        ));
+    }
+    let expected_consumers = consumer_ids.keys().cloned().collect::<BTreeSet<_>>();
+    let accepted_consumers = baseline
+        .consumers
+        .iter()
+        .map(|consumer| consumer.consumer.clone())
+        .collect::<BTreeSet<_>>();
+    if accepted_consumers != expected_consumers {
+        let missing = expected_consumers
+            .difference(&accepted_consumers)
+            .cloned()
+            .collect::<Vec<_>>();
+        let orphan = accepted_consumers
+            .difference(&expected_consumers)
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "accepted consumer denominator baseline does not match discovered consumer families: missing={missing:?}, orphan={orphan:?}"
+        ));
+    }
+
     let mut coverage = BTreeMap::new();
+    let mut shrunk = Vec::new();
     for (category, consumer) in accounting {
         let denominator = consumer.eligible_count() as u64;
+        let consumer_id = &consumer_ids[category];
+        let accepted = baseline
+            .consumers
+            .iter()
+            .find(|accepted| accepted.consumer == *category)
+            .ok_or_else(|| format!("accepted denominator disappeared for consumer {category}"))?;
+        if accepted.consumer_id != *consumer_id {
+            return Err(format!(
+                "accepted denominator for consumer {category} targets {}, expected {consumer_id}",
+                accepted.consumer_id
+            ));
+        }
+        if denominator < accepted.accepted_denominator {
+            shrunk.push(format!(
+                "{category} current={denominator} accepted={}",
+                accepted.accepted_denominator
+            ));
+        }
         let mut exclusions_by_reason = BTreeMap::new();
         for (reason, _) in consumer.exclusions.values() {
             *exclusions_by_reason
@@ -2964,16 +3026,22 @@ fn build_manifest_coverage(
                 .or_insert(0) += 1;
         }
         coverage.insert(
-            consumer_ids[category].clone(),
+            consumer_id.clone(),
             CoverageRecord {
                 numerator: consumer.included.len() as u64,
                 denominator,
                 exclusions_by_reason,
                 unresolved_ids: consumer.unresolved.iter().cloned().collect(),
                 stale_ids: consumer.stale.iter().cloned().collect(),
-                base_denominator: Some(denominator),
+                base_denominator: accepted.accepted_denominator,
             },
         );
+    }
+    if !shrunk.is_empty() {
+        return Err(format!(
+            "consumer denominator shrink rejected before artifact writes; normal generation cannot reset accepted baselines: {}",
+            shrunk.join(", ")
+        ));
     }
     Ok(coverage)
 }
@@ -3944,6 +4012,9 @@ struct ConsumerCoverage {
     projection_paths: Vec<String>,
     included_count: u64,
     eligible_count: u64,
+    accepted_denominator: u64,
+    denominator_baseline_owner: String,
+    denominator_baseline_revision: String,
     excluded_count: u64,
     unresolved_count: u64,
     unclassified_count: u64,
@@ -4015,11 +4086,27 @@ fn build_coverage(
         .iter()
         .map(|consumer| {
             let coverage = &manifest.coverage[&consumer.metadata.id];
+            let baseline = discovery
+                .fragments
+                .consumers
+                .denominator_baseline
+                .consumers
+                .iter()
+                .find(|baseline| baseline.consumer_id == consumer.metadata.id)
+                .expect("validated consumer denominator baseline");
             ConsumerCoverage {
                 id: consumer.metadata.id.clone(),
                 projection_paths: consumer.source_projections.clone(),
                 included_count: coverage.numerator,
                 eligible_count: coverage.denominator,
+                accepted_denominator: coverage.base_denominator,
+                denominator_baseline_owner: baseline.owner.clone(),
+                denominator_baseline_revision: discovery
+                    .fragments
+                    .consumers
+                    .denominator_baseline
+                    .accepted_revision
+                    .clone(),
                 excluded_count: coverage.exclusions_by_reason.values().sum(),
                 unresolved_count: coverage.unresolved_ids.len() as u64,
                 unclassified_count: u64::from(
@@ -5928,6 +6015,153 @@ export type ArbitraryUnion = string | number;
                             + coverage.unresolved_ids.len() as u64
                     );
                 }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn persisted_denominators_accept_unchanged_and_growing_discovery() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let mut discovery = discover(&root()).unwrap();
+                let manifest = build_v2(&discovery).unwrap();
+                let expected = BTreeMap::from([
+                    ("cli", 33),
+                    ("docs", 14),
+                    ("fixtures", 26),
+                    ("http", 620),
+                    ("manifest", 13_001),
+                    ("packages", 21),
+                    ("rhai_editor", 3_141),
+                    ("wasm", 51),
+                ]);
+                for consumer in &manifest.consumers {
+                    let family = consumer.eligibility.surfaces[0].as_str();
+                    let coverage = &manifest.coverage[&consumer.metadata.id];
+                    assert_eq!(coverage.denominator, expected[family], "{family}");
+                    assert_eq!(coverage.base_denominator, expected[family], "{family}");
+                }
+
+                discovery.mechanical.push(
+                    classify_mechanical_declaration(raw_declaration(
+                        "cli",
+                        "command",
+                        "m02-denominator-growth-probe",
+                        "crates/vibelang-cli/src/main.rs",
+                        "Commands::M02DenominatorGrowthProbe",
+                    ))
+                    .unwrap(),
+                );
+                discovery
+                    .mechanical
+                    .sort_by(|left, right| left.id.cmp(&right.id));
+                let grown = build_v2(&discovery).unwrap();
+                for (family, denominator, accepted) in
+                    [("cli", 34, 33), ("manifest", 13_002, 13_001)]
+                {
+                    let consumer = grown
+                        .consumers
+                        .iter()
+                        .find(|consumer| consumer.eligibility.surfaces == [family])
+                        .unwrap();
+                    let coverage = &grown.coverage[&consumer.metadata.id];
+                    assert_eq!(coverage.denominator, denominator, "{family}");
+                    assert_eq!(coverage.base_denominator, accepted, "{family}");
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn wasm_and_cli_source_loss_fail_before_regeneration_writes() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let source_root = root();
+                for (surface, name) in [("wasm", Some("VibelangError.stack")), ("cli", None)] {
+                    let mut discovery = discover(&source_root).unwrap();
+                    let index = discovery
+                        .mechanical
+                        .iter()
+                        .position(|declaration| {
+                            declaration.surface == surface
+                                && name.is_none_or(|name| declaration.name == name)
+                                && declaration.consumers.get(surface)
+                                    == Some(&MechanicalDisposition::Included)
+                        })
+                        .unwrap();
+                    discovery.mechanical.remove(index);
+
+                    let output_root = source_root.join("target").join(format!(
+                        "vibelang-m02-denominator-source-loss-{surface}-{}",
+                        std::process::id()
+                    ));
+                    let sentinels = [
+                        V2_PATH,
+                        COVERAGE_PATH,
+                        DEBT_PATH,
+                        DIFF_PATH,
+                        PACKAGE_INDEX_PATH,
+                    ]
+                    .into_iter()
+                    .map(|path| (path, format!("sentinel:{surface}:{path}\n")))
+                    .collect::<Vec<_>>();
+                    for (path, content) in &sentinels {
+                        let path = output_root.join(path);
+                        fs::create_dir_all(path.parent().unwrap()).unwrap();
+                        fs::write(path, content).unwrap();
+                    }
+
+                    let error = generate_discovered(&source_root, &output_root, &discovery, false)
+                        .unwrap_err();
+                    assert!(error.contains(surface), "{error}");
+                    assert!(error.contains("before artifact writes"), "{error}");
+                    for (path, content) in &sentinels {
+                        assert_eq!(
+                            fs::read_to_string(output_root.join(path)).unwrap(),
+                            *content
+                        );
+                    }
+                    fs::remove_dir_all(output_root).unwrap();
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn denominator_baseline_tampering_fails_closed() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let mut discovery = discover(&root()).unwrap();
+                discovery
+                    .fragments
+                    .consumers
+                    .denominator_baseline
+                    .consumers
+                    .iter_mut()
+                    .find(|consumer| consumer.consumer == "wasm")
+                    .unwrap()
+                    .accepted_denominator = 50;
+                let error = build_v2(&discovery).unwrap_err();
+                assert!(error.contains("checksum mismatch"), "{error}");
+
+                let baseline = &mut discovery.fragments.consumers.denominator_baseline;
+                baseline.sha256 =
+                    vibelang_api_manifest::fragments::consumer_denominator_baseline_sha256(
+                        baseline,
+                    )
+                    .unwrap();
+                let error = build_v2(&discovery).unwrap_err();
+                assert!(error.contains("is not accepted"), "{error}");
+                assert!(error.contains("separately audited update"), "{error}");
             })
             .unwrap()
             .join()

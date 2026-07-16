@@ -1315,7 +1315,7 @@ pub struct CoverageRecord {
     pub exclusions_by_reason: BTreeMap<String, u64>,
     pub unresolved_ids: Vec<String>,
     pub stale_ids: Vec<String>,
-    pub base_denominator: Option<u64>,
+    pub base_denominator: u64,
 }
 
 impl PublicApiManifestV2 {
@@ -1616,15 +1616,20 @@ impl PublicApiManifestV2 {
             if !ids.contains(consumer_id.as_str()) {
                 return Err(invalid_reference("coverage", consumer_id));
             }
+            let classified_denominator = coverage
+                .exclusions_by_reason
+                .values()
+                .try_fold(coverage.numerator, |total, count| total.checked_add(*count))
+                .and_then(|value| value.checked_add(coverage.unresolved_ids.len() as u64));
             if coverage.numerator > coverage.denominator
-                || coverage
-                    .base_denominator
-                    .is_some_and(|base| coverage.denominator < base)
+                || coverage.base_denominator == 0
+                || coverage.denominator < coverage.base_denominator
+                || classified_denominator != Some(coverage.denominator)
             {
                 return Err(ManifestError::new(
                     ErrorCode::InvalidValue,
                     consumer_id,
-                    "coverage cannot exceed its denominator or silently shrink its base denominator",
+                    "coverage must satisfy numerator + exclusions + unresolved = denominator and cannot silently shrink its nonzero accepted base denominator",
                 ));
             }
         }

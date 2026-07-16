@@ -175,7 +175,26 @@ pub struct WasmRecord {
 pub struct ConsumersFragment {
     #[serde(flatten)]
     pub header: FragmentHeader,
+    pub denominator_baseline: ConsumerDenominatorBaselineSet,
     pub records: Vec<ConsumerRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConsumerDenominatorBaselineSet {
+    pub acceptance: String,
+    pub accepted_revision: String,
+    pub sha256: String,
+    pub consumers: Vec<ConsumerDenominatorBaseline>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConsumerDenominatorBaseline {
+    pub consumer: String,
+    pub consumer_id: String,
+    pub accepted_denominator: u64,
+    pub owner: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -230,7 +249,87 @@ pub fn parse_wasm_fragment(input: &str) -> Result<WasmFragment, ManifestError> {
 }
 
 pub fn parse_consumers_fragment(input: &str) -> Result<ConsumersFragment, ManifestError> {
-    parse_fragment(input, FragmentDomain::Consumers)
+    let fragment: ConsumersFragment = parse_fragment(input, FragmentDomain::Consumers)?;
+    fragment.denominator_baseline.validate()?;
+    Ok(fragment)
+}
+
+#[derive(Serialize)]
+struct ConsumerDenominatorBaselineDigest<'a> {
+    acceptance: &'a str,
+    accepted_revision: &'a str,
+    consumers: &'a [ConsumerDenominatorBaseline],
+}
+
+pub fn consumer_denominator_baseline_sha256(
+    baseline: &ConsumerDenominatorBaselineSet,
+) -> Result<String, ManifestError> {
+    crate::canonical::canonical_sha256_hex(&ConsumerDenominatorBaselineDigest {
+        acceptance: &baseline.acceptance,
+        accepted_revision: &baseline.accepted_revision,
+        consumers: &baseline.consumers,
+    })
+}
+
+impl ConsumerDenominatorBaselineSet {
+    pub fn validate(&self) -> Result<(), ManifestError> {
+        if self.acceptance.trim().is_empty()
+            || self.accepted_revision.len() != 40
+            || !self
+                .accepted_revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || self.consumers.is_empty()
+        {
+            return Err(ManifestError::new(
+                ErrorCode::MissingFacet,
+                "consumers.toml.denominator_baseline",
+                "accepted consumer denominators require an acceptance, exact lowercase commit revision, and at least one consumer",
+            ));
+        }
+        let mut previous = None;
+        let mut consumer_ids = BTreeSet::new();
+        for consumer in &self.consumers {
+            crate::v2::validate_stable_id(&consumer.consumer_id, Some("consumer"))?;
+            if consumer.consumer.trim().is_empty()
+                || consumer.owner.trim().is_empty()
+                || consumer.accepted_denominator == 0
+            {
+                return Err(ManifestError::new(
+                    ErrorCode::MissingFacet,
+                    &consumer.consumer_id,
+                    "accepted consumer denominators require a family, owner, and nonzero denominator",
+                ));
+            }
+            if previous.is_some_and(|value| value >= consumer.consumer.as_str()) {
+                return Err(ManifestError::new(
+                    ErrorCode::NonDeterministicOrder,
+                    "consumers.toml.denominator_baseline.consumers",
+                    "accepted consumer denominators must be strictly sorted by consumer family",
+                ));
+            }
+            if !consumer_ids.insert(consumer.consumer_id.as_str()) {
+                return Err(ManifestError::new(
+                    ErrorCode::DuplicateId,
+                    &consumer.consumer_id,
+                    "accepted consumer denominators may name each stable consumer only once",
+                ));
+            }
+            previous = Some(consumer.consumer.as_str());
+        }
+        let actual = consumer_denominator_baseline_sha256(self)?;
+        if self.sha256 != actual {
+            return Err(ManifestError::new(
+                ErrorCode::InvalidValue,
+                "consumers.toml.denominator_baseline.sha256",
+                format!(
+                    "accepted consumer denominator baseline checksum mismatch: expected {}, found {}",
+                    self.sha256, actual
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn parse_fragment<T>(input: &str, expected: FragmentDomain) -> Result<T, ManifestError>

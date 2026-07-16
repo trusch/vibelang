@@ -29337,6 +29337,9 @@
       ],
       "included_count": 8,
       "eligible_count": 14,
+      "accepted_denominator": 14,
+      "denominator_baseline_owner": "vibelang-docs",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 6,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29373,6 +29376,9 @@
       ],
       "included_count": 26,
       "eligible_count": 26,
+      "accepted_denominator": 26,
+      "denominator_baseline_owner": "vibelang-tests",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29384,6 +29390,9 @@
       ],
       "included_count": 50,
       "eligible_count": 51,
+      "accepted_denominator": 51,
+      "denominator_baseline_owner": "vibelang-wasm",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 1,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29395,6 +29404,9 @@
       ],
       "included_count": 13001,
       "eligible_count": 13001,
+      "accepted_denominator": 13001,
+      "denominator_baseline_owner": "xtask",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29406,6 +29418,9 @@
       ],
       "included_count": 33,
       "eligible_count": 33,
+      "accepted_denominator": 33,
+      "denominator_baseline_owner": "vibelang-cli",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29417,6 +29432,9 @@
       ],
       "included_count": 620,
       "eligible_count": 620,
+      "accepted_denominator": 620,
+      "denominator_baseline_owner": "vibelang-http",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 0,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29448,6 +29466,9 @@
       ],
       "included_count": 17,
       "eligible_count": 21,
+      "accepted_denominator": 21,
+      "denominator_baseline_owner": "vibelang-packaging",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 4,
       "unresolved_count": 0,
       "unclassified_count": 0
@@ -29509,6 +29530,9 @@
       ],
       "included_count": 2141,
       "eligible_count": 3141,
+      "accepted_denominator": 3141,
+      "denominator_baseline_owner": "vibelang-tools",
+      "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 725,
       "unresolved_count": 275,
       "unclassified_count": 0
@@ -29549,7 +29573,7 @@
       "path": "api/contract/consumers.toml",
       "domain": "consumers",
       "record_count": 1,
-      "sha256": "035092ea56c66516812755d2224fcf8df4ae929e98f32321986a1cf5768d1a9b"
+      "sha256": "18a198da5a9839578d939add73f0b62e2d481868ed6ff1ae5428687522266f3c"
     }
   ]
 }

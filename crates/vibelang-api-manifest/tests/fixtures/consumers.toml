@@ -2,6 +2,17 @@ fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
 fragment_version = 1
 domain = "consumers"
 
+[denominator_baseline]
+acceptance = "fixture"
+accepted_revision = "0000000000000000000000000000000000000000"
+sha256 = "bdb442eaa673734587b1257447b4aa273b137e39a98d6796d9801720e66c8fc9"
+
+[[denominator_baseline.consumers]]
+consumer = "fixture"
+consumer_id = "v1:consumer:0000000000000006"
+accepted_denominator = 1
+owner = "vibelang-tests"
+
 [[records]]
 target_id = "v1:consumer:0000000000000006"
 owner = "vibelang-tools"

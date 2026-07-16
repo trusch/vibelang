@@ -7,15 +7,15 @@ use vibelang_api_manifest::{
         CompatibilityReport,
     },
     fragments::{
-        parse_authoring_fragment, parse_consumers_fragment, parse_http_fragment,
-        parse_runtime_fragment, parse_wasm_fragment, parse_websocket_fragment,
+        consumer_denominator_baseline_sha256, parse_authoring_fragment, parse_consumers_fragment,
+        parse_http_fragment, parse_runtime_fragment, parse_wasm_fragment, parse_websocket_fragment,
         DiscoveredSemanticNode, FragmentSet, SemanticFacet,
     },
     v2::{
         parse_manifest, parse_v2_manifest, to_pretty_json_v2, Alias, AliasKind, ApiEntryV2,
         ApiType, AvailabilityStatus, AvailabilityV2, BindingDetails, Capability,
-        CapabilityExpression, ConsistencyPoint, Consumer, Derivation, Eligibility, Event,
-        EventDelivery, EventOrdering, Facet, FailureContract, FailureDelivery, FailureStage,
+        CapabilityExpression, ConsistencyPoint, Consumer, CoverageRecord, Derivation, Eligibility,
+        Event, EventDelivery, EventOrdering, Facet, FailureContract, FailureDelivery, FailureStage,
         FallbackPolicy, Field, FieldDirection, Generator, HttpSuccess, Idempotency, LossDetection,
         NodeMetadata, Operation, OperationKind, OverloadV2, PanicExposure, PriorState,
         ProvenanceAnchor, PublicApiManifestV2, RevisionRelation, Stability, StabilityLevel,
@@ -584,6 +584,74 @@ fn all_six_fragment_fixtures_parse_and_validate_completeness() {
     let second = fragment_set();
     assert_eq!(first, second);
     first.validate(&discovered_nodes()).unwrap();
+}
+
+#[test]
+fn consumer_denominator_baseline_is_checksum_protected() {
+    let parsed = parse_consumers_fragment(CONSUMERS).unwrap();
+    assert_eq!(
+        consumer_denominator_baseline_sha256(&parsed.denominator_baseline).unwrap(),
+        parsed.denominator_baseline.sha256
+    );
+    let tampered = CONSUMERS.replace("accepted_denominator = 1", "accepted_denominator = 2");
+    assert_eq!(
+        parse_consumers_fragment(&tampered).unwrap_err().code,
+        ErrorCode::InvalidValue
+    );
+}
+
+#[test]
+fn coverage_requires_a_nonshrinking_accepted_denominator_and_exact_equation() {
+    let mut manifest = manifest_with_all_metadata_owners();
+    let consumer_id = manifest.consumers[0].metadata.id.clone();
+    let included_id = manifest.types[0].metadata.id.clone();
+    manifest.consumers[0].included_ids.push(included_id);
+    manifest.coverage.insert(
+        consumer_id.clone(),
+        CoverageRecord {
+            numerator: 1,
+            denominator: 1,
+            exclusions_by_reason: BTreeMap::new(),
+            unresolved_ids: Vec::new(),
+            stale_ids: Vec::new(),
+            base_denominator: 1,
+        },
+    );
+    manifest.validate().unwrap();
+
+    let mut shrunken = manifest.clone();
+    shrunken
+        .coverage
+        .get_mut(&consumer_id)
+        .unwrap()
+        .base_denominator = 2;
+    assert_eq!(
+        shrunken.validate().unwrap_err().code,
+        ErrorCode::InvalidValue
+    );
+
+    let mut inconsistent = manifest.clone();
+    inconsistent
+        .coverage
+        .get_mut(&consumer_id)
+        .unwrap()
+        .denominator = 2;
+    assert_eq!(
+        inconsistent.validate().unwrap_err().code,
+        ErrorCode::InvalidValue
+    );
+
+    let mut missing_baseline = serde_json::to_value(manifest).unwrap();
+    missing_baseline["coverage"][&consumer_id]
+        .as_object_mut()
+        .unwrap()
+        .remove("base_denominator");
+    assert_eq!(
+        parse_v2_manifest(&serde_json::to_string(&missing_baseline).unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::MissingFacet
+    );
 }
 
 #[test]
