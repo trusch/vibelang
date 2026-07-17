@@ -748,6 +748,7 @@ impl<B: Backend> Runtime<B> {
 
         let component_path = message.component_path();
         let action = message.operation().to_lowercase();
+        self.begin_concurrent_contextual_work(&context, &component_path, &action)?;
         let result = self.dispatch_message(message).await;
         if let Err(error) = &result {
             finish_contextual_receipt(
@@ -800,11 +801,6 @@ impl<B: Backend> Runtime<B> {
         if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
             finish_deferred_effect_after_fence(&self.mutation_ledger, &completion)?;
         } else {
-            self.begin_contextual_work(
-                &completion.context,
-                &completion.component_path,
-                &completion.action,
-            )?;
             self.finish_contextual_work(
                 &completion.context,
                 &completion.component_path,
@@ -1091,18 +1087,39 @@ impl<B: Backend> Runtime<B> {
         component_path: &str,
         action: &str,
     ) -> Result<()> {
+        self.begin_contextual_work_inner(context, component_path, action, false)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn begin_concurrent_contextual_work(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+    ) -> Result<()> {
+        self.begin_contextual_work_inner(context, component_path, action, true)
+    }
+
+    fn begin_contextual_work_inner(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+        allow_pending_predecessor: bool,
+    ) -> Result<()> {
         let now = SystemTime::now();
-        let planning = self
-            .mutation_ledger
-            .begin_planning(
-                context.attempt_id(),
-                vec![PlannedComponent {
-                    path: component_path.into(),
-                    action: action.into(),
-                }],
-                now,
-            )
-            .map_err(mutation_ledger_error)?;
+        let planned = vec![PlannedComponent {
+            path: component_path.into(),
+            action: action.into(),
+        }];
+        let planning = if allow_pending_predecessor {
+            self.mutation_ledger
+                .begin_concurrent_planning(context.attempt_id(), planned, now)
+        } else {
+            self.mutation_ledger
+                .begin_planning(context.attempt_id(), planned, now)
+        }
+        .map_err(mutation_ledger_error)?;
         publish_mutation_transition(&self.mutation_ledger, context, &planning, now);
         let committing = self
             .mutation_ledger
@@ -6792,6 +6809,7 @@ mod tests {
         events: std::sync::Mutex<Vec<BackendEvent>>,
         fail_create_group: std::sync::atomic::AtomicBool,
         sync_mode: std::sync::atomic::AtomicU8,
+        sync_release: tokio::sync::Notify,
     }
 
     #[derive(Clone, Debug)]
@@ -6840,6 +6858,7 @@ mod tests {
                 events: std::sync::Mutex::new(Vec::new()),
                 fail_create_group: std::sync::atomic::AtomicBool::new(false),
                 sync_mode: std::sync::atomic::AtomicU8::new(0),
+                sync_release: tokio::sync::Notify::new(),
             }
         }
 
@@ -7053,6 +7072,10 @@ mod tests {
                 0 => Ok(()),
                 1 => Err(MockError),
                 2 => std::future::pending().await,
+                3 => {
+                    self.sync_release.notified().await;
+                    Ok(())
+                }
                 mode => panic!("unsupported test sync mode {mode}"),
             }
         }
@@ -10748,6 +10771,282 @@ mod tests {
             handle.mutation_receipt(resumed.attempt_id).unwrap().state,
             ReceiptState::Terminal(TerminalOutcome::Applied(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn lower_boundary_applied_then_higher_partial_preserves_newer_fence() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .sync_mode
+            .store(3, std::sync::atomic::Ordering::SeqCst);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let sync_waiter = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        let lower_attempt = wait_for_one_pending(&handle).await;
+        runtime.tick().await;
+
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "faulted".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit(create.clone(), handle.legacy_submission(&create).unwrap())
+            .await
+            .unwrap();
+
+        runtime.backend.sync_release.notify_one();
+        sync_waiter.await.unwrap().unwrap();
+        let lower = handle.mutation_receipt(lower_attempt).unwrap();
+        assert!(matches!(
+            lower.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        runtime.tick().await;
+
+        let higher = handle.mutation_receipt(higher.attempt_id).unwrap();
+        assert!(matches!(
+            higher.state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, lower.revision);
+        assert_eq!(
+            status.live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn higher_partial_then_lower_boundary_applied_requires_exact_acknowledgement() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .sync_mode
+            .store(3, std::sync::atomic::Ordering::SeqCst);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let sync_waiter = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        let lower_attempt = wait_for_one_pending(&handle).await;
+        runtime.tick().await;
+
+        let transitions = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let transition_capture = transitions.clone();
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "faulted".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit_with_sinks(
+                create.clone(),
+                handle.legacy_submission(&create).unwrap(),
+                MutationReplySink::new(move |receipt| {
+                    transition_capture.lock().unwrap().push(receipt);
+                }),
+                MutationEventSink::default(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let transitions = transitions.lock().unwrap().clone();
+        assert_eq!(transitions.len(), 5);
+        assert!(matches!(
+            transitions[0].state,
+            ReceiptState::Evaluating { .. }
+        ));
+        assert!(matches!(
+            transitions[1].state,
+            ReceiptState::Accepted { .. }
+        ));
+        assert!(matches!(transitions[2].state, ReceiptState::Planning));
+        assert!(matches!(
+            transitions[3].state,
+            ReceiptState::Committing {
+                phase: CommitPhase::Reconcile
+            }
+        ));
+        assert!(matches!(
+            transitions[4].state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+
+        runtime.backend.sync_release.notify_one();
+        sync_waiter.await.unwrap().unwrap();
+        let lower = handle.mutation_receipt(lower_attempt).unwrap();
+        assert!(matches!(
+            lower.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, lower.revision);
+        assert_eq!(
+            status.live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+
+        let blocked = Message::Transport(TransportMessage::Start);
+        let blocked = handle
+            .submit(blocked.clone(), handle.legacy_submission(&blocked).unwrap())
+            .await
+            .unwrap();
+        assert!(matches!(
+            blocked.state,
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+                if code == "runtime_fenced"
+        ));
+
+        handle.continue_best_effort(higher.attempt_id).unwrap();
+        runtime
+            .backend
+            .fail_create_group
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let resumed = Message::Transport(TransportMessage::SetTempo { bpm: 123.0 });
+        let resumed = handle
+            .submit(resumed.clone(), handle.legacy_submission(&resumed).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        let resumed = handle.mutation_receipt(resumed.attempt_id).unwrap();
+        assert!(matches!(
+            resumed.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, resumed.revision);
+        assert_eq!(status.live_state, LiveState::Clean);
+    }
+
+    #[tokio::test]
+    async fn older_applied_completion_cannot_regress_confirmed_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let lower_message = Message::Transport(TransportMessage::SetTempo { bpm: 120.0 });
+        let higher_message = Message::Transport(TransportMessage::Start);
+        let lower = handle
+            .submit(
+                lower_message.clone(),
+                handle.legacy_submission(&lower_message).unwrap(),
+            )
+            .await
+            .unwrap();
+        let higher = handle
+            .submit(
+                higher_message.clone(),
+                handle.legacy_submission(&higher_message).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let lower_path = lower_message.component_path();
+        let lower_action = lower_message.operation().to_lowercase();
+        let higher_path = higher_message.component_path();
+        let higher_action = higher_message.operation().to_lowercase();
+        handle
+            .ledger
+            .begin_planning(
+                lower.attempt_id,
+                vec![PlannedComponent {
+                    path: lower_path.clone(),
+                    action: lower_action.clone(),
+                }],
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                lower.attempt_id,
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .begin_concurrent_planning(
+                higher.attempt_id,
+                vec![PlannedComponent {
+                    path: higher_path.clone(),
+                    action: higher_action.clone(),
+                }],
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                higher.attempt_id,
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .unwrap();
+
+        let applied = |path: String, action: String| {
+            let effective_at = EffectiveAt {
+                observed_at: Timestamp::from_system_time(SystemTime::now()),
+                musical_beat: None,
+                backend_time_seconds: None,
+            };
+            ReceiptState::Terminal(TerminalOutcome::Applied(Applied {
+                effective_at: effective_at.clone(),
+                confirmations: vec![Confirmation::RuntimeCommit],
+                components: vec![ComponentOutcome {
+                    path,
+                    action,
+                    state: ComponentState::Applied,
+                    effective_at: Some(effective_at),
+                    confirmation: Some(Confirmation::RuntimeCommit),
+                    diagnostic: None,
+                }],
+                audible_tail_until: None,
+            }))
+        };
+        handle
+            .ledger
+            .transition(
+                higher.attempt_id,
+                applied(higher_path, higher_action),
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                lower.attempt_id,
+                applied(lower_path, lower_action),
+                SystemTime::now(),
+            )
+            .unwrap();
+
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, higher.revision);
+        assert_eq!(status.live_state, LiveState::Clean);
     }
 
     #[tokio::test]

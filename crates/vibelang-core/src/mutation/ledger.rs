@@ -418,6 +418,25 @@ impl MutationLedger {
         planned: Vec<PlannedComponent>,
         now: SystemTime,
     ) -> Result<MutationReceipt, LedgerError> {
+        self.begin_planning_inner(attempt_id, planned, now, true)
+    }
+
+    pub(crate) fn begin_concurrent_planning(
+        &self,
+        attempt_id: AttemptId,
+        planned: Vec<PlannedComponent>,
+        now: SystemTime,
+    ) -> Result<MutationReceipt, LedgerError> {
+        self.begin_planning_inner(attempt_id, planned, now, false)
+    }
+
+    fn begin_planning_inner(
+        &self,
+        attempt_id: AttemptId,
+        planned: Vec<PlannedComponent>,
+        now: SystemTime,
+        require_previous_terminal: bool,
+    ) -> Result<MutationReceipt, LedgerError> {
         let mut inner = self.inner.lock();
         inner.prune(now)?;
         let current = inner.receipt(attempt_id)?.clone();
@@ -429,20 +448,22 @@ impl MutationLedger {
                 "planning can begin only from accepted".into(),
             ));
         }
-        if let Some(blocking) = inner
-            .revisions
-            .range(..revision)
-            .find_map(|(revision, id)| {
-                inner
-                    .receipts
-                    .get(id)
-                    .filter(|record| !record.receipt.state.is_terminal())
-                    .map(|_| *revision)
-            })
-        {
-            return Err(LedgerError::RevisionOrder(format!(
-                "revision {revision} is blocked by non-terminal revision {blocking}"
-            )));
+        if require_previous_terminal {
+            if let Some(blocking) = inner
+                .revisions
+                .range(..revision)
+                .find_map(|(revision, id)| {
+                    inner
+                        .receipts
+                        .get(id)
+                        .filter(|record| !record.receipt.state.is_terminal())
+                        .map(|_| *revision)
+                })
+            {
+                return Err(LedgerError::RevisionOrder(format!(
+                    "revision {revision} is blocked by non-terminal revision {blocking}"
+                )));
+            }
         }
         let confirmed_revision = inner.last_confirmed_revision;
         if current
@@ -810,26 +831,55 @@ impl LedgerInner {
                             "an applied outcome requires an allocated revision".into(),
                         )
                     })?;
-                    self.last_confirmed_revision = Some(revision);
-                    self.live_state = LiveState::Clean;
+                    self.last_confirmed_revision = Some(
+                        self.last_confirmed_revision
+                            .map_or(revision, |confirmed| confirmed.max(revision)),
+                    );
+                    let restores_clean = match &self.live_state {
+                        LiveState::Clean => true,
+                        LiveState::Partial {
+                            revision: partial_revision,
+                            ..
+                        } => revision > *partial_revision,
+                        LiveState::PreAdmissionPartial { .. } => false,
+                        LiveState::Unknown { since_revision, .. } => revision > *since_revision,
+                    };
+                    if restores_clean {
+                        self.live_state = LiveState::Clean;
+                    }
                 }
                 TerminalOutcome::Rejected(_) => {
                     if let Some(revision) = receipt.revision {
                         self.last_rejected_revision = Some(revision);
                     }
                 }
-                TerminalOutcome::Partial(partial) => {
-                    self.live_state = match receipt.revision {
-                        Some(revision) => LiveState::Partial {
-                            revision,
-                            fenced: partial.fenced,
-                        },
-                        None => LiveState::PreAdmissionPartial {
+                TerminalOutcome::Partial(partial) => match receipt.revision {
+                    Some(revision) => {
+                        let updates_live_state = match &self.live_state {
+                            LiveState::Clean => self
+                                .last_confirmed_revision
+                                .is_none_or(|confirmed| revision > confirmed),
+                            LiveState::Partial {
+                                revision: partial_revision,
+                                ..
+                            } => revision > *partial_revision,
+                            LiveState::PreAdmissionPartial { .. } => false,
+                            LiveState::Unknown { since_revision, .. } => revision > *since_revision,
+                        };
+                        if updates_live_state {
+                            self.live_state = LiveState::Partial {
+                                revision,
+                                fenced: partial.fenced,
+                            };
+                        }
+                    }
+                    None => {
+                        self.live_state = LiveState::PreAdmissionPartial {
                             attempt_id,
                             fenced: partial.fenced,
-                        },
-                    };
-                }
+                        };
+                    }
+                },
                 TerminalOutcome::Superseded(_) => {}
             }
         }
