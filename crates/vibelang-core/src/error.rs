@@ -153,6 +153,26 @@ pub enum Error {
     #[error("message channel closed")]
     ChannelClosed,
 
+    /// Message channel is at capacity.
+    #[error("message channel full")]
+    ChannelFull,
+
+    /// A result-bearing backend barrier did not complete before its deadline.
+    #[error("backend synchronization timed out")]
+    SyncTimeout,
+
+    /// A result-bearing backend barrier completed without delivering its acknowledgement.
+    #[error("backend synchronization acknowledgement was lost")]
+    AcknowledgementLost,
+
+    /// The canonical mutation ledger rejected an internal operation.
+    #[error("mutation ledger error: {0}")]
+    MutationLedger(String),
+
+    /// Mutation ingress is fenced after an uncertain or partial effect.
+    #[error("runtime fenced by partial mutation {0}")]
+    RuntimeFenced(String),
+
     // =========================================================================
     // MIDI Errors (feature-gated)
     // =========================================================================
