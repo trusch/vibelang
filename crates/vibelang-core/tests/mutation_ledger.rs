@@ -53,9 +53,13 @@ fn planned(path: &str) -> PlannedComponent {
 }
 
 fn component(path: &str, state: ComponentState) -> ComponentOutcome {
+    component_action(path, "replace", state)
+}
+
+fn component_action(path: &str, action: &str, state: ComponentState) -> ComponentOutcome {
     ComponentOutcome {
         path: path.into(),
-        action: "replace".into(),
+        action: action.into(),
         state,
         effective_at: None,
         confirmation: None,
@@ -80,6 +84,24 @@ fn applied(components: Vec<ComponentOutcome>, at: SystemTime) -> ReceiptState {
         confirmations: vec![Confirmation::RuntimeCommit],
         components,
         audible_tail_until: None,
+    }))
+}
+
+fn partial(
+    phase: FailurePhase,
+    code: &str,
+    components: Vec<ComponentOutcome>,
+    rollback: RollbackState,
+    fenced: bool,
+    last_confirmed_revision: Option<RevisionId>,
+) -> ReceiptState {
+    ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+        phase,
+        code: code.into(),
+        components,
+        rollback,
+        fenced,
+        last_confirmed_revision,
     }))
 }
 
@@ -576,6 +598,264 @@ fn transition_graph_and_terminal_component_invariants_are_closed() {
         audible_tail_until: None,
     });
     assert!(validate_terminal(&unconfirmed, previous, &planned_components).is_err());
+}
+
+#[test]
+fn evaluating_partial_records_eager_effect_evidence_without_allocating_a_revision() {
+    let ledger = MutationLedger::new(LedgerConfig::default()).unwrap();
+    let evaluating = new_receipt(
+        ledger
+            .submit(
+                submission(
+                    None,
+                    None,
+                    json!({"synthdef": "eager"}),
+                    json!({"synthdef": "eager"}),
+                ),
+                now(0),
+            )
+            .unwrap(),
+    );
+
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Evaluate,
+                "legacy_eager_effect",
+                Vec::new(),
+                RollbackState::Unavailable,
+                true,
+                None,
+            ),
+            now(1),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    let invalid_component = ComponentOutcome {
+        path: String::new(),
+        action: "deploy".into(),
+        state: ComponentState::Applied,
+        effective_at: None,
+        confirmation: None,
+        diagnostic: None,
+    };
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Evaluate,
+                "legacy_eager_effect",
+                vec![invalid_component],
+                RollbackState::Unavailable,
+                true,
+                None,
+            ),
+            now(2),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Evaluate,
+                "legacy_eager_effect",
+                vec![component_action(
+                    "synthdef/eager",
+                    "deploy",
+                    ComponentState::Applied,
+                )],
+                RollbackState::Unavailable,
+                false,
+                None,
+            ),
+            now(3),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    let unchanged = ledger.receipt(evaluating.attempt_id).unwrap();
+    assert!(matches!(unchanged.state, ReceiptState::Evaluating { .. }));
+    assert_eq!(unchanged.revision, None);
+
+    let terminal = ledger
+        .transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Evaluate,
+                "legacy_eager_effect",
+                vec![component_action(
+                    "synthdef/eager",
+                    "deploy",
+                    ComponentState::Applied,
+                )],
+                RollbackState::Unavailable,
+                true,
+                None,
+            ),
+            now(4),
+        )
+        .unwrap();
+    assert_eq!(terminal.revision, None);
+    assert!(matches!(
+        terminal.state,
+        ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            fenced: true,
+            last_confirmed_revision: None,
+            ..
+        }))
+    ));
+    let status = ledger.status(now(4));
+    assert_eq!(status.accepted_through, None);
+    assert_eq!(status.last_confirmed_revision, None);
+    assert_eq!(
+        status.live_state,
+        LiveState::PreAdmissionPartial {
+            attempt_id: evaluating.attempt_id,
+            fenced: true,
+        }
+    );
+    assert!(matches!(
+        ledger.accept(evaluating.attempt_id, None, now(5)),
+        Err(LedgerError::InvalidTransition(_))
+    ));
+}
+
+#[test]
+fn accepted_partial_retains_its_revision_and_fences_dispatch_uncertainty() {
+    let ledger = MutationLedger::new(LedgerConfig::default()).unwrap();
+    let confirmed = apply_one(&ledger, None, 0);
+    let evaluating = new_receipt(
+        ledger
+            .submit(
+                submission(
+                    None,
+                    Some(confirmed),
+                    json!({"dispatch": "backend"}),
+                    json!({"dispatch": "backend"}),
+                ),
+                now(10),
+            )
+            .unwrap(),
+    );
+    let accepted = ledger.accept(evaluating.attempt_id, None, now(11)).unwrap();
+    let assigned_revision = accepted.revision.unwrap();
+
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Admission,
+                "dispatch_uncertain",
+                vec![component_action(
+                    "backend/dispatch",
+                    "dispatch",
+                    ComponentState::Uncertain,
+                )],
+                RollbackState::Uncertain,
+                true,
+                None,
+            ),
+            now(12),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    let mut duplicate_action =
+        component_action("backend/dispatch", "dispatch", ComponentState::NotStarted);
+    duplicate_action.action = "retry".into();
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Admission,
+                "dispatch_uncertain",
+                vec![
+                    component_action("backend/dispatch", "dispatch", ComponentState::Uncertain,),
+                    duplicate_action,
+                ],
+                RollbackState::Uncertain,
+                true,
+                Some(confirmed),
+            ),
+            now(13),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Admission,
+                "dispatch_uncertain",
+                vec![component_action(
+                    "backend/dispatch",
+                    "dispatch",
+                    ComponentState::Applied,
+                )],
+                RollbackState::Unavailable,
+                false,
+                Some(confirmed),
+            ),
+            now(14),
+        ),
+        Err(LedgerError::InvalidReceipt(_))
+    ));
+    let unchanged = ledger.receipt(evaluating.attempt_id).unwrap();
+    assert!(matches!(unchanged.state, ReceiptState::Accepted { .. }));
+    assert_eq!(unchanged.revision, Some(assigned_revision));
+
+    let terminal = ledger
+        .transition(
+            evaluating.attempt_id,
+            partial(
+                FailurePhase::Admission,
+                "dispatch_uncertain",
+                vec![component_action(
+                    "backend/dispatch",
+                    "dispatch",
+                    ComponentState::Uncertain,
+                )],
+                RollbackState::Uncertain,
+                true,
+                Some(confirmed),
+            ),
+            now(15),
+        )
+        .unwrap();
+    assert_eq!(terminal.revision, Some(assigned_revision));
+    assert_eq!(terminal.previous_confirmed_revision, Some(confirmed));
+    assert!(matches!(
+        terminal.state,
+        ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            fenced: true,
+            last_confirmed_revision: Some(revision),
+            ..
+        })) if revision == confirmed
+    ));
+    let status = ledger.status(now(15));
+    assert_eq!(status.accepted_through, Some(assigned_revision));
+    assert_eq!(status.last_confirmed_revision, Some(confirmed));
+    assert_eq!(
+        status.live_state,
+        LiveState::Partial {
+            revision: assigned_revision,
+            fenced: true,
+        }
+    );
+    assert!(matches!(
+        ledger.transition(
+            evaluating.attempt_id,
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                phase: FailurePhase::Admission,
+                code: "rewrite".into(),
+                message: "rewrite".into(),
+                rollback: RollbackState::Confirmed,
+                preserved_revision: Some(confirmed),
+            })),
+            now(16),
+        ),
+        Err(LedgerError::InvalidTransition(_))
+    ));
 }
 
 #[test]

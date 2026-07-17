@@ -998,39 +998,76 @@ pub fn validate_terminal(
             }
         }
         TerminalOutcome::Partial(partial) => {
-            if partial.code.trim().is_empty() {
-                return Err("partial outcome requires a nonempty code".into());
-            }
+            validate_partial(partial, previous_confirmed_revision)?;
             validate_component_partition(&partial.components, planned)?;
-            if partial.last_confirmed_revision != previous_confirmed_revision {
-                return Err("partial outcome must retain the previous confirmed revision".into());
-            }
-            if !partial.components.iter().any(|component| {
-                matches!(
-                    component.state,
-                    ComponentState::Applied | ComponentState::Uncertain
-                )
-            }) {
-                return Err(
-                    "partial outcome requires at least one applied or uncertain component".into(),
-                );
-            }
-            if partial
-                .components
-                .iter()
-                .any(|component| component.state == ComponentState::Uncertain)
-                && !partial.fenced
-            {
-                return Err("uncertain partial outcome must fence the runtime".into());
-            }
-            if matches!(
-                partial.rollback,
-                RollbackState::Failed | RollbackState::Uncertain
-            ) && !partial.fenced
-            {
-                return Err("failed or uncertain rollback must fence the runtime".into());
-            }
         }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_pre_planning_partial(
+    partial: &Partial,
+    previous_confirmed_revision: Option<RevisionId>,
+) -> Result<(), String> {
+    validate_partial(partial, previous_confirmed_revision)?;
+    validate_component_evidence(&partial.components)?;
+    if !partial.fenced {
+        return Err("pre-planning partial outcome must fence the runtime".into());
+    }
+    Ok(())
+}
+
+fn validate_partial(
+    partial: &Partial,
+    previous_confirmed_revision: Option<RevisionId>,
+) -> Result<(), String> {
+    if partial.code.trim().is_empty() {
+        return Err("partial outcome requires a nonempty code".into());
+    }
+    if partial.last_confirmed_revision != previous_confirmed_revision {
+        return Err("partial outcome must retain the previous confirmed revision".into());
+    }
+    if !partial.components.iter().any(|component| {
+        matches!(
+            component.state,
+            ComponentState::Applied | ComponentState::Uncertain
+        )
+    }) {
+        return Err("partial outcome requires at least one applied or uncertain component".into());
+    }
+    if partial
+        .components
+        .iter()
+        .any(|component| component.state == ComponentState::Uncertain)
+        && !partial.fenced
+    {
+        return Err("uncertain partial outcome must fence the runtime".into());
+    }
+    if matches!(
+        partial.rollback,
+        RollbackState::Failed | RollbackState::Uncertain
+    ) && !partial.fenced
+    {
+        return Err("failed or uncertain rollback must fence the runtime".into());
+    }
+    Ok(())
+}
+
+fn validate_component_evidence(outcomes: &[ComponentOutcome]) -> Result<(), String> {
+    if outcomes
+        .iter()
+        .any(|component| component.path.is_empty() || component.action.is_empty())
+    {
+        return Err("component evidence paths and actions must be nonempty".into());
+    }
+    let mut paths = outcomes
+        .iter()
+        .map(|component| component.path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    paths.dedup();
+    if paths.len() != outcomes.len() {
+        return Err("component evidence paths must be unique".into());
     }
     Ok(())
 }

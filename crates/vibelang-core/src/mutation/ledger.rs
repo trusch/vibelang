@@ -2,6 +2,7 @@ use super::digest::{
     operation_digest, DigestError, EpochFingerprintKey, IdempotencyKeyFingerprint,
     RequestFingerprint,
 };
+use super::wire::validate_pre_planning_partial;
 use super::*;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -685,12 +686,47 @@ impl LedgerInner {
         validate_transition(&record.receipt.state, &state)
             .map_err(LedgerError::InvalidTransition)?;
         if let ReceiptState::Terminal(outcome) = &state {
-            validate_terminal(
-                outcome,
-                record.receipt.previous_confirmed_revision,
-                &record.planned,
-            )
-            .map_err(LedgerError::InvalidReceipt)?;
+            if let TerminalOutcome::Partial(partial) = outcome {
+                match &record.receipt.state {
+                    ReceiptState::Evaluating { .. } => {
+                        if record.receipt.revision.is_some() {
+                            return Err(LedgerError::InvalidReceipt(
+                                "an evaluating partial outcome cannot have a revision".into(),
+                            ));
+                        }
+                        validate_pre_planning_partial(
+                            partial,
+                            record.receipt.previous_confirmed_revision,
+                        )
+                        .map_err(LedgerError::InvalidReceipt)?;
+                    }
+                    ReceiptState::Accepted { .. } => {
+                        if record.receipt.revision.is_none() {
+                            return Err(LedgerError::InvalidReceipt(
+                                "an accepted partial outcome requires an allocated revision".into(),
+                            ));
+                        }
+                        validate_pre_planning_partial(
+                            partial,
+                            record.receipt.previous_confirmed_revision,
+                        )
+                        .map_err(LedgerError::InvalidReceipt)?;
+                    }
+                    _ => validate_terminal(
+                        outcome,
+                        record.receipt.previous_confirmed_revision,
+                        &record.planned,
+                    )
+                    .map_err(LedgerError::InvalidReceipt)?,
+                }
+            } else {
+                validate_terminal(
+                    outcome,
+                    record.receipt.previous_confirmed_revision,
+                    &record.planned,
+                )
+                .map_err(LedgerError::InvalidReceipt)?;
+            }
             if matches!(outcome, TerminalOutcome::Superseded(_))
                 && !matches!(
                     record.receipt.state,
