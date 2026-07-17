@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use std::fmt;
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConstantTimeEq};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -143,6 +143,61 @@ impl fmt::Debug for EpochFingerprintKey {
 }
 
 impl Drop for EpochFingerprintKey {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+pub(crate) struct RetainedIdentityKey([u8; 32]);
+
+impl RetainedIdentityKey {
+    pub(crate) fn generate() -> Result<Self, DigestError> {
+        let mut key = [0_u8; 32];
+        getrandom::fill(&mut key).map_err(|error| DigestError::Random(error.to_string()))?;
+        Ok(Self(key))
+    }
+
+    pub(crate) fn key_fingerprint(
+        &self,
+        caller_namespace: &str,
+        idempotency_key: &str,
+    ) -> Result<RetainedIdentityFingerprint, DigestError> {
+        let canonical = canonical(&(caller_namespace, idempotency_key))?;
+        Ok(RetainedIdentityFingerprint(hmac(
+            &self.0,
+            b"vibelang/idempotency-key/reset-retention/v1\0",
+            &canonical,
+        )))
+    }
+}
+
+impl fmt::Debug for RetainedIdentityKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RetainedIdentityKey(<redacted>)")
+    }
+}
+
+impl Drop for RetainedIdentityKey {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+pub(crate) struct RetainedIdentityFingerprint([u8; 32]);
+
+impl RetainedIdentityFingerprint {
+    pub(crate) fn constant_time_eq(&self, other: &Self) -> Choice {
+        self.0.ct_eq(&other.0)
+    }
+}
+
+impl fmt::Debug for RetainedIdentityFingerprint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RetainedIdentityFingerprint(<redacted>)")
+    }
+}
+
+impl Drop for RetainedIdentityFingerprint {
     fn drop(&mut self) {
         self.0.fill(0);
     }

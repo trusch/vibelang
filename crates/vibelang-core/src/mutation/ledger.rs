@@ -1,6 +1,6 @@
 use super::digest::{
     operation_digest, DigestError, EpochFingerprintKey, IdempotencyKeyFingerprint,
-    RequestFingerprint,
+    RequestFingerprint, RetainedIdentityFingerprint, RetainedIdentityKey,
 };
 use super::wire::validate_pre_planning_partial;
 use super::*;
@@ -120,6 +120,8 @@ struct LedgerInner {
     config: LedgerConfig,
     epoch: RuntimeEpoch,
     fingerprint_key: EpochFingerprintKey,
+    retained_identity_key: RetainedIdentityKey,
+    retained_identities: Vec<RetainedIdentityFingerprint>,
     next_revision: u64,
     next_event_sequence: u64,
     accepted_through: Option<RevisionId>,
@@ -284,13 +286,27 @@ impl MutationLedger {
             );
         }
 
-        if inner.idempotency.len() + inner.tombstones.len() >= inner.config.idempotency_capacity {
+        let retained_identity = inner
+            .retained_identity_key
+            .key_fingerprint(&submission.caller_namespace, idempotency_key)?;
+        if inner.retained_identity_exists(&retained_identity) {
+            return inner.reject_new_attempt(
+                request_identity,
+                None,
+                FailurePhase::Idempotency,
+                "runtime_epoch_changed",
+                "the idempotency key belongs to a previous runtime epoch",
+                now,
+            );
+        }
+
+        if inner.retained_identities.len() >= inner.config.idempotency_capacity {
             return inner.reject_new_attempt(
                 request_identity,
                 None,
                 FailurePhase::Idempotency,
                 "idempotency_capacity_exhausted",
-                "the runtime cannot retain another idempotency identity in this epoch",
+                "the runtime cannot retain another idempotency identity across reset epochs",
                 now,
             );
         }
@@ -303,6 +319,7 @@ impl MutationLedger {
                 request_fingerprint,
             },
         );
+        inner.retained_identities.push(retained_identity);
         Ok(SubmissionResult::New(receipt))
     }
 
@@ -565,11 +582,7 @@ impl MutationLedger {
     }
 
     pub fn reset(&self) -> Result<RuntimeEpoch, LedgerError> {
-        let mut inner = self.inner.lock();
-        let replacement = LedgerInner::new(inner.config.clone())?;
-        let epoch = replacement.epoch;
-        *inner = replacement;
-        Ok(epoch)
+        self.inner.lock().reset_epoch()
     }
 
     pub fn prune(&self, now: SystemTime) -> Result<(), LedgerError> {
@@ -583,6 +596,8 @@ impl LedgerInner {
             config,
             epoch: RuntimeEpoch::new(),
             fingerprint_key: EpochFingerprintKey::generate()?,
+            retained_identity_key: RetainedIdentityKey::generate()?,
+            retained_identities: Vec::new(),
             next_revision: 1,
             next_event_sequence: 1,
             accepted_through: None,
@@ -595,6 +610,35 @@ impl LedgerInner {
             idempotency: HashMap::new(),
             tombstones: HashMap::new(),
         })
+    }
+
+    fn reset_epoch(&mut self) -> Result<RuntimeEpoch, LedgerError> {
+        let fingerprint_key = EpochFingerprintKey::generate()?;
+        let epoch = RuntimeEpoch::new();
+        self.epoch = epoch;
+        self.fingerprint_key = fingerprint_key;
+        self.next_revision = 1;
+        self.next_event_sequence = 1;
+        self.accepted_through = None;
+        self.last_confirmed_revision = None;
+        self.last_rejected_revision = None;
+        self.live_state = LiveState::Clean;
+        self.receipts.clear();
+        self.revisions.clear();
+        self.events.clear();
+        self.idempotency.clear();
+        self.tombstones.clear();
+        Ok(epoch)
+    }
+
+    fn retained_identity_exists(&self, candidate: &RetainedIdentityFingerprint) -> bool {
+        bool::from(
+            self.retained_identities
+                .iter()
+                .fold(subtle::Choice::from(0), |found, identity| {
+                    found | identity.constant_time_eq(candidate)
+                }),
+        )
     }
 
     fn create_attempt(

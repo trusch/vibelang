@@ -1117,7 +1117,7 @@ fn retention_tombstones_gaps_epoch_reset_and_restart_are_explicit() {
             submission(
                 Some("retained-key"),
                 None,
-                json!({"secret": "a"}),
+                json!({"secret": "changed-after-reset"}),
                 json!({"secret": "<redacted>"}),
             ),
             now(11),
@@ -1166,6 +1166,185 @@ fn retention_tombstones_gaps_epoch_reset_and_restart_are_explicit() {
         rejected.receipt().state,
         ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
             if code == "runtime_epoch_changed"
+    ));
+
+    let omitted_epoch_retry = ledger
+        .submit(
+            submission(
+                Some("retained-key"),
+                None,
+                json!({"secret": "changed-again-after-reset"}),
+                json!({"secret": "<redacted>"}),
+            ),
+            now(15),
+        )
+        .unwrap();
+    assert!(matches!(
+        omitted_epoch_retry.receipt().state,
+        ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+            if code == "runtime_epoch_changed"
+    ));
+
+    let fresh = new_receipt(
+        ledger
+            .submit(
+                submission(
+                    Some("post-reset-key"),
+                    None,
+                    json!({"secret": "b"}),
+                    json!({"secret": "<redacted>"}),
+                ),
+                now(16),
+            )
+            .unwrap(),
+    );
+    assert_eq!(fresh.runtime_epoch, new_epoch);
+
+    let mut other_caller = submission(
+        Some("retained-key"),
+        None,
+        json!({"secret": "c"}),
+        json!({"secret": "<redacted>"}),
+    );
+    other_caller.caller_namespace = "other-caller".into();
+    assert!(matches!(
+        ledger.submit(other_caller, now(17)).unwrap(),
+        SubmissionResult::New(_)
+    ));
+}
+
+#[test]
+fn reset_and_omitted_epoch_retry_are_linearized_without_new_admission() {
+    const ITERATIONS: usize = 32;
+    for iteration in 0..ITERATIONS {
+        let ledger = Arc::new(MutationLedger::new(LedgerConfig::default()).unwrap());
+        let original = new_receipt(
+            ledger
+                .submit(
+                    submission(
+                        Some("reset-race-key"),
+                        None,
+                        json!({"iteration": iteration}),
+                        json!({"iteration": iteration}),
+                    ),
+                    now(iteration as u64),
+                )
+                .unwrap(),
+        );
+        let barrier = Arc::new(Barrier::new(2));
+        let reset_ledger = Arc::clone(&ledger);
+        let retry_ledger = Arc::clone(&ledger);
+        let reset_barrier = Arc::clone(&barrier);
+        let retry_barrier = Arc::clone(&barrier);
+        let resetter = thread::spawn(move || {
+            reset_barrier.wait();
+            reset_ledger.reset().unwrap()
+        });
+        let retry = thread::spawn(move || {
+            retry_barrier.wait();
+            retry_ledger
+                .submit(
+                    submission(
+                        Some("reset-race-key"),
+                        None,
+                        json!({"iteration": iteration}),
+                        json!({"iteration": iteration}),
+                    ),
+                    now(iteration as u64 + 1),
+                )
+                .unwrap()
+        });
+        let new_epoch = resetter.join().unwrap();
+        let retry = retry.join().unwrap();
+        match retry {
+            SubmissionResult::Replayed(receipt) => {
+                assert_eq!(receipt.attempt_id, original.attempt_id);
+                assert_eq!(receipt.runtime_epoch, original.runtime_epoch);
+            }
+            SubmissionResult::Rejected(receipt) => assert!(matches!(
+                receipt.state,
+                ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                    ref code,
+                    ..
+                })) if code == "runtime_epoch_changed"
+            )),
+            SubmissionResult::New(receipt) => {
+                panic!("reset race silently readmitted attempt {receipt:?}")
+            }
+        }
+        assert_eq!(ledger.runtime_epoch(), new_epoch);
+        let after_boundary = ledger
+            .submit(
+                submission(
+                    Some("reset-race-key"),
+                    None,
+                    json!({"iteration": iteration}),
+                    json!({"iteration": iteration}),
+                ),
+                now(iteration as u64 + 2),
+            )
+            .unwrap();
+        assert!(matches!(
+            after_boundary.receipt().state,
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+                if code == "runtime_epoch_changed"
+        ));
+    }
+}
+
+#[test]
+fn cross_epoch_identity_evidence_is_bounded_and_fails_closed() {
+    let ledger = MutationLedger::new(LedgerConfig {
+        minimum_event_count: 1,
+        minimum_event_age: Duration::ZERO,
+        idempotency_capacity: 2,
+    })
+    .unwrap();
+    assert!(matches!(
+        ledger
+            .submit(
+                submission(Some("epoch-one"), None, json!({"x": 1}), json!({"x": 1})),
+                now(0),
+            )
+            .unwrap(),
+        SubmissionResult::New(_)
+    ));
+    ledger.reset().unwrap();
+    assert!(matches!(
+        ledger
+            .submit(
+                submission(Some("epoch-two"), None, json!({"x": 2}), json!({"x": 2})),
+                now(1),
+            )
+            .unwrap(),
+        SubmissionResult::New(_)
+    ));
+    ledger.reset().unwrap();
+
+    for (offset, key) in ["epoch-one", "epoch-two"].into_iter().enumerate() {
+        let retained = ledger
+            .submit(
+                submission(Some(key), None, json!({"x": offset}), json!({"x": offset})),
+                now(offset as u64 + 2),
+            )
+            .unwrap();
+        assert!(matches!(
+            retained.receipt().state,
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+                if code == "runtime_epoch_changed"
+        ));
+    }
+
+    let exhausted = ledger
+        .submit(
+            submission(Some("epoch-three"), None, json!({"x": 3}), json!({"x": 3})),
+            now(4),
+        )
+        .unwrap();
+    assert!(matches!(
+        exhausted.receipt().state,
+        ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+            if code == "idempotency_capacity_exhausted"
     ));
 }
 
