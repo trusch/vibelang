@@ -133,7 +133,13 @@ impl StagedReloadAssets {
 pub(crate) struct StagedAssetOutcome {
     pub path: String,
     pub action: String,
-    pub error: Option<String>,
+    pub failure: Option<StagedAssetFailure>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StagedAssetFailure {
+    pub code: &'static str,
+    pub message: String,
 }
 
 /// Quantization mode for applying hot reload changes.

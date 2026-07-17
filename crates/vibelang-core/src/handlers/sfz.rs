@@ -237,15 +237,36 @@ impl<B: Backend> SfzHandler<B> {
             use futures::StreamExt;
             let mut allocations: Vec<(i32, BufferId, std::path::PathBuf)> =
                 Vec::with_capacity(buffer_loads.len());
-            {
+            let allocation_error = {
                 let mut state = self.state.write().await;
+                let mut allocation_error = None;
                 for load in &buffer_loads {
-                    let our_buffer_id = state.alloc_buffer_id()?;
-                    allocations.push((load.sfz_buffer_id, our_buffer_id, load.path.clone()));
+                    match state.alloc_buffer_id() {
+                        Ok(our_buffer_id) => {
+                            allocations.push((load.sfz_buffer_id, our_buffer_id, load.path.clone()))
+                        }
+                        Err(error) => {
+                            allocation_error = Some(error);
+                            break;
+                        }
+                    }
                 }
+                if allocation_error.is_some() {
+                    for (_, buffer_id, _) in &allocations {
+                        state.free_buffer_id(*buffer_id);
+                    }
+                }
+                allocation_error
+            };
+            if let Some(error) = allocation_error {
+                return Err(error);
             }
 
             let backend = &self.backend;
+            let allocated_buffer_ids: Vec<_> = allocations
+                .iter()
+                .map(|(_, buffer_id, _)| *buffer_id)
+                .collect();
             let mut loads = futures::stream::iter(allocations.into_iter().map(
                 |(sfz_buffer_id, buffer_id, path)| async move {
                     backend.load_buffer(buffer_id, &path).await.map_err(|e| {
@@ -262,11 +283,38 @@ impl<B: Backend> SfzHandler<B> {
                     Ok::<(i32, BufferId), Error>((sfz_buffer_id, buffer_id))
                 },
             ))
-            .buffer_unordered(8);
+            .buffered(8);
 
+            let mut load_errors = Vec::new();
             while let Some(result) = loads.next().await {
-                let (sfz_buffer_id, our_buffer_id) = result?;
-                buffer_id_map.insert(sfz_buffer_id, our_buffer_id);
+                match result {
+                    Ok((sfz_buffer_id, our_buffer_id)) => {
+                        buffer_id_map.insert(sfz_buffer_id, our_buffer_id);
+                    }
+                    Err(error) => load_errors.push(error.to_string()),
+                }
+            }
+            if !load_errors.is_empty() {
+                let mut cleanup_errors = Vec::new();
+                for buffer_id in allocated_buffer_ids {
+                    match self.backend.free_buffer(buffer_id).await {
+                        Ok(()) => self.state.write().await.free_buffer_id(buffer_id),
+                        Err(error) => cleanup_errors.push(format!(
+                            "cleanup free_buffer({}) failed: {}",
+                            buffer_id.raw(),
+                            error
+                        )),
+                    }
+                }
+                let mut reason = load_errors.join("; ");
+                if !cleanup_errors.is_empty() {
+                    reason.push_str("; ");
+                    reason.push_str(&cleanup_errors.join("; "));
+                }
+                return Err(Error::SfzLoadFailed {
+                    path: path_buf,
+                    reason,
+                });
             }
 
             instrument

@@ -326,6 +326,7 @@ impl ReloadPhaseOutcome {
 #[derive(Debug)]
 struct ReloadExecution {
     result: Result<()>,
+    failures: Vec<ReloadPhaseFailure>,
     staging: Vec<reload::StagedAssetOutcome>,
     phases: Vec<ReloadPhaseOutcome>,
 }
@@ -674,6 +675,19 @@ impl<B: Backend> Runtime<B> {
             return Ok(());
         }
         if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+            if matches!(
+                &message,
+                Message::Reload(reload)
+                    if matches!(reload.as_ref(), ReloadMessage::ApplyStaged { .. })
+            ) {
+                let Message::Reload(reload) = message else {
+                    unreachable!("the staged reload match above was exact");
+                };
+                let ReloadMessage::ApplyStaged { assets, .. } = *reload else {
+                    unreachable!("the staged reload match above was exact");
+                };
+                return self.finish_fenced_staged_reload(context, assets).await;
+            }
             reject_contextual_admission(
                 &self.mutation_ledger,
                 &context,
@@ -1288,6 +1302,9 @@ impl<B: Backend> Runtime<B> {
                 }
             }
             ReloadMessage::ApplyStaged { state, assets } => {
+                if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+                    return self.finish_fenced_staged_reload(context, assets).await;
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     self.reload_staging_in_flight = false;
@@ -1305,6 +1322,43 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+    }
+
+    async fn finish_fenced_staged_reload(
+        &mut self,
+        context: MutationContext,
+        mut assets: reload::StagedReloadAssets,
+    ) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.reload_staging_in_flight = false;
+        }
+        let staging = std::mem::take(&mut assets.outcomes);
+        let cleanup = self.discard_staged_leftovers(assets).await;
+        let mut phases = RELOAD_PHASE_COMPONENTS
+            .iter()
+            .map(|(path, action)| ReloadPhaseOutcome::pending(path, action))
+            .collect::<Vec<_>>();
+        let cleanup_phase = phases
+            .last_mut()
+            .expect("reload phase table always contains staged asset cleanup");
+        cleanup_phase.started = true;
+        cleanup_phase.failures = cleanup;
+        let execution = ReloadExecution {
+            result: Err(Error::RuntimeFenced(
+                "staged reload reached apply after the runtime became fenced".into(),
+            )),
+            failures: vec![ReloadPhaseFailure::new(
+                "reload_apply_fenced",
+                "staged assets were loaded but apply was skipped because the runtime is fenced",
+            )],
+            staging,
+            phases,
+        };
+        self.finish_reload_work(&context, &execution)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.advance_reload_queue().await;
+        execution.result
     }
 
     async fn handle_sync_message(
@@ -1912,6 +1966,8 @@ impl<B: Backend> Runtime<B> {
         self.reload_staging_in_flight = true;
         let samples_handler = SamplesHandler::new(self.backend.clone(), self.state.clone());
         let sfz_handler = SfzHandler::new(self.backend.clone(), self.state.clone());
+        let backend = self.backend.clone();
+        let state = self.state.clone();
         let tx = self.tx.clone();
         let ledger = self.mutation_ledger.clone();
         tokio::spawn(async move {
@@ -1931,7 +1987,7 @@ impl<B: Backend> Runtime<B> {
                             reload::StagedAssetOutcome {
                                 path,
                                 action: "load".into(),
-                                error: None,
+                                failure: None,
                             },
                         ),
                         Err(e) => {
@@ -1942,7 +1998,10 @@ impl<B: Backend> Runtime<B> {
                                 reload::StagedAssetOutcome {
                                     path,
                                     action: "load".into(),
-                                    error: Some(e.to_string()),
+                                    failure: Some(reload::StagedAssetFailure {
+                                        code: error_code(&e),
+                                        message: e.to_string(),
+                                    }),
                                 },
                             )
                         }
@@ -1966,7 +2025,7 @@ impl<B: Backend> Runtime<B> {
                         assets.outcomes.push(reload::StagedAssetOutcome {
                             path: format!("reload/staging/sfz/{}", id.raw()),
                             action: "load".into(),
-                            error: None,
+                            failure: None,
                         });
                     }
                     Err(e) => {
@@ -1974,7 +2033,10 @@ impl<B: Backend> Runtime<B> {
                         assets.outcomes.push(reload::StagedAssetOutcome {
                             path: format!("reload/staging/sfz/{}", id.raw()),
                             action: "load".into(),
-                            error: Some(e.to_string()),
+                            failure: Some(reload::StagedAssetFailure {
+                                code: error_code(&e),
+                                message: e.to_string(),
+                            }),
                         });
                     }
                 }
@@ -2008,7 +2070,10 @@ impl<B: Backend> Runtime<B> {
                 let ReloadMessage::ApplyStaged { assets, .. } = *reload else {
                     return;
                 };
-                if let Err(error) = finish_lost_staged_reload(&ledger, &context, assets.outcomes) {
+                let mut assets = assets;
+                let staging = std::mem::take(&mut assets.outcomes);
+                let cleanup = discard_staged_reload_assets(&backend, &state, assets).await;
+                if let Err(error) = finish_lost_staged_reload(&ledger, &context, staging, cleanup) {
                     tracing::error!("Failed to record lost staged reload: {}", error);
                 }
             }
@@ -2039,34 +2104,7 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         staged: reload::StagedReloadAssets,
     ) -> Vec<ReloadPhaseFailure> {
-        let mut failures = Vec::new();
-        if staged.is_empty() {
-            return failures;
-        }
-        let mut buffer_ids: Vec<crate::types::BufferId> =
-            staged.samples.values().map(|info| info.buffer_id).collect();
-        for instrument in staged.sfz.values() {
-            let unique: std::collections::HashSet<crate::types::BufferId> =
-                instrument.regions.iter().map(|r| r.buffer_id).collect();
-            buffer_ids.extend(unique);
-        }
-        tracing::debug!(
-            "Reload: freeing {} staged buffer(s) the apply did not consume",
-            buffer_ids.len()
-        );
-        {
-            let mut state = self.state.write().await;
-            for id in &buffer_ids {
-                state.free_buffer_id(*id);
-            }
-        }
-        for id in buffer_ids {
-            if let Err(e) = self.backend.free_buffer(id).await {
-                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
-                failures.push(ReloadPhaseFailure::new("staged_asset_cleanup_failed", e));
-            }
-        }
-        failures
+        discard_staged_reload_assets(&self.backend, &self.state, staged).await
     }
 
     async fn apply_reload_inner(
@@ -2076,6 +2114,7 @@ impl<B: Backend> Runtime<B> {
     ) -> ReloadExecution {
         let mut execution = ReloadExecution {
             result: Ok(()),
+            failures: Vec::new(),
             staging: Vec::new(),
             phases: RELOAD_PHASE_COMPONENTS
                 .iter()
@@ -4575,6 +4614,41 @@ impl<B: Backend> Runtime<B> {
     }
 }
 
+async fn discard_staged_reload_assets<B: Backend>(
+    backend: &Arc<B>,
+    state: &Arc<RwLock<State>>,
+    staged: reload::StagedReloadAssets,
+) -> Vec<ReloadPhaseFailure> {
+    let mut failures = Vec::new();
+    if staged.is_empty() {
+        return failures;
+    }
+    let mut buffer_ids: Vec<crate::types::BufferId> =
+        staged.samples.values().map(|info| info.buffer_id).collect();
+    for instrument in staged.sfz.values() {
+        buffer_ids.extend(instrument.regions.iter().map(|region| region.buffer_id));
+    }
+    buffer_ids.sort_by_key(|id| id.raw());
+    buffer_ids.dedup();
+    tracing::debug!(
+        "Reload: freeing {} staged buffer(s) the apply did not consume",
+        buffer_ids.len()
+    );
+    for id in buffer_ids {
+        match backend.free_buffer(id).await {
+            Ok(()) => state.write().await.free_buffer_id(id),
+            Err(error) => {
+                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, error);
+                failures.push(ReloadPhaseFailure::new(
+                    "staged_asset_cleanup_failed",
+                    format!("free_buffer({}) failed: {}", id.raw(), error),
+                ));
+            }
+        }
+    }
+    failures
+}
+
 struct WorkFailure {
     code: &'static str,
     message: String,
@@ -4666,31 +4740,60 @@ fn finish_reload_receipt(
         backend_time_seconds: None,
     };
     let mut components = Vec::with_capacity(execution.staging.len() + execution.phases.len());
+    let mut diagnostics = execution
+        .failures
+        .iter()
+        .map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: None,
+            source_span: None,
+        })
+        .collect::<Vec<_>>();
     for staged in &execution.staging {
+        let diagnostic = staged.failure.as_ref().map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(staged.path.clone()),
+            source_span: None,
+        });
+        if let Some(diagnostic) = &diagnostic {
+            diagnostics.push(diagnostic.clone());
+        }
         components.push(ComponentOutcome {
             path: staged.path.clone(),
             action: staged.action.clone(),
-            state: if staged.error.is_some() {
+            state: if staged.failure.is_some() {
                 ComponentState::Uncertain
             } else {
                 ComponentState::Applied
             },
-            effective_at: staged.error.is_none().then(|| effective_at.clone()),
+            effective_at: staged.failure.is_none().then(|| effective_at.clone()),
             confirmation: staged
-                .error
+                .failure
                 .is_none()
                 .then_some(Confirmation::RuntimeCommit),
-            diagnostic: staged.error.as_ref().map(|message| Diagnostic {
-                severity: DiagnosticSeverity::Error,
-                code: "reload_staging_failed".into(),
-                message: message.clone(),
-                component_path: Some(staged.path.clone()),
-                source_span: None,
-            }),
+            diagnostic,
         });
     }
     for phase in &execution.phases {
         let failure = phase.failures.first();
+        let diagnostic = failure.map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(phase.path.into()),
+            source_span: None,
+        });
+        diagnostics.extend(phase.failures.iter().map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(phase.path.into()),
+            source_span: None,
+        }));
         components.push(ComponentOutcome {
             path: phase.path.into(),
             action: phase.action.into(),
@@ -4704,29 +4807,12 @@ fn finish_reload_receipt(
             effective_at: (phase.started && failure.is_none()).then(|| effective_at.clone()),
             confirmation: (phase.started && failure.is_none())
                 .then_some(Confirmation::RuntimeCommit),
-            diagnostic: failure.map(|failure| Diagnostic {
-                severity: DiagnosticSeverity::Error,
-                code: failure.code.into(),
-                message: if phase.failures.len() == 1 {
-                    failure.message.clone()
-                } else {
-                    format!(
-                        "{} (and {} additional phase failure(s))",
-                        failure.message,
-                        phase.failures.len() - 1
-                    )
-                },
-                component_path: Some(phase.path.into()),
-                source_span: None,
-            }),
+            diagnostic,
         });
     }
-    let first_failure = components.iter().find_map(|component| {
-        component
-            .diagnostic
-            .as_ref()
-            .map(|diagnostic| diagnostic.code.clone())
-    });
+    let first_failure = diagnostics
+        .first()
+        .map(|diagnostic| diagnostic.code.clone());
     let current = ledger
         .receipt(context.attempt_id())
         .map_err(mutation_ledger_error)?;
@@ -4748,7 +4834,7 @@ fn finish_reload_receipt(
         }))
     };
     let receipt = ledger
-        .transition(context.attempt_id(), state, now)
+        .transition_with_diagnostics(context.attempt_id(), state, diagnostics, now)
         .map_err(mutation_ledger_error)?;
     publish_mutation_transition(ledger, context, &receipt, now);
     Ok(receipt)
@@ -4759,9 +4845,14 @@ fn finish_lost_staged_reload(
     ledger: &MutationLedger,
     context: &MutationContext,
     staging: Vec<reload::StagedAssetOutcome>,
+    cleanup: Vec<ReloadPhaseFailure>,
 ) -> Result<MutationReceipt> {
     let mut execution = ReloadExecution {
         result: Err(Error::ChannelClosed),
+        failures: vec![ReloadPhaseFailure {
+            code: "staging_completion_lost",
+            message: "the runtime queue closed before staged assets could be applied".into(),
+        }],
         staging,
         phases: RELOAD_PHASE_COMPONENTS
             .iter()
@@ -4769,11 +4860,7 @@ fn finish_lost_staged_reload(
             .collect(),
     };
     execution.phases[15].started = true;
-    execution.phases[15].failures.push(ReloadPhaseFailure {
-        code: "staging_completion_lost",
-        message: "the runtime queue closed before staged assets could be applied or reclaimed"
-            .into(),
-    });
+    execution.phases[15].failures = cleanup;
     finish_reload_receipt(ledger, context, &execution)
 }
 
@@ -5541,7 +5628,8 @@ mod tests {
     use crate::handlers::RouteDest;
     use crate::reload::ParamRouteKind;
     use crate::state::GroupState;
-    use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
+    use crate::traits::SampleConfig;
+    use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, SampleId, VoiceId};
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
@@ -6808,6 +6896,11 @@ mod tests {
         /// id back into the next create.
         events: std::sync::Mutex<Vec<BackendEvent>>,
         fail_create_group: std::sync::atomic::AtomicBool,
+        load_buffer_log: std::sync::Mutex<Vec<BufferId>>,
+        free_buffer_log: std::sync::Mutex<Vec<BufferId>>,
+        load_mode: std::sync::atomic::AtomicU8,
+        loads_started: std::sync::atomic::AtomicU32,
+        load_release: tokio::sync::Notify,
         sync_mode: std::sync::atomic::AtomicU8,
         sync_release: tokio::sync::Notify,
     }
@@ -6857,6 +6950,11 @@ mod tests {
                 map_param_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
                 fail_create_group: std::sync::atomic::AtomicBool::new(false),
+                load_buffer_log: std::sync::Mutex::new(Vec::new()),
+                free_buffer_log: std::sync::Mutex::new(Vec::new()),
+                load_mode: std::sync::atomic::AtomicU8::new(0),
+                loads_started: std::sync::atomic::AtomicU32::new(0),
+                load_release: tokio::sync::Notify::new(),
                 sync_mode: std::sync::atomic::AtomicU8::new(0),
                 sync_release: tokio::sync::Notify::new(),
             }
@@ -7028,9 +7126,18 @@ mod tests {
 
         async fn load_buffer(
             &self,
-            _id: BufferId,
+            id: BufferId,
             _path: &Path,
         ) -> std::result::Result<BufferInfo, Self::Error> {
+            self.load_buffer_log.lock().unwrap().push(id);
+            self.loads_started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            match self.load_mode.load(std::sync::atomic::Ordering::SeqCst) {
+                0 => {}
+                1 => return Err(MockError),
+                2 => self.load_release.notified().await,
+                mode => panic!("unsupported test load mode {mode}"),
+            }
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -7059,7 +7166,8 @@ mod tests {
             Ok(())
         }
 
-        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+        async fn free_buffer(&self, id: BufferId) -> std::result::Result<(), Self::Error> {
+            self.free_buffer_log.lock().unwrap().push(id);
             Ok(())
         }
 
@@ -11086,6 +11194,318 @@ mod tests {
             create.diagnostic.as_ref().unwrap().code,
             "reload_group_create_failed"
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sample_reload_message(ids: &[u32]) -> Message {
+        let mut state = reload::ScriptState::new();
+        for id in ids {
+            state.add_sample(
+                SampleId::new(*id),
+                SampleConfig::new(format!("/test/sample_{id}.wav")),
+            );
+        }
+        Message::Reload(Box::new(ReloadMessage::Apply { state }))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn tick_until_receipt_terminal<B: Backend>(
+        runtime: &mut Runtime<B>,
+        handle: &RuntimeHandle,
+        attempt_id: crate::mutation::AttemptId,
+    ) -> MutationReceipt {
+        for _ in 0..1000 {
+            runtime.tick().await;
+            let receipt = handle.mutation_receipt(attempt_id).unwrap();
+            if receipt.state.is_terminal() {
+                return receipt;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("mutation receipt did not become terminal");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn wait_for_staged_loads(runtime: &mut Runtime<RecordingBackend>, expected: u32) {
+        for _ in 0..1000 {
+            runtime.tick().await;
+            if runtime
+                .backend
+                .loads_started
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == expected
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("staging did not start {expected} buffer load(s)");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn direct_staging_load_failure_preserves_its_code_and_cleanup() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let message = sample_reload_message(&[7]);
+        let accepted = handle
+            .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+            .await
+            .unwrap();
+
+        let receipt = tick_until_receipt_terminal(&mut runtime, &handle, accepted.attempt_id).await;
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a direct staging load failure must be partial");
+        };
+        assert_eq!(partial.code, "sample_load_failed");
+        assert_eq!(
+            receipt
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.as_str())
+                .collect::<Vec<_>>(),
+            vec!["sample_load_failed", "reload_sample_create_failed"]
+        );
+        let staging = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staging/sample/7")
+            .unwrap();
+        assert_eq!(staging.state, ComponentState::Uncertain);
+        assert_eq!(
+            staging.diagnostic.as_ref().unwrap().code,
+            "sample_load_failed"
+        );
+        let loads = runtime.backend.load_buffer_log.lock().unwrap().clone();
+        let frees = runtime.backend.free_buffer_log.lock().unwrap().clone();
+        assert_eq!(
+            loads.len(),
+            2,
+            "apply retries a failed staged sample inline"
+        );
+        assert_eq!(
+            frees, loads,
+            "each failed load's buffer ID must be reclaimed"
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_receipt_preserves_multiple_failures_in_one_phase() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Reload(Box::new(ReloadMessage::Apply {
+            state: reload::ScriptState::new(),
+        }));
+        let accepted = handle
+            .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+            .await
+            .unwrap();
+        let context = MutationContext::new(
+            accepted.attempt_id,
+            accepted.runtime_epoch,
+            accepted.request.idempotency_key_present,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        )
+        .with_revision(accepted.revision.unwrap())
+        .unwrap();
+        runtime
+            .begin_contextual_components(
+                &context,
+                RELOAD_PHASE_COMPONENTS
+                    .iter()
+                    .map(|(path, action)| PlannedComponent {
+                        path: (*path).into(),
+                        action: (*action).into(),
+                    })
+                    .collect(),
+                false,
+            )
+            .unwrap();
+        let mut execution = ReloadExecution {
+            result: Ok(()),
+            failures: Vec::new(),
+            staging: Vec::new(),
+            phases: RELOAD_PHASE_COMPONENTS
+                .iter()
+                .map(|(path, action)| ReloadPhaseOutcome {
+                    path,
+                    action,
+                    failures: Vec::new(),
+                    started: true,
+                })
+                .collect(),
+        };
+        execution.phases[4].failures = vec![
+            ReloadPhaseFailure::new("first_handler_failure", "first failure"),
+            ReloadPhaseFailure::new("second_handler_failure", "second failure"),
+        ];
+
+        let receipt = runtime.finish_reload_work(&context, &execution).unwrap();
+        assert_eq!(
+            receipt
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.message.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("first_handler_failure", "first failure"),
+                ("second_handler_failure", "second failure"),
+            ]
+        );
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("multiple phase failures must produce a partial receipt");
+        };
+        let create = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/create_entities")
+            .unwrap();
+        assert_eq!(create.diagnostic.as_ref().unwrap().message, "first failure");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn staged_apply_after_newer_fence_is_truthful_partial() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(2, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let reload = sample_reload_message(&[11]);
+        let lower = handle
+            .submit(reload.clone(), handle.legacy_submission(&reload).unwrap())
+            .await
+            .unwrap();
+        wait_for_staged_loads(&mut runtime, 1).await;
+
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "newer-fence".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit(create.clone(), handle.legacy_submission(&create).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        assert!(matches!(
+            handle.mutation_receipt(higher.attempt_id).unwrap().state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+
+        runtime.backend.load_release.notify_waiters();
+        let receipt = tick_until_receipt_terminal(&mut runtime, &handle, lower.attempt_id).await;
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a fenced staged apply must remain partial, never rejected");
+        };
+        assert_eq!(partial.code, "reload_apply_fenced");
+        assert_eq!(receipt.diagnostics[0].code, "reload_apply_fenced");
+        let staging = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staging/sample/11")
+            .unwrap();
+        assert_eq!(staging.state, ComponentState::Applied);
+        for component in partial
+            .components
+            .iter()
+            .filter(|component| component.path != "reload/staged_assets")
+            .filter(|component| !component.path.starts_with("reload/staging/"))
+        {
+            assert_eq!(component.state, ComponentState::NotStarted);
+        }
+        let cleanup = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staged_assets")
+            .unwrap();
+        assert_eq!(cleanup.state, ComponentState::Applied);
+        assert!(runtime.state.read().await.samples.is_empty());
+        assert_eq!(
+            *runtime.backend.free_buffer_log.lock().unwrap(),
+            *runtime.backend.load_buffer_log.lock().unwrap()
+        );
+        assert_eq!(
+            handle.mutation_status().live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn lost_staged_apply_frees_every_buffer_in_deterministic_order() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(2, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let reload = sample_reload_message(&[30, 10, 20]);
+        let accepted = handle
+            .submit(reload.clone(), handle.legacy_submission(&reload).unwrap())
+            .await
+            .unwrap();
+        wait_for_staged_loads(&mut runtime, 3).await;
+        let backend = runtime.backend.clone();
+        let state = runtime.state.clone();
+        backend.load_release.notify_waiters();
+        drop(runtime);
+
+        let mut terminal = None;
+        for _ in 0..1000 {
+            let receipt = handle.mutation_receipt(accepted.attempt_id).unwrap();
+            if receipt.state.is_terminal() {
+                terminal = Some(receipt);
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        let receipt = terminal.expect("lost staged reload receipt did not become terminal");
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a staged apply lost with the runtime queue must be partial");
+        };
+        assert_eq!(partial.code, "staging_completion_lost");
+        let loaded = backend.load_buffer_log.lock().unwrap().clone();
+        let freed = backend.free_buffer_log.lock().unwrap().clone();
+        let mut expected = loaded.clone();
+        expected.sort_by_key(|id| id.raw());
+        expected.dedup();
+        assert_eq!(freed, expected);
+        assert_eq!(freed.len(), 3);
+        let reclaimed = {
+            let mut state = state.write().await;
+            let reclaimed = (0..3)
+                .map(|_| state.alloc_buffer_id().unwrap())
+                .collect::<Vec<_>>();
+            for id in &reclaimed {
+                state.free_buffer_id(*id);
+            }
+            reclaimed
+        };
+        assert_eq!(reclaimed, expected);
+        let cleanup = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staged_assets")
+            .unwrap();
+        assert_eq!(cleanup.state, ComponentState::Applied);
+        assert!(cleanup.diagnostic.is_none());
     }
 
     async fn wait_for_one_pending(handle: &RuntimeHandle) -> crate::mutation::AttemptId {

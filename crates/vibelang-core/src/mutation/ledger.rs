@@ -514,6 +514,23 @@ impl MutationLedger {
         inner.transition(attempt_id, state, now)
     }
 
+    pub(crate) fn transition_with_diagnostics(
+        &self,
+        attempt_id: AttemptId,
+        state: ReceiptState,
+        diagnostics: Vec<Diagnostic>,
+        now: SystemTime,
+    ) -> Result<MutationReceipt, LedgerError> {
+        if matches!(state, ReceiptState::Planning) {
+            return Err(LedgerError::InvalidTransition(
+                "use begin_planning so expected revision and component planning are atomic".into(),
+            ));
+        }
+        let mut inner = self.inner.lock();
+        inner.prune(now)?;
+        inner.transition_with_diagnostics(attempt_id, state, diagnostics, now)
+    }
+
     pub fn cancel(&self, attempt_id: AttemptId, now: SystemTime) -> CancelResult {
         let mut inner = self.inner.lock();
         if inner.prune(now).is_err() {
@@ -743,6 +760,26 @@ impl LedgerInner {
         state: ReceiptState,
         now: SystemTime,
     ) -> Result<MutationReceipt, LedgerError> {
+        self.transition_inner(attempt_id, state, Vec::new(), now)
+    }
+
+    fn transition_with_diagnostics(
+        &mut self,
+        attempt_id: AttemptId,
+        state: ReceiptState,
+        diagnostics: Vec<Diagnostic>,
+        now: SystemTime,
+    ) -> Result<MutationReceipt, LedgerError> {
+        self.transition_inner(attempt_id, state, diagnostics, now)
+    }
+
+    fn transition_inner(
+        &mut self,
+        attempt_id: AttemptId,
+        state: ReceiptState,
+        diagnostics: Vec<Diagnostic>,
+        now: SystemTime,
+    ) -> Result<MutationReceipt, LedgerError> {
         let record = self
             .receipts
             .get(&attempt_id)
@@ -814,6 +851,7 @@ impl LedgerInner {
         let timestamp = Timestamp::from_system_time(now);
         let mut receipt = record.receipt.clone();
         receipt.state = state;
+        receipt.diagnostics.extend(diagnostics);
         receipt.event_sequence = sequence;
         receipt.timestamps.last_transition_at = timestamp.clone();
         if matches!(receipt.state, ReceiptState::Accepted { .. }) {
