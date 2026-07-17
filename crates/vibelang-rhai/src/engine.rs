@@ -7,11 +7,11 @@ use rhai::Engine;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use vibelang_core::mutation::{
-    Atomicity, CandidateOrigin, MutationEventSink, MutationKind, MutationReceipt,
+    Atomicity, CandidateOrigin, FailurePhase, MutationEventSink, MutationKind, MutationReceipt,
     MutationReplySink, MutationSource, RequestMaterial, Submission, SupersessionPolicy,
 };
 use vibelang_core::reload::ScriptState;
-use vibelang_core::{ReloadMessage, RuntimeHandle};
+use vibelang_core::{MutationAttempt, ReloadMessage, RuntimeHandle};
 
 use crate::api;
 use crate::context;
@@ -202,15 +202,52 @@ fn host_receipt_sink() -> (
     MutationReplySink,
 ) {
     let (send, receive) = mpsc::channel();
-    let latest = Arc::new(Mutex::new(None));
+    let latest: Arc<Mutex<Option<MutationReceipt>>> = Arc::new(Mutex::new(None));
     let sink_latest = Arc::clone(&latest);
     let sink = MutationReplySink::new(move |receipt| {
+        let mut publish = false;
         if let Ok(mut current) = sink_latest.lock() {
-            *current = Some(receipt.clone());
+            let replace = current.as_ref().is_none_or(|current| {
+                current.attempt_id == receipt.attempt_id
+                    && current.runtime_epoch == receipt.runtime_epoch
+                    && receipt.event_sequence > current.event_sequence
+            });
+            if replace {
+                *current = Some(receipt.clone());
+                publish = true;
+            }
         }
-        let _ = send.send(receipt);
+        if publish {
+            let _ = send.send(receipt);
+        }
     });
     (latest, receive, sink)
+}
+
+struct PendingHostMutation {
+    attempt: MutationAttempt,
+    latest_receipt: Arc<Mutex<Option<MutationReceipt>>>,
+    receipt_updates: mpsc::Receiver<MutationReceipt>,
+}
+
+impl PendingHostMutation {
+    fn into_carrier(self, initial_receipt: MutationReceipt) -> HostMutation {
+        HostMutation {
+            initial_receipt,
+            latest_receipt: self.latest_receipt,
+            receipt_updates: self.receipt_updates,
+        }
+    }
+}
+
+fn host_failure(error: &Error) -> (FailurePhase, &'static str) {
+    match error {
+        Error::Io(_) => (FailurePhase::Decode, "script_read_failed"),
+        Error::Parse(_) => (FailurePhase::Parse, "script_parse_failed"),
+        Error::Script(_) | Error::Runtime(_) => {
+            (FailurePhase::Evaluate, "script_evaluation_failed")
+        }
+    }
 }
 
 fn host_submission_receipt(
@@ -339,6 +376,8 @@ impl ScriptEngine {
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
     pub fn execute(&mut self, script: &str) -> Result<ScriptState> {
+        self.compile(script)?;
+
         // Clear object registries before each execution
         api::clear_all_registries();
 
@@ -367,6 +406,37 @@ impl ScriptEngine {
         Ok(state)
     }
 
+    /// Execute a previously compiled whole script with normal v1 setup and
+    /// exit handling. Hosts may use this to keep parsing ahead of eager work.
+    pub fn execute_precompiled(&mut self, ast: &rhai::AST) -> Result<ScriptState> {
+        // Clear object registries before each execution
+        api::clear_all_registries();
+
+        // Reset exit code before execution
+        crate::reset_exit_code();
+
+        // Initialize context
+        context::init_context();
+
+        // Execute script
+        let result = self.engine.run_ast(ast).map_err(Error::from);
+
+        // Take state regardless of result (to clean up context)
+        let state = context::take_state();
+        context::clear_context();
+
+        // Check if script exited via exit() - this is not an error
+        if crate::get_exit_code().is_some() {
+            // Script requested exit, return state normally
+            return Ok(state);
+        }
+
+        // Return error if script failed for other reasons
+        result?;
+
+        Ok(state)
+    }
+
     /// Evaluate a v1 Rhai script and submit its collected state through the
     /// canonical runtime receipt ledger.
     ///
@@ -378,22 +448,112 @@ impl ScriptEngine {
         script: &str,
         handle: &RuntimeHandle,
     ) -> Result<HostMutation> {
-        let state = self.execute(script)?;
-        Self::submit_state(handle, state).await
+        let mut pending = Self::begin_host_attempt(handle)?;
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let state = match self
+            .compile(script)
+            .and_then(|ast| self.execute_precompiled(&ast))
+        {
+            Ok(state) => state,
+            Err(error) => {
+                let (phase, code) = host_failure(&error);
+                let message = error.to_string();
+                let terminal_message = if error.definitely_no_effect() {
+                    message
+                } else {
+                    match pending.attempt.record_uncertain_effect(
+                        "rhai/evaluation",
+                        "evaluate",
+                        code,
+                        message.clone(),
+                    ) {
+                        Ok(()) => message,
+                        Err(accounting) => {
+                            format!("{message}; effect accounting failed: {accounting}")
+                        }
+                    }
+                };
+                return Self::finish_host_attempt(handle, pending, phase, code, terminal_message);
+            }
+        };
+        if let Err(error) = pending.attempt.record_uncertain_effect(
+                "rhai/evaluation",
+                "evaluate",
+                "rhai_eager_effects_possible",
+                "Rhai evaluation may have updated process-global registries or invoked a deploy callback",
+            ) {
+            return Self::finish_host_attempt(
+                handle,
+                pending,
+                FailurePhase::Evaluate,
+                "evaluation_effect_accounting_failed",
+                error.to_string(),
+            );
+        }
+        Self::submit_host_attempt(handle, state, pending).await
     }
 
     /// Submit an already evaluated v1 [`ScriptState`] and expose all canonical
     /// receipt transitions to the Rhai host.
     pub async fn submit_state(handle: &RuntimeHandle, state: ScriptState) -> Result<HostMutation> {
+        let pending = Self::begin_host_attempt(handle)?;
+        Self::submit_host_attempt(handle, state, pending).await
+    }
+
+    fn begin_host_attempt(handle: &RuntimeHandle) -> Result<PendingHostMutation> {
         let (latest_receipt, receipt_updates, reply_sink) = host_receipt_sink();
         let submission = host_submission(handle.mutation_status().runtime_epoch)?;
+        let attempt = handle
+            .begin_attempt(submission, reply_sink, MutationEventSink::default())
+            .map_err(|error| Error::Runtime(error.to_string()))?;
+        Ok(PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
+    fn finish_host_attempt(
+        handle: &RuntimeHandle,
+        pending: PendingHostMutation,
+        phase: FailurePhase,
+        code: &str,
+        message: String,
+    ) -> Result<HostMutation> {
+        let PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        } = pending;
+        let receipt = handle
+            .finish_attempt_failure(attempt, phase, code, message)
+            .map_err(|error| Error::Runtime(error.to_string()))?;
+        Ok(HostMutation {
+            initial_receipt: receipt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
+    async fn submit_host_attempt(
+        handle: &RuntimeHandle,
+        state: ScriptState,
+        pending: PendingHostMutation,
+    ) -> Result<HostMutation> {
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        } = pending;
         let submission_result = handle
-            .submit_with_sinks(
-                ReloadMessage::Apply { state }.into(),
-                submission,
-                reply_sink,
-                MutationEventSink::default(),
-            )
+            .submit_attempt(ReloadMessage::Apply { state }.into(), attempt)
             .await;
         let initial_receipt = host_submission_receipt(submission_result, &latest_receipt)?;
         Ok(HostMutation {
@@ -417,6 +577,8 @@ impl ScriptEngine {
         let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         self.setup_module_resolver(base_path);
 
+        let ast = self.engine.compile(&script).map_err(Error::from)?;
+
         // Clear object registries before each execution
         api::clear_all_registries();
 
@@ -429,7 +591,7 @@ impl ScriptEngine {
         context::set_import_paths(self.import_paths.clone());
 
         // Execute script
-        let result = self.engine.run(&script).map_err(Error::from);
+        let result = self.engine.run_ast(&ast).map_err(Error::from);
 
         // Take state regardless of result
         let state = context::take_state();
@@ -476,8 +638,49 @@ impl ScriptEngine {
         path: impl AsRef<Path>,
         handle: &RuntimeHandle,
     ) -> Result<HostMutation> {
-        let state = self.execute_file(path)?;
-        Self::submit_state(handle, state).await
+        let mut pending = Self::begin_host_attempt(handle)?;
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let state = match self.execute_file(path) {
+            Ok(state) => state,
+            Err(error) => {
+                let (phase, code) = host_failure(&error);
+                let message = error.to_string();
+                let terminal_message = if error.definitely_no_effect() {
+                    message
+                } else {
+                    match pending.attempt.record_uncertain_effect(
+                        "rhai/file_evaluation",
+                        "evaluate",
+                        code,
+                        message.clone(),
+                    ) {
+                        Ok(()) => message,
+                        Err(accounting) => {
+                            format!("{message}; effect accounting failed: {accounting}")
+                        }
+                    }
+                };
+                return Self::finish_host_attempt(handle, pending, phase, code, terminal_message);
+            }
+        };
+        if let Err(error) = pending.attempt.record_uncertain_effect(
+                "rhai/file_evaluation",
+                "evaluate",
+                "rhai_eager_effects_possible",
+                "Rhai file evaluation may have updated process-global registries or invoked a deploy callback",
+            ) {
+            return Self::finish_host_attempt(
+                handle,
+                pending,
+                FailurePhase::Evaluate,
+                "evaluation_effect_accounting_failed",
+                error.to_string(),
+            );
+        }
+        Self::submit_host_attempt(handle, state, pending).await
     }
 
     /// Execute a script from a file and return state, AST, and any registered
@@ -502,21 +705,14 @@ impl ScriptEngine {
         let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         self.setup_module_resolver(base_path);
 
+        let ast = self.engine.compile(&script).map_err(Error::from)?;
+
         api::clear_all_registries();
         crate::reset_exit_code();
 
         context::init_context();
         context::set_current_file(Some(path.to_path_buf()));
         context::set_import_paths(self.import_paths.clone());
-
-        let ast = self.engine.compile(&script).map_err(Error::from);
-        let ast = match ast {
-            Ok(a) => a,
-            Err(e) => {
-                context::clear_context();
-                return Err(e);
-            }
-        };
 
         let result = self.engine.run_ast(&ast).map_err(Error::from);
 
@@ -653,6 +849,129 @@ impl Default for ScriptEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use vibelang_core::compat::Instant;
+    use vibelang_core::mutation::{ReceiptState, TerminalOutcome};
+    use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime};
+
+    #[derive(Debug)]
+    struct CarrierBackendError;
+
+    impl std::fmt::Display for CarrierBackendError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("carrier backend error")
+        }
+    }
+
+    impl std::error::Error for CarrierBackendError {}
+
+    struct CarrierBackend;
+
+    #[async_trait]
+    impl Backend for CarrierBackend {
+        type Error = CarrierBackendError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 1,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn write_test_project(files: &[(&str, &str)]) -> std::path::PathBuf {
@@ -799,6 +1118,115 @@ mod tests {
             host_submission_receipt(Err(vibelang_core::Error::ChannelClosed), &latest).unwrap();
 
         assert_eq!(canonical, rejected);
+    }
+
+    #[test]
+    fn host_receipt_sink_rejects_reordered_and_foreign_callbacks() {
+        let accepted = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let mut terminal = accepted.clone();
+        terminal.event_sequence = vibelang_core::mutation::EventSequence::new(3).unwrap();
+        terminal.state = ReceiptState::Terminal(TerminalOutcome::Rejected(
+            vibelang_core::mutation::Rejected {
+                phase: FailurePhase::Evaluate,
+                code: "script_evaluation_failed".into(),
+                message: "script aborted".into(),
+                rollback: vibelang_core::mutation::RollbackState::NotNeeded,
+                preserved_revision: None,
+            },
+        ));
+        let mut stale = accepted;
+        stale.event_sequence = vibelang_core::mutation::EventSequence::new(2).unwrap();
+        let foreign = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(2),
+        });
+        let (latest, updates, sink) = host_receipt_sink();
+
+        sink.publish(terminal.clone());
+        sink.publish(stale);
+        sink.publish(foreign);
+
+        assert_eq!(updates.try_recv().unwrap(), terminal);
+        assert!(updates.try_recv().is_err());
+        assert_eq!(latest.lock().unwrap().as_ref(), Some(&terminal));
+    }
+
+    #[tokio::test]
+    async fn host_success_preserves_preallocated_attempt_through_admission() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let mut engine = ScriptEngine::new();
+
+        let carrier = engine
+            .execute_and_submit("set_tempo(141);", &handle)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            carrier.initial_receipt().state,
+            ReceiptState::Accepted { .. }
+        ));
+        assert!(carrier.initial_receipt().revision.is_some());
+        assert_eq!(
+            carrier.latest_receipt().unwrap().attempt_id,
+            carrier.initial_receipt().attempt_id
+        );
+        assert_eq!(
+            carrier.latest_receipt().unwrap().revision,
+            carrier.initial_receipt().revision
+        );
+    }
+
+    #[tokio::test]
+    async fn host_parse_failure_is_effect_free_rejected_attempt() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let mut engine = ScriptEngine::new();
+
+        let carrier = engine.execute_and_submit("let = ;", &handle).await.unwrap();
+
+        assert!(carrier.initial_receipt().revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) =
+            &carrier.initial_receipt().state
+        else {
+            panic!("parse failure must be rejected");
+        };
+        assert_eq!(rejected.phase, FailurePhase::Parse);
+        assert_eq!(rejected.code, "script_parse_failed");
+        assert_eq!(
+            carrier.latest_receipt().unwrap().attempt_id,
+            carrier.initial_receipt().attempt_id
+        );
+    }
+
+    #[tokio::test]
+    async fn host_runtime_failure_after_eager_effect_is_fenced_partial() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let effect_ran = Arc::new(AtomicBool::new(false));
+        let effect_capture = Arc::clone(&effect_ran);
+        let mut engine = ScriptEngine::new();
+        engine.engine.register_fn("eager_effect", move || {
+            effect_capture.store(true, Ordering::SeqCst);
+        });
+
+        let carrier = engine
+            .execute_and_submit("eager_effect(); throw \"stop\";", &handle)
+            .await
+            .unwrap();
+
+        assert!(effect_ran.load(Ordering::SeqCst));
+        assert!(carrier.initial_receipt().revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) =
+            &carrier.initial_receipt().state
+        else {
+            panic!("runtime failure after eager work must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.phase, FailurePhase::Evaluate);
+        assert_eq!(partial.code, "script_evaluation_failed");
+        assert_eq!(partial.components[0].path, "rhai/evaluation");
     }
 
     #[test]

@@ -44,12 +44,13 @@ use vibelang_core::backends::WebScsynthBackend;
 #[cfg(target_arch = "wasm32")]
 use vibelang_core::message::TransportMessage;
 use vibelang_core::mutation::{
-    Atomicity, CandidateOrigin, MutationEventSink, MutationKind, MutationReceipt,
-    MutationReplySink, MutationSource, ReceiptState, RequestMaterial, Submission,
+    Atomicity, CandidateOrigin, Confirmation, FailurePhase, MutationEventSink, MutationKind,
+    MutationReceipt, MutationReplySink, MutationSource, ReceiptState, RequestMaterial, Submission,
     SupersessionPolicy, TerminalOutcome,
 };
 #[cfg(target_arch = "wasm32")]
 use vibelang_core::{Message, Runtime};
+use vibelang_core::{MutationAttempt, RuntimeHandle};
 use vibelang_dsp::{
     clear_effect_registry, clear_synthdef_registry, get_all_effects_encoded,
     get_all_synthdefs_encoded, notes::parse_note_name, set_deploy_callback, system_synthdefs,
@@ -155,10 +156,14 @@ impl ExecutionResult {
     }
 
     fn with_receipt(mut self, receipt: MutationReceipt) -> Self {
-        if let Some(failure) = receipt_failure(&receipt) {
+        if self.failure.is_none() {
+            if let Some(failure) = receipt_failure(&receipt) {
+                self.success = false;
+                self.error = Some(failure.message.clone());
+                self.failure = Some(failure);
+            }
+        } else if receipt_failure(&receipt).is_some() {
             self.success = false;
-            self.error = Some(failure.message.clone());
-            self.failure = Some(failure);
         }
         self.receipt = Some(receipt);
         self
@@ -249,14 +254,32 @@ fn receipt_sinks(
     MutationReplySink,
     MutationEventSink,
 ) {
-    let latest = Arc::new(Mutex::new(None));
+    let latest: Arc<Mutex<Option<MutationReceipt>>> = Arc::new(Mutex::new(None));
     let sink_latest = Arc::clone(&latest);
     let reply_sink = MutationReplySink::new(move |receipt| {
+        let mut publish = false;
         if let Ok(mut latest) = sink_latest.lock() {
-            *latest = Some(receipt.clone());
+            let replace = latest.as_ref().is_none_or(|current| {
+                current.attempt_id == receipt.attempt_id
+                    && current.runtime_epoch == receipt.runtime_epoch
+                    && receipt.event_sequence > current.event_sequence
+            });
+            if replace {
+                *latest = Some(receipt.clone());
+                publish = true;
+            }
         }
-        if let Ok(mut receipts) = receipts.lock() {
-            receipts.insert(receipt.attempt_id.to_string(), receipt);
+        if publish {
+            if let Ok(mut receipts) = receipts.lock() {
+                let key = receipt.attempt_id.to_string();
+                let replace = receipts.get(&key).is_none_or(|current| {
+                    current.runtime_epoch == receipt.runtime_epoch
+                        && receipt.event_sequence > current.event_sequence
+                });
+                if replace {
+                    receipts.insert(key, receipt);
+                }
+            }
         }
     });
     (latest, reply_sink, MutationEventSink::default())
@@ -269,9 +292,101 @@ fn latest_known_receipt(
     observed
         .filter(|observed| {
             observed.attempt_id == returned.attempt_id
+                && observed.runtime_epoch == returned.runtime_epoch
                 && observed.event_sequence >= returned.event_sequence
         })
         .unwrap_or(returned)
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum BridgeAssetKind {
+    Synthdef,
+    Effect,
+}
+
+struct BridgeAsset {
+    kind: BridgeAssetKind,
+    name: String,
+    data: Vec<u8>,
+}
+
+impl BridgeAsset {
+    fn path(&self) -> String {
+        let family = match self.kind {
+            BridgeAssetKind::Synthdef => "synthdefs",
+            BridgeAssetKind::Effect => "effects",
+        };
+        format!("wasm/bridge/{family}/{}", self.name)
+    }
+
+    const fn failure_code(&self) -> &'static str {
+        match self.kind {
+            BridgeAssetKind::Synthdef => "synthdef_bridge_failed",
+            BridgeAssetKind::Effect => "effect_bridge_failed",
+        }
+    }
+
+    fn failure_message(&self, error: &str) -> String {
+        let family = match self.kind {
+            BridgeAssetKind::Synthdef => "synthdef",
+            BridgeAssetKind::Effect => "effect",
+        };
+        format!("failed to load {family} {}: {error}", self.name)
+    }
+}
+
+fn sorted_bridge_assets(
+    synthdefs: Vec<(String, Vec<u8>)>,
+    effects: Vec<(String, Vec<u8>)>,
+) -> Vec<BridgeAsset> {
+    let mut assets = synthdefs
+        .into_iter()
+        .map(|(name, data)| BridgeAsset {
+            kind: BridgeAssetKind::Synthdef,
+            name,
+            data,
+        })
+        .chain(effects.into_iter().map(|(name, data)| BridgeAsset {
+            kind: BridgeAssetKind::Effect,
+            name,
+            data,
+        }))
+        .collect::<Vec<_>>();
+    assets.sort_by(|left, right| (left.kind, &left.name).cmp(&(right.kind, &right.name)));
+    assets
+}
+
+fn finish_wasm_attempt_failure(
+    handle: &RuntimeHandle,
+    latest: &Arc<Mutex<Option<MutationReceipt>>>,
+    attempt: MutationAttempt,
+    receipt_phase: FailurePhase,
+    result_phase: ExecutionFailurePhase,
+    code: &str,
+    message: String,
+) -> ExecutionResult {
+    let receipt = handle
+        .finish_attempt_failure(attempt, receipt_phase, code, message.clone())
+        .ok()
+        .or_else(|| latest.lock().ok().and_then(|latest| latest.clone()));
+    let result = ExecutionResult::failed(result_phase, code, message);
+    match receipt {
+        Some(receipt) => result.with_receipt(receipt),
+        None => result,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+struct WasmAttemptDispatch<'a> {
+    handle: &'a RuntimeHandle,
+    attempt: MutationAttempt,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmAttemptDispatch<'_> {
+    async fn submit_with_sinks(self, message: Message) -> vibelang_core::Result<MutationReceipt> {
+        self.handle.submit_attempt(message, self.attempt).await
+    }
 }
 
 /// Compiled synthdef ready to send to SuperSonic.
@@ -371,72 +486,14 @@ impl VibelangRuntime {
     pub async fn execute(&mut self, script: &str) -> JsValue {
         web_sys::console::log_1(&JsValue::from_str("VibelangRuntime.execute() called"));
 
-        // Clear old synthdefs
-        clear_synthdef_registry();
-        clear_effect_registry();
-
-        // Parse and execute the script
-        web_sys::console::log_1(&JsValue::from_str("Parsing script..."));
-        let result = self.script_engine.execute(script);
-
-        let state = match result {
-            Ok(state) => state,
-            Err(error) => {
-                let result = ExecutionResult::failed(
-                    ExecutionFailurePhase::Evaluate,
-                    "evaluation_failed",
-                    error.to_string(),
-                );
-                return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
-            }
-        };
-        let mut execution_result = ExecutionResult::evaluated(&state);
-
         let Some(runtime) = &self.runtime else {
-            execution_result = execution_result.delivery_failed(
+            let result = ExecutionResult::failed(
                 ExecutionFailurePhase::Initialize,
                 "runtime_not_initialized",
                 "VibelangRuntime.init() must complete before execute can deliver a candidate",
             );
-            return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
+            return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
         };
-
-        web_sys::console::log_1(&JsValue::from_str("Runtime present, applying state..."));
-        let synthdefs = get_all_synthdefs_encoded();
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Found {} synthdefs to load",
-            synthdefs.len()
-        )));
-        for (name, data) in synthdefs {
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "Loading synthdef: {} ({} bytes)",
-                name,
-                data.len()
-            )));
-            if let Err(error) = load_synthdef_to_supersonic(&name, &data).await {
-                execution_result = execution_result.delivery_failed(
-                    ExecutionFailurePhase::Bridge,
-                    "synthdef_bridge_failed",
-                    format!(
-                        "failed to load synthdef {name}: {}",
-                        js_error_message(&error)
-                    ),
-                );
-                return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
-            }
-        }
-
-        for (name, data) in get_all_effects_encoded() {
-            if let Err(error) = load_synthdef_to_supersonic(&name, &data).await {
-                execution_result = execution_result.delivery_failed(
-                    ExecutionFailurePhase::Bridge,
-                    "effect_bridge_failed",
-                    format!("failed to load effect {name}: {}", js_error_message(&error)),
-                );
-                return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
-            }
-        }
-
         let handle = runtime.handle();
         let submission = wasm_submission(
             handle.mutation_status().runtime_epoch,
@@ -444,16 +501,166 @@ impl VibelangRuntime {
             script,
         );
         let (latest, reply_sink, event_sink) = receipt_sinks(Arc::clone(&self.receipts));
-        let submission_result = handle
-            .submit_with_sinks(
-                Message::Reload(Box::new(vibelang_core::message::ReloadMessage::Apply {
-                    state,
-                })),
-                submission,
-                reply_sink,
-                event_sink,
+        let mut attempt = match handle.begin_attempt(submission, reply_sink, event_sink) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                let result = ExecutionResult::failed(
+                    ExecutionFailurePhase::Runtime,
+                    "attempt_allocation_failed",
+                    error.to_string(),
+                );
+                return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
+            }
+        };
+        if !attempt.is_active() {
+            let result = ExecutionResult::failed(
+                ExecutionFailurePhase::Runtime,
+                "attempt_completed_before_evaluation",
+                "the canonical WASM attempt completed before evaluation",
             )
-            .await;
+            .with_receipt(attempt.receipt().clone());
+            return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
+        }
+
+        web_sys::console::log_1(&JsValue::from_str("Parsing script..."));
+        let ast = match self.script_engine.compile(script) {
+            Ok(ast) => ast,
+            Err(error) => {
+                let result = finish_wasm_attempt_failure(
+                    &handle,
+                    &latest,
+                    attempt,
+                    FailurePhase::Parse,
+                    ExecutionFailurePhase::Evaluate,
+                    "script_parse_failed",
+                    error.to_string(),
+                );
+                return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
+            }
+        };
+
+        // Registry replacement and script execution may run eager callbacks,
+        // so both occur only after the canonical attempt exists and parsing
+        // has completed without effects.
+        clear_synthdef_registry();
+        clear_effect_registry();
+
+        let state = match self.script_engine.execute_precompiled(&ast) {
+            Ok(state) => state,
+            Err(error) => {
+                let message = error.to_string();
+                let accounting = attempt.record_uncertain_effect(
+                    "wasm/evaluation",
+                    "evaluate",
+                    "script_evaluation_failed",
+                    message.clone(),
+                );
+                let terminal_message = match accounting {
+                    Ok(()) => message,
+                    Err(error) => {
+                        format!("script evaluation failed and effect accounting failed: {error}")
+                    }
+                };
+                let result = finish_wasm_attempt_failure(
+                    &handle,
+                    &latest,
+                    attempt,
+                    FailurePhase::Evaluate,
+                    ExecutionFailurePhase::Evaluate,
+                    "script_evaluation_failed",
+                    terminal_message,
+                );
+                return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
+            }
+        };
+        let mut execution_result = ExecutionResult::evaluated(&state);
+        if let Err(error) = attempt.record_uncertain_effect(
+            "wasm/evaluation",
+            "evaluate",
+            "wasm_eager_effects_possible",
+            "WASM evaluation replaced registries and may have invoked a deploy callback",
+        ) {
+            execution_result = finish_wasm_attempt_failure(
+                &handle,
+                &latest,
+                attempt,
+                FailurePhase::Evaluate,
+                ExecutionFailurePhase::Evaluate,
+                "evaluation_effect_accounting_failed",
+                error.to_string(),
+            );
+            return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
+        }
+
+        web_sys::console::log_1(&JsValue::from_str("Runtime present, applying state..."));
+        let assets = sorted_bridge_assets(get_all_synthdefs_encoded(), get_all_effects_encoded());
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "Found {} synthdefs/effects to load",
+            assets.len()
+        )));
+        for asset in assets {
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "Loading synthdef: {} ({} bytes)",
+                asset.name,
+                asset.data.len()
+            )));
+            if let Err(error) = load_synthdef_to_supersonic(&asset.name, &asset.data).await {
+                let message = asset.failure_message(&js_error_message(&error));
+                let accounting = attempt.record_uncertain_effect(
+                    asset.path(),
+                    "load_synthdef",
+                    asset.failure_code(),
+                    message.clone(),
+                );
+                let terminal_message = match accounting {
+                    Ok(()) => message,
+                    Err(error) => {
+                        format!("bridge load failed and effect accounting failed: {error}")
+                    }
+                };
+                execution_result = finish_wasm_attempt_failure(
+                    &handle,
+                    &latest,
+                    attempt,
+                    FailurePhase::ExternalEffect,
+                    ExecutionFailurePhase::Bridge,
+                    asset.failure_code(),
+                    terminal_message,
+                );
+                return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
+            }
+            if let Err(error) = attempt.record_applied_effect(
+                asset.path(),
+                "load_synthdef",
+                Confirmation::ExternalAcknowledgment {
+                    system: "vibelangBridge.loadSynthdef".into(),
+                    token: asset.name.clone(),
+                },
+            ) {
+                execution_result = finish_wasm_attempt_failure(
+                    &handle,
+                    &latest,
+                    attempt,
+                    FailurePhase::ExternalEffect,
+                    ExecutionFailurePhase::Bridge,
+                    "bridge_effect_accounting_failed",
+                    format!(
+                        "bridge acknowledged {} but receipt accounting failed: {error}",
+                        asset.name
+                    ),
+                );
+                return serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL);
+            }
+        }
+
+        let submission_result = WasmAttemptDispatch {
+            handle: &handle,
+            attempt,
+        }
+        .submit_with_sinks(Message::Reload(Box::new(
+            vibelang_core::message::ReloadMessage::Apply { state },
+        )))
+        .await;
         let receipt = match submission_result {
             Ok(receipt) => {
                 let observed = latest.lock().ok().and_then(|latest| latest.clone());
@@ -787,10 +994,133 @@ pub fn version() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::path::Path;
+    use vibelang_core::compat::Instant;
     use vibelang_core::mutation::{
         AttemptId, EventSequence, FailurePhase, Partial, ReceiptTimestamps, RequestIdentity,
         RevisionId, RollbackState, RuntimeEpoch, Timestamp, MUTATION_SCHEMA_VERSION,
     };
+    use vibelang_core::{
+        AddAction, Backend, BufferId, BufferInfo, Message, NodeId, ParamMap, ReloadMessage, Runtime,
+    };
+
+    #[derive(Debug)]
+    struct CarrierBackendError;
+
+    impl std::fmt::Display for CarrierBackendError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("carrier backend error")
+        }
+    }
+
+    impl std::error::Error for CarrierBackendError {}
+
+    struct CarrierBackend;
+
+    #[async_trait]
+    impl Backend for CarrierBackend {
+        type Error = CarrierBackendError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 1,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
 
     fn receipt(state: ReceiptState) -> MutationReceipt {
         let now = Timestamp::parse("2026-07-17T08:00:00Z").unwrap();
@@ -898,6 +1228,272 @@ mod tests {
             assert_eq!(result.failure.as_ref().unwrap().code, code);
             assert!(result.receipt.is_none());
         }
+    }
+
+    #[test]
+    fn wasm_receipt_sink_rejects_reordered_and_foreign_callbacks() {
+        let accepted = receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let mut terminal = accepted.clone();
+        terminal.event_sequence = EventSequence::new(3).unwrap();
+        terminal.state = ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::ExternalEffect,
+            code: "synthdef_bridge_failed".into(),
+            components: vec![vibelang_core::mutation::ComponentOutcome {
+                path: "wasm/bridge/synthdefs/lead".into(),
+                action: "load_synthdef".into(),
+                state: vibelang_core::mutation::ComponentState::Uncertain,
+                effective_at: None,
+                confirmation: None,
+                diagnostic: None,
+            }],
+            rollback: RollbackState::Unavailable,
+            fenced: true,
+            last_confirmed_revision: None,
+        }));
+        let mut stale = accepted;
+        stale.event_sequence = EventSequence::new(2).unwrap();
+        let foreign = receipt(ReceiptState::Accepted {
+            queue_position: Some(2),
+        });
+        let receipts = Arc::new(Mutex::new(HashMap::new()));
+        let (latest, sink, _) = receipt_sinks(Arc::clone(&receipts));
+
+        sink.publish(terminal.clone());
+        sink.publish(stale);
+        sink.publish(foreign);
+
+        assert_eq!(latest.lock().unwrap().as_ref(), Some(&terminal));
+        let receipts = receipts.lock().unwrap();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(
+            receipts.get(&terminal.attempt_id.to_string()),
+            Some(&terminal)
+        );
+    }
+
+    #[test]
+    fn wasm_bridge_assets_are_deterministic_and_family_ordered() {
+        let assets = sorted_bridge_assets(
+            vec![("zeta".into(), vec![3]), ("alpha".into(), vec![1])],
+            vec![("verb".into(), vec![4]), ("delay".into(), vec![2])],
+        );
+        let names = assets
+            .iter()
+            .map(|asset| (asset.kind, asset.name.as_str()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                (BridgeAssetKind::Synthdef, "alpha"),
+                (BridgeAssetKind::Synthdef, "zeta"),
+                (BridgeAssetKind::Effect, "delay"),
+                (BridgeAssetKind::Effect, "verb"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn wasm_success_preserves_preallocated_attempt_through_admission() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let script = "set_tempo(143);";
+        let receipts = Arc::new(Mutex::new(HashMap::new()));
+        let (latest, reply_sink, event_sink) = receipt_sinks(Arc::clone(&receipts));
+        let mut attempt = handle
+            .begin_attempt(
+                wasm_submission(handle.mutation_status().runtime_epoch, "test", script),
+                reply_sink,
+                event_sink,
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        let mut engine = ScriptEngine::new();
+        let ast = engine.compile(script).unwrap();
+        let state = engine.execute_precompiled(&ast).unwrap();
+        attempt
+            .record_uncertain_effect(
+                "wasm/evaluation",
+                "evaluate",
+                "wasm_eager_effects_possible",
+                "test evaluation",
+            )
+            .unwrap();
+
+        let accepted = handle
+            .submit_attempt(ReloadMessage::Apply { state }.into(), attempt)
+            .await
+            .unwrap();
+
+        assert_eq!(accepted.attempt_id, attempt_id);
+        assert!(accepted.revision.is_some());
+        assert_eq!(latest.lock().unwrap().as_ref(), Some(&accepted));
+        assert_eq!(
+            receipts.lock().unwrap().get(&attempt_id.to_string()),
+            Some(&accepted)
+        );
+    }
+
+    #[test]
+    fn wasm_parse_failure_is_effect_free_rejected_attempt() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let script = "let = ;";
+        let receipts = Arc::new(Mutex::new(HashMap::new()));
+        let (latest, reply_sink, event_sink) = receipt_sinks(Arc::clone(&receipts));
+        let attempt = handle
+            .begin_attempt(
+                wasm_submission(handle.mutation_status().runtime_epoch, "test", script),
+                reply_sink,
+                event_sink,
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        let error = ScriptEngine::new().compile(script).unwrap_err();
+
+        let result = finish_wasm_attempt_failure(
+            &handle,
+            &latest,
+            attempt,
+            FailurePhase::Parse,
+            ExecutionFailurePhase::Evaluate,
+            "script_parse_failed",
+            error.to_string(),
+        );
+
+        let receipt = result.receipt.unwrap();
+        assert_eq!(receipt.attempt_id, attempt_id);
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = receipt.state else {
+            panic!("parse failure must be rejected");
+        };
+        assert_eq!(rejected.phase, FailurePhase::Parse);
+        assert_eq!(rejected.code, "script_parse_failed");
+    }
+
+    #[test]
+    fn wasm_eager_evaluation_failure_is_fenced_partial() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let receipts = Arc::new(Mutex::new(HashMap::new()));
+        let (latest, reply_sink, event_sink) = receipt_sinks(Arc::clone(&receipts));
+        let mut attempt = handle
+            .begin_attempt(
+                wasm_submission(
+                    handle.mutation_status().runtime_epoch,
+                    "test",
+                    "throw \"stop\";",
+                ),
+                reply_sink,
+                event_sink,
+            )
+            .unwrap();
+        attempt
+            .record_uncertain_effect(
+                "wasm/evaluation",
+                "evaluate",
+                "script_evaluation_failed",
+                "script aborted after registry replacement",
+            )
+            .unwrap();
+
+        let result = finish_wasm_attempt_failure(
+            &handle,
+            &latest,
+            attempt,
+            FailurePhase::Evaluate,
+            ExecutionFailurePhase::Evaluate,
+            "script_evaluation_failed",
+            "script aborted after registry replacement".into(),
+        );
+
+        let receipt = result.receipt.unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("eager evaluation failure must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.components[0].path, "wasm/evaluation");
+    }
+
+    #[test]
+    fn wasm_partial_bridge_load_failure_preserves_all_delivery_evidence() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let receipts = Arc::new(Mutex::new(HashMap::new()));
+        let (latest, reply_sink, event_sink) = receipt_sinks(Arc::clone(&receipts));
+        let mut attempt = handle
+            .begin_attempt(
+                wasm_submission(
+                    handle.mutation_status().runtime_epoch,
+                    "test",
+                    "set_tempo(120);",
+                ),
+                reply_sink,
+                event_sink,
+            )
+            .unwrap();
+        attempt
+            .record_uncertain_effect(
+                "wasm/evaluation",
+                "evaluate",
+                "wasm_eager_effects_possible",
+                "registries were replaced",
+            )
+            .unwrap();
+        attempt
+            .record_applied_effect(
+                "wasm/bridge/synthdefs/alpha",
+                "load_synthdef",
+                Confirmation::ExternalAcknowledgment {
+                    system: "vibelangBridge.loadSynthdef".into(),
+                    token: "alpha".into(),
+                },
+            )
+            .unwrap();
+        attempt
+            .record_uncertain_effect(
+                "wasm/bridge/synthdefs/beta",
+                "load_synthdef",
+                "synthdef_bridge_failed",
+                "vibelangBridge.loadSynthdef rejected: bridge offline",
+            )
+            .unwrap();
+
+        let result = finish_wasm_attempt_failure(
+            &handle,
+            &latest,
+            attempt,
+            FailurePhase::ExternalEffect,
+            ExecutionFailurePhase::Bridge,
+            "synthdef_bridge_failed",
+            "failed to load synthdef beta: bridge offline".into(),
+        );
+
+        let receipt = result.receipt.unwrap();
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("partial bridge delivery must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.phase, FailurePhase::ExternalEffect);
+        assert_eq!(partial.code, "synthdef_bridge_failed");
+        assert_eq!(partial.components.len(), 3);
+        assert_eq!(
+            partial.components[1].state,
+            vibelang_core::mutation::ComponentState::Applied
+        );
+        assert_eq!(
+            partial.components[2].state,
+            vibelang_core::mutation::ComponentState::Uncertain
+        );
+        assert_eq!(receipt.diagnostics[0].code, "synthdef_bridge_failed");
+        assert_eq!(
+            receipt.diagnostics[0].message,
+            "failed to load synthdef beta: bridge offline"
+        );
+        assert_eq!(result.failure.unwrap().phase, ExecutionFailurePhase::Bridge);
     }
 
     #[test]

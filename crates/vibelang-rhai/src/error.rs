@@ -25,6 +25,15 @@ pub enum Error {
     Runtime(String),
 }
 
+impl Error {
+    /// Parsing and source reads complete before script registries, deployment
+    /// callbacks, or extension operations can run.
+    #[must_use]
+    pub const fn definitely_no_effect(&self) -> bool {
+        matches!(self, Self::Parse(_) | Self::Io(_))
+    }
+}
+
 impl From<Box<rhai::EvalAltResult>> for Error {
     fn from(err: Box<rhai::EvalAltResult>) -> Self {
         Error::Script(err.to_string())

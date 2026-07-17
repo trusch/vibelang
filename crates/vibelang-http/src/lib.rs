@@ -230,11 +230,22 @@ fn record_http_receipt(receipt: MutationReceipt) {
 fn http_reply_sink(latest: Arc<Mutex<Option<MutationReceipt>>>) -> MutationReplySink {
     let request_context = HTTP_REQUEST_CONTEXT.try_with(Clone::clone).ok();
     MutationReplySink::new(move |receipt| {
+        let mut publish = false;
         if let Ok(mut latest) = latest.lock() {
-            *latest = Some(receipt.clone());
+            let replace = latest.as_ref().is_none_or(|current| {
+                current.attempt_id == receipt.attempt_id
+                    && current.runtime_epoch == receipt.runtime_epoch
+                    && receipt.event_sequence > current.event_sequence
+            });
+            if replace {
+                *latest = Some(receipt.clone());
+                publish = true;
+            }
         }
-        if let Some(context) = &request_context {
-            context.record(receipt);
+        if publish {
+            if let Some(context) = &request_context {
+                context.record(receipt);
+            }
         }
     })
 }

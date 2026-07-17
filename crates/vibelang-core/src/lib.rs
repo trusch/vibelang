@@ -147,7 +147,7 @@ pub use message::{
     ReloadMessage, SampleMessage, SequenceMessage, SyncMessage, SynthDefMessage, TransportMessage,
     VoiceMessage,
 };
-pub use runtime::{Runtime, RuntimeHandle};
+pub use runtime::{MutationAttempt, Runtime, RuntimeHandle};
 pub use state::{
     ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternOwner, PatternState,
     SequenceState, SfzInstrumentState, SfzRegionState, State, VoiceRole, VoiceState,

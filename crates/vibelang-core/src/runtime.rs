@@ -4982,6 +4982,89 @@ fn error_is_pre_effect(error: &Error) -> bool {
     )
 }
 
+/// One canonical carrier attempt allocated before evaluation or bridge work.
+#[derive(Debug)]
+pub struct MutationAttempt {
+    context: MutationContext,
+    receipt: MutationReceipt,
+    active: bool,
+    pre_admission_effects: Vec<ComponentOutcome>,
+}
+
+impl MutationAttempt {
+    #[must_use]
+    pub fn receipt(&self) -> &MutationReceipt {
+        &self.receipt
+    }
+
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        self.active
+    }
+
+    pub fn record_uncertain_effect(
+        &mut self,
+        path: impl Into<String>,
+        action: impl Into<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<()> {
+        let path = path.into();
+        let code = code.into();
+        let message = message.into();
+        self.record_effect(ComponentOutcome {
+            path: path.clone(),
+            action: action.into(),
+            state: ComponentState::Uncertain,
+            effective_at: None,
+            confirmation: None,
+            diagnostic: Some(Diagnostic {
+                severity: DiagnosticSeverity::Error,
+                code,
+                message,
+                component_path: Some(path),
+                source_span: None,
+            }),
+        })
+    }
+
+    pub fn record_applied_effect(
+        &mut self,
+        path: impl Into<String>,
+        action: impl Into<String>,
+        confirmation: Confirmation,
+    ) -> Result<()> {
+        self.record_effect(ComponentOutcome {
+            path: path.into(),
+            action: action.into(),
+            state: ComponentState::Applied,
+            effective_at: None,
+            confirmation: Some(confirmation),
+            diagnostic: None,
+        })
+    }
+
+    fn record_effect(&mut self, effect: ComponentOutcome) -> Result<()> {
+        if !self.active {
+            return Err(Error::InvalidConfig(
+                "cannot record an effect on a completed mutation attempt".into(),
+            ));
+        }
+        if self
+            .pre_admission_effects
+            .iter()
+            .any(|current| current.path == effect.path)
+        {
+            return Err(Error::InvalidConfig(format!(
+                "pre-admission effect path '{}' is already recorded",
+                effect.path
+            )));
+        }
+        self.pre_admission_effects.push(effect);
+        Ok(())
+    }
+}
+
 /// A cloneable handle for sending messages to the runtime.
 ///
 /// Handles are cheap to clone and can be shared across threads.
@@ -5027,6 +5110,18 @@ impl RuntimeHandle {
         event_sink: MutationEventSink,
     ) -> Result<MutationReceipt> {
         self.ensure_receipt_bearing(&msg)?;
+        let attempt = self.begin_attempt(submission, reply_sink, event_sink)?;
+        self.submit_attempt(msg, attempt).await
+    }
+
+    /// Allocate and publish the one canonical attempt that owns carrier
+    /// evaluation, eager effects, and eventual runtime submission.
+    pub fn begin_attempt(
+        &self,
+        submission: Submission,
+        reply_sink: MutationReplySink,
+        event_sink: MutationEventSink,
+    ) -> Result<MutationAttempt> {
         let now = SystemTime::now();
         let submitted = self
             .ledger
@@ -5041,18 +5136,109 @@ impl RuntimeHandle {
             event_sink,
         );
         publish_mutation_transition(&self.ledger, &context, &receipt, now);
-        match submitted {
-            SubmissionResult::Rejected(_) | SubmissionResult::Replayed(_) => return Ok(receipt),
-            SubmissionResult::New(_) => {}
-        }
-        if self.is_fenced() {
-            let rejected = self.reject_before_admission(
-                &context,
+        let mut attempt = MutationAttempt {
+            context,
+            receipt,
+            active: matches!(submitted, SubmissionResult::New(_)),
+            pre_admission_effects: Vec::new(),
+        };
+        if attempt.active && self.is_fenced() {
+            attempt.receipt = self.reject_before_admission(
+                &attempt.context,
                 "runtime_fenced",
                 "a partial or unknown mutation must be acknowledged before continuing",
                 now,
             )?;
-            return Ok(rejected);
+            attempt.active = false;
+        }
+        Ok(attempt)
+    }
+
+    /// Finish a carrier attempt before queue admission. An effect-free failure
+    /// is rejected; any recorded eager or bridge effect is a fenced Partial.
+    pub fn finish_attempt_failure(
+        &self,
+        mut attempt: MutationAttempt,
+        phase: FailurePhase,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<MutationReceipt> {
+        if !attempt.active {
+            return self
+                .ledger
+                .receipt(attempt.context.attempt_id())
+                .map_err(mutation_ledger_error);
+        }
+        let code = code.into();
+        let message = message.into();
+        let previous = attempt.receipt.previous_confirmed_revision;
+        let state = if attempt.pre_admission_effects.is_empty() {
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                phase,
+                code: code.clone(),
+                message: message.clone(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: previous,
+            }))
+        } else {
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+                phase,
+                code: code.clone(),
+                components: std::mem::take(&mut attempt.pre_admission_effects),
+                rollback: RollbackState::Unavailable,
+                fenced: true,
+                last_confirmed_revision: previous,
+            }))
+        };
+        let now = SystemTime::now();
+        let receipt = self
+            .ledger
+            .transition_with_diagnostics(
+                attempt.context.attempt_id(),
+                state,
+                vec![Diagnostic {
+                    severity: DiagnosticSeverity::Error,
+                    code,
+                    message,
+                    component_path: None,
+                    source_span: None,
+                }],
+                now,
+            )
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(&self.ledger, &attempt.context, &receipt, now);
+        Ok(receipt)
+    }
+
+    /// Submit an already allocated carrier attempt without creating another
+    /// attempt or revision.
+    pub async fn submit_attempt(
+        &self,
+        msg: Message,
+        attempt: MutationAttempt,
+    ) -> Result<MutationReceipt> {
+        if let Err(error) = self.ensure_receipt_bearing(&msg) {
+            self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
+                error_code(&error),
+                error.to_string(),
+            )?;
+            return Err(error);
+        }
+        if !attempt.active {
+            return self
+                .ledger
+                .receipt(attempt.context.attempt_id())
+                .map_err(mutation_ledger_error);
+        }
+        if self.is_fenced() {
+            return self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+            );
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -5060,47 +5246,46 @@ impl RuntimeHandle {
             let permit = match tx.reserve().await {
                 Ok(permit) => permit,
                 Err(_) => {
-                    self.reject_before_admission(
-                        &context,
+                    self.finish_attempt_failure(
+                        attempt,
+                        FailurePhase::Admission,
                         "queue_closed",
                         "the runtime mutation queue is closed",
-                        SystemTime::now(),
                     )?;
                     return Err(Error::ChannelClosed);
                 }
             };
             if self.is_fenced() {
-                let rejected = self.reject_before_admission(
-                    &context,
+                return self.finish_attempt_failure(
+                    attempt,
+                    FailurePhase::Admission,
                     "runtime_fenced",
                     "a partial or unknown mutation must be acknowledged before continuing",
-                    SystemTime::now(),
-                )?;
-                return Ok(rejected);
+                );
             }
-            let accepted = self.accept_after_queue_admission(&context)?;
+            let accepted = self.accept_after_queue_admission(&attempt.context)?;
             if matches!(accepted.state, ReceiptState::Accepted { .. }) {
-                permit.send(ContextualMessage::new(context, msg));
+                permit.send(ContextualMessage::new(attempt.context, msg));
             }
             return Ok(accepted);
         }
         #[cfg(target_arch = "wasm32")]
         if self
             .tx
-            .send_async(ContextualMessage::new(context.clone(), msg))
+            .send_async(ContextualMessage::new(attempt.context.clone(), msg))
             .await
             .is_err()
         {
-            self.reject_before_admission(
-                &context,
+            self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
                 "queue_closed",
                 "the runtime mutation queue is closed",
-                SystemTime::now(),
             )?;
             return Err(Error::ChannelClosed);
         }
         #[cfg(target_arch = "wasm32")]
-        self.accept_after_queue_admission(&context)
+        self.accept_after_queue_admission(&attempt.context)
     }
 
     /// Try to send a message without waiting.
@@ -10716,6 +10901,166 @@ mod tests {
         assert!(events
             .iter()
             .all(|event| event.receipt.attempt_id == accepted.attempt_id));
+    }
+
+    #[tokio::test]
+    async fn preallocated_attempt_submits_one_identity_and_one_revision() {
+        let mut runtime = Runtime::new(MockBackend);
+        disable_test_midi_threads(&mut runtime);
+        let handle = runtime.handle();
+        let replies = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let reply_capture = Arc::clone(&replies);
+        let message = Message::Transport(TransportMessage::SetTempo { bpm: 139.0 });
+        let submission = handle.legacy_submission(&message).unwrap();
+        let attempt = handle
+            .begin_attempt(
+                submission,
+                MutationReplySink::new(move |receipt| {
+                    reply_capture.lock().unwrap().push(receipt);
+                }),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+
+        assert!(attempt.is_active());
+        assert!(attempt.receipt().revision.is_none());
+        let accepted = handle.submit_attempt(message, attempt).await.unwrap();
+        assert_eq!(accepted.attempt_id, attempt_id);
+        let revision = accepted
+            .revision
+            .expect("queue admission allocates revision");
+
+        runtime.tick().await;
+        let terminal = handle.mutation_receipt(attempt_id).unwrap();
+        assert!(matches!(
+            terminal.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        assert_eq!(terminal.revision, Some(revision));
+        let replies = replies.lock().unwrap();
+        assert!(replies
+            .iter()
+            .all(|receipt| receipt.attempt_id == attempt_id));
+        assert!(replies
+            .iter()
+            .filter_map(|receipt| receipt.revision)
+            .all(|current| current == revision));
+    }
+
+    #[test]
+    fn preallocated_effect_free_failure_is_rejected_without_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+
+        let receipt = handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Parse,
+                "script_parse_failed",
+                "unexpected token at line 1",
+            )
+            .unwrap();
+
+        assert_eq!(receipt.attempt_id, attempt_id);
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = receipt.state else {
+            panic!("effect-free carrier failure must be rejected");
+        };
+        assert_eq!(rejected.phase, FailurePhase::Parse);
+        assert_eq!(rejected.code, "script_parse_failed");
+        assert_eq!(rejected.message, "unexpected token at line 1");
+    }
+
+    #[test]
+    fn preallocated_eager_effect_failure_is_fenced_partial_without_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let mut attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        attempt
+            .record_uncertain_effect(
+                "carrier/evaluation",
+                "evaluate",
+                "extension_effect_uncertain",
+                "an eager extension ran before the script failed",
+            )
+            .unwrap();
+
+        let receipt = handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Evaluate,
+                "script_evaluation_failed",
+                "script aborted",
+            )
+            .unwrap();
+
+        assert_eq!(receipt.attempt_id, attempt_id);
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("failure after an eager effect must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.phase, FailurePhase::Evaluate);
+        assert_eq!(partial.code, "script_evaluation_failed");
+        assert_eq!(partial.components.len(), 1);
+        assert_eq!(partial.components[0].path, "carrier/evaluation");
+        assert_eq!(partial.components[0].state, ComponentState::Uncertain);
+    }
+
+    #[tokio::test]
+    async fn preallocated_effectful_queue_failure_retains_partial_receipt() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let mut attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        attempt
+            .record_applied_effect(
+                "carrier/bridge/synthdef/test",
+                "load",
+                Confirmation::ExternalAcknowledgment {
+                    system: "test_bridge".into(),
+                    token: "test".into(),
+                },
+            )
+            .unwrap();
+        drop(runtime);
+
+        assert!(matches!(
+            handle.submit_attempt(message, attempt).await,
+            Err(Error::ChannelClosed)
+        ));
+        let receipt = handle.mutation_receipt(attempt_id).unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("queue failure after bridge delivery must remain partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.code, "queue_closed");
+        assert_eq!(partial.components[0].state, ComponentState::Applied);
     }
 
     #[tokio::test]

@@ -73,3 +73,6 @@ tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 midir = { version = "0.10", optional = true }
+
+[dev-dependencies]
+async-trait = "0.1"
