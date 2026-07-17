@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 use syn::{Fields, FnArg, ImplItem, Item, ItemFn, ReturnType, Type, Visibility};
 use vibelang_api_manifest::canonical::{canonical_sha256_hex, sha256_hex};
@@ -53,6 +53,8 @@ const ACCEPTED_V1_HTTP_SHA256: &str =
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
     "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
+const CORE_MANIFEST_PATH: &str = "crates/vibelang-core/Cargo.toml";
+const CORE_WIRE_TEST_PATH: &str = "crates/vibelang-core/tests/mutation_ledger.rs";
 const EXPECTED_ENTRIES: usize = 3_626;
 const EXPECTED_OVERLOADS: usize = 8_431;
 const EXPECTED_HTTP_ROUTES: usize = 96;
@@ -110,6 +112,456 @@ struct MechanicalDeclaration {
     source_anchors: Vec<(String, String)>,
     contract_node: bool,
     consumers: BTreeMap<String, MechanicalDisposition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CoreCargoManifest {
+    package: CoreCargoPackage,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CoreCargoPackage {
+    metadata: CoreCargoMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CoreCargoMetadata {
+    vibelang: CoreVibelangMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CoreVibelangMetadata {
+    #[serde(rename = "api-contract")]
+    api_contract: CoreApiContractMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CoreApiContractMetadata {
+    #[serde(rename = "wire-source")]
+    wire_source: String,
+    #[serde(rename = "ledger-source")]
+    ledger_source: String,
+    #[serde(rename = "runtime-fragment")]
+    runtime_fragment: String,
+    #[serde(rename = "wire-schema-version")]
+    wire_schema_version: u16,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct CoreWireField {
+    host_name: String,
+    serialized_name: String,
+    rust_type: String,
+    required: bool,
+    symbol: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct CoreWireVariant {
+    host_name: String,
+    serialized_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CoreWireDeclaration {
+    name: String,
+    kind: TypeKind,
+    fields: Vec<CoreWireField>,
+    variants: Vec<CoreWireVariant>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct CoreLedgerOperation {
+    symbol: String,
+    request_type: String,
+    response_type: String,
+    error_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CoreContractDiscovery {
+    wire_source: String,
+    ledger_source: String,
+    declarations: Vec<CoreWireDeclaration>,
+    operation: CoreLedgerOperation,
+}
+
+fn discover_core_contract(root: &Path) -> Result<CoreContractDiscovery, String> {
+    let manifest: CoreCargoManifest = toml::from_str(&read(root, CORE_MANIFEST_PATH)?)
+        .map_err(|error| format!("{CORE_MANIFEST_PATH}: {error}"))?;
+    let metadata = manifest.package.metadata.vibelang.api_contract;
+    let crate_root = root.join("crates/vibelang-core");
+    let wire_path = contract_metadata_path(root, &crate_root, &metadata.wire_source)?;
+    let ledger_path = contract_metadata_path(root, &crate_root, &metadata.ledger_source)?;
+    let runtime_fragment = contract_metadata_path(root, &crate_root, &metadata.runtime_fragment)?;
+    let expected_runtime_fragment = fs::canonicalize(root.join("api/contract/runtime.toml"))
+        .map_err(|error| format!("api/contract/runtime.toml: {error}"))?;
+    if runtime_fragment != expected_runtime_fragment {
+        return Err(format!(
+            "{CORE_MANIFEST_PATH} runtime-fragment must resolve to api/contract/runtime.toml"
+        ));
+    }
+    let wire_source = relative_path(root, &wire_path)?;
+    let ledger_source = relative_path(root, &ledger_path)?;
+    let wire = syn::parse_file(
+        &fs::read_to_string(&wire_path).map_err(|error| format!("{wire_source}: {error}"))?,
+    )
+    .map_err(|error| format!("{wire_source}: {error}"))?;
+    let declared_schema_version = wire
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Const(item) if item.ident == "MUTATION_SCHEMA_VERSION" => {
+                let syn::Expr::Lit(value) = &*item.expr else {
+                    return None;
+                };
+                let syn::Lit::Int(value) = &value.lit else {
+                    return None;
+                };
+                value.base10_parse::<u16>().ok()
+            }
+            _ => None,
+        })
+        .ok_or_else(|| format!("{wire_source} has no literal MUTATION_SCHEMA_VERSION"))?;
+    if metadata.wire_schema_version != declared_schema_version {
+        return Err(format!(
+            "{CORE_MANIFEST_PATH} wire-schema-version {} disagrees with {wire_source} value {declared_schema_version}",
+            metadata.wire_schema_version
+        ));
+    }
+
+    let mut declarations = Vec::new();
+    for item in &wire.items {
+        match item {
+            Item::Struct(item) if matches!(item.vis, Visibility::Public(_)) => {
+                require_contract_marker(&item.attrs, &wire_source, &item.ident.to_string())?;
+                declarations.push(core_struct_declaration(item)?);
+            }
+            Item::Enum(item) if matches!(item.vis, Visibility::Public(_)) => {
+                require_contract_marker(&item.attrs, &wire_source, &item.ident.to_string())?;
+                declarations.push(core_enum_declaration(item)?);
+            }
+            Item::Type(item) if matches!(item.vis, Visibility::Public(_)) => {
+                require_contract_marker(&item.attrs, &wire_source, &item.ident.to_string())?;
+                declarations.push(CoreWireDeclaration {
+                    name: item.ident.to_string(),
+                    kind: TypeKind::Alias,
+                    fields: Vec::new(),
+                    variants: Vec::new(),
+                });
+            }
+            Item::Macro(item)
+                if item.mac.path.is_ident("uuid_v7_id")
+                    || item.mac.path.is_ident("decimal_u64") =>
+            {
+                let ident: syn::Ident = syn::parse2(item.mac.tokens.clone())
+                    .map_err(|error| format!("{wire_source}: invalid wire macro: {error}"))?;
+                declarations.push(CoreWireDeclaration {
+                    name: ident.to_string(),
+                    kind: TypeKind::Alias,
+                    fields: Vec::new(),
+                    variants: Vec::new(),
+                });
+            }
+            _ => {}
+        }
+    }
+    declarations.sort_by(|left, right| left.name.cmp(&right.name));
+    if declarations.is_empty() {
+        return Err(format!("{wire_source} produced no core wire declarations"));
+    }
+    for pair in declarations.windows(2) {
+        if pair[0].name == pair[1].name {
+            return Err(format!("duplicate core wire declaration {}", pair[0].name));
+        }
+    }
+
+    let ledger = syn::parse_file(
+        &fs::read_to_string(&ledger_path).map_err(|error| format!("{ledger_source}: {error}"))?,
+    )
+    .map_err(|error| format!("{ledger_source}: {error}"))?;
+    let mut operations = Vec::new();
+    for item in &ledger.items {
+        let Item::Impl(item) = item else { continue };
+        if type_last_ident(&item.self_ty).as_deref() != Some("MutationLedger") {
+            continue;
+        }
+        for impl_item in &item.items {
+            let ImplItem::Fn(function) = impl_item else {
+                continue;
+            };
+            let Some(marker) = contract_doc(&function.attrs, "@vibelang-contract-operation") else {
+                continue;
+            };
+            if !matches!(function.vis, Visibility::Public(_)) {
+                return Err(format!(
+                    "{ledger_source}: contract operation {} is not public",
+                    function.sig.ident
+                ));
+            }
+            let fields = marker
+                .split_whitespace()
+                .filter_map(|field| field.split_once('='))
+                .collect::<BTreeMap<_, _>>();
+            let field = |name: &str| {
+                fields
+                    .get(name)
+                    .map(|value| (*value).to_string())
+                    .ok_or_else(|| {
+                        format!(
+                            "{ledger_source}: contract operation {} lacks {name}=...",
+                            function.sig.ident
+                        )
+                    })
+            };
+            operations.push(CoreLedgerOperation {
+                symbol: format!("MutationLedger::{}", function.sig.ident),
+                request_type: field("request")?,
+                response_type: field("response")?,
+                error_type: field("error")?,
+            });
+        }
+    }
+    let [operation] = operations.as_slice() else {
+        return Err(format!(
+            "{ledger_source} must expose exactly one annotated M03 ledger operation, found {}",
+            operations.len()
+        ));
+    };
+    for name in [
+        &operation.request_type,
+        &operation.response_type,
+        &operation.error_type,
+    ] {
+        if !declarations
+            .iter()
+            .any(|declaration| declaration.name == *name)
+        {
+            return Err(format!(
+                "{ledger_source} operation {} references undiscovered wire type {name}",
+                operation.symbol
+            ));
+        }
+    }
+    Ok(CoreContractDiscovery {
+        wire_source,
+        ledger_source,
+        declarations,
+        operation: operation.clone(),
+    })
+}
+
+fn contract_metadata_path(root: &Path, crate_root: &Path, value: &str) -> Result<PathBuf, String> {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        return Err(format!(
+            "core API-contract metadata path must be relative: {value}"
+        ));
+    }
+    let canonical = fs::canonicalize(crate_root.join(path))
+        .map_err(|error| format!("core API-contract metadata path {value}: {error}"))?;
+    if !canonical.starts_with(root) {
+        return Err(format!(
+            "core API-contract metadata path escapes the repository: {value}"
+        ));
+    }
+    Ok(canonical)
+}
+
+fn require_contract_marker(
+    attrs: &[syn::Attribute],
+    source: &str,
+    name: &str,
+) -> Result<(), String> {
+    if contract_doc(attrs, "@vibelang-contract-wire").is_some() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{source}: public wire declaration {name} lacks @vibelang-contract-wire"
+        ))
+    }
+}
+
+fn contract_doc(attrs: &[syn::Attribute], marker: &str) -> Option<String> {
+    attrs.iter().find_map(|attribute| {
+        if !attribute.path().is_ident("doc") {
+            return None;
+        }
+        let syn::Meta::NameValue(value) = &attribute.meta else {
+            return None;
+        };
+        let syn::Expr::Lit(value) = &value.value else {
+            return None;
+        };
+        let syn::Lit::Str(value) = &value.lit else {
+            return None;
+        };
+        value
+            .value()
+            .strip_prefix(marker)
+            .map(|tail| tail.trim().to_string())
+    })
+}
+
+fn core_struct_declaration(item: &syn::ItemStruct) -> Result<CoreWireDeclaration, String> {
+    let name = item.ident.to_string();
+    let fields = match &item.fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|field| {
+                let ident = field
+                    .ident
+                    .as_ref()
+                    .ok_or_else(|| format!("{name} has an unnamed record field"))?;
+                let host_name = ident.to_string();
+                Ok(CoreWireField {
+                    serialized_name: serde_rename(&field.attrs)
+                        .unwrap_or_else(|| host_name.clone()),
+                    rust_type: type_text(&field.ty),
+                    required: outer_type_argument(&field.ty, "Option").is_none(),
+                    symbol: format!("{name}::{host_name}"),
+                    host_name,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+        Fields::Unnamed(_) | Fields::Unit => Vec::new(),
+    };
+    Ok(CoreWireDeclaration {
+        name,
+        kind: if matches!(&item.fields, Fields::Named(_)) {
+            TypeKind::Record
+        } else {
+            TypeKind::Alias
+        },
+        fields,
+        variants: Vec::new(),
+    })
+}
+
+fn core_enum_declaration(item: &syn::ItemEnum) -> Result<CoreWireDeclaration, String> {
+    let name = item.ident.to_string();
+    let mut fields = Vec::new();
+    let mut variants = Vec::new();
+    for variant in &item.variants {
+        let host_variant = variant.ident.to_string();
+        let serialized_variant =
+            serde_rename(&variant.attrs).unwrap_or_else(|| to_snake_case(&host_variant));
+        variants.push(CoreWireVariant {
+            host_name: host_variant.clone(),
+            serialized_name: serialized_variant.clone(),
+        });
+        match &variant.fields {
+            Fields::Named(named) => {
+                for field in &named.named {
+                    let ident = field
+                        .ident
+                        .as_ref()
+                        .ok_or_else(|| format!("{name}::{host_variant} has unnamed fields"))?;
+                    let field_name = ident.to_string();
+                    let serialized_field =
+                        serde_rename(&field.attrs).unwrap_or_else(|| field_name.clone());
+                    fields.push(CoreWireField {
+                        host_name: format!("{host_variant}.{field_name}"),
+                        serialized_name: format!("{serialized_variant}.details.{serialized_field}"),
+                        rust_type: type_text(&field.ty),
+                        required: outer_type_argument(&field.ty, "Option").is_none(),
+                        symbol: format!("{name}::{host_variant}::{field_name}"),
+                    });
+                }
+            }
+            Fields::Unnamed(unnamed) => {
+                for (index, field) in unnamed.unnamed.iter().enumerate() {
+                    fields.push(CoreWireField {
+                        host_name: format!("{host_variant}.{index}"),
+                        serialized_name: format!("{serialized_variant}.details[{index}]"),
+                        rust_type: type_text(&field.ty),
+                        required: outer_type_argument(&field.ty, "Option").is_none(),
+                        symbol: format!("{name}::{host_variant}::{index}"),
+                    });
+                }
+            }
+            Fields::Unit => {}
+        }
+    }
+    fields.sort_by(|left, right| left.host_name.cmp(&right.host_name));
+    variants.sort_by(|left, right| left.host_name.cmp(&right.host_name));
+    Ok(CoreWireDeclaration {
+        name,
+        kind: if serde_attribute_has_key(&item.attrs, "tag") {
+            TypeKind::TaggedUnion
+        } else {
+            TypeKind::Enum
+        },
+        fields,
+        variants,
+    })
+}
+
+fn serde_rename(attrs: &[syn::Attribute]) -> Option<String> {
+    serde_attribute_value(attrs, "rename")
+}
+
+fn serde_attribute_has_key(attrs: &[syn::Attribute], key: &str) -> bool {
+    attrs.iter().any(|attribute| {
+        serde_attribute_items(attribute)
+            .is_some_and(|items| items.into_iter().any(|meta| meta.path().is_ident(key)))
+    })
+}
+
+fn serde_attribute_value(attrs: &[syn::Attribute], key: &str) -> Option<String> {
+    attrs.iter().find_map(|attribute| {
+        serde_attribute_items(attribute)?
+            .into_iter()
+            .find_map(|meta| {
+                let syn::Meta::NameValue(value) = meta else {
+                    return None;
+                };
+                if !value.path.is_ident(key) {
+                    return None;
+                }
+                let syn::Expr::Lit(value) = value.value else {
+                    return None;
+                };
+                let syn::Lit::Str(value) = value.lit else {
+                    return None;
+                };
+                Some(value.value())
+            })
+    })
+}
+
+fn serde_attribute_items(attribute: &syn::Attribute) -> Option<Vec<syn::Meta>> {
+    use syn::parse::Parser as _;
+    if !attribute.path().is_ident("serde") {
+        return None;
+    }
+    let syn::Meta::List(list) = &attribute.meta else {
+        return None;
+    };
+    syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+        .parse2(list.tokens.clone())
+        .ok()
+        .map(|items| items.into_iter().collect())
+}
+
+fn to_snake_case(value: &str) -> String {
+    let characters = value.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    for (index, character) in characters.iter().copied().enumerate() {
+        let previous = index.checked_sub(1).and_then(|index| characters.get(index));
+        let next = characters.get(index + 1);
+        if character.is_ascii_uppercase()
+            && !output.is_empty()
+            && (previous.is_some_and(|value| value.is_ascii_lowercase() || value.is_ascii_digit())
+                || (previous.is_some_and(|value| value.is_ascii_uppercase())
+                    && next.is_some_and(|value| value.is_ascii_lowercase())))
+        {
+            output.push('_');
+        }
+        output.push(character.to_ascii_lowercase());
+    }
+    output
 }
 
 fn discover_mechanical_declarations(
@@ -1499,6 +1951,7 @@ struct Discovery {
     baseline: ArtifactBaseline,
     fragments: FragmentSet,
     mechanical: Vec<MechanicalDeclaration>,
+    core_contract: CoreContractDiscovery,
 }
 
 fn discover(root: &Path) -> Result<Discovery, String> {
@@ -1531,6 +1984,7 @@ fn discover(root: &Path) -> Result<Discovery, String> {
     validate_accepted_projections(root, &baseline)?;
     let fragments = load_fragments(root)?;
     let mechanical = discover_mechanical_declarations(root, &baseline)?;
+    let core_contract = discover_core_contract(root)?;
 
     Ok(Discovery {
         v1,
@@ -1541,6 +1995,7 @@ fn discover(root: &Path) -> Result<Discovery, String> {
         baseline,
         fragments,
         mechanical,
+        core_contract,
     })
 }
 
@@ -1548,6 +2003,7 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
     let mut manifest = build_v2(discovery)?;
     let composition = validate_fragment_join(discovery, &manifest, &discovery.fragments)?;
     apply_fragments(&mut manifest, &discovery.fragments)?;
+    validate_core_contract_graph(discovery, &manifest)?;
     validate_http_graph(discovery, &manifest)?;
     manifest.stats.insert(
         "semantic_fragments".into(),
@@ -1779,6 +2235,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
     {
         types.push(mechanical_type(declaration));
     }
+    types.extend(core_wire_manifest_types(&discovery.core_contract)?);
     types.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
 
     let default_error_type_id = http_type_ids
@@ -1817,6 +2274,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             ))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    operations.push(core_ledger_operation(&discovery.core_contract)?);
     operations.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
     connect_http_field_bindings(&mut types, &operations, &http_type_ids)?;
 
@@ -1872,6 +2330,28 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             .sum(),
     );
     stats.insert("websocket_events".into(), events.len() as u64);
+    stats.insert(
+        "core_wire_types".into(),
+        discovery.core_contract.declarations.len() as u64,
+    );
+    stats.insert(
+        "core_wire_fields".into(),
+        discovery
+            .core_contract
+            .declarations
+            .iter()
+            .map(|declaration| declaration.fields.len() as u64)
+            .sum(),
+    );
+    stats.insert(
+        "core_wire_variants".into(),
+        discovery
+            .core_contract
+            .declarations
+            .iter()
+            .map(|declaration| declaration.variants.len() as u64)
+            .sum(),
+    );
     Ok(PublicApiManifestV2 {
         schema: SCHEMA_URI_V2.into(),
         schema_version: SCHEMA_VERSION_V2,
@@ -1888,6 +2368,214 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         consumers,
         coverage,
         stats,
+    })
+}
+
+fn core_wire_type_id(name: &str) -> String {
+    semantic_id("type", &format!("core-wire|{name}"))
+}
+
+fn core_ledger_operation_id(operation: &CoreLedgerOperation) -> String {
+    semantic_id("operation", &format!("core-ledger|{}", operation.symbol))
+}
+
+fn core_wire_manifest_types(core: &CoreContractDiscovery) -> Result<Vec<ApiType>, String> {
+    let type_ids = core
+        .declarations
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.name.clone(),
+                core_wire_type_id(&declaration.name),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut scalar_shapes = BTreeSet::new();
+    for declaration in &core.declarations {
+        for field in &declaration.fields {
+            if referenced_core_wire_type(&field.rust_type, &type_ids).is_none() {
+                scalar_shapes.insert(field.rust_type.clone());
+            }
+        }
+    }
+    let scalar_type_ids = scalar_shapes
+        .iter()
+        .map(|shape| {
+            (
+                shape.clone(),
+                semantic_id("type", &format!("core-wire-scalar|{shape}")),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut types = core
+        .declarations
+        .iter()
+        .map(|declaration| {
+            let mut fields = declaration
+                .fields
+                .iter()
+                .map(|field| {
+                    let type_id = referenced_core_wire_type(&field.rust_type, &type_ids)
+                        .or_else(|| scalar_type_ids.get(&field.rust_type).cloned())
+                        .ok_or_else(|| {
+                            format!(
+                                "core wire field {}::{} has no discovered type for {}",
+                                declaration.name, field.host_name, field.rust_type
+                            )
+                        })?;
+                    Ok(Field {
+                        metadata: metadata(
+                            semantic_id(
+                                "field",
+                                &format!(
+                                    "core-wire|{}|{}",
+                                    declaration.name, field.host_name
+                                ),
+                            ),
+                            format!("{}::{}", declaration.name, field.host_name),
+                            "vibelang-core",
+                            &core.wire_source,
+                            field.symbol.clone(),
+                            Derivation::RustAst,
+                            available(),
+                            Vec::new(),
+                        ),
+                        serialized_name: field.serialized_name.clone(),
+                        host_name: field.host_name.clone(),
+                        direction: FieldDirection::Bidirectional,
+                        required: field.required,
+                        type_id,
+                        default: None,
+                        value_contract: Facet::NotApplicable {
+                            reason: "M03 discovers canonical core wire shape; value semantics land at the owning domain milestone".into(),
+                        },
+                        operation_applicability: Facet::NotApplicable {
+                            reason: "canonical nested wire fields are projected through their owning receipt operation rather than rebound independently".into(),
+                        },
+                        bindings: Vec::new(),
+                        observation: Facet::NotApplicable {
+                            reason: "M03 defines lossless carriers; live observation semantics land with runtime instrumentation".into(),
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            fields.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
+            let mut variants = declaration
+                .variants
+                .iter()
+                .map(|variant| EnumVariant {
+                    id: semantic_id(
+                        "variant",
+                        &format!(
+                            "core-wire|{}|{}",
+                            declaration.name, variant.host_name
+                        ),
+                    ),
+                    serialized_name: variant.serialized_name.clone(),
+                })
+                .collect::<Vec<_>>();
+            variants.sort_by(|left, right| left.id.cmp(&right.id));
+            Ok(ApiType {
+                metadata: metadata(
+                    type_ids[&declaration.name].clone(),
+                    declaration.name.clone(),
+                    "vibelang-core",
+                    &core.wire_source,
+                    declaration.name.clone(),
+                    Derivation::RustAst,
+                    available(),
+                    Vec::new(),
+                ),
+                kind: declaration.kind,
+                fields,
+                variants,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    for shape in scalar_shapes {
+        types.push(ApiType {
+            metadata: metadata(
+                scalar_type_ids[&shape].clone(),
+                shape.clone(),
+                "vibelang-core",
+                &core.wire_source,
+                format!("wire scalar {shape}"),
+                Derivation::RustAst,
+                available(),
+                Vec::new(),
+            ),
+            kind: TypeKind::Alias,
+            fields: Vec::new(),
+            variants: Vec::new(),
+        });
+    }
+    types.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
+    Ok(types)
+}
+
+fn referenced_core_wire_type(
+    rust_type: &str,
+    type_ids: &BTreeMap<String, String>,
+) -> Option<String> {
+    type_ids
+        .iter()
+        .filter(|(name, _)| {
+            rust_type == name.as_str()
+                || rust_type
+                    .split(|character: char| !character.is_alphanumeric() && character != '_')
+                    .any(|token| token == name.as_str())
+        })
+        .max_by_key(|(name, _)| name.len())
+        .map(|(_, id)| id.clone())
+}
+
+fn core_ledger_operation(core: &CoreContractDiscovery) -> Result<Operation, String> {
+    let operation = &core.operation;
+    let type_id = |name: &str| {
+        core.declarations
+            .iter()
+            .any(|declaration| declaration.name == name)
+            .then(|| core_wire_type_id(name))
+            .ok_or_else(|| format!("core ledger operation references missing type {name}"))
+    };
+    Ok(Operation {
+        metadata: metadata(
+            core_ledger_operation_id(operation),
+            operation.symbol.clone(),
+            "vibelang-core",
+            &core.ledger_source,
+            operation.symbol.clone(),
+            Derivation::RustAst,
+            available(),
+            vec![ProvenanceAnchor {
+                path: CORE_WIRE_TEST_PATH.into(),
+                symbol: "canonical_receipt_status_error_capability_and_event_wires_round_trip"
+                    .into(),
+                line: None,
+                derivation: Derivation::BehavioralFixture,
+            }],
+        ),
+        kind: OperationKind::Mutation,
+        request_type_id: Some(type_id(&operation.request_type)?),
+        response_type_ids: vec![type_id(&operation.response_type)?],
+        error_type_id: type_id(&operation.error_type)?,
+        effects: Vec::new(),
+        idempotency: Idempotency::Conditional,
+        effect_timing: Facet::NotApplicable {
+            reason: "runtime.toml owns the M03 ledger timing contract".into(),
+        },
+        atomicity: Facet::NotApplicable {
+            reason: "runtime.toml owns the M03 ledger atomicity contract".into(),
+        },
+        revision: Facet::NotApplicable {
+            reason: "runtime.toml owns the M03 revision-allocation contract".into(),
+        },
+        receipt: Facet::NotApplicable {
+            reason: "runtime.toml owns the M03 canonical receipt contract".into(),
+        },
+        consistency: ConsistencyPoint::ResponseSnapshot,
+        security_capability_ids: Vec::new(),
+        bindings: Vec::new(),
     })
 }
 
@@ -2480,10 +3168,9 @@ fn http_operation_ids_by_type(
 
     let mut operation_ids_by_type = BTreeMap::<String, BTreeSet<String>>::new();
     for operation in operations {
-        let binding = operation
-            .bindings
-            .first()
-            .ok_or_else(|| format!("HTTP operation {} has no binding", operation.metadata.id))?;
+        let Some(binding) = operation.bindings.first() else {
+            continue;
+        };
         let BindingDetails::Http {
             path_type_ids,
             query_type_ids,
@@ -2494,10 +3181,7 @@ fn http_operation_ids_by_type(
             ..
         } = &binding.details
         else {
-            return Err(format!(
-                "HTTP operation {} has a non-HTTP binding",
-                operation.metadata.id
-            ));
+            continue;
         };
         let mut pending = path_type_ids
             .iter()
@@ -2556,6 +3240,125 @@ fn http_field_effectiveness(
             .into(),
         }),
     }
+}
+
+fn validate_core_contract_graph(
+    discovery: &Discovery,
+    manifest: &PublicApiManifestV2,
+) -> Result<(), String> {
+    let expected_types = core_wire_manifest_types(&discovery.core_contract)?;
+    let actual_types = manifest
+        .types
+        .iter()
+        .filter(|api_type| {
+            api_type.metadata.ownership.implementation_owner == "vibelang-core"
+                && api_type
+                    .metadata
+                    .source_anchors
+                    .iter()
+                    .any(|anchor| anchor.path == discovery.core_contract.wire_source)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if actual_types != expected_types {
+        return Err(
+            "core wire types, fields, variants, serialized names, or type links disagree with the annotated Rust source"
+                .into(),
+        );
+    }
+
+    let operation_id = core_ledger_operation_id(&discovery.core_contract.operation);
+    let operation = manifest
+        .operations
+        .iter()
+        .find(|operation| operation.metadata.id == operation_id)
+        .ok_or_else(|| {
+            "annotated core ledger operation is missing from the manifest".to_string()
+        })?;
+    let mechanical = core_ledger_operation(&discovery.core_contract)?;
+    if operation.metadata != mechanical.metadata
+        || operation.request_type_id != mechanical.request_type_id
+        || operation.response_type_ids != mechanical.response_type_ids
+        || operation.error_type_id != mechanical.error_type_id
+        || operation.bindings != mechanical.bindings
+    {
+        return Err(
+            "core ledger operation request/response/error/test-anchor graph disagrees with source"
+                .into(),
+        );
+    }
+
+    let records = discovery
+        .fragments
+        .runtime
+        .records
+        .iter()
+        .filter(|record| record.target_id == operation_id)
+        .collect::<Vec<_>>();
+    let [record] = records.as_slice() else {
+        return Err(format!(
+            "runtime.toml must contain exactly one semantic record for {operation_id}, found {}",
+            records.len()
+        ));
+    };
+    let semantics = record.operation.as_ref().ok_or_else(|| {
+        format!("runtime.toml operation semantics are missing for {operation_id}")
+    })?;
+    let revision = record
+        .revision
+        .as_ref()
+        .ok_or_else(|| format!("runtime.toml revision semantics are missing for {operation_id}"))?;
+    let receipt = record
+        .receipt
+        .as_ref()
+        .ok_or_else(|| format!("runtime.toml receipt semantics are missing for {operation_id}"))?;
+    if record.failure.is_none() || record.effects.is_empty() {
+        return Err(format!(
+            "runtime.toml failure/effect semantics are incomplete for {operation_id}"
+        ));
+    }
+    if operation.metadata.ownership.implementation_owner != record.owner
+        || operation.kind != semantics.kind
+        || operation.idempotency != semantics.idempotency
+        || operation.consistency != semantics.consistency
+        || operation.effect_timing
+            != (Facet::Applicable {
+                value: semantics.effect_timing,
+            })
+        || operation.atomicity
+            != (Facet::Applicable {
+                value: semantics.atomicity,
+            })
+        || operation.revision
+            != (Facet::Applicable {
+                value: revision.clone(),
+            })
+        || operation.receipt
+            != (Facet::Applicable {
+                value: receipt.clone(),
+            })
+        || operation.effects != record.effects
+    {
+        return Err(format!(
+            "core ledger manifest semantics disagree with runtime.toml for {operation_id}"
+        ));
+    }
+
+    let receipt_types = manifest
+        .types
+        .iter()
+        .filter(|api_type| api_type.metadata.name.ends_with("Receipt"))
+        .collect::<Vec<_>>();
+    if receipt_types.len() != 1
+        || receipt_types[0].metadata.name != "MutationReceipt"
+        || receipt_types[0].metadata.ownership.implementation_owner != "vibelang-core"
+    {
+        return Err(
+            "the canonical core MutationReceipt must be the only discovered receipt wire type"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn validate_http_graph(
@@ -2786,12 +3589,11 @@ fn validate_http_graph(
         ));
     }
 
-    let available = manifest
-        .operations
-        .iter()
+    let available = actual_operations
+        .values()
         .filter(|operation| operation.metadata.availability.status == AvailabilityStatus::Available)
         .count();
-    let conditional = manifest.operations.len() - available;
+    let conditional = actual_operations.len() - available;
     if available != 74 || conditional != 22 {
         return Err(format!(
             "HTTP route conditions must be exactly 74 unconditional and 22 conditional, got {available}/{conditional}"
@@ -2860,14 +3662,24 @@ fn build_consumers(
                 )
                 .chain(api_type.variants.iter().map(|variant| variant.id.clone()))
         })
-        .chain(operations.iter().flat_map(|operation| {
-            std::iter::once(operation.metadata.id.clone()).chain(
-                operation
-                    .bindings
-                    .iter()
-                    .map(|binding| binding.metadata.id.clone()),
-            )
-        }))
+        .chain(
+            operations
+                .iter()
+                .filter(|operation| {
+                    operation
+                        .bindings
+                        .iter()
+                        .any(|binding| matches!(binding.details, BindingDetails::Http { .. }))
+                })
+                .flat_map(|operation| {
+                    std::iter::once(operation.metadata.id.clone()).chain(
+                        operation
+                            .bindings
+                            .iter()
+                            .map(|binding| binding.metadata.id.clone()),
+                    )
+                }),
+        )
         .collect::<BTreeSet<_>>();
     let editor = editor_consumer_accounting(discovery)?;
     let mut consumers = Vec::new();
@@ -3356,6 +4168,10 @@ fn derive_semantic_requirements(discovery: &Discovery) -> Result<Vec<SemanticReq
             })
             .collect(),
     )?;
+    let core_runtime = (
+        core_ledger_operation_id(&discovery.core_contract.operation),
+        "vibelang-core".to_string(),
+    );
     let http = unique_semantic_target(
         "current ignored HTTP quantization field",
         discovery
@@ -3455,6 +4271,31 @@ fn derive_semantic_requirements(discovery: &Discovery) -> Result<Vec<SemanticReq
             target_id: runtime.0,
             facet: SemanticFacet::Operation,
             owner: runtime.1,
+        },
+        SemanticRequirement {
+            target_id: core_runtime.0.clone(),
+            facet: SemanticFacet::Operation,
+            owner: core_runtime.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: core_runtime.0.clone(),
+            facet: SemanticFacet::Revision,
+            owner: core_runtime.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: core_runtime.0.clone(),
+            facet: SemanticFacet::Receipt,
+            owner: core_runtime.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: core_runtime.0.clone(),
+            facet: SemanticFacet::Failure,
+            owner: core_runtime.1.clone(),
+        },
+        SemanticRequirement {
+            target_id: core_runtime.0,
+            facet: SemanticFacet::Effects,
+            owner: core_runtime.1,
         },
         SemanticRequirement {
             target_id: http.0.clone(),
@@ -3764,7 +4605,16 @@ fn validate_frozen_semantic_refinements(
     requirements: &[SemanticRequirement],
     fragments: &FragmentSet,
 ) -> Result<(), String> {
-    let runtime_target = required_semantic_target(requirements, SemanticFacet::Operation)?;
+    let runtime_target = semantic_id("operation", "http|PATCH|/transport");
+    if !requirements.iter().any(|requirement| {
+        requirement.target_id == runtime_target
+            && requirement.facet == SemanticFacet::Operation
+            && requirement.owner == "vibelang-core"
+    }) {
+        return Err(format!(
+            "frozen M02 runtime requirement disappeared for {runtime_target}"
+        ));
+    }
     let runtime = fragments
         .runtime
         .records
@@ -3865,6 +4715,22 @@ fn apply_fragments(
             operation.atomicity = Facet::Applicable {
                 value: semantics.atomicity,
             };
+        }
+        if let Some(revision) = &record.revision {
+            operation.revision = Facet::Applicable {
+                value: revision.clone(),
+            };
+        }
+        if let Some(receipt) = &record.receipt {
+            operation.receipt = Facet::Applicable {
+                value: receipt.clone(),
+            };
+        }
+        if !record.effects.is_empty() {
+            operation.effects = record.effects.clone();
+            operation
+                .effects
+                .sort_by(|left, right| left.id.cmp(&right.id));
         }
     }
     for record in &fragments.http.records {
@@ -4363,12 +5229,15 @@ fn build_debt(
         }
     }
     for operation in &manifest.operations {
+        let Some(binding) = operation.bindings.first() else {
+            continue;
+        };
         let BindingDetails::Http {
             method,
             path,
             authentication_capability_id,
             ..
-        } = &operation.bindings[0].details
+        } = &binding.details
         else {
             continue;
         };
@@ -5504,6 +6373,68 @@ mod tests {
     }
 
     #[test]
+    fn core_wire_operation_and_runtime_fragment_agree_bidirectionally() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let discovery = discover(&root()).unwrap();
+                let mut manifest = build_v2(&discovery).unwrap();
+                validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
+                apply_fragments(&mut manifest, &discovery.fragments).unwrap();
+                validate_core_contract_graph(&discovery, &manifest).unwrap();
+
+                let discovered_fields = discovery
+                    .core_contract
+                    .declarations
+                    .iter()
+                    .map(|declaration| declaration.fields.len())
+                    .sum::<usize>();
+                let discovered_variants = discovery
+                    .core_contract
+                    .declarations
+                    .iter()
+                    .map(|declaration| declaration.variants.len())
+                    .sum::<usize>();
+                assert!(discovered_fields > 100);
+                assert!(discovered_variants > 50);
+
+                let mut missing_field = manifest.clone();
+                missing_field
+                    .types
+                    .iter_mut()
+                    .find(|api_type| api_type.metadata.name == "MutationReceipt")
+                    .unwrap()
+                    .fields
+                    .pop();
+                assert!(validate_core_contract_graph(&discovery, &missing_field).is_err());
+
+                let mut missing_variant = manifest.clone();
+                missing_variant
+                    .types
+                    .iter_mut()
+                    .find(|api_type| api_type.metadata.name == "TerminalOutcome")
+                    .unwrap()
+                    .variants
+                    .pop();
+                assert!(validate_core_contract_graph(&discovery, &missing_variant).is_err());
+
+                let mut missing_semantics = discovery.fragments.clone();
+                let operation_id = core_ledger_operation_id(&discovery.core_contract.operation);
+                missing_semantics
+                    .runtime
+                    .records
+                    .iter_mut()
+                    .find(|record| record.target_id == operation_id)
+                    .unwrap()
+                    .receipt = None;
+                assert!(validate_fragment_join(&discovery, &manifest, &missing_semantics).is_err());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
     fn unclassified_and_orphan_debt_fail_closed() {
         let record = DebtRecord {
             id: semantic_id("debt", "probe"),
@@ -5595,7 +6526,17 @@ mod tests {
                 apply_fragments(&mut manifest, &discovery.fragments).unwrap();
                 validate_http_graph(&discovery, &manifest).unwrap();
 
-                assert_eq!(manifest.operations.len(), EXPECTED_HTTP_ROUTES);
+                let http_operations = manifest
+                    .operations
+                    .iter()
+                    .filter(|operation| {
+                        operation
+                            .bindings
+                            .iter()
+                            .any(|binding| matches!(&binding.details, BindingDetails::Http { .. }))
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(http_operations.len(), EXPECTED_HTTP_ROUTES);
                 assert_eq!(
                     discovery
                         .http
@@ -5606,14 +6547,13 @@ mod tests {
                     EXPECTED_HTTP_FIELDS
                 );
                 assert_eq!(
-                    manifest
-                        .operations
+                    http_operations
                         .iter()
                         .filter(|operation| operation.request_type_id.is_some())
                         .count(),
                     76
                 );
-                assert!(manifest.operations.iter().all(|operation| {
+                assert!(http_operations.iter().all(|operation| {
                     !operation.response_type_ids.is_empty()
                         && operation.security_capability_ids.is_empty()
                         && matches!(
@@ -5625,14 +6565,13 @@ mod tests {
                             } if !successes.is_empty()
                         )
                 }));
-                let available = manifest
-                    .operations
+                let available = http_operations
                     .iter()
                     .filter(|operation| {
                         operation.metadata.availability.status == AvailabilityStatus::Available
                     })
                     .count();
-                assert_eq!((available, manifest.operations.len() - available), (74, 22));
+                assert_eq!((available, http_operations.len() - available), (74, 22));
 
                 let raw_type_ids = discovery
                     .http
@@ -6041,9 +6980,19 @@ export type ArbitraryUnion = string | number;
                 for consumer in &manifest.consumers {
                     let family = consumer.eligibility.surfaces[0].as_str();
                     let coverage = &manifest.coverage[&consumer.metadata.id];
-                    assert_eq!(coverage.denominator, expected[family], "{family}");
                     assert_eq!(coverage.base_denominator, expected[family], "{family}");
+                    if family == "manifest" {
+                        assert!(coverage.denominator > expected[family], "{family}");
+                    } else {
+                        assert_eq!(coverage.denominator, expected[family], "{family}");
+                    }
                 }
+                let current_manifest_denominator = manifest
+                    .consumers
+                    .iter()
+                    .find(|consumer| consumer.eligibility.surfaces == ["manifest"])
+                    .map(|consumer| manifest.coverage[&consumer.metadata.id].denominator)
+                    .unwrap();
 
                 discovery.mechanical.push(
                     classify_mechanical_declaration(raw_declaration(
@@ -6059,9 +7008,10 @@ export type ArbitraryUnion = string | number;
                     .mechanical
                     .sort_by(|left, right| left.id.cmp(&right.id));
                 let grown = build_v2(&discovery).unwrap();
-                for (family, denominator, accepted) in
-                    [("cli", 34, 33), ("manifest", 13_002, 13_001)]
-                {
+                for (family, denominator, accepted) in [
+                    ("cli", 34, 33),
+                    ("manifest", current_manifest_denominator + 1, 13_001),
+                ] {
                     let consumer = grown
                         .consumers
                         .iter()
@@ -6412,7 +7362,7 @@ export type ArbitraryUnion = string | number;
                 let mut manifest = build_v2(&discovery).unwrap();
                 let composition =
                     validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
-                assert_eq!(composition.accounting.semantic_records, 6);
+                assert_eq!(composition.accounting.semantic_records, 7);
                 assert_eq!(composition.accounting.orphan_records, 0);
                 assert_eq!(composition.accounting.unclassified_records, 0);
                 assert!(composition.accounting.unclassified_targets.is_empty());

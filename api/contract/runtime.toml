@@ -12,3 +12,52 @@ idempotency = "conditional"
 consistency = "response_snapshot"
 effect_timing = "runtime_queued"
 atomicity = "best_effort"
+
+[[records]]
+target_id = "v1:operation:ca4641c620621c16"
+owner = "vibelang-core"
+
+[records.operation]
+kind = "mutation"
+idempotency = "conditional"
+consistency = "response_snapshot"
+effect_timing = "immediate_live"
+atomicity = "required"
+
+[records.revision]
+mode = "allocates"
+acceptance = ["rejected", "accepted", "terminal"]
+terminals = ["rejected", "superseded", "applied", "partial"]
+
+[records.receipt]
+attempt_id_type = "AttemptId"
+runtime_epoch_type = "RuntimeEpoch"
+revision_id_type = "RevisionId"
+event_sequence_type = "EventSequence"
+terminal_outcomes = ["rejected", "superseded", "applied", "partial"]
+component_outcomes = ["applied", "failed", "uncertain", "not_started"]
+
+[records.failure]
+stages = ["decode", "validate", "admission", "observe"]
+error_ids = [
+    "mutation.error.counter_exhausted",
+    "mutation.error.digest",
+    "mutation.error.invalid_receipt",
+    "mutation.error.invalid_transition",
+    "mutation.error.receipt_not_found",
+    "mutation.error.revision_order",
+]
+retryable = false
+prior_state = "unchanged"
+fallback = "reject"
+panic_exposure = "none"
+delivery = ["return", "receipt", "event"]
+cleanup_owner = "vibelang-core"
+
+[[records.effects]]
+id = "v1:effect:287f24a9d934f2e1"
+kind = "register"
+target_id = "v1:type:e6937d2924671d09"
+behavior = "add"
+observable_result = "one canonical attempt receipt and ordered transition event"
+preconditions = ["the submitted runtime epoch and idempotency identity are valid"]

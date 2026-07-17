@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-compatibility-debt/v1",
   "schema_version": 1,
-  "contract_digest": "7a384a01aac998f2c03cede11bc6635021cdc0a7d19bf58199b5fb833d13d20e",
+  "contract_digest": "2e3068df38ffa2840db1b2b24037c57a0b0feae88fd8e3708d28a1a84748a15e",
   "records": [
     {
       "id": "v1:debt:001cc8b4d1999b0e",
@@ -214,6 +214,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:031e315cc9918f42",
+      "surface": "http",
+      "node_id": "v1:field:13e5288a769887db",
+      "operation_id": null,
+      "member": "revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:03784f25fda50947",
+      "surface": "http",
+      "node_id": "v1:field:41c5740abce13938",
+      "operation_id": null,
+      "member": "diagnostic",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:040ace2f7ee308b0",
       "surface": "http",
       "node_id": "v1:field:9f8e590b3d1a2433",
@@ -226,6 +256,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:0411dd4dce08eee6",
+      "surface": "http",
+      "node_id": "v1:field:b411a9bd11d934aa",
+      "operation_id": null,
+      "member": "component_path",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -346,6 +391,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:05aa74842a480cc3",
+      "surface": "http",
+      "node_id": "v1:field:2d423d1a97604ec6",
+      "operation_id": null,
+      "member": "preserved_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -556,6 +616,36 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:089de26b0884d991",
+      "surface": "http",
+      "node_id": "v1:field:2b4cc9fd001a6b82",
+      "operation_id": null,
+      "member": "pending",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:08cc080c239a0f6a",
+      "surface": "http",
+      "node_id": "v1:field:6403ce4c52e04585",
+      "operation_id": null,
+      "member": "source_span",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -829,6 +919,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json"
     },
     {
+      "id": "v1:debt:0cb41f827b7d0bbb",
+      "surface": "http",
+      "node_id": "v1:field:f5af854ef6327061",
+      "operation_id": null,
+      "member": "phase",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:0cd71f3fc5c01e1c",
       "surface": "http",
       "node_id": "v1:field:d21fb2277f5d591b",
@@ -934,6 +1039,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:0e10d57895e13b8e",
+      "surface": "http",
+      "node_id": "v1:field:a48350e9960e8d30",
+      "operation_id": null,
+      "member": "code",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:0e3482b2872ac520",
       "surface": "http",
       "node_id": "v1:field:d399a88c1cc42140",
@@ -1006,6 +1126,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:0f2fc149e37538e1",
+      "surface": "http",
+      "node_id": "v1:field:576d30ab962cc4ae",
+      "operation_id": null,
+      "member": "reason_ids",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -1159,6 +1294,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:10bcb8f22e02f04e",
+      "surface": "http",
+      "node_id": "v1:field:d2e8def9b47e7259",
+      "operation_id": null,
+      "member": "action",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:111f241c596badab",
       "surface": "http",
       "node_id": "v1:field:085778f53465a01e",
@@ -1234,6 +1384,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:12a7834cba764d52",
+      "surface": "http",
+      "node_id": "v1:field:77f29aef84c982fe",
+      "operation_id": null,
+      "member": "expires_before",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:12efea0a294168ad",
       "surface": "http",
       "node_id": "v1:field:600009c85cb47dea",
@@ -1264,6 +1429,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:13ea86602fc6129f",
+      "surface": "http",
+      "node_id": "v1:field:29634063e7d6ca4f",
+      "operation_id": null,
+      "member": "operation_digest",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:143c2654fd31ad97",
       "surface": "http",
       "node_id": "v1:operation:57ba957feebc8c4e",
@@ -1277,6 +1457,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "crates/vibelang-http/src/lib.rs"
+    },
+    {
+      "id": "v1:debt:14497c7fd1c74abe",
+      "surface": "http",
+      "node_id": "v1:field:668efd6c10be0f53",
+      "operation_id": null,
+      "member": "reset_required.details.reason",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:146d90565301b47b",
@@ -1384,6 +1579,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:151512620e2d3e9d",
+      "surface": "http",
+      "node_id": "v1:field:df1a67997d815401",
+      "operation_id": null,
+      "member": "expected_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:156c35aed590e7d1",
+      "surface": "http",
+      "node_id": "v1:field:5f57fe96660ceae0",
+      "operation_id": null,
+      "member": "state",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:156e0bc09af012d2",
       "surface": "http",
       "node_id": "v1:field:96c1392d4f462d24",
@@ -1396,6 +1621,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:157f0fd84bd16d6b",
+      "surface": "http",
+      "node_id": "v1:field:983e50299ba048fd",
+      "operation_id": null,
+      "member": "audible_tail_until",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -1486,6 +1726,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/midi.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:170543f2a1e9534f",
+      "surface": "http",
+      "node_id": "v1:field:4ec9bb72dd75bc44",
+      "operation_id": null,
+      "member": "fenced",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -1609,6 +1864,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:191c2f36cfed3f60",
+      "surface": "http",
+      "node_id": "v1:field:8c3ddb0e83709561",
+      "operation_id": null,
+      "member": "atomicity",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:194b09d344695119",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -1639,6 +1909,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:1a1867401368c16b",
+      "surface": "http",
+      "node_id": "v1:field:68c9bdaeee829565",
+      "operation_id": null,
+      "member": "column",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:1a1b2333bae5cff9",
       "surface": "http",
       "node_id": "v1:field:b76a332e0f4f066a",
@@ -1651,6 +1936,36 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/midi.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:1a1ba64ce0848f2c",
+      "surface": "http",
+      "node_id": "v1:field:07cadcbc7a9933f9",
+      "operation_id": null,
+      "member": "pre_admission_partial.details.attempt_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:1a8078174cd5089e",
+      "surface": "http",
+      "node_id": "v1:field:6e072572bdbe5c56",
+      "operation_id": null,
+      "member": "previous_event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -2149,6 +2464,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:20bd3ad582624b83",
+      "surface": "http",
+      "node_id": "v1:field:8fa3244761206f78",
+      "operation_id": null,
+      "member": "staging.details.total",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:20bf42ecaa843ee4",
       "surface": "http",
       "node_id": "v1:operation:9aa2847bcf953672",
@@ -2314,6 +2644,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:22f5420853aa3840",
+      "surface": "http",
+      "node_id": "v1:field:5179f9858401d4e8",
+      "operation_id": null,
+      "member": "code",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:234344d71e2e06ec",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -2371,6 +2716,21 @@
       "exit_gate": "replace legacy behavior with an effective binding or structured rejection",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:24cc6d0030ceb6dc",
+      "surface": "http",
+      "node_id": "v1:field:aa72264ebf1301a8",
+      "operation_id": null,
+      "member": "accepted_through",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -2749,6 +3109,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:29a3fc221e4d5c0b",
+      "surface": "http",
+      "node_id": "v1:field:64008b680be8ddca",
+      "operation_id": null,
+      "member": "phase",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:29dc870aceadc6d1",
       "surface": "http",
       "node_id": "v1:field:8759c33580928e77",
@@ -2821,6 +3196,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/fades.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:2c27a1b7e7d20fd5",
+      "surface": "http",
+      "node_id": "v1:field:cd531c0e66685f02",
+      "operation_id": null,
+      "member": "receipt_window",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -3034,6 +3424,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:2e579128dce94c11",
+      "surface": "http",
+      "node_id": "v1:field:5706599bf5c1240a",
+      "operation_id": null,
+      "member": "id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:2e612aedb99b15ba",
       "surface": "http",
       "node_id": "v1:operation:10fb1331eb57d298",
@@ -3139,6 +3544,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:2fa66bf970adb163",
+      "surface": "http",
+      "node_id": "v1:field:9113c76069f2987d",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:2fd6d3f3b29d204e",
       "surface": "http",
       "node_id": "v1:field:4d60a5d5848e7cec",
@@ -3226,6 +3646,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:30e4246e50ce6fca",
+      "surface": "http",
+      "node_id": "v1:field:64ea4ae666c7b45c",
+      "operation_id": null,
+      "member": "supersession",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -3649,6 +4084,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:34bef7474e36899f",
+      "surface": "http",
+      "node_id": "v1:field:d2482d4a9a7ef6d0",
+      "operation_id": null,
+      "member": "schema_version",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:34ef86b541769f65",
       "surface": "http",
       "node_id": "v1:field:84b88f503fe4ece8",
@@ -3677,6 +4127,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "crates/vibelang-http/src/lib.rs"
+    },
+    {
+      "id": "v1:debt:357cb1a36cd1ee31",
+      "surface": "http",
+      "node_id": "v1:field:b981baeaf71ea1cb",
+      "operation_id": null,
+      "member": "source",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:35bfe8c958883681",
@@ -3979,6 +4444,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:3877549911c6c993",
+      "surface": "http",
+      "node_id": "v1:field:8dffdd71678d3bc8",
+      "operation_id": null,
+      "member": "atomicity",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:38b1596b4e89e9ec",
       "surface": "http",
       "node_id": "v1:operation:eef5f3c402deff7e",
@@ -3992,6 +4472,36 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
+    },
+    {
+      "id": "v1:debt:38be16fd44657a01",
+      "surface": "http",
+      "node_id": "v1:field:3c7608dd9b44fbab",
+      "operation_id": null,
+      "member": "rollback",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:38e6ab2fd891c2fa",
+      "surface": "http",
+      "node_id": "v1:field:057ab7fa03db0ad7",
+      "operation_id": null,
+      "member": "code",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:3938a0884140e94a",
@@ -4114,6 +4624,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:3a637d6ae5cf55ff",
+      "surface": "http",
+      "node_id": "v1:field:4546a089eacfebea",
+      "operation_id": null,
+      "member": "evaluating.details.phase",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:3a69f3bae1e4fc06",
       "surface": "http",
       "node_id": "v1:field:74fc6b1b99b048c6",
@@ -4216,6 +4741,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:3cf4994c7c8e2822",
+      "surface": "http",
+      "node_id": "v1:field:e52184bf303df7ff",
+      "operation_id": null,
+      "member": "components",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -4699,6 +5239,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:4287253eb7ec877b",
+      "surface": "http",
+      "node_id": "v1:field:ec5bc9a42c819222",
+      "operation_id": null,
+      "member": "backend_time_seconds",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:42bff055719f6301",
       "surface": "http",
       "node_id": "v1:field:87bb48f07d8ed9f1",
@@ -4711,6 +5266,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4306bd1e3b49e1c4",
+      "surface": "http",
+      "node_id": "v1:field:62d838125e73bbc3",
+      "operation_id": null,
+      "member": "event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -4786,6 +5356,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4490db0b98e00d18",
+      "surface": "http",
+      "node_id": "v1:field:dfd82706a6e37119",
+      "operation_id": null,
+      "member": "action",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -5224,6 +5809,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:4901757a33ad1990",
+      "surface": "http",
+      "node_id": "v1:field:f4dfb68055fe06b3",
+      "operation_id": null,
+      "member": "by_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:49054ada2dabdc6d",
+      "surface": "http",
+      "node_id": "v1:field:e9a013ae0590801c",
+      "operation_id": null,
+      "member": "state",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:4905c45a9098a684",
       "surface": "http",
       "node_id": "v1:field:430fb55024a6afaa",
@@ -5239,6 +5854,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:496f83ce5e3b1c64",
+      "surface": "http",
+      "node_id": "v1:field:4292384f7072a83f",
+      "operation_id": null,
+      "member": "last_confirmed_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:49a2c8d946f75dd8",
       "surface": "http",
       "node_id": "v1:field:b7c7cb7e12a113a4",
@@ -5251,6 +5881,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:49c842894b63b2b3",
+      "surface": "http",
+      "node_id": "v1:field:cf1465fba1d0fb06",
+      "operation_id": null,
+      "member": "first_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -5389,6 +6034,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:4bf0664880dfa733",
+      "surface": "http",
+      "node_id": "v1:field:047892e40513846c",
+      "operation_id": null,
+      "member": "path",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4c2dcca2f5d73950",
+      "surface": "http",
+      "node_id": "v1:field:608108300d6fa353",
+      "operation_id": null,
+      "member": "idempotency_key_present",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:4c743e4cddee929e",
       "surface": "http",
       "node_id": "v1:operation:ec59e659751384f9",
@@ -5446,6 +6121,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4da0c2f9295af803",
+      "surface": "http",
+      "node_id": "v1:field:45f765028de28f34",
+      "operation_id": null,
+      "member": "revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -5509,6 +6199,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:4e83d2e2a259a756",
+      "surface": "http",
+      "node_id": "v1:field:fdf3998065119252",
+      "operation_id": null,
+      "member": "rollback",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:4e9cad209ffbddae",
       "surface": "http",
       "node_id": "v1:field:d399a88c1cc42140",
@@ -5521,6 +6226,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4ebd2f826452797e",
+      "surface": "http",
+      "node_id": "v1:field:6295ae14d80b202a",
+      "operation_id": null,
+      "member": "timestamps",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -5614,6 +6334,51 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:4fb85d69eadd0a21",
+      "surface": "http",
+      "node_id": "v1:field:ff9c0f6a73e0a6ff",
+      "operation_id": null,
+      "member": "persistence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4fd24d8dd721a740",
+      "surface": "http",
+      "node_id": "v1:field:26602263de3042dc",
+      "operation_id": null,
+      "member": "tombstone_capacity",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:4fe1cc2ba61e94b4",
+      "surface": "http",
+      "node_id": "v1:field:69b0277f7b9c49a4",
+      "operation_id": null,
+      "member": "source",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:4fea6af080aab71b",
       "surface": "http",
       "node_id": "v1:field:2e1ce3b4b22aee09",
@@ -5674,6 +6439,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:50ce511508c0586b",
+      "surface": "http",
+      "node_id": "v1:field:bd52f4e8946a5bd4",
+      "operation_id": null,
+      "member": "receipt",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:5120a5d6699af344",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -5686,6 +6466,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:51224a68059930b7",
+      "surface": "http",
+      "node_id": "v1:field:0a2a79321e98740f",
+      "operation_id": null,
+      "member": "first_event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -5959,6 +6754,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:5482a5ae76b127b5",
+      "surface": "http",
+      "node_id": "v1:field:3068f36e538f5ebb",
+      "operation_id": null,
+      "member": "end_line",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:54858befad8ad390",
       "surface": "http",
       "node_id": "v1:field:fd54e8940b2ca441",
@@ -5971,6 +6781,36 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:55455ef12ce1cda3",
+      "surface": "http",
+      "node_id": "v1:field:61e8b43c8279332a",
+      "operation_id": null,
+      "member": "backend_barrier.details.backend",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:558a788a0d9ad1ca",
+      "surface": "http",
+      "node_id": "v1:field:43dfc703ef530452",
+      "operation_id": null,
+      "member": "attempt_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -6109,6 +6949,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:579b18722930323d",
+      "surface": "http",
+      "node_id": "v1:field:107c22fee1b58473",
+      "operation_id": null,
+      "member": "last_confirmed_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:57b71431afeae665",
       "surface": "http",
       "node_id": "v1:field:327721404392724b",
@@ -6244,6 +7099,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:58b1303612210e27",
+      "surface": "http",
+      "node_id": "v1:field:9d4726b3bc6a02a9",
+      "operation_id": null,
+      "member": "last_event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:58cca6440b69a9dd",
       "surface": "http",
       "node_id": "v1:field:5449acc8830192e0",
@@ -6259,6 +7129,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:58d046ef54b4ce11",
+      "surface": "http",
+      "node_id": "v1:field:a2c8d1278c0d7a5a",
+      "operation_id": null,
+      "member": "external_acknowledgment.details.token",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:590f0d1c829c2a19",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -6271,6 +7156,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:5976246663bbe9d3",
+      "surface": "http",
+      "node_id": "v1:field:959f7d1428430f8a",
+      "operation_id": null,
+      "member": "minimum_age_seconds",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -6394,6 +7294,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:5a373c6c3b898dfc",
+      "surface": "http",
+      "node_id": "v1:field:b505e4c3f3b46e0a",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:5a819d3eb9ce6af4",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -6499,6 +7414,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:5b5eda6a86b749bd",
+      "surface": "http",
+      "node_id": "v1:field:959e2463025ada32",
+      "operation_id": null,
+      "member": "unknown.details.fenced",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:5b6f395a7d479264",
       "surface": "http",
       "node_id": "v1:field:2c34542816dbdb26",
@@ -6589,6 +7519,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:5d0f2361bc0c958d",
+      "surface": "http",
+      "node_id": "v1:field:d29d48716066a7cc",
+      "operation_id": null,
+      "member": "compensation.details.for_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:5d110cd2d80b0b55",
       "surface": "http",
       "node_id": "v1:field:cdbbf0f308e609f9",
@@ -6634,6 +7579,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:5de837d033f741a4",
+      "surface": "http",
+      "node_id": "v1:field:e3a42cba6858a5e7",
+      "operation_id": null,
+      "member": "partial.details.fenced",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:5e3744c61c13c73a",
       "surface": "mixed",
       "node_id": null,
@@ -6646,6 +7606,21 @@
       "exit_gate": "replace legacy behavior with an effective binding or structured rejection",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:5e5e44a50d388683",
+      "surface": "http",
+      "node_id": "v1:field:2d507d6097a5cc8e",
+      "operation_id": null,
+      "member": "command.details.domain",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -6799,6 +7774,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:5ffef4b91945e6ff",
+      "surface": "http",
+      "node_id": "v1:field:4114e0531a1ffba2",
+      "operation_id": null,
+      "member": "cancellation_before_planning",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:602a849b91022e6b",
       "surface": "http",
       "node_id": "v1:field:40c8eee3c8816c75",
@@ -6856,6 +7846,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:60c678b79307fc49",
+      "surface": "http",
+      "node_id": "v1:field:623fee1add0a30a1",
+      "operation_id": null,
+      "member": "backend_barrier",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -7084,6 +8089,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:638da46a8357d97d",
+      "surface": "http",
+      "node_id": "v1:field:64f811989de2116f",
+      "operation_id": null,
+      "member": "accepted.details.queue_position",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:63a65390519fd95e",
+      "surface": "http",
+      "node_id": "v1:field:68794076cd867784",
+      "operation_id": null,
+      "member": "external_acknowledgment.details.system",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:63d20cd597fab134",
       "surface": "http",
       "node_id": "v1:field:afa18558641c4946",
@@ -7127,6 +8162,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
+    },
+    {
+      "id": "v1:debt:656dc41732f4d595",
+      "surface": "http",
+      "node_id": "v1:field:98a7f7ed09eb21ad",
+      "operation_id": null,
+      "member": "last_transition_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:658a18e3f6a70f0b",
@@ -7279,6 +8329,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:670d461d6aa265ff",
+      "surface": "http",
+      "node_id": "v1:field:fca003ac0d885c68",
+      "operation_id": null,
+      "member": "availability",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:67145bb7a2a32447",
       "surface": "http",
       "node_id": "v1:field:430fb55024a6afaa",
@@ -7306,6 +8371,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:67b1f2e01a1b73ca",
+      "surface": "http",
+      "node_id": "v1:field:8628bd68b1056c76",
+      "operation_id": null,
+      "member": "confirmation",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -7381,6 +8461,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:69660f46dd7bc57f",
+      "surface": "http",
+      "node_id": "v1:field:d46c8ef306b58ad2",
+      "operation_id": null,
+      "member": "last_rejected_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -7534,6 +8629,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:6af0535c13384ef4",
+      "surface": "http",
+      "node_id": "v1:field:e417399fadb8f036",
+      "operation_id": null,
+      "member": "idempotency_key_present",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:6b2ff1698adb3e1e",
       "surface": "http",
       "node_id": "v1:field:5a190bbcbc11027e",
@@ -7562,6 +8672,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "tests/fixtures/api-unification/v1/negative/stale-commands.json",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-commands.json"
+    },
+    {
+      "id": "v1:debt:6b6ca6605b1ff75d",
+      "surface": "http",
+      "node_id": "v1:field:bcef7d84977a67de",
+      "operation_id": null,
+      "member": "superseded.details[0]",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:6be469eecddb0f34",
@@ -7609,6 +8734,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:6c2574a700c91f03",
+      "surface": "http",
+      "node_id": "v1:field:826da3c479465546",
+      "operation_id": null,
+      "member": "accepted_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:6c3481d16d2af214",
       "surface": "http",
       "node_id": "v1:field:614c54f3d450f3d6",
@@ -7651,6 +8791,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:6c4e52a6b8d667f7",
+      "surface": "http",
+      "node_id": "v1:field:b91e6bb204bcb84e",
+      "operation_id": null,
+      "member": "attempt_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -7759,6 +8914,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:6e324a2e7a14d0f4",
+      "surface": "http",
+      "node_id": "v1:field:535cb4be52aa4462",
+      "operation_id": null,
+      "member": "source",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:6e7161c43dd13a4c",
       "surface": "http",
       "node_id": "v1:field:d399a88c1cc42140",
@@ -7864,6 +9034,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:6fc3aca6ca5155ab",
+      "surface": "http",
+      "node_id": "v1:field:eae5e82321f92205",
+      "operation_id": null,
+      "member": "diagnostics",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:7050afe21afad8f4",
       "surface": "http",
       "node_id": "v1:field:b76a332e0f4f066a",
@@ -7894,6 +9079,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:70d600f1e85ef983",
+      "surface": "http",
+      "node_id": "v1:field:ed27e40a3d10f667",
+      "operation_id": null,
+      "member": "kind",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:70d7f62eed3edd7c",
       "surface": "http",
       "node_id": "v1:field:c8b771585c2222b9",
@@ -7909,6 +9109,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:7113b441b52035f7",
+      "surface": "http",
+      "node_id": "v1:field:dad5af1bcb7f0788",
+      "operation_id": null,
+      "member": "kind",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:71435d83035849a5",
       "surface": "http",
       "node_id": "v1:field:0ed0c2afa99f5873",
@@ -7921,6 +9136,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:715dd93c73963ea5",
+      "surface": "http",
+      "node_id": "v1:field:c935f378aa22da4b",
+      "operation_id": null,
+      "member": "http.details.request_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -8314,6 +9544,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:77032fb106471a50",
+      "surface": "http",
+      "node_id": "v1:field:b594a3448bd3d3c5",
+      "operation_id": null,
+      "member": "line",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:7728ad57b2f69c0f",
       "surface": "http",
       "node_id": "v1:field:a3a2014944f79c32",
@@ -8344,6 +9589,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:773cbb10e275c42b",
+      "surface": "http",
+      "node_id": "v1:field:242e6c74dcfca450",
+      "operation_id": null,
+      "member": "message",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:774bed3d708ec814",
       "surface": "consumers",
       "node_id": null,
@@ -8357,6 +9617,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "tests/fixtures/api-unification/v1/negative/stale-commands.json",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-commands.json"
+    },
+    {
+      "id": "v1:debt:77a9f2a02c7978c0",
+      "surface": "http",
+      "node_id": "v1:field:23f3168e16d43778",
+      "operation_id": null,
+      "member": "candidate.details.origin",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:77f5563cf03e37e6",
@@ -8419,6 +9694,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:78dfd45d0d4ef28f",
+      "surface": "http",
+      "node_id": "v1:field:575a94195b6be94c",
+      "operation_id": null,
+      "member": "submitted_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:79158e10e52e963c",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -8446,6 +9736,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:797674167248bb94",
+      "surface": "http",
+      "node_id": "v1:field:d533e490bb5232e8",
+      "operation_id": null,
+      "member": "idempotency",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -8584,6 +9889,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:7b1251b7256a214f",
+      "surface": "http",
+      "node_id": "v1:field:f981de705703fa78",
+      "operation_id": null,
+      "member": "message",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:7bd344ea611f169d",
       "surface": "http",
       "node_id": "v1:operation:499a175ccf60c21c",
@@ -8626,6 +9946,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/fades.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:7c1b7fa23e3af18f",
+      "surface": "http",
+      "node_id": "v1:field:6f87a5fdc667c708",
+      "operation_id": null,
+      "member": "event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -9034,6 +10369,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:81b3a14328f45101",
+      "surface": "http",
+      "node_id": "v1:field:98b368ad2451476c",
+      "operation_id": null,
+      "member": "rejected.details[0]",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:8222db9bff74bfe3",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -9199,6 +10549,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:86f5d21491106438",
+      "surface": "http",
+      "node_id": "v1:field:88e2ea6021130a1f",
+      "operation_id": null,
+      "member": "partial.details[0]",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:87512e41c0145ff4",
       "surface": "websocket",
       "node_id": "v1:event:46ced37429aeb44e",
@@ -9212,6 +10577,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/websocket.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
+    },
+    {
+      "id": "v1:debt:8772302a3207becb",
+      "surface": "http",
+      "node_id": "v1:field:8e143438c02a36c5",
+      "operation_id": null,
+      "member": "terminal.details[0]",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:87a58886b8e3c80a",
@@ -9409,6 +10789,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:8ad5c04188a62c36",
+      "surface": "http",
+      "node_id": "v1:field:df2de58b01b7e22c",
+      "operation_id": null,
+      "member": "path",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:8ae8fdb83bb64622",
       "surface": "http",
       "node_id": "v1:field:57678f02f47cdfab",
@@ -9556,6 +10951,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:8cf9e4fb6d7d0a5b",
+      "surface": "http",
+      "node_id": "v1:field:88985952a95c6285",
+      "operation_id": null,
+      "member": "wasm.details.instance_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -9739,6 +11149,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:8fb6f9e9c176dfcc",
+      "surface": "http",
+      "node_id": "v1:field:67ba9b4c29fc2cab",
+      "operation_id": null,
+      "member": "unknown.details.since_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:8fc99aec2fd31ef5",
       "surface": "http",
       "node_id": "v1:field:871ccca04e1483fc",
@@ -9844,6 +11269,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:91d1f03e68951475",
+      "surface": "http",
+      "node_id": "v1:field:9a113f1f9133575d",
+      "operation_id": null,
+      "member": "terminal_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:920f6e6e71518ff7",
       "surface": "mixed",
       "node_id": null,
@@ -9934,6 +11374,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:93a32c4b7c9b3f82",
+      "surface": "http",
+      "node_id": "v1:field:e90f219ce4dd2688",
+      "operation_id": null,
+      "member": "reason",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:93b43fca7d5f3eb6",
       "surface": "http",
       "node_id": "v1:field:ba52b38a94831e4f",
@@ -9949,6 +11404,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:93bb9cf8277f4657",
+      "surface": "http",
+      "node_id": "v1:field:4864762f684fa7a9",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:93bf8413db8204b7",
       "surface": "http",
       "node_id": "v1:field:3a863bff9a7437ef",
@@ -9961,6 +11431,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:93f2224673e9c0fb",
+      "surface": "http",
+      "node_id": "v1:field:d35bbcdfc427da03",
+      "operation_id": null,
+      "member": "backend_barrier.details.token",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -10099,6 +11584,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:95c946f0d616c569",
+      "surface": "http",
+      "node_id": "v1:field:b54503ef552be4ec",
+      "operation_id": null,
+      "member": "effective_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:95dbc7d70feb0146",
       "surface": "http",
       "node_id": "v1:field:2e3023e2608fe127",
@@ -10174,6 +11674,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:9748000eb3517c99",
+      "surface": "http",
+      "node_id": "v1:field:a93cda48a93b5fbb",
+      "operation_id": null,
+      "member": "schema_version",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:974a30790af189fc",
       "surface": "http",
       "node_id": "v1:operation:70cdeafa503d45d9",
@@ -10219,6 +11734,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:9823a754cb5a6e0c",
+      "surface": "http",
+      "node_id": "v1:field:6cb6dfba723caf9e",
+      "operation_id": null,
+      "member": "revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:9859cecc67a59b65",
       "surface": "http",
       "node_id": "v1:field:637f5618b65bc4c2",
@@ -10231,6 +11761,36 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:988042180e6a0729",
+      "surface": "http",
+      "node_id": "v1:field:f7b793f75f1a0595",
+      "operation_id": null,
+      "member": "partial.details.revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:98d2d7aeecf6fef5",
+      "surface": "http",
+      "node_id": "v1:field:a22e59e3ed4c5fa7",
+      "operation_id": null,
+      "member": "state",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -10261,6 +11821,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:991e8492415fd4bb",
+      "surface": "http",
+      "node_id": "v1:field:26547c3c8abfe3b3",
+      "operation_id": null,
+      "member": "diagnostics",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -10639,6 +12214,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:9d54623596b04437",
+      "surface": "http",
+      "node_id": "v1:field:66d1b10f6ad6462b",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:9dca835b2daeabdc",
       "surface": "http",
       "node_id": "v1:field:071606e35ec91b2e",
@@ -10756,6 +12346,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:9fd221448897bb68",
+      "surface": "http",
+      "node_id": "v1:field:e25674288d000346",
+      "operation_id": null,
+      "member": "expected_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -11254,6 +12859,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:a5f182af593379bf",
+      "surface": "http",
+      "node_id": "v1:field:32f56688e807f3aa",
+      "operation_id": null,
+      "member": "expected_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:a628b6867e9310ba",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -11674,6 +13294,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:abab1e90332636b5",
+      "surface": "http",
+      "node_id": "v1:field:6f687d0982793509",
+      "operation_id": null,
+      "member": "schema_version",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:abfd53b574141bf9",
       "surface": "http",
       "node_id": "v1:operation:c534ffaecd9298d2",
@@ -11776,6 +13411,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:ad9fc027a41ecc95",
+      "surface": "http",
+      "node_id": "v1:field:b18b0d2eff81d76c",
+      "operation_id": null,
+      "member": "effective_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -11944,6 +13594,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:b06d74b47bffeceb",
+      "surface": "http",
+      "node_id": "v1:field:6ddbd8dd6fec7c16",
+      "operation_id": null,
+      "member": "submission_digest",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b0aa4748ee4fc863",
       "surface": "http",
       "node_id": "v1:field:d399a88c1cc42140",
@@ -12049,6 +13714,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:b2f1bedac77aaef3",
+      "surface": "http",
+      "node_id": "v1:field:14e3328f55a694af",
+      "operation_id": null,
+      "member": "live_state",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b2f86316033c0dd7",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -12124,6 +13804,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:b3d48850a68a528c",
+      "surface": "http",
+      "node_id": "v1:field:ff55db1bce56d83c",
+      "operation_id": null,
+      "member": "attempt_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b3ddc81f30b13d85",
       "surface": "http",
       "node_id": "v1:field:47dd33b712fbd7bd",
@@ -12169,6 +13864,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:b45021e5359b2809",
+      "surface": "http",
+      "node_id": "v1:field:e7dc4e367cdc9e9d",
+      "operation_id": null,
+      "member": "http.details.method",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b4bedbc16457c4d1",
       "surface": "mixed",
       "node_id": null,
@@ -12181,6 +13891,21 @@
       "exit_gate": "replace legacy behavior with an effective binding or structured rejection",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:b4c078b4ba1d67e4",
+      "surface": "http",
+      "node_id": "v1:field:13866a53db1f9151",
+      "operation_id": null,
+      "member": "pre_admission_partial.details.fenced",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -12211,6 +13936,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:b55a53231c0a6c86",
+      "surface": "http",
+      "node_id": "v1:field:13d8179dea41c001",
+      "operation_id": null,
+      "member": "events.details.events",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -12304,6 +14044,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:b71be5ad0ee321c0",
+      "surface": "http",
+      "node_id": "v1:field:12fb2553e7be64de",
+      "operation_id": null,
+      "member": "code",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b73b9793774fbc5b",
       "surface": "mixed",
       "node_id": null,
@@ -12334,6 +14089,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:b76065a8a6a92ba4",
+      "surface": "http",
+      "node_id": "v1:field:0fa05d5c0e28690d",
+      "operation_id": null,
+      "member": "retryable",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b7c34d4e1c1d0ae0",
       "surface": "http",
       "node_id": "v1:field:55577ea928888943",
@@ -12346,6 +14116,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:b7d08e1bae3de17a",
+      "surface": "http",
+      "node_id": "v1:field:64f00b62e7dbba7f",
+      "operation_id": null,
+      "member": "command.details.operation",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -12484,6 +14269,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:b92f95760788a2df",
+      "surface": "http",
+      "node_id": "v1:field:4091a04b3657b5b6",
+      "operation_id": null,
+      "member": "severity",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:b93bb8ae3b87cdef",
       "surface": "websocket",
       "node_id": "v1:event:d337b9a57b867eb0",
@@ -12559,6 +14359,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:ba8b0669ca2d3ca6",
+      "surface": "http",
+      "node_id": "v1:field:2524685dd845b21f",
+      "operation_id": null,
+      "member": "supersession",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:ba9f048b0aa3992e",
       "surface": "http",
       "node_id": "v1:field:eee100a7df31b615",
@@ -12571,6 +14386,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/midi.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:baac4045ceacc128",
+      "surface": "http",
+      "node_id": "v1:field:4286470ffa643223",
+      "operation_id": null,
+      "member": "applied.details[0]",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -12679,6 +14509,36 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:bc44a65a77f9979b",
+      "surface": "http",
+      "node_id": "v1:field:4d80a0d182ae2977",
+      "operation_id": null,
+      "member": "event_sequence",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:bc4579748c505e5a",
+      "surface": "http",
+      "node_id": "v1:field:f953b4cce672c0e3",
+      "operation_id": null,
+      "member": "http.details.path",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:bc6131a0aaf251f0",
       "surface": "http",
       "node_id": "v1:field:68add879d4f8f2b3",
@@ -12706,6 +14566,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:bca51f63b279587a",
+      "surface": "http",
+      "node_id": "v1:field:ab0cd7767a6fe1e3",
+      "operation_id": null,
+      "member": "cli.details.source",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -12871,6 +14746,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:bec2d483c56eb2f7",
+      "surface": "http",
+      "node_id": "v1:field:ae5d877ff609ae1b",
+      "operation_id": null,
+      "member": "musical_beat",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -13084,6 +14974,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:c26cf29fc2fc809f",
+      "surface": "http",
+      "node_id": "v1:field:626cc46cef47787d",
+      "operation_id": null,
+      "member": "attempt_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:c2e5b55b897fb9c3",
       "surface": "http",
       "node_id": "v1:field:ba52b38a94831e4f",
@@ -13276,6 +15181,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:c5a204e2fa3a539c",
+      "surface": "http",
+      "node_id": "v1:field:b6f237c1f7aca2a7",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -13489,6 +15409,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
     },
     {
+      "id": "v1:debt:c906ee419e1b2197",
+      "surface": "http",
+      "node_id": "v1:field:9a959baefa6be3d7",
+      "operation_id": null,
+      "member": "submission_digest",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:c9274a64695ab9e6",
       "surface": "http",
       "node_id": "v1:field:d399a88c1cc42140",
@@ -13501,6 +15436,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:c975bc86c021551f",
+      "surface": "http",
+      "node_id": "v1:field:adba832197ee84fc",
+      "operation_id": null,
+      "member": "last_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -13609,6 +15559,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:ca8e95523a1cbc8e",
+      "surface": "http",
+      "node_id": "v1:field:fbb1a6b65c2b7cff",
+      "operation_id": null,
+      "member": "confirmations",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:cad150645e85d752",
       "surface": "http",
       "node_id": "v1:field:1dc85961a0e2bc68",
@@ -13711,6 +15676,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/eval.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:cc142a15e9c8f803",
+      "surface": "http",
+      "node_id": "v1:field:7980941a7cfdba27",
+      "operation_id": null,
+      "member": "idempotency_keyed",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -13849,6 +15829,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:cd41d13a1446c57f",
+      "surface": "http",
+      "node_id": "v1:field:ca375f572497da98",
+      "operation_id": null,
+      "member": "revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:cd913a8b8735aff3",
       "surface": "http",
       "node_id": "v1:field:4123b281b970543f",
@@ -13937,6 +15932,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "crates/vibelang-http/src/lib.rs"
+    },
+    {
+      "id": "v1:debt:ce84619c4b24a82b",
+      "surface": "http",
+      "node_id": "v1:field:19c01fbcae188607",
+      "operation_id": null,
+      "member": "expected_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:cecf317e0c707e35",
@@ -14119,6 +16129,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:d0f3ed031036bdfc",
+      "surface": "http",
+      "node_id": "v1:field:9c19ed66ca7031c7",
+      "operation_id": null,
+      "member": "replace_pending.details.key",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:d1691e28fe261c4b",
       "surface": "http",
       "node_id": "v1:field:950d3496a4255c27",
@@ -14161,6 +16186,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/fades.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:d1f20ed38c3c8784",
+      "surface": "http",
+      "node_id": "v1:field:110a6d44e33de89b",
+      "operation_id": null,
+      "member": "retention",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -14419,6 +16459,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:d704c2edc0cc3c92",
+      "surface": "http",
+      "node_id": "v1:field:51a5203ab1f3efd1",
+      "operation_id": null,
+      "member": "reset_required.details.status",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:d7207ae214ec01db",
       "surface": "http",
       "node_id": "v1:operation:c905777901bab230",
@@ -14659,6 +16714,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:da3053bcbbe7e0f1",
+      "surface": "http",
+      "node_id": "v1:field:eec85abc2da514ae",
+      "operation_id": null,
+      "member": "component_path",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:da346260ae319601",
       "surface": "http",
       "node_id": "v1:field:6466e9c848608e2d",
@@ -14719,6 +16789,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:db53c4882a783e30",
+      "surface": "http",
+      "node_id": "v1:field:3641073926d2c3cf",
+      "operation_id": null,
+      "member": "schema_version",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:db8391f38b8b58f4",
       "surface": "http",
       "node_id": "v1:field:4b9cbcb32c3097b3",
@@ -14746,6 +16831,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:dbf2a14892a03f48",
+      "surface": "http",
+      "node_id": "v1:field:38716632b771fc0d",
+      "operation_id": null,
+      "member": "musical_boundary.details.backend_time",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -15229,6 +17329,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:e2f9f67416176d39",
+      "surface": "http",
+      "node_id": "v1:field:ba77d7dad3494b8b",
+      "operation_id": null,
+      "member": "minimum_event_count",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:e32c4fdf9f137b2a",
       "surface": "http",
       "node_id": "v1:field:358e61e5e29d5dc2",
@@ -15286,6 +17401,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:e3def3a78a1f6c85",
+      "surface": "http",
+      "node_id": "v1:field:b2f1663317143c0a",
+      "operation_id": null,
+      "member": "rhai.details.engine_id",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -15469,6 +17599,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:e73fa2e55b191e43",
+      "surface": "http",
+      "node_id": "v1:field:6e165c438753c68b",
+      "operation_id": null,
+      "member": "staging.details.completed",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:e793d6aeb61621ca",
       "surface": "http",
       "node_id": "v1:field:ddec9e38dae64cc6",
@@ -15601,6 +17746,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:e8ae51af533392d6",
+      "surface": "http",
+      "node_id": "v1:field:4996396f9ad207b5",
+      "operation_id": null,
+      "member": "cli.details.mode",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -15781,6 +17941,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:ebf99c70d7451412",
+      "surface": "http",
+      "node_id": "v1:field:c7d7ea0f6390a862",
+      "operation_id": null,
+      "member": "atomic_generation_activation",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -15979,6 +18154,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:efcfe046adcdf53d",
+      "surface": "http",
+      "node_id": "v1:field:a5c0700bdc7bda48",
+      "operation_id": null,
+      "member": "previous_confirmed_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:eff371dd9c42540d",
       "surface": "http",
       "node_id": "v1:field:89bb536b13ee35e7",
@@ -16006,6 +18196,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:f016e40bf9ecdb33",
+      "surface": "http",
+      "node_id": "v1:field:f871e55488f08ef9",
+      "operation_id": null,
+      "member": "internal.details.parent_revision",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -16114,6 +18319,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:f28f38e67c471463",
+      "surface": "http",
+      "node_id": "v1:field:c16eda4ebad15311",
+      "operation_id": null,
+      "member": "musical_boundary.details.beat",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:f296578ec5f75a8a",
       "surface": "http",
       "node_id": "v1:field:2bbc1bf10b38dcfd",
@@ -16126,6 +18346,36 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/routes/fades.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:f2dc58a85360c75e",
+      "surface": "http",
+      "node_id": "v1:field:8864871e63895277",
+      "operation_id": null,
+      "member": "runtime_epoch",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:f3220af6add338f5",
+      "surface": "http",
+      "node_id": "v1:field:aacdb287d18b7b2c",
+      "operation_id": null,
+      "member": "observed_at",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -16159,6 +18409,21 @@
       "test_anchor": "crates/vibelang-http/src/lib.rs"
     },
     {
+      "id": "v1:debt:f408a2e454f402e9",
+      "surface": "http",
+      "node_id": "v1:field:d9bcc78ac865c4eb",
+      "operation_id": null,
+      "member": "end_column",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:f47186d9d3f42cee",
       "surface": "http",
       "node_id": "v1:field:2a89108dab1ee7cd",
@@ -16187,6 +18452,36 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "crates/vibelang-http/src/lib.rs"
+    },
+    {
+      "id": "v1:debt:f53357c6602316e4",
+      "surface": "http",
+      "node_id": "v1:field:6b972a7da2029853",
+      "operation_id": null,
+      "member": "committing.details.phase",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:f5be4e369dc24867",
+      "surface": "http",
+      "node_id": "v1:field:3015389c24b18cba",
+      "operation_id": null,
+      "member": "musical_boundary",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:f5e7db9f4640e7e0",
@@ -16381,6 +18676,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:f915d3d196818a9c",
+      "surface": "http",
+      "node_id": "v1:field:ad47cd9fd3403101",
+      "operation_id": null,
+      "member": "message",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -16714,6 +19024,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:fd209f78b15413cf",
+      "surface": "http",
+      "node_id": "v1:field:56abe6674cf3e4b0",
+      "operation_id": null,
+      "member": "request",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
       "id": "v1:debt:fd8ffe4e4c410edb",
       "surface": "http",
       "node_id": "v1:field:2ca8f3fb0bc72063",
@@ -16742,6 +19067,21 @@
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/lib.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/stale-success.json"
+    },
+    {
+      "id": "v1:debt:fdf3a818d200dee5",
+      "surface": "http",
+      "node_id": "v1:field:346be9ba1381afab",
+      "operation_id": null,
+      "member": "schema_version",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
       "id": "v1:debt:fe1d73316c72a1f8",
@@ -16801,6 +19141,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:fee7f40e3698f8f4",
+      "surface": "http",
+      "node_id": "v1:field:903be2dfc721d8fb",
+      "operation_id": null,
+      "member": "components",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-core/src/mutation/wire.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -16898,7 +19253,7 @@
     "dead": 91,
     "ignored": 24,
     "log_only": 6,
-    "stale": 1005
+    "stale": 1162
   },
   "orphan_count": 0,
   "unclassified_count": 0

@@ -117,6 +117,7 @@ mod backend;
 mod clock;
 pub mod compat;
 mod error;
+pub mod mutation;
 mod runtime;
 mod state;
 mod transport_snapshot;
@@ -139,6 +140,7 @@ pub mod midi;
 pub use audio::{AudioConnector, AudioError, PortDirection, PortMatcher};
 pub use backend::{AddAction, Backend, BufferInfo};
 pub use error::{Error, Result, SynthDefRejection};
+pub use mutation::{MutationContext, MutationLedger};
 
 pub use message::{
     EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,

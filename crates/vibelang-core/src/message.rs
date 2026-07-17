@@ -8,6 +8,7 @@
 //! - Undo/redo functionality
 //! - Deterministic behavior
 
+pub use crate::mutation::MutationContext;
 use crate::state::PatternOwner;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
