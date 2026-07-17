@@ -5076,6 +5076,47 @@ pub struct RuntimeHandle {
     async_mutation_in_flight: Arc<parking_lot::Mutex<Option<crate::mutation::AttemptId>>>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QueueAdmissionFailure {
+    Full,
+    Closed,
+}
+
+impl QueueAdmissionFailure {
+    const fn code(self) -> &'static str {
+        match self {
+            Self::Full => "queue_full",
+            Self::Closed => "queue_closed",
+        }
+    }
+
+    const fn message(self) -> &'static str {
+        match self {
+            Self::Full => "the runtime mutation queue is full",
+            Self::Closed => "the runtime mutation queue is closed",
+        }
+    }
+
+    const fn error(self) -> Error {
+        match self {
+            Self::Full => Error::ChannelFull,
+            Self::Closed => Error::ChannelClosed,
+        }
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn classify_wasm_queue_error<T>(
+    error: &futures::channel::mpsc::TrySendError<T>,
+) -> QueueAdmissionFailure {
+    if error.is_full() {
+        QueueAdmissionFailure::Full
+    } else {
+        debug_assert!(error.is_disconnected());
+        QueueAdmissionFailure::Closed
+    }
+}
+
 impl RuntimeHandle {
     /// Send a message to the runtime.
     ///
@@ -5343,22 +5384,18 @@ impl RuntimeHandle {
             let permit = match tx.try_reserve() {
                 Ok(permit) => permit,
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    self.reject_before_admission(
+                    return self.fail_queue_admission(
                         &context,
-                        "queue_full",
-                        "the runtime mutation queue is full",
+                        QueueAdmissionFailure::Full,
                         SystemTime::now(),
-                    )?;
-                    return Err(Error::ChannelFull);
+                    );
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                    self.reject_before_admission(
+                    return self.fail_queue_admission(
                         &context,
-                        "queue_closed",
-                        "the runtime mutation queue is closed",
+                        QueueAdmissionFailure::Closed,
                         SystemTime::now(),
-                    )?;
-                    return Err(Error::ChannelClosed);
+                    );
                 }
             };
             if self.is_fenced() {
@@ -5377,21 +5414,14 @@ impl RuntimeHandle {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            use futures::Sink;
             let mut tx = self.tx.clone();
-            match std::pin::Pin::new(&mut tx)
-                .start_send(ContextualMessage::new(context.clone(), msg))
-            {
+            match tx.try_send(ContextualMessage::new(context.clone(), msg)) {
                 Ok(()) => self.accept_after_queue_admission(&context),
-                Err(_) => {
-                    self.reject_before_admission(
-                        &context,
-                        "queue_full_or_closed",
-                        "the WASM runtime mutation queue is full or closed",
-                        SystemTime::now(),
-                    )?;
-                    Err(Error::ChannelFull)
-                }
+                Err(error) => self.fail_queue_admission(
+                    &context,
+                    classify_wasm_queue_error(&error),
+                    SystemTime::now(),
+                ),
             }
         }
     }
@@ -5700,6 +5730,16 @@ impl RuntimeHandle {
         now: SystemTime,
     ) -> Result<MutationReceipt> {
         reject_contextual_admission(&self.ledger, context, code, message, now)
+    }
+
+    fn fail_queue_admission(
+        &self,
+        context: &MutationContext,
+        failure: QueueAdmissionFailure,
+        now: SystemTime,
+    ) -> Result<MutationReceipt> {
+        self.reject_before_admission(context, failure.code(), failure.message(), now)?;
+        Err(failure.error())
     }
 
     fn is_fenced(&self) -> bool {
@@ -11109,6 +11149,57 @@ mod tests {
             panic!("closed queue must publish a rejected receipt");
         };
         assert_eq!(rejected.code, "queue_closed");
+    }
+
+    #[test]
+    fn wasm_queue_faults_publish_distinct_canonical_codes_and_errors() {
+        let (mut full_tx, _full_rx) = futures::channel::mpsc::channel(0);
+        full_tx.try_send(()).unwrap();
+        let full = classify_wasm_queue_error(&full_tx.try_send(()).unwrap_err());
+
+        let (mut closed_tx, closed_rx) = futures::channel::mpsc::channel(0);
+        drop(closed_rx);
+        let closed = classify_wasm_queue_error(&closed_tx.try_send(()).unwrap_err());
+
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        for (failure, expected_code, expected_message) in [
+            (full, "queue_full", "the runtime mutation queue is full"),
+            (
+                closed,
+                "queue_closed",
+                "the runtime mutation queue is closed",
+            ),
+        ] {
+            let message = Message::Transport(TransportMessage::Start);
+            let attempt = handle
+                .begin_attempt(
+                    handle.legacy_submission(&message).unwrap(),
+                    MutationReplySink::default(),
+                    MutationEventSink::default(),
+                )
+                .unwrap();
+            let attempt_id = attempt.receipt().attempt_id;
+            let context = attempt.context.clone();
+
+            let error = handle
+                .fail_queue_admission(&context, failure, SystemTime::now())
+                .unwrap_err();
+            match failure {
+                QueueAdmissionFailure::Full => assert!(matches!(error, Error::ChannelFull)),
+                QueueAdmissionFailure::Closed => assert!(matches!(error, Error::ChannelClosed)),
+            }
+
+            let receipt = handle.mutation_receipt(attempt_id).unwrap();
+            assert_eq!(receipt.attempt_id, attempt_id);
+            assert!(receipt.revision.is_none());
+            let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = receipt.state else {
+                panic!("WASM queue admission failure must be rejected");
+            };
+            assert_eq!(rejected.phase, FailurePhase::Admission);
+            assert_eq!(rejected.code, expected_code);
+            assert_eq!(rejected.message, expected_message);
+        }
     }
 
     #[cfg(feature = "midi")]

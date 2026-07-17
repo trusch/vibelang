@@ -998,8 +998,9 @@ mod tests {
     use std::path::Path;
     use vibelang_core::compat::Instant;
     use vibelang_core::mutation::{
-        AttemptId, EventSequence, FailurePhase, Partial, ReceiptTimestamps, RequestIdentity,
-        RevisionId, RollbackState, RuntimeEpoch, Timestamp, MUTATION_SCHEMA_VERSION,
+        AttemptId, EventSequence, FailurePhase, Partial, ReceiptTimestamps, Rejected,
+        RequestIdentity, RevisionId, RollbackState, RuntimeEpoch, Timestamp,
+        MUTATION_SCHEMA_VERSION,
     };
     use vibelang_core::{
         AddAction, Backend, BufferId, BufferInfo, Message, NodeId, ParamMap, ReloadMessage, Runtime,
@@ -1227,6 +1228,46 @@ mod tests {
             assert_eq!(result.failure.as_ref().unwrap().phase, phase);
             assert_eq!(result.failure.as_ref().unwrap().code, code);
             assert!(result.receipt.is_none());
+        }
+    }
+
+    #[test]
+    fn wasm_queue_fault_receipts_preserve_distinct_carrier_projections() {
+        let state = vibelang_core::reload::ScriptState::default();
+        for (code, message) in [
+            ("queue_full", "the runtime mutation queue is full"),
+            ("queue_closed", "the runtime mutation queue is closed"),
+        ] {
+            let mut queue_receipt = receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+                Rejected {
+                    phase: FailurePhase::Admission,
+                    code: code.into(),
+                    message: message.into(),
+                    rollback: RollbackState::NotNeeded,
+                    preserved_revision: None,
+                },
+            )));
+            queue_receipt.revision = None;
+            queue_receipt.timestamps.accepted_at = None;
+            let attempt_id = queue_receipt.attempt_id;
+
+            let result = ExecutionResult::evaluated(&state).with_receipt(queue_receipt);
+
+            assert!(!result.success);
+            assert_eq!(result.error.as_deref(), Some(message));
+            let failure = result.failure.as_ref().unwrap();
+            assert_eq!(failure.phase, ExecutionFailurePhase::Runtime);
+            assert_eq!(failure.code, code);
+            assert_eq!(failure.message, message);
+            assert_eq!(result.receipt.as_ref().unwrap().attempt_id, attempt_id);
+
+            let projected = serde_json::to_value(&result).unwrap();
+            assert_eq!(projected["failure"]["code"], code);
+            assert_eq!(
+                projected["receipt"]["state"]["details"]["details"]["code"],
+                code
+            );
+            assert_eq!(projected["receipt"]["attempt_id"], attempt_id.to_string());
         }
     }
 
