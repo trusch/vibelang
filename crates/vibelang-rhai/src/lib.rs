@@ -33,7 +33,7 @@ pub mod error;
 pub mod extensions;
 
 // Re-exports
-pub use engine::ScriptEngine;
+pub use engine::{HostMutation, ScriptEngine};
 pub use error::{Error, Result};
 
 #[cfg(feature = "api-manifest")]

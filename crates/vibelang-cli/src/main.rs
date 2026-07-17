@@ -18,11 +18,324 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+use vibelang_core::mutation::{
+    Atomicity, CandidateOrigin, CliMode, MutationEventSink, MutationKind, MutationReceipt,
+    MutationReplySink, MutationSource, ReceiptState, RequestMaterial, Submission,
+    SupersessionPolicy, SupersessionReason, TerminalOutcome,
+};
 use vibelang_core::{
     setup_metering, setup_node_tracking, Message, ReloadMessage, Runtime, ScsynthBackend,
     ScsynthConfig, ScsynthProcess, TransportMessage,
 };
 use vibelang_rhai::ScriptEngine;
+
+const RECEIPT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct TrackedMutation {
+    initial_receipt: MutationReceipt,
+    updates: mpsc::UnboundedReceiver<MutationReceipt>,
+}
+
+impl TrackedMutation {
+    async fn wait_terminal(mut self) -> Result<MutationReceipt> {
+        print_receipt(&self.initial_receipt);
+        if self.initial_receipt.state.is_terminal() {
+            return Ok(self.initial_receipt);
+        }
+        let mut last_sequence = self.initial_receipt.event_sequence;
+        loop {
+            match tokio::time::timeout(RECEIPT_WAIT_TIMEOUT, self.updates.recv()).await {
+                Ok(Some(receipt)) => {
+                    if receipt.event_sequence <= last_sequence {
+                        continue;
+                    }
+                    last_sequence = receipt.event_sequence;
+                    print_receipt(&receipt);
+                    if receipt.state.is_terminal() {
+                        return Ok(receipt);
+                    }
+                }
+                Ok(None) => anyhow::bail!(
+                    "receipt stream closed while attempt {} remained pending after event {}",
+                    self.initial_receipt.attempt_id,
+                    last_sequence
+                ),
+                Err(_) => {
+                    anyhow::bail!(
+                        "timed out waiting for terminal receipt: attempt {} remains pending after event {}",
+                        self.initial_receipt.attempt_id,
+                        last_sequence
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn print_receipt(receipt: &MutationReceipt) {
+    for line in receipt_projection(receipt) {
+        match &receipt.state {
+            ReceiptState::Terminal(TerminalOutcome::Rejected(_))
+            | ReceiptState::Terminal(TerminalOutcome::Superseded(_))
+            | ReceiptState::Terminal(TerminalOutcome::Partial(_)) => eprintln!("{line}"),
+            _ => println!("{line}"),
+        }
+    }
+}
+
+fn receipt_projection(receipt: &MutationReceipt) -> Vec<String> {
+    let revision = receipt
+        .revision
+        .map_or_else(|| "none".into(), |revision| revision.to_string());
+    let mut lines = match &receipt.state {
+        ReceiptState::Evaluating { phase } => vec![format!(
+            "PENDING attempt={} revision={} stage=evaluating/{phase:?}",
+            receipt.attempt_id, revision
+        )],
+        ReceiptState::Accepted { queue_position } => vec![format!(
+            "PENDING attempt={} revision={} stage=accepted scope=queue_admitted queue_position={} (terminal truth pending)",
+            receipt.attempt_id,
+            revision,
+            queue_position.map_or_else(|| "unknown".into(), |position| position.to_string())
+        )],
+        ReceiptState::Planning => vec![format!(
+            "PENDING attempt={} revision={} stage=planning",
+            receipt.attempt_id, revision
+        )],
+        ReceiptState::Staging { completed, total } => vec![format!(
+            "PENDING attempt={} revision={} stage=staging readiness={completed}/{total}",
+            receipt.attempt_id, revision
+        )],
+        ReceiptState::Committing { phase } => vec![format!(
+            "PENDING attempt={} revision={} stage=committing/{phase:?}",
+            receipt.attempt_id, revision
+        )],
+        ReceiptState::Terminal(TerminalOutcome::Applied(applied)) => vec![format!(
+            "APPLIED attempt={} revision={} boundary={:?} confirmations={}",
+            receipt.attempt_id,
+            revision,
+            applied.effective_at,
+            applied.confirmations.len()
+        )],
+        ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) => vec![format!(
+            "REJECTED attempt={} revision={} phase={:?} code={} message={}",
+            receipt.attempt_id, revision, rejected.phase, rejected.code, rejected.message
+        )],
+        ReceiptState::Terminal(TerminalOutcome::Superseded(superseded)) => {
+            let reason = match superseded.reason {
+                SupersessionReason::Replaced => "replaced",
+                SupersessionReason::Cancelled => "cancelled",
+            };
+            vec![format!(
+                "SUPERSEDED attempt={} revision={} reason={} by_revision={}",
+                receipt.attempt_id,
+                revision,
+                reason,
+                superseded
+                    .by_revision
+                    .map_or_else(|| "none".into(), |revision| revision.to_string())
+            )]
+        }
+        ReceiptState::Terminal(TerminalOutcome::Partial(partial)) => {
+            let mut lines = vec![format!(
+                "PARTIAL attempt={} revision={} phase={:?} code={} fenced={} rollback={:?}",
+                receipt.attempt_id,
+                revision,
+                partial.phase,
+                partial.code,
+                partial.fenced,
+                partial.rollback
+            )];
+            for component in &partial.components {
+                lines.push(format!(
+                    "  component={} action={} state={:?}",
+                    component.path, component.action, component.state
+                ));
+            }
+            if partial.fenced {
+                lines.push(format!(
+                    "  migration: further mutations are fenced; inspect this receipt, then explicitly acknowledge continue_best_effort({}) before retrying",
+                    receipt.attempt_id
+                ));
+            }
+            lines
+        }
+    };
+    for diagnostic in &receipt.diagnostics {
+        lines.push(format!(
+            "  diagnostic severity={:?} code={} component={} message={}",
+            diagnostic.severity,
+            diagnostic.code,
+            diagnostic.component_path.as_deref().unwrap_or("none"),
+            diagnostic.message
+        ));
+    }
+    lines
+}
+
+fn require_applied(receipt: MutationReceipt) -> Result<MutationReceipt> {
+    match &receipt.state {
+        ReceiptState::Terminal(TerminalOutcome::Applied(_)) => Ok(receipt),
+        ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) => {
+            if rejected.code == "runtime_fenced" {
+                anyhow::bail!(
+                    "attempt {} was rejected by the runtime fence; acknowledge the current fenced Partial with continue_best_effort before retrying",
+                    receipt.attempt_id
+                );
+            }
+            anyhow::bail!(
+                "attempt {} was rejected [{}]: {}; correct the cause before retrying as a new attempt",
+                receipt.attempt_id,
+                rejected.code,
+                rejected.message
+            );
+        }
+        ReceiptState::Terminal(TerminalOutcome::Superseded(superseded)) => anyhow::bail!(
+            "attempt {} was superseded ({:?}); only the replacing or newly submitted attempt can establish terminal truth",
+            receipt.attempt_id,
+            superseded.reason
+        ),
+        ReceiptState::Terminal(TerminalOutcome::Partial(partial)) => anyhow::bail!(
+            "attempt {} is Partial [{}] (fenced={}); it is not success and must not be retried before component review{}",
+            receipt.attempt_id,
+            partial.code,
+            partial.fenced,
+            if partial.fenced {
+                " and explicit continue_best_effort acknowledgement"
+            } else {
+                ""
+            }
+        ),
+        state => anyhow::bail!(
+            "attempt {} is still pending at {state:?}; queue admission is not application",
+            receipt.attempt_id
+        ),
+    }
+}
+
+fn cli_submission(
+    handle: &vibelang_core::RuntimeHandle,
+    source: &std::path::Path,
+    mode: CliMode,
+    kind: MutationKind,
+    supersession: SupersessionPolicy,
+    operation: &str,
+) -> Result<Submission> {
+    let source = source.to_string_lossy().into_owned();
+    let material = RequestMaterial::new(
+        &("compat.vibelang.v1", "cli", operation, source.as_str()),
+        Some(&("compat.vibelang.v1", "cli", operation, source.as_str())),
+    )?;
+    Ok(Submission {
+        kind,
+        source: MutationSource::Cli {
+            mode,
+            source: Some(source),
+        },
+        caller_namespace: "compat.vibelang.v1.local".into(),
+        idempotency_key: None,
+        require_idempotency_key: false,
+        retry_epoch: Some(handle.mutation_status().runtime_epoch),
+        expected_revision: None,
+        atomicity: Atomicity::BestEffort,
+        supersession,
+        material,
+    })
+}
+
+async fn submit_cli_mutation(
+    handle: &vibelang_core::RuntimeHandle,
+    source: &std::path::Path,
+    mode: CliMode,
+    message: Message,
+    kind: MutationKind,
+    supersession: SupersessionPolicy,
+) -> Result<TrackedMutation> {
+    let operation = message.operation().to_lowercase();
+    let submission = cli_submission(handle, source, mode, kind, supersession, &operation)?;
+    let (send, updates) = mpsc::unbounded_channel();
+    let reply_sink = MutationReplySink::new(move |receipt| {
+        let _ = send.send(receipt);
+    });
+    match handle
+        .submit_with_sinks(
+            message,
+            submission,
+            reply_sink,
+            MutationEventSink::default(),
+        )
+        .await
+    {
+        Ok(initial_receipt) => Ok(TrackedMutation {
+            initial_receipt,
+            updates,
+        }),
+        Err(error) => {
+            let mut updates = updates;
+            let mut latest = None;
+            while let Ok(receipt) = updates.try_recv() {
+                latest = Some(receipt);
+            }
+            if let Some(receipt) = latest {
+                print_receipt(&receipt);
+                anyhow::bail!(
+                    "mutation admission failed for attempt {}: {}",
+                    receipt.attempt_id,
+                    error
+                );
+            }
+            Err(error.into())
+        }
+    }
+}
+
+async fn submit_cli_reload(
+    handle: &vibelang_core::RuntimeHandle,
+    source: &std::path::Path,
+    mode: CliMode,
+    state: vibelang_core::reload::ScriptState,
+) -> Result<TrackedMutation> {
+    let origin = match mode {
+        CliMode::Startup => CandidateOrigin::ScriptFile,
+        CliMode::Watch => CandidateOrigin::WatchReload,
+        CliMode::EvalServer => CandidateOrigin::HttpEval,
+    };
+    let supersession = match mode {
+        CliMode::Watch => SupersessionPolicy::ReplacePending {
+            key: source.to_string_lossy().into_owned(),
+        },
+        CliMode::Startup | CliMode::EvalServer => SupersessionPolicy::Fifo,
+    };
+    submit_cli_mutation(
+        handle,
+        source,
+        mode,
+        ReloadMessage::Apply { state }.into(),
+        MutationKind::Candidate { origin },
+        supersession,
+    )
+    .await
+}
+
+async fn submit_cli_command(
+    handle: &vibelang_core::RuntimeHandle,
+    source: &std::path::Path,
+    message: Message,
+) -> Result<TrackedMutation> {
+    let kind = MutationKind::Command {
+        domain: message.domain(),
+        operation: message.operation().to_lowercase(),
+    };
+    submit_cli_mutation(
+        handle,
+        source,
+        CliMode::Startup,
+        message,
+        kind,
+        SupersessionPolicy::Fifo,
+    )
+    .await
+}
 
 /// VibeLang CLI - A music livecoding language
 #[derive(Parser)]
@@ -613,21 +926,19 @@ async fn run_simple_mode(
     // Wait for all synthdefs queued during script execution to be loaded
     // This ensures modulators and voices can find their synthdefs
     info!("Waiting for synthdefs to be loaded...");
-    handle.sync_and_wait().await?;
+    handle.sync_and_wait().await.context(
+        "backend synchronization failed before candidate submission; no reload was reported applied",
+    )?;
     info!("Synthdefs loaded, applying state...");
 
     // Check if script requested early exit (for integration tests)
     if let Some(exit_code) = vibelang_rhai::get_exit_code() {
         info!("Script requested exit with code {}", exit_code);
-        // Apply state before exiting (for any cleanup)
-        let _ = handle
-            .send(
-                ReloadMessage::Apply {
-                    state: output.state,
-                }
-                .into(),
-            )
-            .await;
+        let terminal = submit_cli_reload(&handle, &file, CliMode::Startup, output.state)
+            .await?
+            .wait_terminal()
+            .await?;
+        require_applied(terminal)?;
         // Stop the running flag so the runtime task exits
         running.store(false, Ordering::SeqCst);
         // Exit with the requested code
@@ -646,25 +957,27 @@ async fn run_simple_mode(
             .await;
     }
 
-    handle
-        .send(
-            ReloadMessage::Apply {
-                state: output.state,
-            }
-            .into(),
-        )
+    let initial_terminal = submit_cli_reload(&handle, &file, CliMode::Startup, output.state)
+        .await?
+        .wait_terminal()
         .await?;
+    require_applied(initial_terminal)?;
 
     // Wait for state to be fully applied before starting transport
     // This ensures MIDI devices are registered before transport starts,
     // so they receive the Start message
-    handle.sync_and_wait().await?;
+    handle.sync_and_wait().await.context(
+        "backend synchronization failed after the reload receipt; Transport Start withheld",
+    )?;
     info!("State applied");
 
     // Start transport
-    handle
-        .send(Message::Transport(TransportMessage::Start))
-        .await?;
+    let start_terminal =
+        submit_cli_command(&handle, &file, Message::Transport(TransportMessage::Start))
+            .await?
+            .wait_terminal()
+            .await?;
+    require_applied(start_terminal)?;
     info!("Transport started");
 
     // Watch for changes if requested
@@ -729,18 +1042,53 @@ async fn run_simple_mode(
                                     })
                                     .await;
                             }
-                            if let Err(e) = handle_clone
-                                .send(
-                                    ReloadMessage::Apply {
-                                        state: output.state,
-                                    }
-                                    .into(),
-                                )
-                                .await
+                            match submit_cli_reload(
+                                &handle_clone,
+                                &file_clone,
+                                CliMode::Watch,
+                                output.state,
+                            )
+                            .await
                             {
-                                error!("Failed to apply reload: {}", e);
-                            } else {
-                                info!("Reload successful");
+                                Ok(tracked) => match tracked.wait_terminal().await {
+                                    Ok(receipt) => match &receipt.state {
+                                        ReceiptState::Terminal(TerminalOutcome::Applied(_)) => {
+                                            info!(
+                                                "Reload applied at revision {}",
+                                                receipt.revision.map_or_else(
+                                                    || "none".into(),
+                                                    |revision| revision.to_string()
+                                                )
+                                            );
+                                        }
+                                        ReceiptState::Terminal(TerminalOutcome::Partial(_)) => {
+                                            error!(
+                                                "Watch submissions stopped after Partial attempt {}; status and receipt reads remain available",
+                                                receipt.attempt_id
+                                            );
+                                            break;
+                                        }
+                                        ReceiptState::Terminal(TerminalOutcome::Rejected(_))
+                                        | ReceiptState::Terminal(TerminalOutcome::Superseded(_)) => {
+                                            error!(
+                                                "Reload attempt {} was not applied; continuing to watch for a corrected change",
+                                                receipt.attempt_id
+                                            );
+                                        }
+                                        _ => {
+                                            unreachable!("wait_terminal returned a pending receipt")
+                                        }
+                                    },
+                                    Err(error) => {
+                                        error!(
+                                            "Watch submissions stopped without terminal truth: {error}"
+                                        );
+                                        break;
+                                    }
+                                },
+                                Err(error) => {
+                                    error!("Failed to submit reload: {error}");
+                                }
                             }
                         }
                         Err(e) => {
@@ -762,9 +1110,12 @@ async fn run_simple_mode(
     }
 
     // Stop transport
-    handle
-        .send(Message::Transport(TransportMessage::Stop))
-        .await?;
+    let stop_terminal =
+        submit_cli_command(&handle, &file, Message::Transport(TransportMessage::Stop))
+            .await?
+            .wait_terminal()
+            .await?;
+    require_applied(stop_terminal)?;
     info!("Transport stopped");
 
     // Wait for runtime task
@@ -1016,5 +1367,221 @@ fn list_midi_devices() {
                 println!("  {}: {}", i, name);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    use vibelang_core::mutation::{
+        ComponentOutcome, ComponentState, Diagnostic, DiagnosticSeverity, EventSequence,
+        FailurePhase, Partial, ReceiptTimestamps, Rejected, RequestIdentity, RevisionId,
+        RollbackState, RuntimeEpoch, Superseded, Timestamp, MUTATION_SCHEMA_VERSION,
+    };
+
+    fn receipt(state: ReceiptState) -> MutationReceipt {
+        let now = Timestamp::parse("2026-07-17T08:00:00Z").unwrap();
+        MutationReceipt {
+            schema_version: MUTATION_SCHEMA_VERSION,
+            attempt_id: vibelang_core::mutation::AttemptId::new(),
+            runtime_epoch: RuntimeEpoch::new(),
+            revision: Some(RevisionId::new(7).unwrap()),
+            event_sequence: EventSequence::new(11).unwrap(),
+            request: RequestIdentity {
+                kind: MutationKind::Candidate {
+                    origin: CandidateOrigin::WatchReload,
+                },
+                source: MutationSource::Cli {
+                    mode: CliMode::Watch,
+                    source: Some("song.vibe".into()),
+                },
+                submission_digest: None,
+                operation_digest: None,
+                idempotency_key_present: false,
+                expected_revision: None,
+                atomicity: Atomicity::BestEffort,
+                supersession: SupersessionPolicy::ReplacePending {
+                    key: "song.vibe".into(),
+                },
+            },
+            state,
+            previous_confirmed_revision: Some(RevisionId::new(6).unwrap()),
+            timestamps: ReceiptTimestamps {
+                submitted_at: now.clone(),
+                accepted_at: Some(now.clone()),
+                last_transition_at: now,
+                terminal_at: None,
+            },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn queue_admission_is_pending_not_terminal_success() {
+        let accepted = receipt(ReceiptState::Accepted {
+            queue_position: Some(2),
+        });
+        let projection = receipt_projection(&accepted).join("\n");
+
+        assert!(projection.starts_with("PENDING"));
+        assert!(projection.contains("scope=queue_admitted"));
+        assert!(projection.contains("terminal truth pending"));
+        assert!(!projection.contains("APPLIED"));
+        assert!(require_applied(accepted)
+            .unwrap_err()
+            .to_string()
+            .contains("queue admission is not application"));
+    }
+
+    #[tokio::test]
+    async fn terminal_wait_preserves_readiness_and_late_partial_truth() {
+        let accepted = receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let mut staging = accepted.clone();
+        staging.event_sequence = EventSequence::new(12).unwrap();
+        staging.state = ReceiptState::Staging {
+            completed: 1,
+            total: 2,
+        };
+        let mut partial = accepted.clone();
+        partial.event_sequence = EventSequence::new(13).unwrap();
+        partial.state = ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::BackendBarrier,
+            code: "backend_sync_failed".into(),
+            components: Vec::new(),
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: Some(RevisionId::new(6).unwrap()),
+        }));
+        let (send, updates) = mpsc::unbounded_channel();
+        send.send(accepted.clone()).unwrap();
+        send.send(staging).unwrap();
+        send.send(partial.clone()).unwrap();
+        drop(send);
+
+        let terminal = TrackedMutation {
+            initial_receipt: accepted,
+            updates,
+        }
+        .wait_terminal()
+        .await
+        .unwrap();
+
+        assert_eq!(terminal, partial);
+        assert!(require_applied(terminal).is_err());
+    }
+
+    #[test]
+    fn late_partial_overrides_accepted_and_fences_retry() {
+        let mut partial = receipt(ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::BackendBarrier,
+            code: "backend_sync_failed".into(),
+            components: vec![ComponentOutcome {
+                path: "reload/routes".into(),
+                action: "reconcile".into(),
+                state: ComponentState::Uncertain,
+                effective_at: None,
+                confirmation: None,
+                diagnostic: None,
+            }],
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: Some(RevisionId::new(6).unwrap()),
+        })));
+        partial.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: "backend_sync_failed".into(),
+            message: "scsynth rejected the barrier".into(),
+            component_path: Some("reload/routes".into()),
+            source_span: None,
+        });
+        let projection = receipt_projection(&partial).join("\n");
+
+        assert!(projection.starts_with("PARTIAL"));
+        assert!(projection.contains("component=reload/routes"));
+        assert!(projection.contains("fenced=true"));
+        assert!(projection.contains("continue_best_effort"));
+        assert!(!projection.contains("APPLIED"));
+        let error = require_applied(partial).unwrap_err().to_string();
+        assert!(error.contains("is Partial"));
+        assert!(error.contains("explicit continue_best_effort acknowledgement"));
+    }
+
+    #[test]
+    fn sync_failure_remains_structured_rejection() {
+        let rejected = receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+            Rejected {
+                phase: FailurePhase::BackendBarrier,
+                code: "sync_timeout".into(),
+                message: "backend barrier timed out".into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: Some(RevisionId::new(6).unwrap()),
+            },
+        )));
+        let projection = receipt_projection(&rejected).join("\n");
+
+        assert!(projection.contains("phase=BackendBarrier"));
+        assert!(projection.contains("code=sync_timeout"));
+        assert!(require_applied(rejected)
+            .unwrap_err()
+            .to_string()
+            .contains("correct the cause before retrying"));
+    }
+
+    #[test]
+    fn runtime_fence_requires_explicit_acknowledgement() {
+        let rejected = receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+            Rejected {
+                phase: FailurePhase::Admission,
+                code: "runtime_fenced".into(),
+                message: "a partial must be acknowledged".into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: Some(RevisionId::new(6).unwrap()),
+            },
+        )));
+        let error = require_applied(rejected).unwrap_err().to_string();
+
+        assert!(error.contains("runtime fence"));
+        assert!(error.contains("continue_best_effort"));
+        assert!(error.contains("before retrying"));
+    }
+
+    #[test]
+    fn cancellation_and_replacement_project_as_superseded() {
+        for (reason, expected) in [
+            (SupersessionReason::Cancelled, "reason=cancelled"),
+            (SupersessionReason::Replaced, "reason=replaced"),
+        ] {
+            let superseded = receipt(ReceiptState::Terminal(TerminalOutcome::Superseded(
+                Superseded {
+                    reason,
+                    by_revision: Some(RevisionId::new(8).unwrap()),
+                },
+            )));
+            let projection = receipt_projection(&superseded).join("\n");
+
+            assert!(projection.starts_with("SUPERSEDED"));
+            assert!(projection.contains(expected));
+            assert!(!projection.contains("APPLIED"));
+            assert!(require_applied(superseded).is_err());
+        }
+    }
+
+    #[test]
+    fn rejected_attempt_retry_diagnostic_names_new_attempt() {
+        let rejected = receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+            Rejected {
+                phase: FailurePhase::Validate,
+                code: "invalid_candidate".into(),
+                message: "voice reference is missing".into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: Some(RevisionId::new(6).unwrap()),
+            },
+        )));
+        let error = require_applied(rejected).unwrap_err().to_string();
+
+        assert!(error.contains("correct the cause"));
+        assert!(error.contains("new attempt"));
     }
 }

@@ -5,7 +5,13 @@
 use rhai::Engine;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc, Mutex};
+use vibelang_core::mutation::{
+    Atomicity, CandidateOrigin, MutationEventSink, MutationKind, MutationReceipt,
+    MutationReplySink, MutationSource, RequestMaterial, Submission, SupersessionPolicy,
+};
 use vibelang_core::reload::ScriptState;
+use vibelang_core::{ReloadMessage, RuntimeHandle};
 
 use crate::api;
 use crate::context;
@@ -138,6 +144,114 @@ mod wasm_resolver {
 #[cfg(target_arch = "wasm32")]
 pub use wasm_resolver::InMemoryModuleResolver;
 
+/// Canonical runtime outcome carrier for one evaluated v1 Rhai script.
+///
+/// Rhai terminal return values remain evaluation-local. This outer carrier is
+/// the authoritative source for queue admission, readiness transitions, and
+/// the eventual runtime outcome.
+pub struct HostMutation {
+    initial_receipt: MutationReceipt,
+    latest_receipt: Arc<Mutex<Option<MutationReceipt>>>,
+    receipt_updates: mpsc::Receiver<MutationReceipt>,
+}
+
+impl HostMutation {
+    /// The receipt returned by submission. `accepted` is pending only; a
+    /// pre-admission failure may instead already be terminal.
+    #[must_use]
+    pub fn initial_receipt(&self) -> &MutationReceipt {
+        &self.initial_receipt
+    }
+
+    /// The newest canonical receipt published by the runtime.
+    pub fn latest_receipt(&self) -> Result<MutationReceipt> {
+        self.latest_receipt
+            .lock()
+            .map_err(|_| Error::Runtime("host receipt state is poisoned".into()))?
+            .clone()
+            .ok_or_else(|| Error::Runtime("host receipt was not published".into()))
+    }
+
+    /// Read the next readiness or terminal transition without blocking.
+    ///
+    /// `None` means no newer transition is currently available. Callers must
+    /// not reinterpret that as success; [`HostMutation::latest_receipt`] stays
+    /// authoritative.
+    pub fn try_next_receipt(&self) -> Option<MutationReceipt> {
+        while let Ok(receipt) = self.receipt_updates.try_recv() {
+            if receipt.event_sequence > self.initial_receipt.event_sequence {
+                return Some(receipt);
+            }
+        }
+        None
+    }
+
+    /// Acknowledge the current fenced Partial so a host may deliberately
+    /// continue v1 best-effort mutation.
+    pub fn continue_best_effort(&self, handle: &RuntimeHandle) -> Result<()> {
+        let latest = self.latest_receipt()?;
+        handle
+            .continue_best_effort(latest.attempt_id)
+            .map_err(|error| Error::Runtime(error.to_string()))
+    }
+}
+
+fn host_receipt_sink() -> (
+    Arc<Mutex<Option<MutationReceipt>>>,
+    mpsc::Receiver<MutationReceipt>,
+    MutationReplySink,
+) {
+    let (send, receive) = mpsc::channel();
+    let latest = Arc::new(Mutex::new(None));
+    let sink_latest = Arc::clone(&latest);
+    let sink = MutationReplySink::new(move |receipt| {
+        if let Ok(mut current) = sink_latest.lock() {
+            *current = Some(receipt.clone());
+        }
+        let _ = send.send(receipt);
+    });
+    (latest, receive, sink)
+}
+
+fn host_submission_receipt(
+    result: vibelang_core::Result<MutationReceipt>,
+    latest_receipt: &Arc<Mutex<Option<MutationReceipt>>>,
+) -> Result<MutationReceipt> {
+    match result {
+        Ok(receipt) => Ok(receipt),
+        Err(error) => latest_receipt
+            .lock()
+            .map_err(|_| Error::Runtime("host receipt state is poisoned".into()))?
+            .clone()
+            .filter(|receipt| receipt.state.is_terminal())
+            .ok_or_else(|| Error::Runtime(error.to_string())),
+    }
+}
+
+fn host_submission(runtime_epoch: vibelang_core::mutation::RuntimeEpoch) -> Result<Submission> {
+    let material = RequestMaterial::new(
+        &("compat.vibelang.v1", "rhai_host", "reload_apply"),
+        Some(&("compat.vibelang.v1", "rhai_host", "reload_apply")),
+    )
+    .map_err(|error| Error::Runtime(error.to_string()))?;
+    Ok(Submission {
+        kind: MutationKind::Candidate {
+            origin: CandidateOrigin::RhaiHost,
+        },
+        source: MutationSource::Rhai {
+            engine_id: "compat.vibelang.v1.rhai_host".into(),
+        },
+        caller_namespace: "compat.vibelang.v1.local".into(),
+        idempotency_key: None,
+        require_idempotency_key: false,
+        retry_epoch: Some(runtime_epoch),
+        expected_revision: None,
+        atomicity: Atomicity::BestEffort,
+        supersession: SupersessionPolicy::Fifo,
+        material,
+    })
+}
+
 /// Script engine for executing VibeLang scripts.
 ///
 /// The ScriptEngine:
@@ -253,6 +367,42 @@ impl ScriptEngine {
         Ok(state)
     }
 
+    /// Evaluate a v1 Rhai script and submit its collected state through the
+    /// canonical runtime receipt ledger.
+    ///
+    /// The returned [`HostMutation`] initially contains queue-admission truth,
+    /// not an applied claim. Hosts should observe it until the canonical
+    /// receipt becomes terminal.
+    pub async fn execute_and_submit(
+        &mut self,
+        script: &str,
+        handle: &RuntimeHandle,
+    ) -> Result<HostMutation> {
+        let state = self.execute(script)?;
+        Self::submit_state(handle, state).await
+    }
+
+    /// Submit an already evaluated v1 [`ScriptState`] and expose all canonical
+    /// receipt transitions to the Rhai host.
+    pub async fn submit_state(handle: &RuntimeHandle, state: ScriptState) -> Result<HostMutation> {
+        let (latest_receipt, receipt_updates, reply_sink) = host_receipt_sink();
+        let submission = host_submission(handle.mutation_status().runtime_epoch)?;
+        let submission_result = handle
+            .submit_with_sinks(
+                ReloadMessage::Apply { state }.into(),
+                submission,
+                reply_sink,
+                MutationEventSink::default(),
+            )
+            .await;
+        let initial_receipt = host_submission_receipt(submission_result, &latest_receipt)?;
+        Ok(HostMutation {
+            initial_receipt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
     /// Execute a script from a file (native only).
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
@@ -316,6 +466,18 @@ impl ScriptEngine {
         result?;
 
         Ok(state)
+    }
+
+    /// Evaluate a v1 Rhai file and submit its state through the canonical
+    /// runtime receipt ledger.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn execute_file_and_submit(
+        &mut self,
+        path: impl AsRef<Path>,
+        handle: &RuntimeHandle,
+    ) -> Result<HostMutation> {
+        let state = self.execute_file(path)?;
+        Self::submit_state(handle, state).await
     }
 
     /// Execute a script from a file and return state, AST, and any registered
@@ -518,6 +680,125 @@ mod tests {
         let mut engine = ScriptEngine::new();
         let state = engine.execute("set_tempo(140);").unwrap();
         assert_eq!(state.tempo, 140.0);
+    }
+
+    fn host_receipt(state: vibelang_core::mutation::ReceiptState) -> MutationReceipt {
+        use vibelang_core::mutation::{
+            Atomicity, EventSequence, MutationKind, MutationSource, ReceiptTimestamps,
+            RequestIdentity, RuntimeEpoch, SupersessionPolicy, Timestamp, MUTATION_SCHEMA_VERSION,
+        };
+
+        let now = Timestamp::parse("2026-07-17T08:00:00Z").unwrap();
+        MutationReceipt {
+            schema_version: MUTATION_SCHEMA_VERSION,
+            attempt_id: vibelang_core::mutation::AttemptId::new(),
+            runtime_epoch: RuntimeEpoch::new(),
+            revision: Some(vibelang_core::mutation::RevisionId::new(1).unwrap()),
+            event_sequence: EventSequence::new(1).unwrap(),
+            request: RequestIdentity {
+                kind: MutationKind::Candidate {
+                    origin: CandidateOrigin::RhaiHost,
+                },
+                source: MutationSource::Rhai {
+                    engine_id: "compat.vibelang.v1.rhai_host".into(),
+                },
+                submission_digest: None,
+                operation_digest: None,
+                idempotency_key_present: false,
+                expected_revision: None,
+                atomicity: Atomicity::BestEffort,
+                supersession: SupersessionPolicy::Fifo,
+            },
+            state,
+            previous_confirmed_revision: None,
+            timestamps: ReceiptTimestamps {
+                submitted_at: now.clone(),
+                accepted_at: Some(now.clone()),
+                last_transition_at: now,
+                terminal_at: None,
+            },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn host_submission_is_candidate_local_best_effort() {
+        let epoch = vibelang_core::mutation::RuntimeEpoch::new();
+        let submission = host_submission(epoch).unwrap();
+
+        assert_eq!(
+            submission.kind,
+            MutationKind::Candidate {
+                origin: CandidateOrigin::RhaiHost
+            }
+        );
+        assert_eq!(
+            submission.source,
+            MutationSource::Rhai {
+                engine_id: "compat.vibelang.v1.rhai_host".into()
+            }
+        );
+        assert_eq!(submission.atomicity, Atomicity::BestEffort);
+        assert_eq!(submission.supersession, SupersessionPolicy::Fifo);
+        assert_eq!(submission.retry_epoch, Some(epoch));
+    }
+
+    #[test]
+    fn host_carrier_keeps_late_partial_canonical() {
+        use vibelang_core::mutation::{
+            FailurePhase, Partial, ReceiptState, RollbackState, TerminalOutcome,
+        };
+
+        let accepted = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let (latest_receipt, receipt_updates, sink) = host_receipt_sink();
+        sink.publish(accepted.clone());
+        let carrier = HostMutation {
+            initial_receipt: accepted,
+            latest_receipt,
+            receipt_updates,
+        };
+        let mut partial = host_receipt(ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::BackendBarrier,
+            code: "backend_sync_failed".into(),
+            components: Vec::new(),
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: None,
+        })));
+        partial.attempt_id = carrier.initial_receipt().attempt_id;
+        partial.runtime_epoch = carrier.initial_receipt().runtime_epoch;
+        partial.revision = carrier.initial_receipt().revision;
+        partial.event_sequence = vibelang_core::mutation::EventSequence::new(2).unwrap();
+        sink.publish(partial.clone());
+
+        assert_eq!(carrier.try_next_receipt().unwrap(), partial);
+        assert!(carrier.try_next_receipt().is_none());
+        assert_eq!(carrier.latest_receipt().unwrap(), partial);
+    }
+
+    #[test]
+    fn host_carrier_preserves_terminal_receipt_when_admission_channel_closes() {
+        use vibelang_core::mutation::{
+            FailurePhase, ReceiptState, Rejected, RollbackState, TerminalOutcome,
+        };
+
+        let rejected = host_receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+            Rejected {
+                phase: FailurePhase::Admission,
+                code: "queue_closed".into(),
+                message: "the runtime mutation queue is closed".into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: None,
+            },
+        )));
+        let latest = Arc::new(Mutex::new(Some(rejected.clone())));
+
+        let canonical =
+            host_submission_receipt(Err(vibelang_core::Error::ChannelClosed), &latest).unwrap();
+
+        assert_eq!(canonical, rejected);
     }
 
     #[test]
