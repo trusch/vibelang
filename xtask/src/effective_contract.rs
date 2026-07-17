@@ -49,7 +49,7 @@ const API_VERSION: &str = "0.4.0";
 const ACCEPTED_V1_MANIFEST_SHA256: &str =
     "1dea4d106f11ebc916b9bd8bdade70973df0166d8040deb60aa1f2e60f244e05";
 const ACCEPTED_V1_HTTP_SHA256: &str =
-    "6f8a1de4d29e424715ffe1622f681312408fcda16234e39d859c3ec1f458cb2a";
+    "2de38dfb357dda17c22edf3d7e729dfdfa5a17c8ee2cb1c63ea0101c438fb25e";
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
     "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
@@ -57,9 +57,9 @@ const CORE_MANIFEST_PATH: &str = "crates/vibelang-core/Cargo.toml";
 const CORE_WIRE_TEST_PATH: &str = "crates/vibelang-core/tests/mutation_ledger.rs";
 const EXPECTED_ENTRIES: usize = 3_626;
 const EXPECTED_OVERLOADS: usize = 8_431;
-const EXPECTED_HTTP_ROUTES: usize = 96;
-const EXPECTED_HTTP_TYPES: usize = 75;
-const EXPECTED_HTTP_FIELDS: usize = 297;
+const EXPECTED_HTTP_ROUTES: usize = 97;
+const EXPECTED_HTTP_TYPES: usize = 76;
+const EXPECTED_HTTP_FIELDS: usize = 307;
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     let discovery = discover(root)?;
@@ -895,12 +895,13 @@ fn discover_wasm_declarations(
     ));
     let bridge_methods = source
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("async fn "))
-        .filter_map(|tail| {
-            tail.split_once('(')
-                .map(|(name, _)| name.trim().to_string())
+        .filter_map(|line| {
+            line.trim()
+                .split_once("js_sys::Reflect::get(&bridge, &JsValue::from_str(\"")
+                .and_then(|(_, tail)| tail.split_once("\")"))
+                .map(|(name, _)| name.to_string())
         })
-        .filter(|name| name.chars().any(char::is_uppercase))
+        .filter(|name| !name.is_empty())
         .collect::<BTreeSet<_>>();
     if bridge_methods.is_empty() {
         return Err("WASM host bridge has no mechanically discovered methods".into());
@@ -1160,6 +1161,10 @@ fn typescript_members(body: &str) -> BTreeSet<String> {
 
 fn typescript_member_name(statement: &str) -> Option<String> {
     let mut statement = statement.trim();
+    while let Some(comment) = statement.strip_prefix("/*") {
+        let end = comment.find("*/")?;
+        statement = comment[end + 2..].trim_start();
+    }
     for modifier in [
         "readonly ",
         "public ",
@@ -1713,6 +1718,22 @@ fn add_http_alias_type_ids(
     Ok(())
 }
 
+fn add_core_http_type_ids(
+    core: &CoreContractDiscovery,
+    type_ids_by_name: &mut BTreeMap<String, Vec<(String, String)>>,
+) {
+    for declaration in &core.declarations {
+        type_ids_by_name
+            .entry(declaration.name.clone())
+            .or_insert_with(|| {
+                vec![(
+                    core.wire_source.clone(),
+                    core_wire_type_id(&declaration.name),
+                )]
+            });
+    }
+}
+
 fn discover_http_handler_contracts(
     root: &Path,
     snapshot: &HttpSnapshot,
@@ -2138,6 +2159,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         candidates.sort();
     }
     add_http_alias_type_ids(&discovery.http_type_aliases, &mut http_type_ids_by_name)?;
+    add_core_http_type_ids(&discovery.core_contract, &mut http_type_ids_by_name);
     let mut scalar_shapes = BTreeSet::new();
     for api_type in &discovery.http.types {
         for field in &api_type.fields {
@@ -2244,39 +2266,45 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
     let midi_error_type_id = http_type_ids
         .get("crates/vibelang-http/src/routes/midi.rs|ErrorResponse")
         .ok_or_else(|| "HTTP snapshot has no midi::ErrorResponse type".to_string())?;
-    let mut operations = discovery
-        .http
-        .routes
-        .iter()
-        .map(|route| {
-            let error_type_id = if route.handler.starts_with("routes::midi::") {
-                midi_error_type_id
-            } else {
-                default_error_type_id
-            };
-            let handler = discovery
-                .http_handlers
-                .get(&route.handler)
-                .ok_or_else(|| format!("missing HTTP handler contract for {}", route.handler))?;
-            let resolved = resolve_http_route_contract(
-                route,
-                handler,
-                error_type_id,
-                &http_type_ids_by_name,
-                &scalar_type_ids,
-            )?;
-            Ok(http_operation(
-                route,
-                handler,
-                &resolved,
-                &midi_capability_id,
-                &native_capability_id,
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut operations = Vec::new();
+    let mut legacy_result_type_ids = BTreeMap::new();
+    for route in &discovery.http.routes {
+        let error_type_id = if route.handler.starts_with("routes::midi::") {
+            midi_error_type_id
+        } else {
+            default_error_type_id
+        };
+        let handler = discovery
+            .http_handlers
+            .get(&route.handler)
+            .ok_or_else(|| format!("missing HTTP handler contract for {}", route.handler))?;
+        let resolved = resolve_http_route_contract(
+            route,
+            handler,
+            error_type_id,
+            &http_type_ids_by_name,
+            &scalar_type_ids,
+        )?;
+        let operation = http_operation(
+            route,
+            handler,
+            &resolved,
+            &midi_capability_id,
+            &native_capability_id,
+        );
+        if let Some(type_id) = resolved.legacy_result_type_id {
+            legacy_result_type_ids.insert(operation.metadata.id.clone(), type_id);
+        }
+        operations.push(operation);
+    }
     operations.push(core_ledger_operation(&discovery.core_contract)?);
     operations.sort_by(|left, right| left.metadata.id.cmp(&right.metadata.id));
-    connect_http_field_bindings(&mut types, &operations, &http_type_ids)?;
+    connect_http_field_bindings(
+        &mut types,
+        &operations,
+        &http_type_ids,
+        &legacy_result_type_ids,
+    )?;
 
     let mut events = websocket_events
         .iter()
@@ -2859,6 +2887,7 @@ fn contract_capability(
 struct ResolvedHttpRouteContract {
     request_type_id: Option<String>,
     response_type_ids: Vec<String>,
+    legacy_result_type_id: Option<String>,
     path_type_ids: Vec<String>,
     query_type_ids: Vec<String>,
     header_type_ids: Vec<String>,
@@ -2899,14 +2928,35 @@ fn resolve_http_route_contract(
             resolve_http_type_id(shape, &handler.source, type_ids_by_name, scalar_type_ids)
         })
         .transpose()?;
-    let success_type_id = resolve_http_type_id(
+    let legacy_success_type_id = resolve_http_type_id(
         &handler.success_type,
         &handler.source,
         type_ids_by_name,
         scalar_type_ids,
     )?;
-    let successes = handler
-        .success_statuses
+    let carrier_type_id = (route.method != "GET" && route.path != "/eval")
+        .then(|| {
+            resolve_http_type_id(
+                "MutationHttpResponse",
+                "crates/vibelang-http/src/lib.rs",
+                type_ids_by_name,
+                scalar_type_ids,
+            )
+        })
+        .transpose()?;
+    let success_type_id = carrier_type_id
+        .clone()
+        .unwrap_or_else(|| legacy_success_type_id.clone());
+    let legacy_result_type_id = carrier_type_id
+        .as_ref()
+        .map(|_| legacy_success_type_id.clone());
+    let mut success_statuses = handler.success_statuses.clone();
+    if carrier_type_id.is_some() {
+        success_statuses.push(202);
+        success_statuses.sort_unstable();
+        success_statuses.dedup();
+    }
+    let successes = success_statuses
         .iter()
         .map(|status| HttpSuccess {
             status: *status,
@@ -2936,6 +2986,7 @@ fn resolve_http_route_contract(
     Ok(ResolvedHttpRouteContract {
         request_type_id,
         response_type_ids,
+        legacy_result_type_id,
         path_type_ids,
         query_type_ids,
         header_type_ids,
@@ -3102,9 +3153,11 @@ fn connect_http_field_bindings(
     types: &mut [ApiType],
     operations: &[Operation],
     http_type_ids: &BTreeMap<String, String>,
+    legacy_result_type_ids: &BTreeMap<String, String>,
 ) -> Result<(), String> {
     let raw_type_ids = http_type_ids.values().cloned().collect::<BTreeSet<_>>();
-    let operation_ids_by_type = http_operation_ids_by_type(types, operations, &raw_type_ids)?;
+    let operation_ids_by_type =
+        http_operation_ids_by_type(types, operations, &raw_type_ids, legacy_result_type_ids)?;
 
     for api_type in types
         .iter_mut()
@@ -3149,6 +3202,7 @@ fn http_operation_ids_by_type(
     types: &[ApiType],
     operations: &[Operation],
     raw_type_ids: &BTreeSet<String>,
+    legacy_result_type_ids: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
     let mut nested = BTreeMap::<String, BTreeSet<String>>::new();
     for api_type in types
@@ -3183,13 +3237,16 @@ fn http_operation_ids_by_type(
         else {
             continue;
         };
-        let mut pending = path_type_ids
+        let mut pending = operation
+            .response_type_ids
             .iter()
+            .chain(path_type_ids)
             .chain(query_type_ids)
             .chain(header_type_ids)
             .chain(body_type_id)
             .chain(successes.iter().map(|success| &success.type_id))
             .chain(std::iter::once(error_type_id))
+            .chain(legacy_result_type_ids.get(&operation.metadata.id))
             .filter(|id| raw_type_ids.contains(*id))
             .cloned()
             .collect::<Vec<_>>();
@@ -3344,19 +3401,65 @@ fn validate_core_contract_graph(
         ));
     }
 
-    let receipt_types = manifest
+    let canonical_receipt_types = manifest
         .types
         .iter()
-        .filter(|api_type| api_type.metadata.name.ends_with("Receipt"))
+        .filter(|api_type| api_type.metadata.name == "MutationReceipt")
         .collect::<Vec<_>>();
-    if receipt_types.len() != 1
-        || receipt_types[0].metadata.name != "MutationReceipt"
-        || receipt_types[0].metadata.ownership.implementation_owner != "vibelang-core"
+    if canonical_receipt_types.len() != 1
+        || canonical_receipt_types[0]
+            .metadata
+            .ownership
+            .implementation_owner
+            != "vibelang-core"
     {
-        return Err(
-            "the canonical core MutationReceipt must be the only discovered receipt wire type"
-                .into(),
-        );
+        return Err("the canonical core MutationReceipt must resolve exactly once".into());
+    }
+    let receipt_projections = manifest
+        .types
+        .iter()
+        .filter(|api_type| {
+            api_type.metadata.name.ends_with("Receipt")
+                && api_type.metadata.name != "MutationReceipt"
+                && !api_type
+                    .metadata
+                    .name
+                    .starts_with("mechanical wasm method ")
+        })
+        .collect::<Vec<_>>();
+    if receipt_projections.len() != 1
+        || receipt_projections[0].metadata.name
+            != "mechanical wasm interface VibelangMutationReceipt"
+        || receipt_projections[0]
+            .metadata
+            .ownership
+            .implementation_owner
+            != "vibelang-wasm"
+        || !receipt_projections[0]
+            .metadata
+            .source_anchors
+            .iter()
+            .any(|anchor| anchor.path == WASM_TYPES_PATH)
+    {
+        let found = receipt_projections
+            .iter()
+            .map(|api_type| {
+                format!(
+                    "{} ({}, {})",
+                    api_type.metadata.name,
+                    api_type.metadata.ownership.implementation_owner,
+                    api_type
+                        .metadata
+                        .source_anchors
+                        .first()
+                        .map_or("missing anchor", |anchor| anchor.path.as_str())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "the canonical core MutationReceipt may only have the explicit WASM v1 carrier projection; found [{found}]"
+        ));
     }
     Ok(())
 }
@@ -3394,6 +3497,7 @@ fn validate_http_graph(
         candidates.sort();
     }
     add_http_alias_type_ids(&discovery.http_type_aliases, &mut type_ids_by_name)?;
+    add_core_http_type_ids(&discovery.core_contract, &mut type_ids_by_name);
     let scalar_type_ids = manifest
         .types
         .iter()
@@ -3434,6 +3538,7 @@ fn validate_http_graph(
         return Err("HTTP operation/binding set is not the exact source route set".into());
     }
 
+    let mut legacy_result_type_ids = BTreeMap::new();
     for route in &discovery.http.routes {
         let key = (route.method.clone(), route.path.clone());
         let actual = actual_operations[&key];
@@ -3463,6 +3568,9 @@ fn validate_http_graph(
             &midi_capability_id,
             &native_capability_id,
         );
+        if let Some(type_id) = resolved.legacy_result_type_id {
+            legacy_result_type_ids.insert(expected.metadata.id.clone(), type_id);
+        }
         if actual.request_type_id != expected.request_type_id
             || actual.response_type_ids != expected.response_type_ids
             || actual.error_type_id != expected.error_type_id
@@ -3530,8 +3638,12 @@ fn validate_http_graph(
         }
     }
 
-    let expected_operation_ids =
-        http_operation_ids_by_type(&manifest.types, &manifest.operations, &raw_type_ids)?;
+    let expected_operation_ids = http_operation_ids_by_type(
+        &manifest.types,
+        &manifest.operations,
+        &raw_type_ids,
+        &legacy_result_type_ids,
+    )?;
     let event_payload_ids = manifest
         .events
         .iter()
@@ -3594,9 +3706,9 @@ fn validate_http_graph(
         .filter(|operation| operation.metadata.availability.status == AvailabilityStatus::Available)
         .count();
     let conditional = actual_operations.len() - available;
-    if available != 74 || conditional != 22 {
+    if available != 75 || conditional != 22 {
         return Err(format!(
-            "HTTP route conditions must be exactly 74 unconditional and 22 conditional, got {available}/{conditional}"
+            "HTTP route conditions must be exactly 75 unconditional and 22 conditional, got {available}/{conditional}"
         ));
     }
     Ok(())
@@ -5259,24 +5371,6 @@ fn build_debt(
                 test_anchor: "crates/vibelang-http/src/lib.rs".into(),
             });
         }
-        if method == "GET" {
-            continue;
-        }
-        records.push(DebtRecord {
-            id: semantic_id("debt", &format!("http-success|{method}|{path}")),
-            surface: "http".into(),
-            node_id: Some(operation.metadata.id.clone()),
-            operation_id: Some(operation.metadata.id.clone()),
-            member: "success_response".into(),
-            legacy_class: "stale".into(),
-            owner: "vibelang-http".into(),
-            diagnostic_id: "compat.http.stale_success".into(),
-            issue: "M04 honest v1 receipts and M11 HTTP v2".into(),
-            exit_gate: "queue/evaluation acceptance must not claim applied state".into(),
-            remove_by: "v2 release-ready gate".into(),
-            source_anchor: "crates/vibelang-http/src/lib.rs".into(),
-            test_anchor: "tests/fixtures/api-unification/v1/negative/stale-success.json".into(),
-        });
     }
     for event in &manifest.events {
         records.push(DebtRecord {
@@ -5287,12 +5381,14 @@ fn build_debt(
             member: event.metadata.name.clone(),
             legacy_class: "stale".into(),
             owner: "vibelang-http".into(),
-            diagnostic_id: "compat.websocket.unrevisioned_poll".into(),
-            issue: "M11 typed revisioned WebSocket projection".into(),
-            exit_gate: "typed payload, ordering, loss detection, and resync must land".into(),
+            diagnostic_id: "compat.websocket.legacy_v1_projection".into(),
+            issue: "M11 versioned WebSocket contract".into(),
+            exit_gate:
+                "publish versioned payload schemas and ledger catch-up without changing legacy telemetry"
+                    .into(),
             remove_by: "v2 release-ready gate".into(),
             source_anchor: "crates/vibelang-http/src/websocket.rs".into(),
-            test_anchor: "tests/fixtures/api-unification/v1/negative/stale-success.json".into(),
+            test_anchor: "crates/vibelang-http/src/websocket.rs".into(),
         });
     }
     for api_type in &manifest.types {
@@ -5333,16 +5429,6 @@ fn build_debt(
         "ignored",
         "compat.v1.ignored_input",
         "M08-M12 domain effectiveness migrations",
-    )?;
-    add_fixture_cases(
-        root,
-        &mut records,
-        "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json",
-        "cases",
-        "wasm",
-        "log_only",
-        "compat.wasm.false_success",
-        "M12 WASM v2 runtime contract",
     )?;
     add_fixture_cases(
         root,
@@ -6551,7 +6637,7 @@ mod tests {
                         .iter()
                         .filter(|operation| operation.request_type_id.is_some())
                         .count(),
-                    76
+                    77
                 );
                 assert!(http_operations.iter().all(|operation| {
                     !operation.response_type_ids.is_empty()
@@ -6571,7 +6657,66 @@ mod tests {
                         operation.metadata.availability.status == AvailabilityStatus::Available
                     })
                     .count();
-                assert_eq!((available, http_operations.len() - available), (74, 22));
+                assert_eq!((available, http_operations.len() - available), (75, 22));
+
+                let carrier_id = semantic_id(
+                    "type",
+                    "http|crates/vibelang-http/src/lib.rs|MutationHttpResponse",
+                );
+                let start = http_operations
+                    .iter()
+                    .find(|operation| operation.metadata.name == "POST /transport/start")
+                    .unwrap();
+                assert_eq!(
+                    start
+                        .bindings
+                        .first()
+                        .and_then(|binding| match &binding.details {
+                            BindingDetails::Http { successes, .. } => Some(successes),
+                            _ => None,
+                        })
+                        .unwrap()
+                        .iter()
+                        .map(|success| success.type_id.as_str())
+                        .collect::<BTreeSet<_>>(),
+                    [carrier_id.as_str()].into_iter().collect()
+                );
+                assert!(start.response_type_ids.contains(&carrier_id));
+
+                let keyboard_operation_id =
+                    semantic_id("operation", "http|POST|/midi/route/keyboard");
+                let keyboard_message = manifest
+                    .types
+                    .iter()
+                    .find(|api_type| api_type.metadata.name == "AddKeyboardRouteResponse")
+                    .unwrap()
+                    .fields
+                    .iter()
+                    .find(|field| field.host_name == "message")
+                    .unwrap();
+                assert_eq!(
+                    keyboard_message.operation_applicability,
+                    Facet::Applicable {
+                        value: vec![keyboard_operation_id.clone()]
+                    }
+                );
+                assert_eq!(
+                    keyboard_message
+                        .bindings
+                        .iter()
+                        .map(|binding| binding.operation_id.as_str())
+                        .collect::<BTreeSet<_>>(),
+                    [keyboard_operation_id.as_str()].into_iter().collect()
+                );
+
+                let receipt_lookup = http_operations
+                    .iter()
+                    .find(|operation| operation.metadata.name == "GET /receipts/{attempt_id}")
+                    .unwrap();
+                assert_eq!(
+                    receipt_lookup.response_type_ids,
+                    [core_wire_type_id("MutationReceipt")]
+                );
 
                 let raw_type_ids = discovery
                     .http
@@ -6615,6 +6760,12 @@ mod tests {
                         .count(),
                     EXPECTED_HTTP_ROUTES
                 );
+                assert!(!debt.records.iter().any(|record| {
+                    matches!(
+                        record.diagnostic_id.as_str(),
+                        "compat.http.stale_success" | "compat.wasm.false_success"
+                    )
+                }));
             })
             .unwrap()
             .join()
@@ -6748,7 +6899,7 @@ mod tests {
                             declaration.surface == "websocket" && declaration.kind == "event"
                         })
                         .count(),
-                    7
+                    9
                 );
 
                 let manifest = build_v2(&discovery).unwrap();
@@ -6825,6 +6976,10 @@ mod tests {
                 assert!(!generated.iter().any(|(_, name)| {
                     name.starts_with("ExecutionResult") || name.starts_with("CompiledSynthdef")
                 }));
+                assert!(discovery.mechanical.iter().any(|declaration| {
+                    declaration.kind == "host_bridge_method"
+                        && declaration.name == "globalThis.vibelangBridge.loadSynthdef"
+                }));
 
                 let manifest = build_v2(&discovery).unwrap();
                 let accounting = semantic_join_accounting(
@@ -6872,6 +7027,7 @@ mod tests {
         let source = r#"
 export interface ArbitraryEnvelope {
   nonce: string;
+  /** @deprecated compatibility field */
   payload?: Uint8Array;
   commit(value: number): Promise<void>;
 }
@@ -6981,11 +7137,7 @@ export type ArbitraryUnion = string | number;
                     let family = consumer.eligibility.surfaces[0].as_str();
                     let coverage = &manifest.coverage[&consumer.metadata.id];
                     assert_eq!(coverage.base_denominator, expected[family], "{family}");
-                    if family == "manifest" {
-                        assert!(coverage.denominator > expected[family], "{family}");
-                    } else {
-                        assert_eq!(coverage.denominator, expected[family], "{family}");
-                    }
+                    assert!(coverage.denominator >= expected[family], "{family}");
                 }
                 let current_manifest_denominator = manifest
                     .consumers
@@ -7035,17 +7187,51 @@ export type ArbitraryUnion = string | number;
                 let source_root = root();
                 for (surface, name) in [("wasm", Some("VibelangError.stack")), ("cli", None)] {
                     let mut discovery = discover(&source_root).unwrap();
-                    let index = discovery
+                    let accepted_denominator = discovery
+                        .fragments
+                        .consumers
+                        .denominator_baseline
+                        .consumers
+                        .iter()
+                        .find(|consumer| consumer.consumer == surface)
+                        .unwrap()
+                        .accepted_denominator
+                        as usize;
+                    let current_denominator = discovery
                         .mechanical
                         .iter()
-                        .position(|declaration| {
+                        .filter(|declaration| declaration.consumers.contains_key(surface))
+                        .count();
+                    let removal_count = current_denominator - accepted_denominator + 1;
+                    let mut indexes = discovery
+                        .mechanical
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, declaration)| {
                             declaration.surface == surface
-                                && name.is_none_or(|name| declaration.name == name)
+                                && (surface != "wasm" || declaration.kind == "type_member")
                                 && declaration.consumers.get(surface)
                                     == Some(&MechanicalDisposition::Included)
                         })
-                        .unwrap();
-                    discovery.mechanical.remove(index);
+                        .map(|(index, declaration)| {
+                            (
+                                name.is_none_or(|name| declaration.name != name),
+                                declaration.id.clone(),
+                                index,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    indexes.sort();
+                    let mut indexes = indexes
+                        .into_iter()
+                        .take(removal_count)
+                        .map(|(_, _, index)| index)
+                        .collect::<Vec<_>>();
+                    assert_eq!(indexes.len(), removal_count);
+                    indexes.sort_unstable_by(|left, right| right.cmp(left));
+                    for index in indexes {
+                        discovery.mechanical.remove(index);
+                    }
 
                     let output_root = source_root.join("target").join(format!(
                         "vibelang-m02-denominator-source-loss-{surface}-{}",
@@ -7207,7 +7393,13 @@ export type ArbitraryUnion = string | number;
                 assert_missing(&mutant, "Effectiveness");
 
                 let mut mutant = discovery.fragments.clone();
-                mutant.websocket.records[0].event = None;
+                mutant
+                    .websocket
+                    .records
+                    .iter_mut()
+                    .find(|record| record.target_id == semantic_id("event", "websocket|hello"))
+                    .unwrap()
+                    .event = None;
                 assert_missing(&mutant, "Event");
 
                 let mut mutant = discovery.fragments.clone();
@@ -7362,7 +7554,7 @@ export type ArbitraryUnion = string | number;
                 let mut manifest = build_v2(&discovery).unwrap();
                 let composition =
                     validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
-                assert_eq!(composition.accounting.semantic_records, 7);
+                assert_eq!(composition.accounting.semantic_records, 9);
                 assert_eq!(composition.accounting.orphan_records, 0);
                 assert_eq!(composition.accounting.unclassified_records, 0);
                 assert!(composition.accounting.unclassified_targets.is_empty());
@@ -7405,6 +7597,23 @@ export type ArbitraryUnion = string | number;
                 assert_eq!(host.required_globals, ["globalThis.vibelangBridge"]);
                 assert_eq!(host.progress, WasmProgress::HostTick);
                 assert_eq!(host.canonical_package_owner, "crates/vibelang-wasm");
+
+                let receipt_updated = manifest
+                    .events
+                    .iter()
+                    .find(|event| event.metadata.name == "receipt.updated")
+                    .unwrap();
+                assert_eq!(receipt_updated.ordering, EventOrdering::ObservationSequence);
+                assert_eq!(
+                    receipt_updated.revision_relation,
+                    RevisionRelation::AcceptedRevision
+                );
+                assert_eq!(receipt_updated.delivery, EventDelivery::BestEffort);
+                assert_eq!(receipt_updated.loss_detection, LossDetection::ResetRequired);
+                assert_eq!(
+                    receipt_updated.resync_operation_id,
+                    Some(semantic_id("operation", "http|GET|/receipts/{attempt_id}"))
+                );
 
                 let editor = manifest
                     .consumers

@@ -394,6 +394,12 @@
     },
     {
       "method": "GET",
+      "path": "/receipts/{attempt_id}",
+      "handler": "routes::eval::get_receipt",
+      "availability": []
+    },
+    {
+      "method": "GET",
       "path": "/recordings",
       "handler": "routes::recordings::list_recordings",
       "availability": [
@@ -624,6 +630,37 @@
     }
   ],
   "types": [
+    {
+      "name": "MutationHttpResponse",
+      "kind": "struct",
+      "source": "crates/vibelang-http/src/lib.rs",
+      "derives": [
+        "Serialize"
+      ],
+      "availability": [],
+      "fields": [
+        {
+          "name": "receipt",
+          "rust_type": "MutationReceipt",
+          "serde": []
+        },
+        {
+          "name": "related_receipts",
+          "rust_type": "Vec < MutationReceipt >",
+          "serde": [
+            "serde (skip_serializing_if = \"Vec::is_empty\")"
+          ]
+        },
+        {
+          "name": "legacy_result",
+          "rust_type": "Option < Value >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        }
+      ],
+      "variants": []
+    },
     {
       "name": "ActiveFade",
       "kind": "struct",
@@ -2563,6 +2600,11 @@
           "serde": []
         },
         {
+          "name": "legacy_success_scope",
+          "rust_type": "& 'static str",
+          "serde": []
+        },
+        {
           "name": "result",
           "rust_type": "Option < String >",
           "serde": []
@@ -2571,6 +2613,13 @@
           "name": "error",
           "rust_type": "Option < String >",
           "serde": []
+        },
+        {
+          "name": "receipt",
+          "rust_type": "Option < MutationReceipt >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
         }
       ],
       "variants": []
@@ -3210,6 +3259,41 @@
           "name": "timestamp",
           "rust_type": "f64",
           "serde": []
+        },
+        {
+          "name": "runtime_epoch",
+          "rust_type": "Option < RuntimeEpoch >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "event_sequence",
+          "rust_type": "Option < EventSequence >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "last_confirmed_revision",
+          "rust_type": "Option < RevisionId >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "receipt",
+          "rust_type": "Option < MutationReceipt >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
+        },
+        {
+          "name": "status",
+          "rust_type": "Option < RuntimeMutationStatus >",
+          "serde": [
+            "serde (skip_serializing_if = \"Option::is_none\")"
+          ]
         },
         {
           "name": "data",

@@ -434,10 +434,7 @@ pub async fn create_voice(
         ));
     }
 
-    // Return the created voice
-    // Wait a moment for state to update, then fetch
-    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
+    // Preserve the old entity snapshot only when it is already observable.
     let voice = state
         .with_state(|s| {
             s.voices

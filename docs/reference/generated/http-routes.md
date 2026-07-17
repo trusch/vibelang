@@ -2,7 +2,7 @@
 
 > Generated from `api/http-api-snapshot-v1.json`; edit Axum routes or Serde DTOs and regenerate instead of editing this file.
 
-The source snapshot contains **96 method/path registrations** and **75 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
+The source snapshot contains **97 method/path registrations** and **76 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
 
 ## Routes
 
@@ -67,6 +67,7 @@ The source snapshot contains **96 method/path registrations** and **75 public se
 | `PUT` | `/patterns/{id}/params/{param}` | `routes::patterns::set_pattern_param` | always |
 | `POST` | `/patterns/{id}/start` | `routes::patterns::start_pattern` | always |
 | `POST` | `/patterns/{id}/stop` | `routes::patterns::stop_pattern` | always |
+| `GET` | `/receipts/{attempt_id}` | `routes::eval::get_receipt` | always |
 | `GET` | `/recordings` | `routes::recordings::list_recordings` | `not(target_arch = "wasm32")` |
 | `GET` | `/recordings/{id}` | `routes::recordings::get_recording` | `not(target_arch = "wasm32")` |
 | `POST` | `/recordings/{id}/cancel` | `routes::recordings::cancel_recording` | `not(target_arch = "wasm32")` |
@@ -109,6 +110,7 @@ The source snapshot contains **96 method/path registrations** and **75 public se
 
 | Type | Kind | Source | Direction |
 |---|---|---|---|
+| `MutationHttpResponse` | `struct` | [`crates/vibelang-http/src/lib.rs`](../../../crates/vibelang-http/src/lib.rs) | `Serialize` |
 | `ActiveFade` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `ActiveSequence` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `ActiveSynth` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |

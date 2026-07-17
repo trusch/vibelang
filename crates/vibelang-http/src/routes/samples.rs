@@ -148,9 +148,7 @@ pub async fn load_sample(
         ));
     }
 
-    // Wait for state to update, then fetch
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
+    // Preserve the old entity snapshot only when it is already observable.
     let sample = state
         .with_state(|s| {
             s.samples

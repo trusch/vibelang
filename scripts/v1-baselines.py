@@ -32,12 +32,10 @@ REQUIRED_AUTHORING_FAMILIES = {
 }
 REQUIRED_NEGATIVE_DEFECTS = {
     "ignored_fields",
-    "stale_success",
     "invalid_ugen_labels",
     "semantic_token_mismatch",
     "push_pull_diagnostic_mismatch",
     "stale_commands",
-    "wasm_bridge_false_success",
 }
 REQUIRED_FAILURE_PHASES = {
     "parse",

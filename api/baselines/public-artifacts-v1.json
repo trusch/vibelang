@@ -19,9 +19,9 @@
     },
     "docs": {
       "counts": {
-        "bytes": 790725,
+        "bytes": 790933,
         "files": 11,
-        "lines": 4977,
+        "lines": 4979,
         "shell_fences": 4,
         "vibe_fences": 4
       },
@@ -57,9 +57,9 @@
           "sha256": "b0b291ac1b81e21c469e7dd78346a6d62308f424b8b8f6f8009f90b51b2682f7"
         },
         {
-          "bytes": 18193,
+          "bytes": 18401,
           "path": "docs/reference/generated/http-routes.md",
-          "sha256": "9449cd4b54426edf2514fdb874ba448cc6c51b9af41691921b4e20d1943e6f39"
+          "sha256": "5080c0c79c7347dcea5ce2e83c20ded90ff8e5cf63f54053e74775d6c42d663a"
         },
         {
           "bytes": 407627,
@@ -82,15 +82,15 @@
           "sha256": "30644171b75f4a4a43d2e08444c32bcfba096ad4fbe4ecbf6410abb6e53d8f6d"
         }
       ],
-      "tree_sha256": "ca771eebd3b7d96ef1096aa6bd5b2208885dd54f5c1ac433512f5311199776a2"
+      "tree_sha256": "01b5cd7f162f300fc9a8c442aae7200e761a7d6819b14a5088539302f5c0f1b0"
     },
     "fixtures": {
       "counts": {
         "authoring_families": 17,
-        "bytes": 33731,
+        "bytes": 33725,
         "failure_phases": 25,
         "files": 26,
-        "negative_defects": 7
+        "negative_defects": 5
       },
       "files": [
         {
@@ -99,14 +99,14 @@
           "sha256": "7dd92a7384db0e1917945504362bf56ae16b72d71d7478e81704e19c6ee8f46b"
         },
         {
-          "bytes": 6760,
+          "bytes": 6819,
           "path": "api/baselines/failure-injection-seams-v1.json",
-          "sha256": "829ee48ea11430eff7990c153b4deb10a35d2c376644237b53a64983a66b3a5a"
+          "sha256": "1c9514ccaad3c43cecbe1a7fd73776244d25cbf30528b2d9fa753c12c8659359"
         },
         {
-          "bytes": 1105,
+          "bytes": 864,
           "path": "api/baselines/known-defects-v1.json",
-          "sha256": "fe5dc4bcfc6862a8cd8b95d9b4187d7fa4afde9c7b198c734efedb72e8789202"
+          "sha256": "7c95c7dece5bd9d833449d3c7b4d92a8e24a5741030fba09bc9a059e483ad41c"
         },
         {
           "bytes": 1217,
@@ -214,42 +214,42 @@
           "sha256": "4e95548b74454feb45ed4878ff6cc29be65bbf9d694d8aefce5565836dd68d27"
         },
         {
-          "bytes": 1028,
+          "bytes": 1102,
           "path": "tests/fixtures/api-unification/v1/negative/stale-success.json",
-          "sha256": "5647ce597094a4361c56b52dfbae686a00b516e4c3e915fdca1bb99ec2abdb17"
+          "sha256": "17bfa802961fc852703be7c06eba37c4b8b6a692e824a6e7db2224e6def86413"
         },
         {
-          "bytes": 1169,
+          "bytes": 1271,
           "path": "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json",
-          "sha256": "c7bd18a495284987a7edc915604b50e3f8d231230be461b274a760b08e4a8f3f"
+          "sha256": "2f7001dc3302672872e953ac59c905805c260982cb49088b703054d3ad30d9c8"
         }
       ],
-      "tree_sha256": "11fbdd03892acee77a8b1f02ed92ac8f3d966028f8a0a8cf4595df5bd9d6ed36"
+      "tree_sha256": "459764c5d3d22751ce4363732df6c959642b97ebf9c6073844ce9a61c5c75185"
     },
     "http": {
       "counts": {
-        "bytes": 72901,
-        "fields": 297,
+        "bytes": 75158,
+        "fields": 307,
         "files": 1,
         "methods": {
           "DELETE": 9,
-          "GET": 27,
+          "GET": 28,
           "PATCH": 7,
           "POST": 49,
           "PUT": 4
         },
         "mutating_routes": 69,
-        "routes": 96,
-        "types": 75
+        "routes": 97,
+        "types": 76
       },
       "files": [
         {
-          "bytes": 72901,
+          "bytes": 75158,
           "path": "api/http-api-snapshot-v1.json",
-          "sha256": "6f8a1de4d29e424715ffe1622f681312408fcda16234e39d859c3ec1f458cb2a"
+          "sha256": "2de38dfb357dda17c22edf3d7e729dfdfa5a17c8ee2cb1c63ea0101c438fb25e"
         }
       ],
-      "tree_sha256": "467749df2c4140290631ed8e1cf2b10bfd16dcd0adda9f5bb738e30eea31f5a1"
+      "tree_sha256": "b026bbb68adf92bf27c57d6246d896e3666fc6a641d96844ff52b7fbdfc1d10f"
     },
     "manifest": {
       "counts": {
@@ -272,7 +272,7 @@
     },
     "packages": {
       "counts": {
-        "bytes": 318304,
+        "bytes": 320066,
         "cargo_packages": [
           "vibelang-api-manifest",
           "vibelang-cli",
@@ -298,9 +298,9 @@
       },
       "files": [
         {
-          "bytes": 96791,
+          "bytes": 98047,
           "path": "Cargo.lock",
-          "sha256": "35b32368e3e6a6835111c3a1322c57e96f746635b01d5b06f943bd994c0748cd"
+          "sha256": "1c37e36a9feaf0df40891fb8ce51398481f32f6ef17c12f7e271ca12c0312df1"
         },
         {
           "bytes": 1006,
@@ -308,9 +308,9 @@
           "sha256": "0546725d640fc56d91e4658f8cbb1d10d4385788a7abd990a1a3808364e9e896"
         },
         {
-          "bytes": 308,
+          "bytes": 321,
           "path": "crates/vibelang-api-manifest/Cargo.toml",
-          "sha256": "eed75615f6baf06cbc6a8f6d1e718f270d17dec436e4a7e9583664b4abe1d00a"
+          "sha256": "d68c179d958c078fc9ad41daf04957e589ce3d989dd59ce27bb3cc42ae91bb03"
         },
         {
           "bytes": 1837,
@@ -318,9 +318,9 @@
           "sha256": "16e5451753afa7a84949ce56e42423ab0a4402b5a879a6972d2fd48011c1b954"
         },
         {
-          "bytes": 1458,
+          "bytes": 1877,
           "path": "crates/vibelang-core/Cargo.toml",
-          "sha256": "fbb770a4ac4f1135925d1567be13ea6894024ed82d6382e81a861e659ed7fb69"
+          "sha256": "4c8007d798021f24a9dfe98a1a73b5555383151dc5615b433eb55c5fc236750a"
         },
         {
           "bytes": 856,
@@ -358,9 +358,9 @@
           "sha256": "dcd2285b97fec6b14f00907beb730762e7fc5f1c704a1794b514e7552c0b00de"
         },
         {
-          "bytes": 948,
+          "bytes": 1009,
           "path": "crates/vibelang-wasm/Cargo.toml",
-          "sha256": "9b38296ea6e4b7799e9b1d558f784a4bf89b57a1c5cbd5911f15781e23631b87"
+          "sha256": "a0395ce7f05969ff4b0355726ed92af041d8f80401f0f51d0a9e4f0f79dee828"
         },
         {
           "bytes": 748,
@@ -398,12 +398,12 @@
           "sha256": "d998051e05678a62fbdaf1f6599ba4a9f4891ca047d1b57b46e410b232af7f83"
         },
         {
-          "bytes": 519,
+          "bytes": 532,
           "path": "xtask/Cargo.toml",
-          "sha256": "78399fcb70d916473f63d38955823d3b52dfd8d1080929f4b12d4ba693a6d273"
+          "sha256": "e3bb9a2fd50352745bd594e03e9423827e7784bc297bcf05e3144ebe6071e212"
         }
       ],
-      "tree_sha256": "0c6cceef741d97ecf7b4c267b7070ea8ba45e43d59abf82413aa21e9f4f51aea"
+      "tree_sha256": "c9d0fde940b4ace634c43b54221015572a3e99864161d73846235a0aa2bb1f95"
     },
     "rhai_editor": {
       "counts": {
@@ -678,21 +678,21 @@
     },
     "wasm": {
       "counts": {
-        "bytes": 2199,
-        "class_methods": 23,
+        "bytes": 3104,
+        "class_methods": 25,
         "classes": 2,
         "files": 1,
-        "interfaces": 5,
+        "interfaces": 7,
         "module_functions": 4
       },
       "files": [
         {
-          "bytes": 2199,
+          "bytes": 3104,
           "path": "crates/vibelang-wasm/types/index.d.ts",
-          "sha256": "99b67bd3b4ec92f66b6c6127be84e55012565e643a3aa1cbee26cb66bcb6007f"
+          "sha256": "b11f2a098cb016fa48837f7ae54e5c5826c7d224f79ee69d657efcd8a984b112"
         }
       ],
-      "tree_sha256": "4aa7aac9d4c78dba8832afde1d5f27a812a3e6d125270cbdc5db9ad3846df4c5"
+      "tree_sha256": "d4e6f9d40ae0979f9e06a76ea80033a5bbcafb972811c05b7c75579f80437f96"
     }
   },
   "policy": "observed-v1-behavior-not-endorsement",

@@ -1,20 +1,22 @@
 {
   "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
   "defect": "wasm_bridge_false_success",
-  "expected_current_outcome": "ExecutionResult.success_remains_true_after_bridge_or_reload_delivery_failure",
+  "resolution": "fixed_safety_exception",
+  "expected_current_outcome": "ExecutionResult_success_is_evaluation_only_and_known_bridge_or_dispatch_failure_is_structured_non_success",
   "cases": [
-    "missing bridge returns Ok",
-    "bridge discovery uses globalThis while invocation uses window",
-    "bridge resolved value is ignored",
-    "bridge rejection is logged and does not change ExecutionResult.success",
-    "reload send failure is logged and does not change ExecutionResult.success",
-    "execute before initialization can return success without application"
+    "missing globalThis bridge is structured non-success",
+    "bridge invocation uses the discovered globalThis object",
+    "bridge resolved value is awaited",
+    "bridge rejection is structured non-success",
+    "reload dispatch failure is structured non-success",
+    "execute before initialization is structured non-success"
   ],
   "source_assertions": [
-    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "success: true," },
-    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "Failed to load synthdef {}" },
-    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "Failed to apply state: {}" },
-    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "js_namespace = [\"window\", \"vibelangBridge\"]" },
-    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str(\"vibelangBridge\"))" }
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "legacy_success_scope: \"evaluation_only\"" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "runtime_not_initialized" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "synthdef_bridge_failed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "reload_dispatch_failed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "globalThis.vibelangBridge is not installed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "JsFuture::from(js_sys::Promise::resolve(&pending))" }
   ]
 }

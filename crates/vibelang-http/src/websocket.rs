@@ -14,7 +14,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use vibelang_core::{Clip, FadeTarget, SequenceId, State as RuntimeState};
+use vibelang_core::mutation::{
+    EventSequence, MutationReceipt, ReceiptEvent, RevisionId, RuntimeEpoch, RuntimeMutationStatus,
+};
+use vibelang_core::{Clip, FadeTarget, RuntimeHandle, SequenceId, State as RuntimeState};
 
 use crate::AppState;
 
@@ -25,7 +28,63 @@ pub struct WebSocketEvent {
     pub event_type: String,
     pub timestamp: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_epoch: Option<RuntimeEpoch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_sequence: Option<EventSequence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_confirmed_revision: Option<RevisionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<MutationReceipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<RuntimeMutationStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+}
+
+impl WebSocketEvent {
+    pub(crate) fn receipt(event: ReceiptEvent) -> Self {
+        Self {
+            event_type: "receipt.updated".into(),
+            timestamp: ws_timestamp_ms(),
+            runtime_epoch: Some(event.runtime_epoch),
+            event_sequence: Some(event.event_sequence),
+            last_confirmed_revision: event.receipt.previous_confirmed_revision,
+            receipt: Some(event.receipt),
+            status: None,
+            data: Some(json!({
+                "previous_event_sequence": event.previous_event_sequence,
+            })),
+        }
+    }
+
+    fn telemetry(event_type: &str, data: Value, status: &RuntimeMutationStatus) -> Self {
+        Self {
+            event_type: event_type.into(),
+            timestamp: ws_timestamp_ms(),
+            runtime_epoch: Some(status.runtime_epoch),
+            event_sequence: status.event_sequence,
+            last_confirmed_revision: status.last_confirmed_revision,
+            receipt: None,
+            status: None,
+            data: Some(data),
+        }
+    }
+
+    fn reset_required(skipped: u64, status: RuntimeMutationStatus) -> Self {
+        Self {
+            event_type: "receipt.reset_required".into(),
+            timestamp: ws_timestamp_ms(),
+            runtime_epoch: Some(status.runtime_epoch),
+            event_sequence: status.event_sequence,
+            last_confirmed_revision: status.last_confirmed_revision,
+            receipt: None,
+            status: Some(status),
+            data: Some(json!({
+                "reason": "broadcast_lag",
+                "skipped": skipped,
+            })),
+        }
+    }
 }
 
 /// Client subscription message.
@@ -81,7 +140,17 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                 }
                             }
                         }
-                        Err(_) => break,
+                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                            let event = WebSocketEvent::reset_required(
+                                skipped,
+                                send_state.handle.mutation_status(),
+                            );
+                            let msg = serde_json::to_string(&event).unwrap_or_default();
+                            if sender.send(Message::Text(msg.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
                 Some(cmd) = cmd_rx.recv() => {
@@ -100,8 +169,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                 is_subscribed("playback.tick", std::slice::from_ref(pattern))
                                     || is_subscribed("playback.bar", std::slice::from_ref(pattern))
                             }) {
+                                let status = send_state.handle.mutation_status();
                                 let event = send_state
-                                    .with_state(|runtime| make_snapshot_event("playback.bar", runtime))
+                                    .with_state(|runtime| {
+                                        make_snapshot_event("playback.bar", runtime, &status)
+                                    })
                                     .await;
                                 let msg = serde_json::to_string(&event).unwrap_or_default();
                                 if sender.send(Message::Text(msg.into())).await.is_err() {
@@ -183,6 +255,11 @@ fn make_hello_event() -> WebSocketEvent {
     WebSocketEvent {
         event_type: "hello".to_string(),
         timestamp: ws_timestamp_ms(),
+        runtime_epoch: None,
+        event_sequence: None,
+        last_confirmed_revision: None,
+        receipt: None,
+        status: None,
         data: Some(json!({
             "protocol_version": WS_PROTOCOL_VERSION,
             "server": "vibelang-http",
@@ -195,6 +272,8 @@ fn make_hello_event() -> WebSocketEvent {
                     "transport.started",
                     "transport.stopped",
                     "transport.bpm",
+                    "receipt.updated",
+                    "receipt.reset_required",
                 ],
                 "commands": ["subscribe", "unsubscribe"],
                 "wildcard_subscriptions": true,
@@ -211,12 +290,12 @@ fn ws_timestamp_ms() -> f64 {
         .unwrap_or(0.0)
 }
 
-fn make_snapshot_event(event_type: &str, state: &RuntimeState) -> WebSocketEvent {
-    WebSocketEvent {
-        event_type: event_type.to_string(),
-        timestamp: ws_timestamp_ms(),
-        data: Some(build_playback_snapshot(state)),
-    }
+fn make_snapshot_event(
+    event_type: &str,
+    state: &RuntimeState,
+    status: &RuntimeMutationStatus,
+) -> WebSocketEvent {
+    WebSocketEvent::telemetry(event_type, build_playback_snapshot(state), status)
 }
 
 fn build_playback_snapshot(state: &RuntimeState) -> Value {
@@ -530,6 +609,7 @@ fn build_fades_payload(state: &RuntimeState) -> Vec<Value> {
 /// Background task that polls state and broadcasts events.
 pub async fn run_event_broadcaster(
     state: Arc<RwLock<RuntimeState>>,
+    handle: RuntimeHandle,
     tx: broadcast::Sender<WebSocketEvent>,
 ) {
     let mut last_sixteenth: Option<i64> = None;
@@ -555,6 +635,7 @@ pub async fn run_event_broadcaster(
         };
 
         let now = ws_timestamp_ms();
+        let status = handle.mutation_status();
         let sixteenth = (current_beat * 4.0).floor() as i64;
         let bar = (current_beat / beats_per_bar).floor() as i64;
         let running_changed = last_running != Some(running);
@@ -577,32 +658,30 @@ pub async fn run_event_broadcaster(
             } else {
                 "playback.bar"
             };
-            let _ = tx.send(WebSocketEvent {
-                event_type: event_type.to_string(),
-                timestamp: now,
-                data: Some(snapshot.clone()),
-            });
+            let mut event = WebSocketEvent::telemetry(event_type, snapshot.clone(), &status);
+            event.timestamp = now;
+            let _ = tx.send(event);
         }
 
         if running && last_bar != Some(bar) {
-            let _ = tx.send(WebSocketEvent {
-                event_type: "playback.bar".to_string(),
-                timestamp: now,
-                data: Some(snapshot.clone()),
-            });
+            let mut event = WebSocketEvent::telemetry("playback.bar", snapshot.clone(), &status);
+            event.timestamp = now;
+            let _ = tx.send(event);
         }
 
         // transport.beat remains useful for newer clients that only care about transport edges.
         if running && last_sixteenth != Some(sixteenth) {
-            let _ = tx.send(WebSocketEvent {
-                event_type: "transport.beat".to_string(),
-                timestamp: now,
-                data: Some(json!({
+            let mut event = WebSocketEvent::telemetry(
+                "transport.beat",
+                json!({
                     "beat": current_beat,
                     "bar": bar,
                     "beat_in_bar": (current_beat % beats_per_bar).floor() as i64,
-                })),
-            });
+                }),
+                &status,
+            );
+            event.timestamp = now;
+            let _ = tx.send(event);
         }
 
         if running_changed {
@@ -611,23 +690,27 @@ pub async fn run_event_broadcaster(
             } else {
                 "transport.stopped"
             };
-            let _ = tx.send(WebSocketEvent {
-                event_type: event_type.to_string(),
-                timestamp: now,
-                data: Some(json!({
+            let mut event = WebSocketEvent::telemetry(
+                event_type,
+                json!({
                     "beat": current_beat,
-                })),
-            });
+                }),
+                &status,
+            );
+            event.timestamp = now;
+            let _ = tx.send(event);
         }
 
         if bpm_changed && last_bpm.is_some() {
-            let _ = tx.send(WebSocketEvent {
-                event_type: "transport.bpm".to_string(),
-                timestamp: now,
-                data: Some(json!({
+            let mut event = WebSocketEvent::telemetry(
+                "transport.bpm",
+                json!({
                     "bpm": bpm,
-                })),
-            });
+                }),
+                &status,
+            );
+            event.timestamp = now;
+            let _ = tx.send(event);
         }
 
         last_sixteenth = Some(sixteenth);
@@ -641,6 +724,9 @@ pub async fn run_event_broadcaster(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use vibelang_core::mutation::{
+        LiveState, ReceiptWindow, RevisionId, RuntimeEpoch, MUTATION_SCHEMA_VERSION,
+    };
     use vibelang_core::{
         Beat, BusId, GroupState, MelodyConfig, MelodyState, NodeId, PatternConfig, PatternState,
         SequenceConfig, SequenceState, VoiceConfig, VoiceState,
@@ -689,6 +775,8 @@ mod tests {
         assert!(event_names.contains(&"playback.tick"));
         assert!(event_names.contains(&"playback.bar"));
         assert!(event_names.contains(&"transport.beat"));
+        assert!(event_names.contains(&"receipt.updated"));
+        assert!(event_names.contains(&"receipt.reset_required"));
 
         let commands = capabilities
             .get("commands")
@@ -709,6 +797,42 @@ mod tests {
                 .and_then(Value::as_str),
             Some("playback.bar")
         );
+    }
+
+    #[test]
+    fn legacy_telemetry_carries_receipt_freshness_without_acknowledging() {
+        let epoch = RuntimeEpoch::new();
+        let sequence = EventSequence::new(9).unwrap();
+        let confirmed = RevisionId::new(3).unwrap();
+        let status = RuntimeMutationStatus {
+            schema_version: MUTATION_SCHEMA_VERSION,
+            runtime_epoch: epoch,
+            event_sequence: Some(sequence),
+            accepted_through: Some(confirmed),
+            last_confirmed_revision: Some(confirmed),
+            last_rejected_revision: None,
+            live_state: LiveState::Clean,
+            pending: Vec::new(),
+            receipt_window: ReceiptWindow {
+                first_event_sequence: Some(sequence),
+                last_event_sequence: Some(sequence),
+                first_revision: Some(confirmed),
+                last_revision: Some(confirmed),
+                expires_before: None,
+            },
+        };
+
+        let event = WebSocketEvent::telemetry("transport.beat", json!({ "beat": 4.0 }), &status);
+        assert_eq!(event.runtime_epoch, Some(epoch));
+        assert_eq!(event.event_sequence, Some(sequence));
+        assert_eq!(event.last_confirmed_revision, Some(confirmed));
+        assert!(event.receipt.is_none());
+        assert!(event.status.is_none());
+
+        let reset = WebSocketEvent::reset_required(4, status.clone());
+        assert_eq!(reset.event_type, "receipt.reset_required");
+        assert_eq!(reset.status, Some(status));
+        assert!(reset.receipt.is_none());
     }
 
     #[test]

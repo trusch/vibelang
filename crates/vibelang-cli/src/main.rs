@@ -880,22 +880,47 @@ async fn run_simple_mode(
         let eval_handle = handle.clone();
         tokio::spawn(async move {
             while let Ok(job) = eval_rx.recv() {
-                let result = match evaluate_code(&job.code, &eval_include_paths, &eval_ext_config) {
+                let vibelang_http::EvalJob {
+                    code,
+                    submission,
+                    latest_receipt,
+                    reply_sink,
+                    event_sink,
+                    response_tx,
+                } = job;
+                let result = match evaluate_code(&code, &eval_include_paths, &eval_ext_config) {
                     Ok(state) => {
-                        // Apply the state
-                        match eval_handle
-                            .send(ReloadMessage::Apply { state }.into())
-                            .await
-                        {
-                            Ok(_) => vibelang_http::EvalResult {
+                        let submission_result = eval_handle
+                            .submit_with_sinks(
+                                ReloadMessage::Apply { state }.into(),
+                                submission,
+                                reply_sink,
+                                event_sink,
+                            )
+                            .await;
+                        let receipt = match submission_result {
+                            Ok(receipt) => Some(receipt),
+                            Err(_) => latest_receipt
+                                .lock()
+                                .ok()
+                                .and_then(|latest| latest.clone())
+                                .filter(|receipt| receipt.state.is_terminal()),
+                        };
+                        match receipt {
+                            Some(receipt) => vibelang_http::EvalResult {
                                 success: true,
-                                result: Some("Code executed successfully".to_string()),
+                                result: Some("Code evaluated and submitted".to_string()),
                                 error: None,
+                                receipt: Some(receipt),
                             },
-                            Err(e) => vibelang_http::EvalResult {
-                                success: false,
+                            None => vibelang_http::EvalResult {
+                                success: true,
                                 result: None,
-                                error: Some(format!("Failed to apply: {}", e)),
+                                error: Some(
+                                    "Evaluation succeeded but mutation dispatch failed without a canonical receipt"
+                                        .to_string(),
+                                ),
+                                receipt: None,
                             },
                         }
                     }
@@ -903,9 +928,10 @@ async fn run_simple_mode(
                         success: false,
                         result: None,
                         error: Some(e.to_string()),
+                        receipt: None,
                     },
                 };
-                let _ = job.response_tx.send(result);
+                let _ = response_tx.send(result);
             }
         });
     }

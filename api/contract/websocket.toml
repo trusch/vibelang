@@ -3,6 +3,17 @@ fragment_version = 1
 domain = "websocket"
 
 [[records]]
+target_id = "v1:event:1b12891ff4133de7"
+owner = "vibelang-http"
+
+[records.event]
+ordering = "observation_sequence"
+revision_relation = "applied_revision"
+delivery = "best_effort"
+loss_detection = "reset_required"
+resync_operation_id = "v1:operation:f53d5db7ab6dc057"
+
+[[records]]
 target_id = "v1:event:6e8dc05a669457f4"
 owner = "vibelang-http"
 
@@ -11,3 +22,14 @@ ordering = "unordered"
 revision_relation = "telemetry_only"
 delivery = "poll_derived"
 loss_detection = "not_applicable"
+
+[[records]]
+target_id = "v1:event:a9788284664001dd"
+owner = "vibelang-http"
+
+[records.event]
+ordering = "observation_sequence"
+revision_relation = "accepted_revision"
+delivery = "best_effort"
+loss_detection = "reset_required"
+resync_operation_id = "v1:operation:f53d5db7ab6dc057"

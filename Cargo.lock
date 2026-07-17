@@ -3300,6 +3300,8 @@ dependencies = [
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
+ "uuid",
  "vibelang-core",
  "vibelang-dsp",
  "vibelang-rhai",

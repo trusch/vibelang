@@ -1,13 +1,13 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-package-index/v1",
   "schema_version": 1,
-  "contract_digest": "2e3068df38ffa2840db1b2b24037c57a0b0feae88fd8e3708d28a1a84748a15e",
+  "contract_digest": "b920b66d99a3a0eeac4802fea9a66ccbcd5aa6c84c876b73677108734e21e57d",
   "files": [
     {
       "path": "Cargo.lock",
       "kind": "lockfile",
-      "bytes": 98023,
-      "sha256": "605ebe519d2bfbd69890161b94f6dd279025d1ce5458e28631f0b090157592d6"
+      "bytes": 98047,
+      "sha256": "1c37e36a9feaf0df40891fb8ce51398481f32f6ef17c12f7e271ca12c0312df1"
     },
     {
       "path": "Cargo.toml",
@@ -78,8 +78,8 @@
     {
       "path": "crates/vibelang-wasm/Cargo.toml",
       "kind": "cargo_manifest",
-      "bytes": 948,
-      "sha256": "9b38296ea6e4b7799e9b1d558f784a4bf89b57a1c5cbd5911f15781e23631b87"
+      "bytes": 1009,
+      "sha256": "a0395ce7f05969ff4b0355726ed92af041d8f80401f0f51d0a9e4f0f79dee828"
     },
     {
       "path": "crates/vibelang-wasm/package-lock.json",

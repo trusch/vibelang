@@ -1,13 +1,13 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "2e3068df38ffa2840db1b2b24037c57a0b0feae88fd8e3708d28a1a84748a15e",
+  "contract_digest": "b920b66d99a3a0eeac4802fea9a66ccbcd5aa6c84c876b73677108734e21e57d",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
-    "routes": 96,
-    "http_types": 75,
-    "http_fields": 297,
+    "routes": 97,
+    "http_types": 76,
+    "http_fields": 307,
     "source_nodes": 962,
     "consumer_nodes": 8,
     "orphan_records": 0,
@@ -9176,7 +9176,7 @@
       "id": "v1:source:1d406059d415ef39",
       "path": "crates/vibelang-http/src/lib.rs",
       "kind": "mechanical_declaration",
-      "node_count": 98,
+      "node_count": 103,
       "node_ids": [
         "v1:binding:00be3f56a1ad2716",
         "v1:binding:02117779f9e0c681",
@@ -9270,14 +9270,19 @@
         "v1:binding:ec59e659751384f9",
         "v1:binding:eef5f3c402deff7e",
         "v1:binding:ef55ec2c5a69ccb4",
+        "v1:binding:f53d5db7ab6dc057",
         "v1:binding:f91ea0c6e45be3bc",
         "v1:binding:f9f4c9bd574a1a22",
         "v1:binding:fe8185f876f18a7c",
         "v1:binding:feeb9ca2e0c7f27f",
         "v1:capability:5a8bb9d608e8b0eb",
-        "v1:capability:9455cae31f14d57a"
+        "v1:capability:9455cae31f14d57a",
+        "v1:field:571db82bcf94b40e",
+        "v1:field:81900d56e9030579",
+        "v1:field:daea60d6daf96b7c",
+        "v1:type:83d665cbbb1ee3a1"
       ],
-      "node_ids_sha256": "cc9a7f4aa13d337aa05dbd39d6cec3a183967b8e08b5b026edd713903327003e"
+      "node_ids_sha256": "b0f1e528647c2f9be4fb412970de8500a40c0392bdecb557bf9f4fec2553706e"
     },
     {
       "id": "v1:source:1d96eeb4a01bace1",
@@ -13028,34 +13033,53 @@
       "id": "v1:source:4b966f3e60059f65",
       "path": "crates/vibelang-wasm/types/index.d.ts",
       "kind": "mechanical_declaration",
-      "node_count": 24,
+      "node_count": 43,
       "node_ids": [
         "v1:type:00ca2c83ebe53f21",
+        "v1:type:027c18f9ab40dcd1",
+        "v1:type:0c76690a4cb7aa5f",
         "v1:type:20e080693ede129f",
+        "v1:type:24e14a0806ca1c24",
         "v1:type:256b02983b59a788",
         "v1:type:2cea972bb079420f",
         "v1:type:321c73e6f534730b",
+        "v1:type:35029bf9b8d5263a",
+        "v1:type:3e11b2bf88f5cd45",
         "v1:type:44f3a06b730aff2c",
+        "v1:type:49bd17831d7c4cc8",
         "v1:type:575ffe49fe3d7fd1",
+        "v1:type:5b56d54066404eca",
         "v1:type:67cfa2e13802f07a",
+        "v1:type:6837ed1ad72058f4",
         "v1:type:6ac3a8183bb5ee48",
         "v1:type:6ea4a85cde7d1652",
+        "v1:type:6fd0e9cc7d96e1d2",
+        "v1:type:747e05bc391b7da4",
+        "v1:type:7e2e22fdaed06589",
         "v1:type:8252e358e634f702",
         "v1:type:83ab10bed03a7977",
+        "v1:type:848e1423550b0e29",
+        "v1:type:89b1b78d3a8ab4f8",
         "v1:type:8d746711f4d86df0",
+        "v1:type:9515aa1be6be5170",
+        "v1:type:aa9e5f953d6f4a90",
         "v1:type:aaf3326808c61c62",
+        "v1:type:aafd93ad4f549885",
         "v1:type:ae70ab546d6efd55",
         "v1:type:ba868c0fc5fd71ba",
         "v1:type:bdba9d76f77637fc",
         "v1:type:c4dd51015df0188d",
         "v1:type:cacf1c5445e9cf59",
         "v1:type:cadc46ad37a59bb4",
+        "v1:type:dea88b7e25255705",
+        "v1:type:e62bea38d1f2f9ca",
         "v1:type:e658a2c32f5d0dd3",
         "v1:type:e8c1bc731f35facf",
         "v1:type:efa06f581b69cc55",
+        "v1:type:f71a266e53540468",
         "v1:type:fda85161007560a5"
       ],
-      "node_ids_sha256": "1506eaa23ff56da52b5d684f411526574854d2b90c722945c8e32ed7154d45a8"
+      "node_ids_sha256": "c3b6d86e6b817891a1c265a02004258cea1995f1922932748bff2b55f5558838"
     },
     {
       "id": "v1:source:4c0762627c9636c1",
@@ -14016,15 +14040,17 @@
       "id": "v1:source:4e4adc1785981701",
       "path": "crates/vibelang-wasm/src/lib.rs",
       "kind": "mechanical_declaration",
-      "node_count": 27,
+      "node_count": 29,
       "node_ids": [
         "v1:type:028ac6532244dab3",
         "v1:type:0a948083ebddaad8",
+        "v1:type:154b98cabca505c8",
         "v1:type:1a944a60fe5b803f",
         "v1:type:1c1ec95bf6a20e48",
         "v1:type:22ee8efb26123f38",
         "v1:type:2abfba1ede0624b0",
         "v1:type:2b2e9a7cd64bdf24",
+        "v1:type:363cbb2b01b9e4a9",
         "v1:type:478eaab47049422d",
         "v1:type:519203138aa65b44",
         "v1:type:5a513275b9910cd2",
@@ -14046,7 +14072,7 @@
         "v1:type:f54b27fc6fc36660",
         "v1:type:febe854bfee00143"
       ],
-      "node_ids_sha256": "9b4af0e14f578aedf0b0b2bac2611d72cd06188ac4506accba312b3da334e9e4"
+      "node_ids_sha256": "d0f9ce0dd0a8431065dfd7374b425453006d3460e664d7378264f0adc4f4f287"
     },
     {
       "id": "v1:source:4e8f471e32210442",
@@ -19258,22 +19284,31 @@
       "id": "v1:source:8706c81ef9b0bacd",
       "path": "crates/vibelang-http/src/websocket.rs",
       "kind": "mechanical_declaration",
-      "node_count": 21,
+      "node_count": 30,
       "node_ids": [
+        "v1:event:1b12891ff4133de7",
         "v1:event:46ced37429aeb44e",
         "v1:event:5db44d63085d4f6d",
         "v1:event:6e8dc05a669457f4",
         "v1:event:7cac7694504aa296",
         "v1:event:a56a5b584acd3936",
+        "v1:event:a9788284664001dd",
         "v1:event:c6b8520ff3cd0d96",
         "v1:event:d337b9a57b867eb0",
+        "v1:field:1ced4ed37b3963a4",
+        "v1:field:214a571d56bdebda",
         "v1:field:2cb62b1ebc160370",
+        "v1:field:498ee865df6466da",
         "v1:field:6a6507c7f306491d",
+        "v1:field:98d2fd334310b9a2",
+        "v1:field:d58783264b0e1e18",
         "v1:field:f5d933103965eb68",
         "v1:operation:00be3f56a1ad2716",
         "v1:type:000b70566a32dbbd",
         "v1:type:1b5ff06266dcdae9",
+        "v1:type:228a40741e8998ca",
         "v1:type:230d71c85d95caf7",
+        "v1:type:2596da2cf8943e60",
         "v1:type:5a5d2f5d3c09a7f3",
         "v1:type:853008679c473fad",
         "v1:type:85bc6367ca702fc6",
@@ -19282,7 +19317,7 @@
         "v1:type:d6fbf72967f28d5c",
         "v1:type:fd7e8f345f2d990c"
       ],
-      "node_ids_sha256": "b62c2d219023d23c77152a5f3853868372855a0b00c9e79af953e38a86f0f47e"
+      "node_ids_sha256": "dd85be0d7df45a1e7846778f7d51f2e7228f0e616a4bde55a6eb45e4b0610543"
     },
     {
       "id": "v1:source:8751f8b85867a222",
@@ -19551,17 +19586,20 @@
       "id": "v1:source:8aa68b8f8f3d93e3",
       "path": "crates/vibelang-http/src/routes/eval.rs",
       "kind": "mechanical_declaration",
-      "node_count": 7,
+      "node_count": 10,
       "node_ids": [
+        "v1:field:12fae7d85b5dd5fe",
         "v1:field:1343f683fe42f3b0",
         "v1:field:269683ba27b34907",
         "v1:field:7597a8e38c2e7d71",
+        "v1:field:bb11eaefb59fb7b6",
         "v1:field:ca96de648b444aef",
         "v1:operation:57cf213013df8722",
+        "v1:operation:f53d5db7ab6dc057",
         "v1:type:7f473e0605a8c272",
         "v1:type:ff6ec8e28877ac7e"
       ],
-      "node_ids_sha256": "987d4ad98d038859d08b907231ff5984348f8397a8d133e1536a32983f7bcf5d"
+      "node_ids_sha256": "757f05cec20d48729f5a631a888662118cf604639ddc1a1dfdbf49c614592b8a"
     },
     {
       "id": "v1:source:8bdbf09da674104f",
@@ -21425,9 +21463,11 @@
       "id": "v1:source:a02beba522eaa84e",
       "path": "api/http-api-snapshot-v1.json",
       "kind": "mechanical_declaration",
-      "node_count": 29,
+      "node_count": 31,
       "node_ids": [
+        "v1:type:06fbfa5a38c81d8e",
         "v1:type:0b2a7f62d9ca462d",
+        "v1:type:1af7c4433a118aaa",
         "v1:type:1c04d639038ec149",
         "v1:type:2bee2b80328b98dd",
         "v1:type:2cd1ae80334cbcbb",
@@ -21457,7 +21497,7 @@
         "v1:type:e8ac75ce1d7b52cd",
         "v1:type:ed7b26dd59d98368"
       ],
-      "node_ids_sha256": "c94322434b4133d09ffba294678d632687a2a14b8485d84af5d1fd6d41255dd1"
+      "node_ids_sha256": "fec94a4d472a25b0954dc89f4b3bf560fc952aa49521930263af4a28a6c918af"
     },
     {
       "id": "v1:source:a03c812a7daa548b",
@@ -22081,11 +22121,13 @@
       "id": "v1:source:a726092c939fbb38",
       "path": "api/contract/websocket.toml",
       "kind": "semantic_fragment",
-      "node_count": 1,
+      "node_count": 3,
       "node_ids": [
-        "v1:event:6e8dc05a669457f4"
+        "v1:event:1b12891ff4133de7",
+        "v1:event:6e8dc05a669457f4",
+        "v1:event:a9788284664001dd"
       ],
-      "node_ids_sha256": "3aa089013805a1acb1d86a0bc637733ec89cf4d7447438b0ec2db2c15f5828d5"
+      "node_ids_sha256": "0b8d759d43e9daddbb6cde020cb188e81951c9411dfd21b811d44af35eedd823"
     },
     {
       "id": "v1:source:a7dc9133f63a50f1",
@@ -29624,8 +29666,8 @@
       "projection_paths": [
         "crates/vibelang-wasm/types/index.d.ts"
       ],
-      "included_count": 50,
-      "eligible_count": 51,
+      "included_count": 71,
+      "eligible_count": 72,
       "accepted_denominator": 51,
       "denominator_baseline_owner": "vibelang-wasm",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29638,8 +29680,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13326,
-      "eligible_count": 13326,
+      "included_count": 13366,
+      "eligible_count": 13366,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29666,8 +29708,8 @@
       "projection_paths": [
         "api/http-api-snapshot-v1.json"
       ],
-      "included_count": 620,
-      "eligible_count": 620,
+      "included_count": 637,
+      "eligible_count": 637,
       "accepted_denominator": 620,
       "denominator_baseline_owner": "vibelang-http",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29796,8 +29838,8 @@
     {
       "path": "api/contract/websocket.toml",
       "domain": "websocket",
-      "record_count": 1,
-      "sha256": "178678549acbb576db94b74475759460f67ea144f61e5ffc483211146f2ee804"
+      "record_count": 3,
+      "sha256": "560b44d2c36a4216dfacd836001f341ce274114523668c90ff5e6c48c9a5c398"
     },
     {
       "path": "api/contract/wasm.toml",
