@@ -13,6 +13,9 @@ use async_trait::async_trait;
 use vibelang_core::compat::Instant;
 use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget};
 use vibelang_core::message::{ReloadMessage, SynthDefMessage, VoiceMessage};
+use vibelang_core::mutation::{
+    ComponentState, FailurePhase, ReceiptState, RollbackState, TerminalOutcome,
+};
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId, VoiceRole,
 };
@@ -1674,7 +1677,39 @@ async fn script_named_input_route_create_failure_retries_on_no_change_reload() {
     "#;
 
     runtime.backend().fail_next_input_link_create();
-    apply_script(&mut runtime, script).await;
+    let handle = runtime.handle();
+    let mutation = ScriptEngine::new()
+        .execute_and_submit(script, &handle)
+        .await
+        .expect("script must execute and submit");
+    let partial_attempt = mutation.initial_receipt().attempt_id;
+    runtime.tick().await;
+    let partial_receipt = mutation
+        .latest_receipt()
+        .expect("failed reload must publish a canonical receipt");
+    assert_eq!(partial_receipt.attempt_id, partial_attempt);
+    let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &partial_receipt.state else {
+        panic!("uncertain input-link creation must produce Partial");
+    };
+    assert_eq!(partial.phase, FailurePhase::Reconcile);
+    assert_eq!(partial.code, "reload_input_routes_failed");
+    assert_eq!(partial.rollback, RollbackState::Uncertain);
+    assert!(partial.fenced);
+    let input_routes = partial
+        .components
+        .iter()
+        .find(|component| component.path == "reload/input_routes")
+        .expect("Partial must identify the failed input-route phase");
+    assert_eq!(input_routes.action, "finalize");
+    assert_eq!(input_routes.state, ComponentState::Uncertain);
+    assert_eq!(
+        input_routes
+            .diagnostic
+            .as_ref()
+            .expect("uncertain input-route phase must carry a diagnostic")
+            .code,
+        "reload_input_routes_failed"
+    );
 
     let source = VoiceId::new(fnv1a_id("named_input_retry_src_voice"));
     let target = VoiceId::new(fnv1a_id("named_input_retry_target_voice"));
@@ -1693,6 +1728,9 @@ async fn script_named_input_route_create_failure_retries_on_no_change_reload() {
         );
     }
 
+    handle
+        .continue_best_effort(partial_receipt.attempt_id)
+        .expect("the exact fenced Partial must be acknowledged");
     apply_script(&mut runtime, script).await;
 
     {
