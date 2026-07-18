@@ -59,9 +59,14 @@ use crate::mutation::{
     RequestMaterial, RollbackState, Submission, SubmissionResult, SupersessionPolicy,
     TerminalOutcome, Timestamp,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::native_generation::{AppliedGeneration, NativeGenerationCoordinator};
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+use crate::native_generation::{GenerationOutcome, NativeGenerationPlan};
 use crate::reload;
 #[cfg(feature = "midi")]
 use crate::reload::MidiOutputMessage;
+use crate::resource_manager::ResourceManager;
 use crate::state::{State, VoiceRole};
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
@@ -123,6 +128,16 @@ pub struct Runtime<B: Backend> {
 
     /// Explicit v1 best-effort continuation acknowledgement state.
     mutation_policy: Arc<parking_lot::Mutex<MutationPolicy>>,
+
+    /// Runtime-local physical generation authority used by native v2 plans.
+    /// V1 handlers remain intentionally unmigrated until their family tickets.
+    resource_manager: ResourceManager,
+
+    /// Serialized native graph-generation authority. Holding this async mutex
+    /// spans staging through restoration/commit so one runtime cannot admit
+    /// overlapping generation switches.
+    #[cfg(not(target_arch = "wasm32"))]
+    native_generation_coordinator: tokio::sync::Mutex<NativeGenerationCoordinator>,
 
     /// Native backend barrier currently running off-task. Messages admitted
     /// after it remain deferred until the barrier terminalizes or times out.
@@ -403,6 +418,10 @@ impl<B: Backend> Runtime<B> {
         let mutation_ledger = MutationLedger::new(LedgerConfig::default())
             .expect("default mutation ledger configuration must initialize");
         let mutation_policy = Arc::new(parking_lot::Mutex::new(MutationPolicy::default()));
+        let resource_manager = ResourceManager::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        let native_generation_coordinator =
+            tokio::sync::Mutex::new(NativeGenerationCoordinator::default());
         let async_mutation_in_flight = Arc::new(parking_lot::Mutex::new(None));
 
         // Create MIDI handler first so we can share output channels with voices
@@ -424,6 +443,9 @@ impl<B: Backend> Runtime<B> {
             rx,
             mutation_ledger,
             mutation_policy,
+            resource_manager,
+            #[cfg(not(target_arch = "wasm32"))]
+            native_generation_coordinator,
             async_mutation_in_flight,
             transport_snapshot,
             transport: TransportHandler::new(backend.clone(), state.clone()),
@@ -484,6 +506,24 @@ impl<B: Backend> Runtime<B> {
     /// (beat position, tempo, playing status).
     pub fn transport_snapshot(&self) -> Arc<TransportSnapshot> {
         Arc::clone(&self.transport_snapshot)
+    }
+
+    /// Return this runtime's generation-aware Sample, Buffer, and SFZ
+    /// resource authority.
+    #[must_use]
+    pub fn resource_manager(&self) -> ResourceManager {
+        self.resource_manager.clone()
+    }
+
+    /// Return the graph generation whose activation and local commit were
+    /// both confirmed, if this runtime has committed one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn active_native_generation(&self) -> Option<AppliedGeneration> {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .active()
+            .cloned()
     }
 
     /// Run the main loop until the channel is closed.
@@ -5062,6 +5102,29 @@ impl MutationAttempt {
         }
         self.pre_admission_effects.push(effect);
         Ok(())
+    }
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+impl Runtime<crate::backends::ScsynthBackend> {
+    /// Execute one deterministic inactive-generation plan against this
+    /// runtime's graph coordinator, resource authority, and scsynth adapter.
+    pub async fn execute_native_generation(&self, plan: NativeGenerationPlan) -> GenerationOutcome {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .execute(plan, &self.resource_manager, self.backend.as_ref())
+            .await
+    }
+
+    /// Revisit resource generations whose reader claims delayed their
+    /// post-commit release, retaining quarantine on any uncertain free.
+    pub async fn reap_native_resources(&self) -> crate::native_generation::CleanupHealth {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .reap_retired_resources(&self.resource_manager, self.backend.as_ref())
+            .await
     }
 }
 

@@ -999,6 +999,23 @@ pub struct MutationReceiptWatermark {
     last_rejected_revision: Option<RevisionId>,
 }
 
+impl MutationReceiptWatermark {
+    #[must_use]
+    pub const fn runtime_epoch(&self) -> RuntimeEpoch {
+        self.runtime_epoch
+    }
+
+    #[must_use]
+    pub const fn accepted_through(&self) -> Option<RevisionId> {
+        self.accepted_through
+    }
+
+    #[must_use]
+    pub const fn last_confirmed_revision(&self) -> Option<RevisionId> {
+        self.last_confirmed_revision
+    }
+}
+
 impl TryFrom<&RuntimeMutationStatus> for MutationReceiptWatermark {
     type Error = CapabilityError;
 

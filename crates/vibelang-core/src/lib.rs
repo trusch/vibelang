@@ -119,6 +119,9 @@ mod clock;
 pub mod compat;
 mod error;
 pub mod mutation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_generation;
+pub mod resource_manager;
 mod runtime;
 mod state;
 mod transport_snapshot;
@@ -144,6 +147,9 @@ pub use backend::{AddAction, Backend, BufferInfo};
 pub use candidate::{Candidate, CandidateDraft};
 pub use error::{Error, Result, SynthDefRejection};
 pub use mutation::{MutationContext, MutationLedger};
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_generation::{NativeGenerationCoordinator, NativeGenerationPlanner};
+pub use resource_manager::ResourceManager;
 
 pub use message::{
     EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,
