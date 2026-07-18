@@ -27,14 +27,23 @@ pub mod api;
 pub mod context;
 pub mod engine;
 pub mod error;
+pub mod foundation;
+pub mod version;
 
 // Optional extensions module (feature-gated)
 #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
 pub mod extensions;
 
 // Re-exports
-pub use engine::{HostMutation, ScriptEngine};
+pub use engine::{CompiledScript, HostMutation, ScriptEngine, ScriptEvaluation, V2EngineConfig};
 pub use error::{Error, Result};
+pub use foundation::{
+    BuilderBase, FoundationError, Observation, ObservationStaleness, ObservationState, RefBase,
+    RevisionRef,
+};
+pub use version::{
+    select_import_language, select_language, LanguageSelectionError, LanguageVersion, V2_DIRECTIVE,
+};
 
 #[cfg(feature = "api-manifest")]
 pub fn public_api_metadata_json() -> std::result::Result<String, String> {

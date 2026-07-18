@@ -23,6 +23,14 @@ pub enum Error {
     /// Runtime error.
     #[error("Runtime error: {0}")]
     Runtime(String),
+
+    /// Language-contract selection or compatibility error.
+    #[error("Language contract error: {0}")]
+    Language(#[from] crate::version::LanguageSelectionError),
+
+    /// V2 foundation validation error.
+    #[error("V2 foundation error: {0}")]
+    Foundation(#[from] crate::foundation::FoundationError),
 }
 
 impl Error {
@@ -30,7 +38,10 @@ impl Error {
     /// callbacks, or extension operations can run.
     #[must_use]
     pub const fn definitely_no_effect(&self) -> bool {
-        matches!(self, Self::Parse(_) | Self::Io(_))
+        matches!(
+            self,
+            Self::Parse(_) | Self::Io(_) | Self::Language(_) | Self::Foundation(_)
+        )
     }
 }
 
