@@ -1,14 +1,14 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "b920b66d99a3a0eeac4802fea9a66ccbcd5aa6c84c876b73677108734e21e57d",
+  "contract_digest": "cd12dee031ad1da7121286307f029d69f7788a3f8b50ad99aae4af34a92032ff",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
     "routes": 97,
     "http_types": 76,
     "http_fields": 307,
-    "source_nodes": 962,
+    "source_nodes": 964,
     "consumer_nodes": 8,
     "orphan_records": 0,
     "unclassified_records": 0
@@ -12071,6 +12071,16 @@
       "node_ids_sha256": "d77466ea947bdb14f4b164f97aaa8971a946742bc05c6553b83bc1d84e9b616d"
     },
     {
+      "id": "v1:source:3f01d0e5e713a4fa",
+      "path": "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:3de5ecd799270049"
+      ],
+      "node_ids_sha256": "0d75a85038832e0b0690deab753805a936f2c6a523047b8ecd398a429e9d4f22"
+    },
+    {
       "id": "v1:source:3f720d35c44de3b6",
       "path": "crates/vibelang-dsp/ugen_manifests/sc3_aa_oscillators.json",
       "kind": "mechanical_declaration",
@@ -16338,6 +16348,16 @@
         "v1:overload:663b5ccafdab4c47"
       ],
       "node_ids_sha256": "b8cde0074cd45cc835d6a8f85316a9d54c4f8abff69cf2ed375e4b65af690ac1"
+    },
+    {
+      "id": "v1:source:5fa9993e0f2de8bf",
+      "path": "tests/fixtures/api-unification/v1/negative/failure-seam-artifact-drift.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:58bbfd7197a13d31"
+      ],
+      "node_ids_sha256": "efd3fdb866b4d429b3cf41886e11d631acc0f81af2445e1150065c83e8c0b5d4"
     },
     {
       "id": "v1:source:5fb49c6cfa760a9a",
@@ -29644,6 +29664,8 @@
         "tests/fixtures/api-unification/v1/golden/07_midi.vibe",
         "tests/fixtures/api-unification/v1/golden/08_transport.snapshot",
         "tests/fixtures/api-unification/v1/golden/08_transport.vibe",
+        "tests/fixtures/api-unification/v1/negative/failure-seam-artifact-drift.json",
+        "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
         "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
         "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json",
         "tests/fixtures/api-unification/v1/negative/push-pull-diagnostic-mismatch.json",
@@ -29652,8 +29674,8 @@
         "tests/fixtures/api-unification/v1/negative/stale-success.json",
         "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json"
       ],
-      "included_count": 26,
-      "eligible_count": 26,
+      "included_count": 28,
+      "eligible_count": 28,
       "accepted_denominator": 26,
       "denominator_baseline_owner": "vibelang-tests",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29680,8 +29702,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13366,
-      "eligible_count": 13366,
+      "included_count": 13368,
+      "eligible_count": 13368,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
