@@ -2172,15 +2172,21 @@ mod tests {
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
+    #[path = "m07_integration_gate.rs"]
+    mod m07_integration_gate;
+
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     enum Fault {
+        CorrelationExhaustion,
         Root,
         Create,
         Update,
         Route,
         Effect,
         Barrier,
+        BarrierTimeout,
         Activation,
+        ActivationSendFailure,
         Commit,
         Restoration,
         Cleanup,
@@ -2271,6 +2277,7 @@ mod tests {
         }
 
         fn reserve_correlation(&self) -> Result<BackendCorrelation, Self::Error> {
+            self.fail(Fault::CorrelationExhaustion)?;
             if self.duplicate_correlations {
                 return Ok(BackendCorrelation {
                     backend: "mock".into(),
@@ -2314,6 +2321,7 @@ mod tests {
             &self,
             expected: &BackendCorrelation,
         ) -> Result<BackendCorrelation, Self::Error> {
+            self.fail(Fault::BarrierTimeout)?;
             self.ack(Fault::Barrier, expected)
         }
 
@@ -2322,6 +2330,7 @@ mod tests {
             _activation: &ActivationSwitch,
             expected: &BackendCorrelation,
         ) -> Result<BackendCorrelation, Self::Error> {
+            self.fail(Fault::ActivationSendFailure)?;
             self.ack(Fault::Activation, expected)
         }
 
