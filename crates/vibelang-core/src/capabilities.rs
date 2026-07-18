@@ -3,6 +3,14 @@
 //! The catalog is derived from the canonical conventions metadata. Runtime
 //! callers provide explicit evidence for every gate required by that catalog;
 //! compilation alone is therefore never treated as live backend truth.
+//!
+//! Snapshot privacy is a closed allowlist. Subjects may identify only local or
+//! remote runtime classes and native OS or WASM target classes. Scopes are
+//! runtime or static-editor classes. Constraints may expose only booleans,
+//! non-negative aggregate counts/rates/sizes, or the opaque audio/MIDI/plugin
+//! classes declared below. Evidence is selected from closed, typed source
+//! classes. Paths, serials, host/user strings, and semantic vendor/device names
+//! reject.
 
 use crate::compat::{timeout, Duration, Instant};
 use crate::mutation::{
@@ -24,6 +32,8 @@ pub use vibelang_api_manifest::conventions::AvailabilityGate;
 pub const CAPABILITY_SNAPSHOT_SCHEMA_ID: &str = "schema.vibelang.capability_snapshot.v1";
 pub const MI_UGENS_PROBE_CACHE_TTL: Duration = Duration::from_secs(1);
 pub const MI_UGENS_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+pub const CAPABILITY_CATALOG_SHA256: &str =
+    "552a1ce1e6ad3535b7c1eddf574e57b9f342df28e34c056bcf91cd15b93ade88";
 
 const AVAILABLE_STATE_ID: &str = "availability.available";
 const DEGRADED_STATE_ID: &str = "availability.degraded";
@@ -34,6 +44,34 @@ const PLUGIN_MISSING_REASON_ID: &str = "reason.plugin_missing";
 const PROBE_FAILED_REASON_ID: &str = "reason.probe_failed";
 const PROBE_PENDING_REASON_ID: &str = "reason.probe_pending";
 const MAX_CANONICAL_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
+// Snapshot strings are deliberately closed over stable semantic classes. New
+// classes require source review here instead of accepting locally meaningful
+// host, user, device, vendor, path, or serial identifiers at runtime.
+const PRIVACY_SAFE_RUNTIME_IDS: &[&str] = &["runtime.local", "runtime.remote"];
+const PRIVACY_SAFE_TARGET_IDS: &[&str] = &[
+    "target.native.linux",
+    "target.native.macos",
+    "target.native.other",
+    "target.native.windows",
+    "target.wasm32",
+];
+const PRIVACY_SAFE_SCOPE_IDS: &[&str] = &["scope.editor.static", "scope.runtime"];
+const PRIVACY_SAFE_CONSTRAINT_IDS: &[&str] = &[
+    "accepted_but_ignored",
+    "buffer_frames",
+    "device_class",
+    "device_count",
+    "plugin_class",
+    "sample_rate_hz",
+];
+const PRIVACY_SAFE_CONSTRAINT_IDENTIFIER_CLASSES: &[&str] = &[
+    "device.class.audio_input",
+    "device.class.audio_output",
+    "device.class.midi_input",
+    "device.class.midi_output",
+    "plugin.class.audio_ugen",
+];
 
 #[derive(Debug, Error)]
 pub enum CapabilityError {
@@ -77,6 +115,8 @@ pub enum CapabilityError {
     ConflictingConstraint(String),
     #[error("invalid stable identifier {field}: {value}")]
     InvalidStableId { field: &'static str, value: String },
+    #[error("privacy policy rejected {field}")]
+    PrivacyPolicyViolation { field: &'static str },
     #[error("invalid build revision: {0}")]
     InvalidBuildRevision(String),
     #[error("security mode {mode_id} requires authenticated={required}, got {actual}")]
@@ -104,11 +144,33 @@ pub struct CapabilityCatalog {
     availability_bindings: BTreeMap<String, AvailabilityBinding>,
 }
 
+#[derive(Serialize)]
+struct CapabilityCatalogSeed<'a> {
+    availability_states: &'a [AvailabilityStateDefinition],
+    availability_reasons: &'a [AvailabilityReasonDefinition],
+    security_modes: &'a [SecurityModeDefinition],
+    capabilities: &'a [CapabilityDefinition],
+    availability_bindings: &'a [AvailabilityBinding],
+}
+
 impl CapabilityCatalog {
     pub fn from_conventions(metadata: &ConventionsMetadata) -> Result<Self, CapabilityError> {
         metadata
             .validate()
             .map_err(|error| CapabilityError::InvalidMetadata(error.to_string()))?;
+        let catalog_digest = canonical_sha256_hex(&CapabilityCatalogSeed {
+            availability_states: &metadata.availability_states,
+            availability_reasons: &metadata.availability_reasons,
+            security_modes: &metadata.security_modes,
+            capabilities: &metadata.capabilities,
+            availability_bindings: &metadata.availability_bindings,
+        })
+        .map_err(|error| CapabilityError::CanonicalJson(error.to_string()))?;
+        if catalog_digest != CAPABILITY_CATALOG_SHA256 {
+            return Err(CapabilityError::InvalidMetadata(format!(
+                "capability catalog digest does not match accepted M05 registry: {catalog_digest}"
+            )));
+        }
         let catalog = Self {
             definitions: metadata
                 .capabilities
@@ -297,19 +359,64 @@ pub enum ProvenanceKind {
     ConsumerProjection,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityProvenance {
-    pub kind_id: ProvenanceKind,
-    pub evidence_id: String,
+    kind_id: ProvenanceKind,
+    evidence_id: String,
 }
 
 impl CapabilityProvenance {
-    pub fn new(kind_id: ProvenanceKind, evidence_id: impl Into<String>) -> Self {
+    fn new(kind_id: ProvenanceKind, evidence_id: impl Into<String>) -> Self {
         Self {
             kind_id,
             evidence_id: evidence_id.into(),
         }
+    }
+
+    #[must_use]
+    pub fn kind_id(&self) -> ProvenanceKind {
+        self.kind_id
+    }
+
+    #[must_use]
+    pub fn evidence_id(&self) -> &str {
+        &self.evidence_id
+    }
+}
+
+/// Privacy-safe evidence classes accepted from capability source adapters.
+///
+/// These variants serialize to generic semantic evidence identifiers. Local
+/// device, vendor, host, user, path, and serial strings cannot be supplied.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapabilityEvidenceSource {
+    ContractCatalog,
+    BuildTarget,
+    BuildFeature,
+    OperatorPolicy,
+    RuntimeProbe,
+    BackendProbe,
+    ConsumerProjection,
+    MiUgensPluginProbe,
+}
+
+impl CapabilityEvidenceSource {
+    fn provenance(self) -> CapabilityProvenance {
+        let (kind_id, evidence_id) = match self {
+            Self::ContractCatalog => (ProvenanceKind::Contract, "contract.capability_catalog.v1"),
+            Self::BuildTarget => (ProvenanceKind::Build, "build.target.class"),
+            Self::BuildFeature => (ProvenanceKind::Build, "build.feature.class"),
+            Self::OperatorPolicy => (ProvenanceKind::OperatorPolicy, "policy.operator.class"),
+            Self::RuntimeProbe => (ProvenanceKind::RuntimeProbe, "probe.runtime.class"),
+            Self::BackendProbe => (ProvenanceKind::BackendProbe, "probe.backend.class"),
+            Self::ConsumerProjection => (
+                ProvenanceKind::ConsumerProjection,
+                "projection.consumer.class",
+            ),
+            Self::MiUgensPluginProbe => (ProvenanceKind::RuntimeProbe, MI_UGENS_PROBE_ID),
+        };
+        CapabilityProvenance::new(kind_id, evidence_id)
     }
 }
 
@@ -322,7 +429,7 @@ pub enum CapabilityConstraint {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GateOutcome {
+pub(crate) enum GateOutcome {
     Available,
     Degraded,
     Unavailable,
@@ -338,46 +445,47 @@ pub struct GateEvidence {
 }
 
 impl GateEvidence {
-    pub fn available(provenance: CapabilityProvenance) -> Self {
+    pub(crate) fn available(source: CapabilityEvidenceSource) -> Self {
         Self {
             outcome: GateOutcome::Available,
             reason_ids: Vec::new(),
             constraints: BTreeMap::new(),
-            provenance: vec![provenance],
+            provenance: vec![source.provenance()],
         }
     }
 
-    pub fn degraded(reason_id: impl Into<String>, provenance: CapabilityProvenance) -> Self {
-        Self::non_available(GateOutcome::Degraded, reason_id, provenance)
+    pub(crate) fn unavailable(
+        reason_id: impl Into<String>,
+        source: CapabilityEvidenceSource,
+    ) -> Self {
+        Self::non_available(GateOutcome::Unavailable, reason_id, source)
     }
 
-    pub fn unavailable(reason_id: impl Into<String>, provenance: CapabilityProvenance) -> Self {
-        Self::non_available(GateOutcome::Unavailable, reason_id, provenance)
-    }
-
-    pub fn unknown(reason_id: impl Into<String>, provenance: CapabilityProvenance) -> Self {
-        Self::non_available(GateOutcome::Unknown, reason_id, provenance)
+    pub(crate) fn unknown(reason_id: impl Into<String>, source: CapabilityEvidenceSource) -> Self {
+        Self::non_available(GateOutcome::Unknown, reason_id, source)
     }
 
     fn non_available(
         outcome: GateOutcome,
         reason_id: impl Into<String>,
-        provenance: CapabilityProvenance,
+        source: CapabilityEvidenceSource,
     ) -> Self {
         Self {
             outcome,
             reason_ids: vec![reason_id.into()],
             constraints: BTreeMap::new(),
-            provenance: vec![provenance],
+            provenance: vec![source.provenance()],
         }
     }
 
-    pub fn with_reason(mut self, reason_id: impl Into<String>) -> Self {
+    #[cfg(test)]
+    fn with_reason(mut self, reason_id: impl Into<String>) -> Self {
         self.reason_ids.push(reason_id.into());
         self
     }
 
-    pub fn with_constraint(
+    #[cfg(test)]
+    fn with_constraint(
         mut self,
         constraint_id: impl Into<String>,
         value: CapabilityConstraint,
@@ -386,8 +494,9 @@ impl GateEvidence {
         self
     }
 
-    pub fn with_provenance(mut self, provenance: CapabilityProvenance) -> Self {
-        self.provenance.push(provenance);
+    #[cfg(test)]
+    fn with_provenance(mut self, source: CapabilityEvidenceSource) -> Self {
+        self.provenance.push(source.provenance());
         self
     }
 }
@@ -400,15 +509,55 @@ pub enum RuntimeCapabilityState {
     Unknown,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// Catalog-derived immutable capability status.
+///
+/// ```compile_fail
+/// use vibelang_core::capabilities::CapabilityStatus;
+/// fn forge(status: &mut CapabilityStatus) {
+///     status.state_id = "availability.available".into();
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityStatus {
-    pub capability_id: String,
-    pub state_id: String,
-    pub scope_id: String,
-    pub reason_ids: Vec<String>,
-    pub constraints: BTreeMap<String, CapabilityConstraint>,
-    pub provenance: Vec<CapabilityProvenance>,
+    capability_id: String,
+    state_id: String,
+    scope_id: String,
+    reason_ids: Vec<String>,
+    constraints: BTreeMap<String, CapabilityConstraint>,
+    provenance: Vec<CapabilityProvenance>,
+}
+
+impl CapabilityStatus {
+    #[must_use]
+    pub fn capability_id(&self) -> &str {
+        &self.capability_id
+    }
+
+    #[must_use]
+    pub fn state_id(&self) -> &str {
+        &self.state_id
+    }
+
+    #[must_use]
+    pub fn scope_id(&self) -> &str {
+        &self.scope_id
+    }
+
+    #[must_use]
+    pub fn reason_ids(&self) -> &[String] {
+        &self.reason_ids
+    }
+
+    #[must_use]
+    pub fn constraints(&self) -> &BTreeMap<String, CapabilityConstraint> {
+        &self.constraints
+    }
+
+    #[must_use]
+    pub fn provenance(&self) -> &[CapabilityProvenance] {
+        &self.provenance
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -421,6 +570,10 @@ pub struct AvailabilityPredicateStatus {
     pub reason_ids: Vec<String>,
 }
 
+/// Complete capability evidence matrix populated only by core source adapters.
+///
+/// Public callers may evaluate or pass a matrix received from the runtime, but
+/// gate insertion is crate-private so they cannot manufacture snapshot truth.
 #[derive(Clone, Debug)]
 pub struct CapabilityMatrix {
     scope_id: String,
@@ -433,6 +586,7 @@ impl CapabilityMatrix {
         scope_id: impl Into<String>,
     ) -> Result<Self, CapabilityError> {
         let scope_id = scope_id.into();
+        validate_allowlisted_identifier("scope_id", &scope_id, PRIVACY_SAFE_SCOPE_IDS)?;
         validate_stable_id("scope_id", &scope_id)?;
         Ok(Self {
             scope_id,
@@ -443,7 +597,7 @@ impl CapabilityMatrix {
         })
     }
 
-    pub fn set_gate(
+    pub(crate) fn set_gate(
         &mut self,
         catalog: &CapabilityCatalog,
         capability_id: &str,
@@ -613,6 +767,7 @@ fn validate_gate_evidence(
     }
     for item in &evidence.provenance {
         validate_stable_id("evidence_id", &item.evidence_id)?;
+        validate_provenance_policy(catalog, item)?;
         if !provenance_matches_gate(item.kind_id, gate) {
             return Err(invalid_evidence(
                 capability_id,
@@ -622,12 +777,74 @@ fn validate_gate_evidence(
         }
     }
     for (constraint_id, value) in &evidence.constraints {
+        validate_constraint_policy(constraint_id, value)?;
         validate_stable_id("constraint_id", constraint_id)?;
         if let CapabilityConstraint::Identifier(identifier) = value {
+            validate_allowlisted_identifier(
+                "constraint_value",
+                identifier,
+                PRIVACY_SAFE_CONSTRAINT_IDENTIFIER_CLASSES,
+            )?;
             validate_stable_id("constraint_value", identifier)?;
         }
     }
     Ok(())
+}
+
+fn validate_constraint_policy(
+    constraint_id: &str,
+    value: &CapabilityConstraint,
+) -> Result<(), CapabilityError> {
+    validate_allowlisted_identifier("constraint_id", constraint_id, PRIVACY_SAFE_CONSTRAINT_IDS)?;
+    let valid_shape = match (constraint_id, value) {
+        ("accepted_but_ignored", CapabilityConstraint::Bool(_)) => true,
+        (
+            "buffer_frames" | "device_count" | "sample_rate_hz",
+            CapabilityConstraint::Integer(value),
+        ) => *value >= 0,
+        ("device_class", CapabilityConstraint::Identifier(identifier)) => {
+            identifier.starts_with("device.class.")
+        }
+        ("plugin_class", CapabilityConstraint::Identifier(identifier)) => {
+            identifier.starts_with("plugin.class.")
+        }
+        _ => false,
+    };
+    if valid_shape {
+        Ok(())
+    } else {
+        Err(CapabilityError::PrivacyPolicyViolation {
+            field: "constraint_value",
+        })
+    }
+}
+
+fn validate_provenance_policy(
+    catalog: &CapabilityCatalog,
+    provenance: &CapabilityProvenance,
+) -> Result<(), CapabilityError> {
+    let approved_class = [
+        CapabilityEvidenceSource::ContractCatalog,
+        CapabilityEvidenceSource::BuildTarget,
+        CapabilityEvidenceSource::BuildFeature,
+        CapabilityEvidenceSource::OperatorPolicy,
+        CapabilityEvidenceSource::RuntimeProbe,
+        CapabilityEvidenceSource::BackendProbe,
+        CapabilityEvidenceSource::ConsumerProjection,
+        CapabilityEvidenceSource::MiUgensPluginProbe,
+    ]
+    .into_iter()
+    .map(CapabilityEvidenceSource::provenance)
+    .any(|approved| approved == *provenance);
+    let approved_security_mode = provenance.kind_id == ProvenanceKind::OperatorPolicy
+        && catalog.security_modes.contains_key(&provenance.evidence_id);
+    if approved_class || approved_security_mode {
+        Ok(())
+    } else {
+        Err(CapabilityError::PrivacyPolicyViolation {
+            field: "evidence_id",
+        })
+    }
 }
 
 fn provenance_matches_gate(kind: ProvenanceKind, gate: AvailabilityGate) -> bool {
@@ -652,12 +869,12 @@ fn invalid_evidence(capability_id: &str, gate: AvailabilityGate, message: &str) 
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilitySubject {
-    pub runtime_id: String,
-    pub target_id: String,
-    pub build_revision: PublicDigest,
+    runtime_id: String,
+    target_id: String,
+    build_revision: PublicDigest,
 }
 
 impl CapabilitySubject {
@@ -668,6 +885,8 @@ impl CapabilitySubject {
     ) -> Result<Self, CapabilityError> {
         let runtime_id = runtime_id.into();
         let target_id = target_id.into();
+        validate_allowlisted_identifier("runtime_id", &runtime_id, PRIVACY_SAFE_RUNTIME_IDS)?;
+        validate_allowlisted_identifier("target_id", &target_id, PRIVACY_SAFE_TARGET_IDS)?;
         validate_stable_id("runtime_id", &runtime_id)?;
         validate_stable_id("target_id", &target_id)?;
         let build_revision = PublicDigest::parse(build_revision.into())
@@ -678,14 +897,29 @@ impl CapabilitySubject {
             build_revision,
         })
     }
+
+    #[must_use]
+    pub fn runtime_id(&self) -> &str {
+        &self.runtime_id
+    }
+
+    #[must_use]
+    pub fn target_id(&self) -> &str {
+        &self.target_id
+    }
+
+    #[must_use]
+    pub fn build_revision(&self) -> &PublicDigest {
+        &self.build_revision
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilitySecurity {
-    pub mode_id: String,
-    pub authenticated: bool,
-    pub origin_policy_id: String,
+    mode_id: String,
+    authenticated: bool,
+    origin_policy_id: String,
 }
 
 impl CapabilitySecurity {
@@ -712,6 +946,21 @@ impl CapabilitySecurity {
         })
     }
 
+    #[must_use]
+    pub fn mode_id(&self) -> &str {
+        &self.mode_id
+    }
+
+    #[must_use]
+    pub fn authenticated(&self) -> bool {
+        self.authenticated
+    }
+
+    #[must_use]
+    pub fn origin_policy_id(&self) -> &str {
+        &self.origin_policy_id
+    }
+
     pub fn operator_policy_evidence(
         &self,
         catalog: &CapabilityCatalog,
@@ -722,22 +971,32 @@ impl CapabilitySecurity {
             .ok_or_else(|| CapabilityError::UnknownSecurityMode(self.mode_id.clone()))?;
         let provenance = CapabilityProvenance::new(ProvenanceKind::OperatorPolicy, &mode.mode_id);
         if let Some(reason_id) = &mode.degraded_reason_id {
-            Ok(GateEvidence::degraded(reason_id, provenance))
+            Ok(GateEvidence {
+                outcome: GateOutcome::Degraded,
+                reason_ids: vec![reason_id.clone()],
+                constraints: BTreeMap::new(),
+                provenance: vec![provenance],
+            })
         } else {
-            Ok(GateEvidence::available(provenance))
+            Ok(GateEvidence {
+                outcome: GateOutcome::Available,
+                reason_ids: Vec::new(),
+                constraints: BTreeMap::new(),
+                provenance: vec![provenance],
+            })
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MutationReceiptWatermark {
-    pub schema_version: u16,
-    pub runtime_epoch: RuntimeEpoch,
-    pub event_sequence: Option<EventSequence>,
-    pub accepted_through: Option<RevisionId>,
-    pub last_confirmed_revision: Option<RevisionId>,
-    pub last_rejected_revision: Option<RevisionId>,
+    schema_version: u16,
+    runtime_epoch: RuntimeEpoch,
+    event_sequence: Option<EventSequence>,
+    accepted_through: Option<RevisionId>,
+    last_confirmed_revision: Option<RevisionId>,
+    last_rejected_revision: Option<RevisionId>,
 }
 
 impl TryFrom<&RuntimeMutationStatus> for MutationReceiptWatermark {
@@ -760,47 +1019,62 @@ impl TryFrom<&RuntimeMutationStatus> for MutationReceiptWatermark {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CapabilitySnapshotInput {
-    pub contract_revision: PublicDigest,
-    pub subject: CapabilitySubject,
-    pub mutation_revision: MutationReceiptWatermark,
-    pub security: CapabilitySecurity,
-    pub capabilities: Vec<CapabilityStatus>,
+struct CapabilitySnapshotInput {
+    contract_revision: PublicDigest,
+    subject: CapabilitySubject,
+    mutation_revision: MutationReceiptWatermark,
+    security: CapabilitySecurity,
+    capabilities: Vec<CapabilityStatus>,
 }
 
-impl CapabilitySnapshotInput {
+/// Explicit source/runtime facts from which a snapshot is assembled.
+///
+/// Capability status and provenance are evaluated from `matrix`; security mode,
+/// authentication, and origin policy are resolved from the canonical catalog.
+/// There is intentionally no constructor accepting either derived output.
+pub struct CapabilitySnapshotFacts<'a> {
+    contract_revision: PublicDigest,
+    subject: CapabilitySubject,
+    mutation_status: &'a RuntimeMutationStatus,
+    matrix: &'a CapabilityMatrix,
+    security_mode_id: &'a str,
+    authenticated: bool,
+}
+
+impl<'a> CapabilitySnapshotFacts<'a> {
     pub fn new(
         contract_revision: impl Into<String>,
         subject: CapabilitySubject,
-        mutation_status: &RuntimeMutationStatus,
-        security: CapabilitySecurity,
-        capabilities: Vec<CapabilityStatus>,
+        mutation_status: &'a RuntimeMutationStatus,
+        matrix: &'a CapabilityMatrix,
+        security_mode_id: &'a str,
+        authenticated: bool,
     ) -> Result<Self, CapabilityError> {
         let contract_revision = PublicDigest::parse(contract_revision.into())
             .map_err(CapabilityError::InvalidBuildRevision)?;
         Ok(Self {
             contract_revision,
             subject,
-            mutation_revision: MutationReceiptWatermark::try_from(mutation_status)?,
-            security,
-            capabilities,
+            mutation_status,
+            matrix,
+            security_mode_id,
+            authenticated,
         })
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilitySnapshot {
-    pub schema_id: String,
-    pub contract_revision: PublicDigest,
-    pub generation: u64,
-    pub snapshot_id: PublicDigest,
-    pub observed_at: Timestamp,
-    pub subject: CapabilitySubject,
-    pub mutation_revision: MutationReceiptWatermark,
-    pub security: CapabilitySecurity,
-    pub capabilities: Vec<CapabilityStatus>,
+    schema_id: String,
+    contract_revision: PublicDigest,
+    generation: u64,
+    snapshot_id: PublicDigest,
+    observed_at: Timestamp,
+    subject: CapabilitySubject,
+    mutation_revision: MutationReceiptWatermark,
+    security: CapabilitySecurity,
+    capabilities: Vec<CapabilityStatus>,
 }
 
 impl CapabilitySnapshot {
@@ -816,6 +1090,41 @@ impl CapabilitySnapshot {
         } else {
             Err(CapabilityError::SnapshotIdMismatch)
         }
+    }
+
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub fn snapshot_id(&self) -> &PublicDigest {
+        &self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn observed_at(&self) -> &Timestamp {
+        &self.observed_at
+    }
+
+    #[must_use]
+    pub fn subject(&self) -> &CapabilitySubject {
+        &self.subject
+    }
+
+    #[must_use]
+    pub fn mutation_revision(&self) -> &MutationReceiptWatermark {
+        &self.mutation_revision
+    }
+
+    #[must_use]
+    pub fn security(&self) -> &CapabilitySecurity {
+        &self.security
+    }
+
+    #[must_use]
+    pub fn capabilities(&self) -> &[CapabilityStatus] {
+        &self.capabilities
     }
 }
 
@@ -833,11 +1142,28 @@ impl CapabilitySnapshotAssembler {
 
     pub fn assemble(
         &mut self,
-        mut input: CapabilitySnapshotInput,
+        catalog: &CapabilityCatalog,
+        facts: CapabilitySnapshotFacts<'_>,
         observed_at: Timestamp,
     ) -> Result<CapabilitySnapshot, CapabilityError> {
+        let security =
+            CapabilitySecurity::from_mode(catalog, facts.security_mode_id, facts.authenticated)?;
+        let mut matrix = facts.matrix.clone();
+        matrix.set_gate(
+            catalog,
+            "capability.http.eval",
+            AvailabilityGate::OperatorPolicy,
+            security.operator_policy_evidence(catalog)?,
+        )?;
+        let mut input = CapabilitySnapshotInput {
+            contract_revision: facts.contract_revision,
+            subject: facts.subject,
+            mutation_revision: MutationReceiptWatermark::try_from(facts.mutation_status)?,
+            security,
+            capabilities: matrix.evaluate(catalog)?,
+        };
         normalize_capabilities(&mut input.capabilities)?;
-        validate_snapshot_input(&input)?;
+        validate_snapshot_input(catalog, &input)?;
 
         let seed = SnapshotSemanticSeed::from(&input);
         let semantics = canonical_json_of(&seed)
@@ -958,22 +1284,16 @@ mod tests {
         })
     }
 
-    fn provenance_for(gate: AvailabilityGate) -> CapabilityProvenance {
-        let (kind, evidence_id) = match gate {
-            AvailabilityGate::Declaration => (ProvenanceKind::Contract, "contract.test.v1"),
-            AvailabilityGate::Target => (ProvenanceKind::Build, "build.target.test"),
-            AvailabilityGate::BuildFeature => (ProvenanceKind::Build, "build.feature.test"),
-            AvailabilityGate::OperatorPolicy => (ProvenanceKind::OperatorPolicy, "policy.test.v1"),
-            AvailabilityGate::RuntimeProbe => (ProvenanceKind::RuntimeProbe, "probe.runtime.test"),
-            AvailabilityGate::BackendSemantic => {
-                (ProvenanceKind::BackendProbe, "probe.backend.test")
-            }
-            AvailabilityGate::ConsumerProjection => (
-                ProvenanceKind::ConsumerProjection,
-                "projection.consumer.test",
-            ),
-        };
-        CapabilityProvenance::new(kind, evidence_id)
+    fn provenance_for(gate: AvailabilityGate) -> CapabilityEvidenceSource {
+        match gate {
+            AvailabilityGate::Declaration => CapabilityEvidenceSource::ContractCatalog,
+            AvailabilityGate::Target => CapabilityEvidenceSource::BuildTarget,
+            AvailabilityGate::BuildFeature => CapabilityEvidenceSource::BuildFeature,
+            AvailabilityGate::OperatorPolicy => CapabilityEvidenceSource::OperatorPolicy,
+            AvailabilityGate::RuntimeProbe => CapabilityEvidenceSource::RuntimeProbe,
+            AvailabilityGate::BackendSemantic => CapabilityEvidenceSource::BackendProbe,
+            AvailabilityGate::ConsumerProjection => CapabilityEvidenceSource::ConsumerProjection,
+        }
     }
 
     fn available_gate(gate: AvailabilityGate) -> GateEvidence {
@@ -1044,23 +1364,22 @@ mod tests {
         .expect("fixed subject must be valid")
     }
 
-    fn snapshot_input(
-        matrix: &CapabilityMatrix,
-        status: &RuntimeMutationStatus,
+    fn snapshot_facts<'a>(
+        matrix: &'a CapabilityMatrix,
+        status: &'a RuntimeMutationStatus,
         target_id: &str,
-        mode_id: &str,
+        mode_id: &'a str,
         authenticated: bool,
-    ) -> CapabilitySnapshotInput {
-        let catalog = &accepted().catalog;
-        CapabilitySnapshotInput::new(
+    ) -> CapabilitySnapshotFacts<'a> {
+        CapabilitySnapshotFacts::new(
             format!("sha256:{}", "b".repeat(64)),
             fixed_subject(target_id),
             status,
-            CapabilitySecurity::from_mode(catalog, mode_id, authenticated)
-                .expect("canonical security mode must validate"),
-            matrix.evaluate(catalog).expect("matrix must evaluate"),
+            matrix,
+            mode_id,
+            authenticated,
         )
-        .expect("snapshot input must validate")
+        .expect("snapshot facts must validate")
     }
 
     fn observed(second: u8) -> Timestamp {
@@ -1104,6 +1423,88 @@ mod tests {
                 AvailabilityGate::BackendSemantic,
             ]
         );
+
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/effective-metadata-v1.json");
+        let source = std::fs::read_to_string(path).expect("accepted M05 metadata must exist");
+        let mut metadata: ConventionsMetadata =
+            serde_json::from_str(&source).expect("accepted M05 metadata must decode");
+        metadata.capabilities[0].meaning.push_str(" forged");
+        assert!(matches!(
+            CapabilityCatalog::from_conventions(&metadata),
+            Err(CapabilityError::InvalidMetadata(_))
+        ));
+    }
+
+    #[test]
+    fn snapshot_assembly_requires_complete_catalog_derived_truth() {
+        let catalog = &accepted().catalog;
+        let status = fixed_status(1, 1);
+
+        let mut missing = available_matrix(false);
+        missing.gates.remove("capability.midi.input");
+        let missing_result = CapabilitySnapshotAssembler::new().assemble(
+            catalog,
+            snapshot_facts(
+                &missing,
+                &status,
+                "target.native.linux",
+                "security.http.loopback_local",
+                false,
+            ),
+            observed(1),
+        );
+        assert!(matches!(
+            missing_result,
+            Err(CapabilityError::MissingCapability(ref id)) if id == "capability.midi.input"
+        ));
+
+        let mut unknown = available_matrix(false);
+        unknown
+            .gates
+            .insert("capability.device.arturia_keystep".into(), BTreeMap::new());
+        let unknown_result = CapabilitySnapshotAssembler::new().assemble(
+            catalog,
+            snapshot_facts(
+                &unknown,
+                &status,
+                "target.native.linux",
+                "security.http.loopback_local",
+                false,
+            ),
+            observed(1),
+        );
+        assert!(matches!(
+            unknown_result,
+            Err(CapabilityError::UnexpectedCapability(ref id))
+                if id == "capability.device.arturia_keystep"
+        ));
+
+        let mut false_available = available_matrix(false);
+        false_available
+            .set_gate(
+                catalog,
+                "capability.plugin.mi_ugens",
+                AvailabilityGate::RuntimeProbe,
+                GateEvidence::available(CapabilityEvidenceSource::MiUgensPluginProbe)
+                    .with_reason("reason.plugin_missing"),
+            )
+            .expect("catalog gate accepts evidence for evaluation");
+        let false_result = CapabilitySnapshotAssembler::new().assemble(
+            catalog,
+            snapshot_facts(
+                &false_available,
+                &status,
+                "target.native.linux",
+                "security.http.loopback_local",
+                false,
+            ),
+            observed(1),
+        );
+        assert!(matches!(
+            false_result,
+            Err(CapabilityError::InvalidGateEvidence { .. })
+        ));
     }
 
     #[test]
@@ -1435,6 +1836,7 @@ mod tests {
     #[test]
     fn security_modes_consume_canonical_policy_and_degradation_data() {
         let catalog = &accepted().catalog;
+        let mutation_status = fixed_status(1, 1);
         for (mode_id, authenticated, expected_state) in [
             (
                 "security.http.authenticated_remote",
@@ -1468,6 +1870,33 @@ mod tests {
             )
             .expect("security matrix must evaluate");
             assert_eq!(status.state_id, expected_state, "{mode_id}");
+
+            let matrix = available_matrix(false);
+            let snapshot = CapabilitySnapshotAssembler::new()
+                .assemble(
+                    catalog,
+                    snapshot_facts(
+                        &matrix,
+                        &mutation_status,
+                        "target.native.linux",
+                        mode_id,
+                        authenticated,
+                    ),
+                    observed(1),
+                )
+                .expect("security mode must assemble from canonical facts");
+            assert_eq!(snapshot.security.mode_id, mode_id);
+            assert_eq!(snapshot.security.authenticated, authenticated);
+            let http = snapshot
+                .capabilities
+                .iter()
+                .find(|status| status.capability_id == "capability.http.eval")
+                .expect("complete catalog contains HTTP eval");
+            assert_eq!(http.state_id, expected_state, "{mode_id}");
+            if mode_id == "security.http.legacy_loopback_unrestricted_cors" {
+                assert_eq!(snapshot.security.origin_policy_id, "origin.any");
+                assert_eq!(http.reason_ids, ["reason.security_policy_disabled"]);
+            }
         }
         assert!(CapabilitySecurity::from_mode(
             catalog,
@@ -1475,24 +1904,34 @@ mod tests {
             false,
         )
         .is_err());
+        let matrix = available_matrix(false);
+        let spoofed = CapabilitySnapshotAssembler::new().assemble(
+            catalog,
+            snapshot_facts(
+                &matrix,
+                &mutation_status,
+                "target.native.linux",
+                "security.http.authenticated_remote",
+                false,
+            ),
+            observed(1),
+        );
+        assert!(matches!(
+            spoofed,
+            Err(CapabilityError::AuthenticationMismatch { .. })
+        ));
     }
 
     #[test]
     fn reasons_and_provenance_are_sorted_deduplicated_and_gate_truthful() {
         let evidence = GateEvidence::unavailable(
             "reason.probe_failed",
-            CapabilityProvenance::new(ProvenanceKind::RuntimeProbe, "probe.zeta"),
+            CapabilityEvidenceSource::RuntimeProbe,
         )
         .with_reason("reason.plugin_missing")
         .with_reason("reason.probe_failed")
-        .with_provenance(CapabilityProvenance::new(
-            ProvenanceKind::RuntimeProbe,
-            "probe.alpha",
-        ))
-        .with_provenance(CapabilityProvenance::new(
-            ProvenanceKind::RuntimeProbe,
-            "probe.alpha",
-        ));
+        .with_provenance(CapabilityEvidenceSource::MiUgensPluginProbe)
+        .with_provenance(CapabilityEvidenceSource::MiUgensPluginProbe);
         let status = evaluate_one(
             "capability.plugin.mi_ugens",
             [
@@ -1508,8 +1947,8 @@ mod tests {
             status.reason_ids,
             ["reason.plugin_missing", "reason.probe_failed"]
         );
-        assert_eq!(status.provenance[0].evidence_id, "probe.alpha");
-        assert_eq!(status.provenance[1].evidence_id, "probe.zeta");
+        assert_eq!(status.provenance[0].evidence_id, "probe.plugin.mi_ugens.v1");
+        assert_eq!(status.provenance[1].evidence_id, "probe.runtime.class");
 
         let wrong_reason = evaluate_one(
             "capability.plugin.mi_ugens",
@@ -1537,10 +1976,7 @@ mod tests {
             [
                 (
                     AvailabilityGate::RuntimeProbe,
-                    GateEvidence::available(CapabilityProvenance::new(
-                        ProvenanceKind::Build,
-                        "build.feature.test",
-                    )),
+                    GateEvidence::available(CapabilityEvidenceSource::BuildFeature),
                 ),
                 (
                     AvailabilityGate::BackendSemantic,
@@ -1560,7 +1996,8 @@ mod tests {
         let mut first_assembler = CapabilitySnapshotAssembler::new();
         let first = first_assembler
             .assemble(
-                snapshot_input(
+                &accepted().catalog,
+                snapshot_facts(
                     &available_matrix(false),
                     &status,
                     "target.native.linux",
@@ -1573,7 +2010,8 @@ mod tests {
         let mut second_assembler = CapabilitySnapshotAssembler::new();
         let second = second_assembler
             .assemble(
-                snapshot_input(
+                &accepted().catalog,
+                snapshot_facts(
                     &available_matrix(true),
                     &status,
                     "target.native.linux",
@@ -1610,7 +2048,8 @@ mod tests {
         let first_matrix = available_matrix(false);
         let first = assembler
             .assemble(
-                snapshot_input(
+                catalog,
+                snapshot_facts(
                     &first_matrix,
                     &status,
                     "target.native.linux",
@@ -1625,7 +2064,8 @@ mod tests {
         retention_only.receipt_window.expires_before = Some(observed(2));
         let unchanged = assembler
             .assemble(
-                snapshot_input(
+                catalog,
+                snapshot_facts(
                     &first_matrix,
                     &retention_only,
                     "target.native.linux",
@@ -1651,7 +2091,8 @@ mod tests {
             .expect("mi-UGens gate");
         let changed = assembler
             .assemble(
-                snapshot_input(
+                catalog,
+                snapshot_facts(
                     &missing_plugin,
                     &status,
                     "target.native.linux",
@@ -1666,7 +2107,8 @@ mod tests {
 
         let repeated = assembler
             .assemble(
-                snapshot_input(
+                catalog,
+                snapshot_facts(
                     &missing_plugin,
                     &status,
                     "target.native.linux",
@@ -1682,7 +2124,8 @@ mod tests {
         let advanced_status = fixed_status(2, 2);
         let advanced = assembler
             .assemble(
-                snapshot_input(
+                catalog,
+                snapshot_facts(
                     &missing_plugin,
                     &advanced_status,
                     "target.native.linux",
@@ -1709,7 +2152,8 @@ mod tests {
         let mut assembler = CapabilitySnapshotAssembler::new();
         let snapshot = assembler
             .assemble(
-                snapshot_input(
+                &accepted().catalog,
+                snapshot_facts(
                     &available_matrix(false),
                     &status,
                     "target.native.linux",
@@ -1737,13 +2181,52 @@ mod tests {
             );
         }
 
-        let private_constraint =
-            GateEvidence::available(provenance_for(AvailabilityGate::RuntimeProbe))
-                .with_constraint(
-                    "device.identity",
-                    CapabilityConstraint::Identifier("/dev/midi1".into()),
-                );
-        let rejected = evaluate_one(
+        for private_value in [
+            "/dev/midi1",
+            "device.arturia_keystep",
+            "device.class.arturia_keystep",
+            "serial.0123456789",
+            "host.alice_laptop",
+            "user.alice",
+        ] {
+            let private_constraint =
+                GateEvidence::available(provenance_for(AvailabilityGate::RuntimeProbe))
+                    .with_constraint(
+                        "device_class",
+                        CapabilityConstraint::Identifier(private_value.into()),
+                    );
+            let rejected = evaluate_one(
+                "capability.midi.input",
+                [
+                    (
+                        AvailabilityGate::Target,
+                        available_gate(AvailabilityGate::Target),
+                    ),
+                    (
+                        AvailabilityGate::BuildFeature,
+                        available_gate(AvailabilityGate::BuildFeature),
+                    ),
+                    (
+                        AvailabilityGate::OperatorPolicy,
+                        available_gate(AvailabilityGate::OperatorPolicy),
+                    ),
+                    (AvailabilityGate::RuntimeProbe, private_constraint),
+                ],
+            );
+            assert!(matches!(
+                rejected,
+                Err(CapabilityError::PrivacyPolicyViolation {
+                    field: "constraint_value"
+                })
+            ));
+        }
+
+        let safe_class = GateEvidence::available(provenance_for(AvailabilityGate::RuntimeProbe))
+            .with_constraint(
+                "device_class",
+                CapabilityConstraint::Identifier("device.class.midi_input".into()),
+            );
+        let safe_status = evaluate_one(
             "capability.midi.input",
             [
                 (
@@ -1758,15 +2241,70 @@ mod tests {
                     AvailabilityGate::OperatorPolicy,
                     available_gate(AvailabilityGate::OperatorPolicy),
                 ),
-                (AvailabilityGate::RuntimeProbe, private_constraint),
+                (AvailabilityGate::RuntimeProbe, safe_class),
+            ],
+        )
+        .expect("approved stable device class");
+        assert_eq!(
+            safe_status.constraints.get("device_class"),
+            Some(&CapabilityConstraint::Identifier(
+                "device.class.midi_input".into()
+            ))
+        );
+
+        let semantic_provenance = GateEvidence {
+            outcome: GateOutcome::Available,
+            reason_ids: Vec::new(),
+            constraints: BTreeMap::new(),
+            provenance: vec![CapabilityProvenance::new(
+                ProvenanceKind::RuntimeProbe,
+                "probe.device.arturia_keystep",
+            )],
+        };
+        let rejected_provenance = evaluate_one(
+            "capability.midi.input",
+            [
+                (
+                    AvailabilityGate::Target,
+                    available_gate(AvailabilityGate::Target),
+                ),
+                (
+                    AvailabilityGate::BuildFeature,
+                    available_gate(AvailabilityGate::BuildFeature),
+                ),
+                (
+                    AvailabilityGate::OperatorPolicy,
+                    available_gate(AvailabilityGate::OperatorPolicy),
+                ),
+                (AvailabilityGate::RuntimeProbe, semantic_provenance),
             ],
         );
         assert!(matches!(
-            rejected,
-            Err(CapabilityError::InvalidStableId {
-                field: "constraint_value",
-                ..
+            rejected_provenance,
+            Err(CapabilityError::PrivacyPolicyViolation {
+                field: "evidence_id"
             })
+        ));
+
+        for runtime_id in ["runtime.user_alice", "runtime.host_alice_laptop"] {
+            assert!(matches!(
+                CapabilitySubject::new(
+                    runtime_id,
+                    "target.native.linux",
+                    format!("sha256:{}", "a".repeat(64))
+                ),
+                Err(CapabilityError::PrivacyPolicyViolation {
+                    field: "runtime_id"
+                })
+            ));
+        }
+        assert!(matches!(
+            CapabilitySubject::new(
+                "runtime.local",
+                "target.native.arturia_keystep",
+                format!("sha256:{}", "a".repeat(64))
+            ),
+            Err(CapabilityError::PrivacyPolicyViolation { field: "target_id" })
         ));
     }
 
@@ -1926,26 +2464,97 @@ fn normalize_capabilities(capabilities: &mut Vec<CapabilityStatus>) -> Result<()
     Ok(())
 }
 
-fn validate_snapshot_input(input: &CapabilitySnapshotInput) -> Result<(), CapabilityError> {
+fn validate_snapshot_input(
+    catalog: &CapabilityCatalog,
+    input: &CapabilitySnapshotInput,
+) -> Result<(), CapabilityError> {
+    validate_allowlisted_identifier(
+        "runtime_id",
+        &input.subject.runtime_id,
+        PRIVACY_SAFE_RUNTIME_IDS,
+    )?;
+    validate_allowlisted_identifier(
+        "target_id",
+        &input.subject.target_id,
+        PRIVACY_SAFE_TARGET_IDS,
+    )?;
     validate_stable_id("runtime_id", &input.subject.runtime_id)?;
     validate_stable_id("target_id", &input.subject.target_id)?;
     validate_stable_id("security_mode_id", &input.security.mode_id)?;
     validate_stable_id("origin_policy_id", &input.security.origin_policy_id)?;
+    let expected_security = CapabilitySecurity::from_mode(
+        catalog,
+        &input.security.mode_id,
+        input.security.authenticated,
+    )?;
+    if expected_security != input.security {
+        return Err(CapabilityError::InvalidMetadata(
+            "security tuple does not match its canonical mode".into(),
+        ));
+    }
+    let mut seen = BTreeSet::new();
     for capability in &input.capabilities {
+        let definition = catalog
+            .definition(&capability.capability_id)
+            .ok_or_else(|| {
+                CapabilityError::UnexpectedCapability(capability.capability_id.clone())
+            })?;
+        if !seen.insert(capability.capability_id.as_str()) {
+            return Err(CapabilityError::DuplicateCapabilityStatus(
+                capability.capability_id.clone(),
+            ));
+        }
+        catalog.runtime_state(&capability.state_id)?;
+        validate_allowlisted_identifier("scope_id", &capability.scope_id, PRIVACY_SAFE_SCOPE_IDS)?;
+        if capability.provenance.is_empty() && !definition.required_gates.is_empty() {
+            return Err(CapabilityError::InvalidMetadata(format!(
+                "capability {} has empty provenance",
+                capability.capability_id
+            )));
+        }
         for reason_id in &capability.reason_ids {
+            catalog
+                .reason(reason_id)
+                .ok_or_else(|| CapabilityError::UnknownAvailabilityReason(reason_id.clone()))?;
             validate_stable_id("reason_id", reason_id)?;
         }
         for provenance in &capability.provenance {
             validate_stable_id("evidence_id", &provenance.evidence_id)?;
+            validate_provenance_policy(catalog, provenance)?;
         }
         for (constraint_id, value) in &capability.constraints {
+            validate_constraint_policy(constraint_id, value)?;
             validate_stable_id("constraint_id", constraint_id)?;
             if let CapabilityConstraint::Identifier(identifier) = value {
+                validate_allowlisted_identifier(
+                    "constraint_value",
+                    identifier,
+                    PRIVACY_SAFE_CONSTRAINT_IDENTIFIER_CLASSES,
+                )?;
                 validate_stable_id("constraint_value", identifier)?;
             }
         }
     }
+    for definition in catalog.definitions() {
+        if !seen.contains(definition.capability_id.as_str()) {
+            return Err(CapabilityError::MissingCapabilityStatus(
+                definition.capability_id.clone(),
+            ));
+        }
+    }
     Ok(())
+}
+
+fn validate_allowlisted_identifier(
+    field: &'static str,
+    value: &str,
+    allowlist: &[&str],
+) -> Result<(), CapabilityError> {
+    if allowlist.contains(&value) {
+        Ok(())
+    } else {
+        Err(CapabilityError::PrivacyPolicyViolation { field })
+    }
 }
 
 fn validate_stable_id(field: &'static str, value: &str) -> Result<(), CapabilityError> {
@@ -1979,17 +2588,18 @@ impl MiUgensProbeResult {
         self,
         catalog: &CapabilityCatalog,
     ) -> Result<GateEvidence, CapabilityError> {
-        let provenance = CapabilityProvenance::new(ProvenanceKind::RuntimeProbe, MI_UGENS_PROBE_ID);
         match self {
-            Self::Present => Ok(GateEvidence::available(provenance)),
+            Self::Present => Ok(GateEvidence::available(
+                CapabilityEvidenceSource::MiUgensPluginProbe,
+            )),
             Self::Missing => Ok(GateEvidence::unavailable(
                 catalog
                     .canonical_reason(PLUGIN_MISSING_REASON_ID, AvailabilityGate::RuntimeProbe)?,
-                provenance,
+                CapabilityEvidenceSource::MiUgensPluginProbe,
             )),
             Self::Failed => Ok(GateEvidence::unavailable(
                 catalog.canonical_reason(PROBE_FAILED_REASON_ID, AvailabilityGate::RuntimeProbe)?,
-                provenance,
+                CapabilityEvidenceSource::MiUgensPluginProbe,
             )),
         }
     }
@@ -1997,7 +2607,7 @@ impl MiUgensProbeResult {
     pub fn pending_evidence(catalog: &CapabilityCatalog) -> Result<GateEvidence, CapabilityError> {
         Ok(GateEvidence::unknown(
             catalog.canonical_reason(PROBE_PENDING_REASON_ID, AvailabilityGate::RuntimeProbe)?,
-            CapabilityProvenance::new(ProvenanceKind::RuntimeProbe, MI_UGENS_PROBE_ID),
+            CapabilityEvidenceSource::MiUgensPluginProbe,
         ))
     }
 }
