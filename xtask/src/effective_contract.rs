@@ -2396,6 +2396,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         consumers,
         coverage,
         stats,
+        conventions: None,
     })
 }
 

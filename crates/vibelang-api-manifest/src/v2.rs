@@ -1,3 +1,4 @@
+use crate::conventions::ConventionsMetadata;
 use crate::{
     compatibility::CompatibilityClass, stable_id, Anchor, DuplicateNameHandling, EntryDetails,
     ErrorCode, ManifestError, PublicApiManifest, StdlibDeclaration, UgenInput,
@@ -112,6 +113,8 @@ pub struct PublicApiManifestV2 {
     pub consumers: Vec<Consumer>,
     pub coverage: BTreeMap<String, CoverageRecord>,
     pub stats: BTreeMap<String, u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conventions: Option<ConventionsMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1338,6 +1341,9 @@ impl PublicApiManifestV2 {
                 "generator",
                 "api_version, generator name, and nonzero format_version are required",
             ));
+        }
+        if let Some(conventions) = &self.conventions {
+            conventions.validate()?;
         }
 
         ensure_sorted("entries", &self.entries, |entry| &entry.metadata.id)?;

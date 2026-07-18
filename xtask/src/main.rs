@@ -1,3 +1,4 @@
+mod conventions;
 mod effective_contract;
 mod public_api;
 mod public_artifacts;
@@ -53,11 +54,17 @@ fn run() -> Result<(), String> {
             }
             effective_contract::generate(&root, check)
         }
+        "effective-metadata" => {
+            if args.next().is_some() {
+                return Err("unexpected extra arguments".into());
+            }
+            conventions::generate(&root, check)
+        }
         _ => Err(usage()),
     }
 }
 
 fn usage() -> String {
-    "usage: cargo run -p xtask -- <public-api|public-artifacts|effective-contract> <generate|check> [cli-help-snapshot]"
+    "usage: cargo run -p xtask -- <public-api|public-artifacts|effective-contract|effective-metadata> <generate|check> [cli-help-snapshot]"
         .into()
 }

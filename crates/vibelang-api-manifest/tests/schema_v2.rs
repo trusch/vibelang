@@ -132,6 +132,7 @@ fn fixture_manifest() -> PublicApiManifestV2 {
         consumers: Vec::new(),
         coverage: BTreeMap::new(),
         stats: BTreeMap::new(),
+        conventions: None,
     }
 }
 

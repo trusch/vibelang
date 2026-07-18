@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod compatibility;
+pub mod conventions;
 pub mod error;
 pub mod fragments;
 pub mod v2;
