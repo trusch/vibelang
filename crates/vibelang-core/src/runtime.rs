@@ -11594,6 +11594,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage() {
+        for (failed_index, &(failed_path, failed_action)) in
+            RELOAD_PHASE_COMPONENTS.iter().enumerate()
+        {
+            let runtime = Runtime::new(MockBackend);
+            let handle = runtime.handle();
+            let message = Message::Reload(Box::new(ReloadMessage::Apply {
+                state: reload::ScriptState::new(),
+            }));
+            let accepted = handle
+                .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+                .await
+                .unwrap();
+            let context = MutationContext::new(
+                accepted.attempt_id,
+                accepted.runtime_epoch,
+                accepted.request.idempotency_key_present,
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .with_revision(accepted.revision.unwrap())
+            .unwrap();
+            runtime
+                .begin_contextual_components(
+                    &context,
+                    RELOAD_PHASE_COMPONENTS
+                        .iter()
+                        .map(|(path, action)| PlannedComponent {
+                            path: (*path).into(),
+                            action: (*action).into(),
+                        })
+                        .collect(),
+                    false,
+                )
+                .unwrap();
+            let mut execution = ReloadExecution {
+                result: Ok(()),
+                failures: Vec::new(),
+                staging: Vec::new(),
+                phases: RELOAD_PHASE_COMPONENTS
+                    .iter()
+                    .map(|(path, action)| ReloadPhaseOutcome {
+                        path,
+                        action,
+                        failures: Vec::new(),
+                        started: true,
+                    })
+                    .collect(),
+            };
+            execution.phases[failed_index]
+                .failures
+                .push(ReloadPhaseFailure::new(
+                    "injected_reload_phase_failure",
+                    failed_path,
+                ));
+
+            let receipt = runtime.finish_reload_work(&context, &execution).unwrap();
+            let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+                panic!("{failed_path} failure must produce a partial receipt");
+            };
+            assert!(partial.fenced, "{failed_path} failure must fence");
+            assert_eq!(partial.code, "injected_reload_phase_failure");
+            assert_eq!(partial.components.len(), RELOAD_PHASE_COMPONENTS.len());
+            let failed = &partial.components[failed_index];
+            assert_eq!(failed.path, failed_path);
+            assert_eq!(failed.action, failed_action);
+            assert_eq!(failed.state, ComponentState::Uncertain);
+            assert_eq!(
+                failed.diagnostic.as_ref().unwrap().code,
+                "injected_reload_phase_failure"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn reload_failure_reports_exact_phase_components_and_fences() {
         let mut runtime = Runtime::new(RecordingBackend::new());
         disable_test_midi_threads(&mut runtime);

@@ -1,0 +1,19 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-failure-seam-negative-drift/1",
+  "cases": [
+    {
+      "id": "executable-apply-component-renamed",
+      "path": "crates/vibelang-core/src/runtime.rs",
+      "replace": "(\"reload/voices\", \"reconcile_running\"),",
+      "replacement": "(\"reload/voices_legacy\", \"reconcile_running\"),",
+      "expected_error": "apply-stage executable catalog drift"
+    },
+    {
+      "id": "direct-phase-coverage-test-renamed",
+      "path": "crates/vibelang-core/src/runtime.rs",
+      "replace": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()",
+      "replacement": "async fn removed_reload_phase_coverage()",
+      "expected_error": "direct test drift"
+    }
+  ]
+}

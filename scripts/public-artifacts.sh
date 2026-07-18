@@ -19,22 +19,29 @@ trap 'rm -f "$snapshot"; rm -rf "$vscode_out"' EXIT
 
 assert_cargo_idle() {
   local processes
-  processes="$(ps -eo comm= | awk '$1 == "cargo" || $1 == "rustc" { print }')"
+  processes="$(
+    ps -eo comm= |
+      awk '$1 == "cargo" || $1 == "rustc" || $1 == "rustdoc" || $1 == "clippy-driver" { print }'
+  )"
   if [[ -n "$processes" ]]; then
-    echo "refusing to overlap Cargo/rustc processes:" >&2
+    echo "refusing to overlap Cargo compiler processes:" >&2
     echo "$processes" >&2
     exit 1
   fi
 }
 
 run_cargo() {
+  local cargo_status=0
   assert_cargo_idle
-  echo "cargo/rustc idle before: cargo $*"
-  CARGO_BUILD_JOBS=1 bash -c 'cargo "$@"' -- "$@"
+  echo "cargo/rustc/rustdoc/clippy-driver idle before: cargo $*"
+  CARGO_BUILD_JOBS=1 bash -c 'cargo "$@"' -- "$@" || cargo_status=$?
+  assert_cargo_idle
+  echo "cargo/rustc/rustdoc/clippy-driver idle after: cargo $*"
+  return "$cargo_status"
 }
 
 cd "$root"
-run_cargo build -p vibelang-cli
+run_cargo build --locked -p vibelang-cli
 
 export COLUMNS=100
 export LC_ALL=C
@@ -49,7 +56,7 @@ export NO_COLOR=1
   done
 } > "$snapshot"
 
-run_cargo run -p xtask -- public-artifacts "$mode" "$snapshot"
+run_cargo run --locked -p xtask -- public-artifacts "$mode" "$snapshot"
 
 npm --prefix vscode-extension ci --ignore-scripts --no-audit --no-fund
 if [[ "$mode" == "generate" ]]; then

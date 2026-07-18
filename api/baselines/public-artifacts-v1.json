@@ -87,9 +87,9 @@
     "fixtures": {
       "counts": {
         "authoring_families": 17,
-        "bytes": 33725,
-        "failure_phases": 25,
-        "files": 26,
+        "bytes": 61597,
+        "failure_phases": 33,
+        "files": 28,
         "negative_defects": 5
       },
       "files": [
@@ -99,9 +99,9 @@
           "sha256": "7dd92a7384db0e1917945504362bf56ae16b72d71d7478e81704e19c6ee8f46b"
         },
         {
-          "bytes": 6819,
+          "bytes": 33073,
           "path": "api/baselines/failure-injection-seams-v1.json",
-          "sha256": "1c9514ccaad3c43cecbe1a7fd73776244d25cbf30528b2d9fa753c12c8659359"
+          "sha256": "20f02825e6a326ab1c0c989ca18d2b9eb27530b7e2c4d87fa00fa74cf77a3087"
         },
         {
           "bytes": 864,
@@ -189,6 +189,16 @@
           "sha256": "5dd1f1167d4326104f2df0c28073b9833107f7554ffd8f5331efeaab74b7b3ec"
         },
         {
+          "bytes": 877,
+          "path": "tests/fixtures/api-unification/v1/negative/failure-seam-artifact-drift.json",
+          "sha256": "ab2bd3d2e88180bbb482954e2093c8f48925a440d11b6b85510c9e82f26fbd20"
+        },
+        {
+          "bytes": 741,
+          "path": "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
+          "sha256": "583ce26f0bb5058173add0ba82b37e9f05cd24aad0e38c10e4a6e10f924689ad"
+        },
+        {
           "bytes": 2547,
           "path": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
           "sha256": "a60a7a691a7086d6a4e7f2f5fa808987ba8959c3b831a6609cdec6f3176ffc12"
@@ -224,7 +234,7 @@
           "sha256": "2f7001dc3302672872e953ac59c905805c260982cb49088b703054d3ad30d9c8"
         }
       ],
-      "tree_sha256": "459764c5d3d22751ce4363732df6c959642b97ebf9c6073844ce9a61c5c75185"
+      "tree_sha256": "7c3cac8281b39d78ae6236c094b68e6e7c46098522a32316285c11db5b8d0f45"
     },
     "http": {
       "counts": {
@@ -272,7 +282,7 @@
     },
     "packages": {
       "counts": {
-        "bytes": 320066,
+        "bytes": 320367,
         "cargo_packages": [
           "vibelang-api-manifest",
           "vibelang-cli",
@@ -298,9 +308,9 @@
       },
       "files": [
         {
-          "bytes": 98047,
+          "bytes": 98105,
           "path": "Cargo.lock",
-          "sha256": "1c37e36a9feaf0df40891fb8ce51398481f32f6ef17c12f7e271ca12c0312df1"
+          "sha256": "30b1b14dbd966844528d208097ffbe2699428bd3b2114bb3c8b2602f6960ba48"
         },
         {
           "bytes": 1006,
@@ -313,9 +323,9 @@
           "sha256": "d68c179d958c078fc9ad41daf04957e589ce3d989dd59ce27bb3cc42ae91bb03"
         },
         {
-          "bytes": 1837,
+          "bytes": 1877,
           "path": "crates/vibelang-cli/Cargo.toml",
-          "sha256": "16e5451753afa7a84949ce56e42423ab0a4402b5a879a6972d2fd48011c1b954"
+          "sha256": "08af2843a2ea00d7656610dc0f7b0ac83ce2b690a00db689758a94116490d9e1"
         },
         {
           "bytes": 1877,
@@ -328,9 +338,9 @@
           "sha256": "d60bc715a6c375fafb2369b42e89217b49aa1edbde434bb72bc5955ab3c6c025"
         },
         {
-          "bytes": 1096,
+          "bytes": 1204,
           "path": "crates/vibelang-http/Cargo.toml",
-          "sha256": "a5265dabcb761f8902244ed0e5f77b3ae2311e99c4e3819bec0683a253c3d175"
+          "sha256": "e023a2871702d5ef92ff4374f4a76fe2f206b472f4e411712ce224c9fe2b27df"
         },
         {
           "bytes": 974,
@@ -358,9 +368,9 @@
           "sha256": "dcd2285b97fec6b14f00907beb730762e7fc5f1c704a1794b514e7552c0b00de"
         },
         {
-          "bytes": 1009,
+          "bytes": 1104,
           "path": "crates/vibelang-wasm/Cargo.toml",
-          "sha256": "a0395ce7f05969ff4b0355726ed92af041d8f80401f0f51d0a9e4f0f79dee828"
+          "sha256": "da71120168e74d5e8d53d02556cce230641332ea2b0a6d41346e3762ffc7215b"
         },
         {
           "bytes": 748,
@@ -403,7 +413,7 @@
           "sha256": "e3bb9a2fd50352745bd594e03e9423827e7784bc297bcf05e3144ebe6071e212"
         }
       ],
-      "tree_sha256": "c9d0fde940b4ace634c43b54221015572a3e99864161d73846235a0aa2bb1f95"
+      "tree_sha256": "768a96a0793877663c7d76c4d629fb9cdb4106423dca920b2387da0b4ba1ebaa"
     },
     "rhai_editor": {
       "counts": {
