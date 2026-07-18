@@ -1,14 +1,14 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "cd12dee031ad1da7121286307f029d69f7788a3f8b50ad99aae4af34a92032ff",
+  "contract_digest": "92248b94eb0fada456070cba95cbceca9a1420e336288796d382c5922bb805bf",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
     "routes": 97,
     "http_types": 76,
     "http_fields": 307,
-    "source_nodes": 964,
+    "source_nodes": 965,
     "consumer_nodes": 8,
     "orphan_records": 0,
     "unclassified_records": 0
@@ -17144,6 +17144,16 @@
       "node_ids_sha256": "2e598ff265733f1e51c475a94fdaf7a52704b1ca65aa19bd2dfa238f408a5203"
     },
     {
+      "id": "v1:source:6f5d569fb8326417",
+      "path": "tests/fixtures/api-unification/v1/negative/m05-metadata-drift.json",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:628752e332c4d121"
+      ],
+      "node_ids_sha256": "788724928dd2269ebcfa50648011e4ada96e9413a2db566e044bbb1b00a725d4"
+    },
+    {
       "id": "v1:source:6f81c5032bb71f46",
       "path": "crates/vibelang-std/stdlib/pads/analog/pad_prophet.vibe",
       "kind": "mechanical_declaration",
@@ -29668,14 +29678,15 @@
         "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
         "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
         "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json",
+        "tests/fixtures/api-unification/v1/negative/m05-metadata-drift.json",
         "tests/fixtures/api-unification/v1/negative/push-pull-diagnostic-mismatch.json",
         "tests/fixtures/api-unification/v1/negative/semantic-token-mismatch.json",
         "tests/fixtures/api-unification/v1/negative/stale-commands.json",
         "tests/fixtures/api-unification/v1/negative/stale-success.json",
         "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json"
       ],
-      "included_count": 28,
-      "eligible_count": 28,
+      "included_count": 29,
+      "eligible_count": 29,
       "accepted_denominator": 26,
       "denominator_baseline_owner": "vibelang-tests",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29702,8 +29713,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13368,
-      "eligible_count": 13368,
+      "included_count": 13369,
+      "eligible_count": 13369,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",

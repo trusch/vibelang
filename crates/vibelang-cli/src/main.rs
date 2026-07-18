@@ -375,6 +375,8 @@ fn cli_script_failure(error: &RhaiError) -> (FailurePhase, &'static str) {
     match error {
         RhaiError::Io(_) => (FailurePhase::Decode, "script_read_failed"),
         RhaiError::Parse(_) => (FailurePhase::Parse, "script_parse_failed"),
+        RhaiError::Language(_) => (FailurePhase::Decode, "language_contract_rejected"),
+        RhaiError::Foundation(_) => (FailurePhase::Evaluate, "candidate_validation_failed"),
         RhaiError::Script(_) | RhaiError::Runtime(_) => {
             (FailurePhase::Evaluate, "script_evaluation_failed")
         }
@@ -1865,6 +1867,25 @@ mod receipt_tests {
         };
         assert_eq!(rejected.phase, FailurePhase::Parse);
         assert_eq!(rejected.code, "script_parse_failed");
+    }
+
+    #[test]
+    fn cli_v2_contract_failures_are_effect_free_and_classified() {
+        let language = RhaiError::Language(
+            vibelang_rhai::LanguageSelectionError::V2RequiresVersionedEntryPoint,
+        );
+        let foundation = RhaiError::Foundation(vibelang_rhai::FoundationError::NoActiveEvaluation);
+
+        assert!(language.definitely_no_effect());
+        assert_eq!(
+            cli_script_failure(&language),
+            (FailurePhase::Decode, "language_contract_rejected")
+        );
+        assert!(foundation.definitely_no_effect());
+        assert_eq!(
+            cli_script_failure(&foundation),
+            (FailurePhase::Evaluate, "candidate_validation_failed")
+        );
     }
 
     #[test]

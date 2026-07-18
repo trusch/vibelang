@@ -11,7 +11,7 @@ use crate::encoder::encode_synthdef;
 use crate::errors::SynthDefError;
 use crate::graph::GraphIR;
 use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString, NativeCallContext, Position};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// Type alias for the deploy callback function
@@ -128,6 +128,136 @@ fn hash_synthdef_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Candidate-local definition kind. This is intentionally separate from the
+/// process-global v1 registries so a definition can be compiled and validated
+/// without publishing or deploying it.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DspDefinitionKind {
+    SynthDef,
+    Effect,
+}
+
+/// Immutable, side-effect-free DSP definition IR for a future staged registry.
+#[derive(Clone, Debug)]
+pub struct DspDefinitionIr {
+    kind: DspDefinitionKind,
+    name: String,
+    graph: Arc<GraphIR>,
+    encoded: Arc<[u8]>,
+    content_hash: u64,
+    outputs: Arc<[OutputPort]>,
+    inputs: Arc<[InputPort]>,
+}
+
+impl DspDefinitionIr {
+    pub fn synthdef(
+        graph: GraphIR,
+        outputs: Vec<OutputPort>,
+        inputs: Vec<InputPort>,
+    ) -> crate::errors::Result<Self> {
+        Self::new(DspDefinitionKind::SynthDef, graph, outputs, inputs)
+    }
+
+    pub fn effect(graph: GraphIR) -> crate::errors::Result<Self> {
+        Self::new(DspDefinitionKind::Effect, graph, Vec::new(), Vec::new())
+    }
+
+    fn new(
+        kind: DspDefinitionKind,
+        graph: GraphIR,
+        outputs: Vec<OutputPort>,
+        inputs: Vec<InputPort>,
+    ) -> crate::errors::Result<Self> {
+        let encoded = encode_synthdef(&graph)?;
+        let content_hash = hash_synthdef_bytes(&encoded);
+        Ok(Self {
+            kind,
+            name: graph.name.clone(),
+            graph: Arc::new(graph),
+            encoded: Arc::from(encoded),
+            content_hash,
+            outputs: Arc::from(outputs),
+            inputs: Arc::from(inputs),
+        })
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> DspDefinitionKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn graph(&self) -> &GraphIR {
+        &self.graph
+    }
+
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.encoded
+    }
+
+    #[must_use]
+    pub const fn content_hash(&self) -> u64 {
+        self.content_hash
+    }
+
+    #[must_use]
+    pub fn outputs(&self) -> &[OutputPort] {
+        &self.outputs
+    }
+
+    #[must_use]
+    pub fn inputs(&self) -> &[InputPort] {
+        &self.inputs
+    }
+}
+
+impl PartialEq for DspDefinitionIr {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.name == other.name
+            && self.encoded == other.encoded
+            && self.outputs == other.outputs
+            && self.inputs == other.inputs
+    }
+}
+
+impl Eq for DspDefinitionIr {}
+
+/// Pure candidate-local definition registry. M07 owns publishing a validated
+/// registry through inactive-generation staging; this type only validates and
+/// freezes the batch.
+#[derive(Clone, Debug, Default)]
+pub struct StagedDspRegistry {
+    definitions: BTreeMap<(DspDefinitionKind, String), DspDefinitionIr>,
+}
+
+impl StagedDspRegistry {
+    pub fn stage(&mut self, definition: DspDefinitionIr) -> crate::errors::Result<bool> {
+        let key = (definition.kind, definition.name.clone());
+        if let Some(existing) = self.definitions.get(&key) {
+            if existing == &definition {
+                return Ok(false);
+            }
+            return Err(SynthDefError::ValidationError(format!(
+                "conflicting staged {:?} definition '{}'",
+                definition.kind, definition.name
+            )));
+        }
+        self.definitions.insert(key, definition);
+        Ok(true)
+    }
+
+    pub fn definitions(&self) -> impl Iterator<Item = &DspDefinitionIr> {
+        self.definitions.values()
+    }
 }
 
 /// Record the content hash for a deployed synthdef / effect body.
@@ -464,6 +594,31 @@ impl SynthDefBuilderHandle {
         self.synthdef.build_body_closure_with_options(closure, true)
     }
 
+    /// Compile a body into detached IR without registry, hash-publication,
+    /// deployment-callback, allocation, or backend effects.
+    pub fn build_detached_body(
+        self,
+        closure: rhai::FnPtr,
+    ) -> crate::errors::Result<DspDefinitionIr> {
+        let outputs = self.synthdef.outputs.clone();
+        let inputs = self.synthdef.inputs.clone();
+        let graph = self.build(closure)?;
+        DspDefinitionIr::synthdef(graph, outputs, inputs)
+    }
+
+    /// Map-body variant of [`Self::build_detached_body`].
+    pub fn build_detached_body_map(
+        self,
+        closure: rhai::FnPtr,
+    ) -> crate::errors::Result<DspDefinitionIr> {
+        let outputs = self.synthdef.outputs.clone();
+        let inputs = self.synthdef.inputs.clone();
+        let graph = self
+            .synthdef
+            .build_body_map_closure_with_options(closure, true)?;
+        DspDefinitionIr::synthdef(graph, outputs, inputs)
+    }
+
     pub fn body(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
         let outputs = self.synthdef.outputs.clone();
@@ -546,6 +701,38 @@ impl FxBuilderHandle {
             .build_effect_map_closure(closure, self.num_channels)
             .map_err(synthdef_error_to_eval)?;
         deploy_fx_ir(&name, ir).map_err(synthdef_error_to_eval)
+    }
+
+    /// Compile an effect body into detached IR without publishing or deploying.
+    pub fn build_detached_body(
+        self,
+        closure: rhai::FnPtr,
+    ) -> crate::errors::Result<DspDefinitionIr> {
+        if self.num_channels == 0 {
+            return Err(SynthDefError::ValidationError(
+                "FX must use at least one channel".to_string(),
+            ));
+        }
+        let graph = self
+            .synthdef
+            .build_effect_closure(closure, self.num_channels)?;
+        DspDefinitionIr::effect(graph)
+    }
+
+    /// Map-body variant of [`Self::build_detached_body`].
+    pub fn build_detached_body_map(
+        self,
+        closure: rhai::FnPtr,
+    ) -> crate::errors::Result<DspDefinitionIr> {
+        if self.num_channels == 0 {
+            return Err(SynthDefError::ValidationError(
+                "FX must use at least one channel".to_string(),
+            ));
+        }
+        let graph = self
+            .synthdef
+            .build_effect_map_closure(closure, self.num_channels)?;
+        DspDefinitionIr::effect(graph)
     }
 }
 
@@ -766,13 +953,41 @@ pub fn register_synthdef_api(engine: &mut Engine) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{register_dsp_api, Input, PortRate, Rate};
+    use crate::{clear_active_builder, register_dsp_api, Input, PortRate, Rate};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const INPUT_CHANNEL_ERROR: &str = "Input port channels must be 1 (mono) or 2 (stereo)";
 
     fn test_engine() -> Engine {
         let mut engine = Engine::new();
         register_dsp_api(&mut engine);
+        engine
+    }
+
+    fn detached_test_engine() -> Engine {
+        let mut engine = test_engine();
+        engine
+            .register_type::<DspDefinitionIr>()
+            .register_fn(
+                "body_ir",
+                |builder: SynthDefBuilderHandle,
+                 body: rhai::FnPtr|
+                 -> Result<DspDefinitionIr, Box<EvalAltResult>> {
+                    builder
+                        .build_detached_body(body)
+                        .map_err(synthdef_error_to_eval)
+                },
+            )
+            .register_fn(
+                "body_ir",
+                |builder: FxBuilderHandle,
+                 body: rhai::FnPtr|
+                 -> Result<DspDefinitionIr, Box<EvalAltResult>> {
+                    builder
+                        .build_detached_body(body)
+                        .map_err(synthdef_error_to_eval)
+                },
+            );
         engine
     }
 
@@ -810,6 +1025,105 @@ mod tests {
             .get(name)
             .cloned()
             .expect("registered synthdef")
+    }
+
+    #[test]
+    fn detached_definition_build_and_staging_have_no_global_or_deploy_effect() {
+        let _guard = reset_registries();
+        let deploys = Arc::new(AtomicUsize::new(0));
+        let deploy_count = Arc::clone(&deploys);
+        set_deploy_callback(move |_| {
+            deploy_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let definition = detached_test_engine()
+            .eval::<DspDefinitionIr>(
+                r#"
+                define_synthdef("candidate_only")
+                    .output("mono")
+                    .body_ir(|| [dc_ar(0.0)])
+                "#,
+            )
+            .expect("compile detached definition");
+
+        assert_eq!(definition.name(), "candidate_only");
+        assert!(!definition.canonical_bytes().is_empty());
+        assert!(!synthdef_exists("candidate_only"));
+        assert_eq!(get_synthdef_outputs("candidate_only"), None);
+        assert_eq!(get_synthdef_inputs("candidate_only"), None);
+        assert_eq!(get_synthdef_hash("candidate_only"), None);
+        assert_eq!(deploys.load(Ordering::SeqCst), 0);
+        assert!(clear_active_builder().is_none());
+
+        let mut staged = StagedDspRegistry::default();
+        assert!(staged.stage(definition.clone()).unwrap());
+        assert!(!staged.stage(definition).unwrap());
+        assert_eq!(staged.definitions().count(), 1);
+        assert!(!synthdef_exists("candidate_only"));
+        assert_eq!(deploys.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn detached_effect_and_registry_clones_remain_candidate_local() {
+        let _guard = reset_registries();
+        let deploys = Arc::new(AtomicUsize::new(0));
+        let deploy_count = Arc::clone(&deploys);
+        set_deploy_callback(move |_| {
+            deploy_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let engine = detached_test_engine();
+        let synth = engine
+            .eval::<DspDefinitionIr>(r#"define_synthdef("candidate_synth").body_ir(|| dc_ar(0.0))"#)
+            .unwrap();
+        let effect = engine
+            .eval::<DspDefinitionIr>(r#"define_fx("candidate_fx").body_ir(|input| input)"#)
+            .unwrap();
+        let conflicting = engine
+            .eval::<DspDefinitionIr>(r#"define_synthdef("candidate_synth").body_ir(|| dc_ar(1.0))"#)
+            .unwrap();
+
+        assert_eq!(effect.kind(), DspDefinitionKind::Effect);
+        let mut original = StagedDspRegistry::default();
+        original.stage(synth).unwrap();
+        let mut cloned = original.clone();
+        cloned.stage(effect).unwrap();
+        assert_eq!(original.definitions().count(), 1);
+        assert_eq!(cloned.definitions().count(), 2);
+        assert!(cloned.stage(conflicting).is_err());
+        assert_eq!(cloned.definitions().count(), 2);
+        assert!(!synthdef_or_effect_exists("candidate_synth"));
+        assert!(!synthdef_or_effect_exists("candidate_fx"));
+        assert_eq!(deploys.load(Ordering::SeqCst), 0);
+        assert!(clear_active_builder().is_none());
+    }
+
+    #[test]
+    fn detached_definition_failure_leaves_no_graph_or_registry_residue() {
+        let _guard = reset_registries();
+        let deploys = Arc::new(AtomicUsize::new(0));
+        let deploy_count = Arc::clone(&deploys);
+        set_deploy_callback(move |_| {
+            deploy_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let error = detached_test_engine()
+            .eval::<DspDefinitionIr>(
+                r#"
+                define_synthdef("broken_candidate")
+                    .body_ir(|| missing_candidate_ugen())
+                "#,
+            )
+            .expect_err("detached compile should fail");
+
+        assert!(error.to_string().contains("missing_candidate_ugen"));
+        assert!(clear_active_builder().is_none());
+        assert!(!synthdef_exists("broken_candidate"));
+        assert_eq!(get_synthdef_hash("broken_candidate"), None);
+        assert_eq!(deploys.load(Ordering::SeqCst), 0);
     }
 
     #[test]

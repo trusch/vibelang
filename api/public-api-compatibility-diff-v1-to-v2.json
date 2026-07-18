@@ -3,15 +3,15 @@
   "schema_version": 1,
   "base": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "1dea4d106f11ebc916b9bd8bdade70973df0166d8040deb60aa1f2e60f244e05",
+    "sha256": "94f6de0354e212187eabb74358ceff04d059de6664189a44b54da2b474102e69",
     "bytes": 33046400
   },
   "candidate_v1_projection": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "1dea4d106f11ebc916b9bd8bdade70973df0166d8040deb60aa1f2e60f244e05",
+    "sha256": "94f6de0354e212187eabb74358ceff04d059de6664189a44b54da2b474102e69",
     "bytes": 33046400
   },
-  "candidate_v2_digest": "cd12dee031ad1da7121286307f029d69f7788a3f8b50ad99aae4af34a92032ff",
+  "candidate_v2_digest": "92248b94eb0fada456070cba95cbceca9a1420e336288796d382c5922bb805bf",
   "unchanged_entry_ids": 3626,
   "unchanged_overload_ids": 8431,
   "unclassified_count": 0,

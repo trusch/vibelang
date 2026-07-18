@@ -114,6 +114,7 @@
 
 // Core modules
 mod backend;
+pub mod candidate;
 mod clock;
 pub mod compat;
 mod error;
@@ -140,6 +141,7 @@ pub mod midi;
 // Re-exports for convenience
 pub use audio::{AudioConnector, AudioError, PortDirection, PortMatcher};
 pub use backend::{AddAction, Backend, BufferInfo};
+pub use candidate::{Candidate, CandidateDraft};
 pub use error::{Error, Result, SynthDefRejection};
 pub use mutation::{MutationContext, MutationLedger};
 
