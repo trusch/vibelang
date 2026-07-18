@@ -3170,6 +3170,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "vibelang-api-manifest",
  "vibelang-dsp",
  "vibelang-sfz",
  "wasm-bindgen",

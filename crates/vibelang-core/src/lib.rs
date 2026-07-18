@@ -125,6 +125,7 @@ mod transport_snapshot;
 // Public modules
 pub mod audio;
 pub mod backends;
+pub mod capabilities;
 pub mod handlers;
 pub mod message;
 pub mod reload;

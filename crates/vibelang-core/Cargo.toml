@@ -30,6 +30,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 subtle = "2.6"
 uuid = { version = "1.0", features = ["serde", "v7"] }
+vibelang-api-manifest = { path = "../vibelang-api-manifest", version = "0.4.0" }
 
 [package.metadata.vibelang.api-contract]
 wire-source = "src/mutation/wire.rs"
