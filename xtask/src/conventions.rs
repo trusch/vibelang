@@ -65,7 +65,12 @@ pub(crate) fn build(manifest: &PublicApiManifest) -> Result<ConventionsMetadata,
                     })?;
                     classify_ugen(entry, input, legacy_policy(&overload.boundary))
                 } else {
-                    classify_parameter(entry, parameter, legacy_policy(&overload.boundary))
+                    classify_parameter(
+                        entry,
+                        overload,
+                        parameter,
+                        legacy_policy(&overload.boundary),
+                    )
                 };
                 parameter_quantities.push(QuantityOccurrence {
                     occurrence_id: occurrence_id("parameter", &overload.id, parameter.position),
@@ -411,6 +416,15 @@ fn registry() -> ConventionsMetadata {
             true,
             true,
             "MIDI note 0 through 127",
+        ),
+        bounded(
+            "range.midi.velocity.0_127",
+            Some(0.0),
+            true,
+            Some(127.0),
+            true,
+            true,
+            "MIDI 1 velocity 0 through 127",
         ),
         bounded(
             "range.midi.pitch_bend14_signed",
@@ -779,10 +793,23 @@ fn reviewed_ugen_count_name(name: &str) -> bool {
 
 fn classify_parameter(
     entry: &ApiEntry,
+    overload: &Overload,
     parameter: &Parameter,
     legacy_policy_id: Option<&str>,
 ) -> QuantityClassification {
-    let provenance = anchors(&entry.source_anchors);
+    let mut provenance = anchors(&entry.source_anchors);
+    provenance.push(format!(
+        "overload:{} parameter_position={}",
+        overload.id, parameter.position
+    ));
+    if let Some(template) = reviewed_parameter_occurrence(&overload.id, parameter.position) {
+        return applicable_with_basis(
+            template,
+            legacy_policy_id,
+            ClassificationBasis::ExplicitOverride,
+            provenance,
+        );
+    }
     let types = parameter
         .accepted_types
         .iter()
@@ -796,37 +823,34 @@ fn classify_parameter(
     });
     let numeric = integer || types.iter().any(|value| matches!(*value, "f32" | "f64"));
     let dynamic = types.contains("Dynamic");
-    let name = parameter
-        .name
-        .as_deref()
-        .unwrap_or(&entry.registered_name)
-        .to_ascii_lowercase();
-
-    let template = if midi_entry(entry) {
-        midi_template(&name, &entry.registered_name)
-    } else if frequency_name(&name) {
-        Some(Template::Frequency)
-    } else if tempo_name(&name) {
-        Some(Template::Tempo)
-    } else if beat_name(&name) {
-        Some(Template::Beat)
-    } else if bar_name(&name) {
-        Some(Template::Bar)
-    } else if time_name(&name) {
-        Some(Template::Time)
-    } else if amplitude_name(&name) {
-        Some(Template::Amplitude)
-    } else if semitone_name(&name) {
-        Some(Template::Semitone)
-    } else if ratio_name(&name) {
-        Some(Template::Ratio)
-    } else if bus_name(&name) {
-        Some(Template::Bus)
-    } else if count_name(&name) {
-        Some(Template::Integer)
-    } else {
-        None
-    };
+    let template = parameter.name.as_deref().and_then(|name| {
+        let name = name.to_ascii_lowercase();
+        if midi_entry(entry) {
+            midi_template(&name, &entry.registered_name)
+        } else if frequency_name(&name) {
+            Some(Template::Frequency)
+        } else if tempo_name(&name) {
+            Some(Template::Tempo)
+        } else if beat_name(&name) {
+            Some(Template::Beat)
+        } else if bar_name(&name) {
+            Some(Template::Bar)
+        } else if time_name(&name) {
+            Some(Template::Time)
+        } else if amplitude_name(&name) {
+            Some(Template::Amplitude)
+        } else if semitone_name(&name) {
+            Some(Template::Semitone)
+        } else if ratio_name(&name) {
+            Some(Template::Ratio)
+        } else if bus_name(&name) {
+            Some(Template::Bus)
+        } else if count_name(&name) {
+            Some(Template::Integer)
+        } else {
+            None
+        }
+    });
 
     if let Some(template) = template {
         if numeric || dynamic {
@@ -852,12 +876,26 @@ fn classify_parameter(
     }
 }
 
+fn reviewed_parameter_occurrence(overload_id: &str, position: u32) -> Option<Template> {
+    match (overload_id, position) {
+        ("v1:overload:5b7b4cedbdb08868", 0) => Some(Template::MidiChannel),
+        ("v1:overload:5b7b4cedbdb08868", 1) => Some(Template::MidiNote),
+        ("v1:overload:5b7b4cedbdb08868", 2) => Some(Template::MidiVelocity7),
+        ("v1:overload:21cf960c74f83a9e", 0) => Some(Template::TimeSignatureNumerator),
+        ("v1:overload:21cf960c74f83a9e", 1) => Some(Template::TimeSignatureDenominator),
+        ("v1:overload:960d8244d6a44f20", 0) => Some(Template::Decibel),
+        ("v1:overload:a68e0536f45cef6a", 0) => Some(Template::Amplitude),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum Template {
     Amplitude,
     Bar,
     Beat,
     Bus,
+    Decibel,
     Frequency,
     FrequencyOffset,
     Integer,
@@ -877,11 +915,27 @@ enum Template {
     Signal,
     Tempo,
     Time,
+    TimeSignatureDenominator,
+    TimeSignatureNumerator,
 }
 
 fn applicable(
     template: Template,
     legacy_policy_id: Option<&str>,
+    provenance: Vec<String>,
+) -> QuantityClassification {
+    applicable_with_basis(
+        template,
+        legacy_policy_id,
+        ClassificationBasis::ReviewedRule,
+        provenance,
+    )
+}
+
+fn applicable_with_basis(
+    template: Template,
+    legacy_policy_id: Option<&str>,
+    basis: ClassificationBasis,
     provenance: Vec<String>,
 ) -> QuantityClassification {
     let (semantic_type_id, unit_id, range_id, rule_id) = match template {
@@ -909,6 +963,12 @@ fn applicable(
             "range.integer.nonnegative",
             "quantity.rule.bus_index",
         ),
+        Template::Decibel => (
+            "audio.level_decibel",
+            "unit.level.decibel",
+            "range.finite.unbounded",
+            "quantity.rule.decibel",
+        ),
         Template::Frequency => (
             "audio.frequency",
             "unit.frequency.hz",
@@ -928,7 +988,7 @@ fn applicable(
             "quantity.rule.integer",
         ),
         Template::MidiChannel => (
-            "midi.channel",
+            "midi.channel_human",
             "unit.midi.channel",
             "range.midi.channel.1_16",
             "quantity.rule.midi",
@@ -978,7 +1038,7 @@ fn applicable(
         Template::MidiVelocity7 => (
             "midi.velocity_7bit",
             "unit.midi.velocity.7bit",
-            "range.midi.u7",
+            "range.midi.velocity.0_127",
             "quantity.rule.midi",
         ),
         Template::MidiVelocityNormalized => (
@@ -1023,6 +1083,18 @@ fn applicable(
             "range.finite.nonnegative",
             "quantity.rule.time",
         ),
+        Template::TimeSignatureDenominator => (
+            "time_signature.denominator",
+            "unit.count",
+            "range.time_signature.denominator.power_of_two",
+            "quantity.rule.time_signature",
+        ),
+        Template::TimeSignatureNumerator => (
+            "time_signature.numerator",
+            "unit.count",
+            "range.time_signature.numerator.1_32",
+            "quantity.rule.time_signature",
+        ),
     };
     QuantityClassification::Applicable {
         semantic_type_id: semantic_type_id.into(),
@@ -1031,7 +1103,7 @@ fn applicable(
         canonical_invalid_value_policy_id: "invalid.reject".into(),
         legacy_invalid_value_policy_id: legacy_policy_id.map(str::to_owned),
         rule_id: rule_id.into(),
-        basis: ClassificationBasis::ReviewedRule,
+        basis,
         provenance,
     }
 }
@@ -1131,14 +1203,31 @@ fn availability_binding(entry: &ApiEntry) -> Result<AvailabilityBinding, String>
         .iter()
         .any(|value| value == "midi")
     {
+        match midi_direction(entry)? {
+            MidiDirection::Input => {
+                capability_ids.insert("capability.midi.input".to_string());
+            }
+            MidiDirection::Output => {
+                capability_ids.insert("capability.midi.output".to_string());
+            }
+            MidiDirection::Bidirectional => {
+                capability_ids.insert("capability.midi.input".to_string());
+                capability_ids.insert("capability.midi.output".to_string());
+            }
+        }
         let name = entry.registered_name.as_str();
         if name.contains("clock") {
             capability_ids.insert("capability.midi.clock".to_string());
-        } else if name.contains("group") || name.contains("per_note") || name.contains("hires") {
+        }
+        if name.contains("group")
+            || name.contains("per_note")
+            || name.contains("hires")
+            || entry
+                .source_anchors
+                .iter()
+                .any(|anchor| anchor.path.ends_with("register_midi2.rs"))
+        {
             capability_ids.insert("capability.midi.ump".to_string());
-        } else {
-            capability_ids.insert("capability.midi.input".to_string());
-            capability_ids.insert("capability.midi.output".to_string());
         }
     }
     if entry
@@ -1240,6 +1329,167 @@ fn availability_binding(entry: &ApiEntry) -> Result<AvailabilityBinding, String>
         unavailable_reason_ids: reason_ids.into_iter().collect(),
         evidence,
     })
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MidiDirection {
+    Input,
+    Output,
+    Bidirectional,
+}
+
+fn midi_direction(entry: &ApiEntry) -> Result<MidiDirection, String> {
+    let symbols = entry
+        .source_anchors
+        .iter()
+        .map(|anchor| anchor.symbol.as_str())
+        .collect::<BTreeSet<_>>();
+    let input_type = matches!(
+        entry.registered_name.as_str(),
+        "BendMapping"
+            | "Cc32Route"
+            | "CcMapping"
+            | "CcRoute"
+            | "GroupRoute"
+            | "KeyboardRoute"
+            | "LooperBuilder"
+            | "MidiRecordingHandle"
+            | "NoteRoute"
+            | "PerNoteControllerBuilder"
+            | "PerNotePitchBendBuilder"
+            | "PerNotePressureBuilder"
+    );
+    let input = input_type
+        || symbols.iter().any(|symbol| {
+            [
+                "BendMapping::",
+                "Cc32Route::",
+                "CcMapping::",
+                "CcRoute::",
+                "GroupRoute::",
+                "KeyboardRoute::",
+                "LooperBuilder::",
+                "MidiRecordingHandle::",
+                "NoteRoute::",
+                "PerNoteControllerBuilder::",
+                "PerNotePitchBendBuilder::",
+                "PerNotePressureBuilder::",
+            ]
+            .iter()
+            .any(|prefix| symbol.starts_with(prefix))
+                || symbol.starts_with("Voice::cc_map")
+                || symbol.starts_with("Voice::param_cc_map")
+                || matches!(
+                    *symbol,
+                    "MidiDevice::cc_route"
+                        | "MidiDevice::keyboard_route"
+                        | "MidiDevice::keys"
+                        | "MidiDevice::looper"
+                        | "MidiDevice::map_bend"
+                        | "MidiDevice::map_cc"
+                        | "MidiDevice::note_route"
+                        | "MidiDevice::on_cc"
+                        | "MidiDevice::on_cc_num"
+                        | "MidiDevice::on_clock_sync"
+                        | "MidiDevice::on_midi"
+                        | "MidiDevice::on_note"
+                        | "MidiDevice::on_note_channel"
+                        | "MidiDevice::open_input"
+                        | "MidiDevice::pad"
+                        | "MidiDevice::per_note_controller"
+                        | "MidiDevice::per_note_pitch_bend"
+                        | "MidiDevice::per_note_pressure"
+                        | "MidiDevice::route_cc_to_group"
+                        | "MidiDevice::route_cc_to_voice"
+                        | "MidiDevice::route_to"
+                        | "MidiDevice::route_to_channel"
+                        | "MidiDevice::route_to_name"
+                        | "MidiDevice::start_recording"
+                        | "MidiDevice::start_recording_channel"
+                )
+        });
+    let output = symbols.iter().any(|symbol| {
+        symbol.starts_with("Voice::midi_channel")
+            || symbol.starts_with("Voice::midi_output_device")
+            || matches!(
+                *symbol,
+                "MidiDevice::cc"
+                    | "MidiDevice::cc32"
+                    | "MidiDevice::cc_hires"
+                    | "MidiDevice::channel"
+                    | "MidiDevice::channel::generated_set"
+                    | "MidiDevice::default_note::generated_set"
+                    | "MidiDevice::disable_clock"
+                    | "MidiDevice::enable_clock"
+                    | "MidiDevice::get_channel"
+                    | "MidiDevice::get_default_note"
+                    | "MidiDevice::group"
+                    | "MidiDevice::note"
+                    | "MidiDevice::note_off"
+                    | "MidiDevice::note_off_hires"
+                    | "MidiDevice::note_on"
+                    | "MidiDevice::note_on_hires"
+                    | "MidiDevice::open_output"
+                    | "MidiDevice::pitch_bend"
+                    | "MidiDevice::pitch_bend_hires"
+                    | "MidiDevice::poly_pressure_hires"
+                    | "MidiDevice::program_change"
+                    | "MidiDevice::send_continue"
+                    | "MidiDevice::send_per_note_bend"
+                    | "MidiDevice::send_per_note_cc"
+                    | "MidiDevice::send_start"
+                    | "MidiDevice::send_stop"
+                    | "Voice::channel"
+                    | "Voice::on_midi_device"
+            )
+    });
+    match (input, output) {
+        (true, false) => Ok(MidiDirection::Input),
+        (false, true) => Ok(MidiDirection::Output),
+        (true, true) => Ok(MidiDirection::Bidirectional),
+        (false, false)
+            if entry.registered_name == "midi_device"
+                || entry.registered_name == "list_midi_devices"
+                || entry.registered_name == "MidiDevice"
+                || symbols.iter().any(|symbol| {
+                    matches!(
+                        *symbol,
+                        "MidiDevice::get_id"
+                            | "MidiDevice::get_name"
+                            | "MidiDevice::id::generated_set"
+                            | "MidiDevice::name::generated_set"
+                    )
+                }) =>
+        {
+            Ok(MidiDirection::Bidirectional)
+        }
+        (false, false)
+            if symbols.iter().any(|symbol| {
+                matches!(
+                    *symbol,
+                    "MidiDevice::get_has_input" | "MidiDevice::has_input::generated_set"
+                )
+            }) =>
+        {
+            Ok(MidiDirection::Input)
+        }
+        (false, false)
+            if symbols.iter().any(|symbol| {
+                matches!(
+                    *symbol,
+                    "MidiDevice::get_has_output" | "MidiDevice::has_output::generated_set"
+                )
+            }) =>
+        {
+            Ok(MidiDirection::Output)
+        }
+        _ => Err(format!(
+            "MIDI entry {} ({}) has no directional source mapping: {}",
+            entry.id,
+            entry.registered_name,
+            symbols.into_iter().collect::<Vec<_>>().join(", ")
+        )),
+    }
 }
 
 fn validate_source_coverage(
@@ -1980,6 +2230,63 @@ fn capability_registry() -> Vec<CapabilityDefinition> {
             "MIDI recording terminals are effectful",
         ),
         (
+            "capability.receipt.atomic_generation_activation",
+            &[
+                AvailabilityGate::RuntimeProbe,
+                AvailabilityGate::BackendSemantic,
+            ],
+            "receipt application requires correlated generation activation",
+        ),
+        (
+            "capability.receipt.backend_barrier",
+            &[
+                AvailabilityGate::Target,
+                AvailabilityGate::RuntimeProbe,
+                AvailabilityGate::BackendSemantic,
+            ],
+            "receipt application crosses a correlated backend barrier",
+        ),
+        (
+            "capability.receipt.cancellation_window",
+            &[
+                AvailabilityGate::Declaration,
+                AvailabilityGate::RuntimeProbe,
+            ],
+            "receipt mutations expose and enforce the declared cancellable phase window",
+        ),
+        (
+            "capability.receipt.expected_revision",
+            &[
+                AvailabilityGate::Declaration,
+                AvailabilityGate::RuntimeProbe,
+            ],
+            "receipt admission and planning enforce expected-revision checks",
+        ),
+        (
+            "capability.receipt.idempotency",
+            &[
+                AvailabilityGate::Declaration,
+                AvailabilityGate::RuntimeProbe,
+            ],
+            "receipt retries enforce canonical idempotency identity and conflict rules",
+        ),
+        (
+            "capability.receipt.ledger_retention",
+            &[
+                AvailabilityGate::Declaration,
+                AvailabilityGate::RuntimeProbe,
+            ],
+            "receipt ledger exposes and enforces its published retention window",
+        ),
+        (
+            "capability.receipt.musical_boundary",
+            &[
+                AvailabilityGate::RuntimeProbe,
+                AvailabilityGate::BackendSemantic,
+            ],
+            "receipt application observes the declared musical activation boundary",
+        ),
+        (
             "capability.resource.sfz",
             &[
                 AvailabilityGate::Target,
@@ -1995,11 +2302,20 @@ fn capability_registry() -> Vec<CapabilityDefinition> {
         .map(|(id, gates, meaning)| CapabilityDefinition {
             capability_id: id.into(),
             required_gates: gates.to_vec(),
-            detection_source: "declaration + target + build + operator policy + runtime/backend probe as applicable".into(),
+            detection_source: if id.starts_with("capability.receipt.") {
+                "receipt-ledger declaration plus runtime/backend evidence for every required gate"
+                    .into()
+            } else {
+                "declaration + target + build + operator policy + runtime/backend probe as applicable".into()
+            },
             dependencies: Vec::new(),
             conflicts: Vec::new(),
             meaning: meaning.into(),
-            source_anchor: anchor("Capability IDs"),
+            source_anchor: if id.starts_with("capability.receipt.") {
+                "docs/architecture/api-unification/adr-effective-api-contract.md#Capabilities, security, and deployment policy".into()
+            } else {
+                anchor("Capability IDs")
+            },
         })
         .collect()
 }
@@ -2008,6 +2324,7 @@ fn rule_registry() -> Vec<ClassificationRuleDefinition> {
     [
         ("quantity.rule.amplitude", "reviewed amp/amplitude/gain parameters use linear-amplitude semantics"),
         ("quantity.rule.bus_index", "reviewed bus fields are non-negative backend bus indices"),
+        ("quantity.rule.decibel", "reviewed decibel occurrences use signed dB level semantics"),
         ("quantity.rule.frequency", "reviewed frequency/cutoff fields use hertz and a positive canonical range"),
         ("quantity.rule.integer", "typed integer/count/index fields retain an explicit integer-unbounded or count classification"),
         ("quantity.rule.midi", "MIDI channel/group/note/velocity/controller/bend names map to the canonical width-specific conventions"),
@@ -2018,6 +2335,7 @@ fn rule_registry() -> Vec<ClassificationRuleDefinition> {
         ("quantity.rule.signal", "signal-bearing UGen inputs without a narrower source-backed unit use raw finite signal semantics"),
         ("quantity.rule.tempo", "reviewed tempo fields use quarter-note BPM 1 through 999"),
         ("quantity.rule.time", "reviewed time/duration/delay/beat/bar fields use their canonical time unit"),
+        ("quantity.rule.time_signature", "reviewed meter occurrences distinguish bounded numerators from power-of-two denominators"),
     ]
     .into_iter()
     .map(|(id, rationale)| ClassificationRuleDefinition {
@@ -2148,6 +2466,114 @@ mod tests {
             ),
             Template::Time
         );
+    }
+
+    #[test]
+    fn reviewed_parameter_occurrences_are_position_exact() {
+        with_large_stack(|| {
+            let manifest = public_api::build_manifest(&root()).unwrap();
+            let metadata = build(&manifest).unwrap();
+            let expected = [
+                (
+                    "v1:overload:5b7b4cedbdb08868",
+                    0,
+                    "midi.channel_human",
+                    "unit.midi.channel",
+                    "range.midi.channel.1_16",
+                ),
+                (
+                    "v1:overload:5b7b4cedbdb08868",
+                    1,
+                    "midi.note",
+                    "unit.midi.note",
+                    "range.midi.note.0_127",
+                ),
+                (
+                    "v1:overload:5b7b4cedbdb08868",
+                    2,
+                    "midi.velocity_7bit",
+                    "unit.midi.velocity.7bit",
+                    "range.midi.velocity.0_127",
+                ),
+                (
+                    "v1:overload:21cf960c74f83a9e",
+                    0,
+                    "time_signature.numerator",
+                    "unit.count",
+                    "range.time_signature.numerator.1_32",
+                ),
+                (
+                    "v1:overload:21cf960c74f83a9e",
+                    1,
+                    "time_signature.denominator",
+                    "unit.count",
+                    "range.time_signature.denominator.power_of_two",
+                ),
+                (
+                    "v1:overload:960d8244d6a44f20",
+                    0,
+                    "audio.level_decibel",
+                    "unit.level.decibel",
+                    "range.finite.unbounded",
+                ),
+                (
+                    "v1:overload:a68e0536f45cef6a",
+                    0,
+                    "audio.amplitude",
+                    "unit.amplitude.linear",
+                    "range.finite.nonnegative",
+                ),
+            ];
+            for (target_id, position, semantic, unit, range) in expected {
+                let occurrence = metadata
+                    .parameter_quantities
+                    .iter()
+                    .find(|occurrence| {
+                        occurrence.target_id == target_id && occurrence.position == position
+                    })
+                    .unwrap();
+                let QuantityClassification::Applicable {
+                    semantic_type_id,
+                    unit_id,
+                    range_id,
+                    basis,
+                    ..
+                } = &occurrence.classification
+                else {
+                    panic!("reviewed occurrence must be applicable")
+                };
+                assert_eq!(semantic_type_id, semantic);
+                assert_eq!(unit_id, unit);
+                assert_eq!(range_id, range);
+                assert_eq!(*basis, ClassificationBasis::ExplicitOverride);
+            }
+
+            let entry = manifest
+                .entries
+                .iter()
+                .find(|entry| entry.id == "v1:entry:6b723141effc457e")
+                .unwrap();
+            let mut unrelated_overload = entry.overloads[0].clone();
+            unrelated_overload.id = stable_id("overload", "unrelated unnamed integers");
+            for parameter in &unrelated_overload.parameters {
+                let classification =
+                    classify_parameter(entry, &unrelated_overload, parameter, None);
+                let QuantityClassification::Applicable {
+                    semantic_type_id,
+                    unit_id,
+                    range_id,
+                    basis,
+                    ..
+                } = classification
+                else {
+                    panic!("typed integer must remain an applicable generic quantity")
+                };
+                assert_eq!(semantic_type_id, "numeric.integer");
+                assert_eq!(unit_id, "unit.scalar");
+                assert_eq!(range_id, "range.integer.unbounded");
+                assert_eq!(basis, ClassificationBasis::ReviewedRule);
+            }
+        });
     }
 
     #[test]
@@ -2325,6 +2751,87 @@ mod tests {
                         .required_gates
                         .contains(&AvailabilityGate::BackendSemantic)
             }));
+            for (capability_id, required_gates) in [
+                (
+                    "capability.receipt.atomic_generation_activation",
+                    vec![
+                        AvailabilityGate::RuntimeProbe,
+                        AvailabilityGate::BackendSemantic,
+                    ],
+                ),
+                (
+                    "capability.receipt.backend_barrier",
+                    vec![
+                        AvailabilityGate::Target,
+                        AvailabilityGate::RuntimeProbe,
+                        AvailabilityGate::BackendSemantic,
+                    ],
+                ),
+                (
+                    "capability.receipt.cancellation_window",
+                    vec![
+                        AvailabilityGate::Declaration,
+                        AvailabilityGate::RuntimeProbe,
+                    ],
+                ),
+                (
+                    "capability.receipt.expected_revision",
+                    vec![
+                        AvailabilityGate::Declaration,
+                        AvailabilityGate::RuntimeProbe,
+                    ],
+                ),
+                (
+                    "capability.receipt.idempotency",
+                    vec![
+                        AvailabilityGate::Declaration,
+                        AvailabilityGate::RuntimeProbe,
+                    ],
+                ),
+                (
+                    "capability.receipt.ledger_retention",
+                    vec![
+                        AvailabilityGate::Declaration,
+                        AvailabilityGate::RuntimeProbe,
+                    ],
+                ),
+                (
+                    "capability.receipt.musical_boundary",
+                    vec![
+                        AvailabilityGate::RuntimeProbe,
+                        AvailabilityGate::BackendSemantic,
+                    ],
+                ),
+            ] {
+                let capability = metadata
+                    .capabilities
+                    .iter()
+                    .find(|capability| capability.capability_id == capability_id)
+                    .unwrap();
+                assert_eq!(capability.required_gates, required_gates);
+                assert!(capability
+                    .detection_source
+                    .contains("runtime/backend evidence"));
+                assert_eq!(
+                    capability.source_anchor,
+                    "docs/architecture/api-unification/adr-effective-api-contract.md#Capabilities, security, and deployment policy"
+                );
+            }
+            for (target_id, expected) in [
+                ("v1:entry:6b723141effc457e", vec!["capability.midi.output"]),
+                ("v1:entry:b93602c512c92e80", vec!["capability.midi.input"]),
+                (
+                    "v1:entry:5653421b5f2800d5",
+                    vec!["capability.midi.input", "capability.midi.output"],
+                ),
+            ] {
+                let binding = metadata
+                    .availability_bindings
+                    .iter()
+                    .find(|binding| binding.target_id == target_id)
+                    .unwrap();
+                assert_eq!(binding.predicate_capability_ids, expected);
+            }
             let security = &metadata.security_bindings[0];
             assert_eq!(
                 security.mode_id,

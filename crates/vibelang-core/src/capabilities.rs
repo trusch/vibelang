@@ -1087,7 +1087,7 @@ mod tests {
     #[test]
     fn catalog_is_derived_from_the_accepted_m05_registry() {
         let catalog = &accepted().catalog;
-        assert_eq!(catalog.definitions().len(), 21);
+        assert_eq!(catalog.definitions().len(), 28);
         assert_eq!(catalog.security_modes().len(), 4);
         assert_eq!(catalog.availability_bindings().len(), 3626);
         assert!(catalog.definition("capability.plugin.mi_ugens").is_some());
@@ -1104,6 +1104,69 @@ mod tests {
                 AvailabilityGate::BackendSemantic,
             ]
         );
+    }
+
+    #[test]
+    fn receipt_capabilities_require_positive_runtime_truth() {
+        let catalog = &accepted().catalog;
+        for capability_id in [
+            "capability.receipt.atomic_generation_activation",
+            "capability.receipt.backend_barrier",
+            "capability.receipt.cancellation_window",
+            "capability.receipt.expected_revision",
+            "capability.receipt.idempotency",
+            "capability.receipt.ledger_retention",
+            "capability.receipt.musical_boundary",
+        ] {
+            let definition = catalog
+                .definition(capability_id)
+                .expect("receipt capability must be canonical");
+            let pending = evaluate_one(
+                capability_id,
+                definition.required_gates.iter().copied().map(|gate| {
+                    if gate == AvailabilityGate::RuntimeProbe {
+                        (gate, unknown_gate(gate, "reason.probe_pending"))
+                    } else {
+                        (gate, available_gate(gate))
+                    }
+                }),
+            )
+            .expect("pending receipt capability must evaluate");
+            assert_eq!(pending.state_id, UNKNOWN_STATE_ID);
+            assert_eq!(pending.reason_ids, ["reason.probe_pending"]);
+
+            let unavailable = evaluate_one(
+                capability_id,
+                definition.required_gates.iter().copied().map(|gate| {
+                    if gate == AvailabilityGate::RuntimeProbe {
+                        (
+                            gate,
+                            unavailable_gate(gate, "reason.runtime_dependency_missing"),
+                        )
+                    } else {
+                        (gate, available_gate(gate))
+                    }
+                }),
+            )
+            .expect("unavailable receipt capability must evaluate");
+            assert_eq!(unavailable.state_id, UNAVAILABLE_STATE_ID);
+            assert_eq!(
+                unavailable.reason_ids,
+                ["reason.runtime_dependency_missing"]
+            );
+
+            let available = evaluate_one(
+                capability_id,
+                definition
+                    .required_gates
+                    .iter()
+                    .copied()
+                    .map(|gate| (gate, available_gate(gate))),
+            )
+            .expect("proven receipt capability must evaluate");
+            assert_eq!(available.state_id, AVAILABLE_STATE_ID);
+            assert_eq!(available.provenance.len(), definition.required_gates.len());
+        }
     }
 
     #[test]

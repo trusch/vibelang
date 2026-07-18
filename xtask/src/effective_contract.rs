@@ -2038,7 +2038,8 @@ fn compose(root: &Path, discovery: &Discovery) -> Result<BTreeMap<&'static str, 
         "unclassified_records".into(),
         composition.accounting.unclassified_records,
     );
-    manifest.validate().map_err(|error| error.to_string())?;
+    let conventions = crate::conventions::build(&discovery.v1)?;
+    crate::conventions::attach(&mut manifest, conventions)?;
 
     let v2_json = vibelang_api_manifest::v2::to_pretty_json_v2(&manifest)
         .map_err(|error| error.to_string())?;
@@ -6453,6 +6454,27 @@ mod tests {
                 for (path, content) in first {
                     assert_eq!(content, fs::read_to_string(root.join(path)).unwrap());
                 }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn composed_v2_has_one_canonical_conventions_projection() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let root = root();
+                let discovery = discover(&root).unwrap();
+                let outputs = compose(&root, &discovery).unwrap();
+                let manifest =
+                    vibelang_api_manifest::v2::parse_v2_manifest(outputs.get(V2_PATH).unwrap())
+                        .unwrap();
+                let expected = crate::conventions::build(&discovery.v1).unwrap();
+                assert_eq!(manifest.conventions.as_ref(), Some(&expected));
+                assert_eq!(expected.capabilities.len(), 28);
+                assert_eq!(expected.parameter_quantities.len(), 18_786);
             })
             .unwrap()
             .join()
