@@ -6,9 +6,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
 use vibelang_core::candidate::{
-    Candidate, CandidateDraft, CandidateError, CompatibilityError, DeclarationIr, DeclarationOwner,
-    DeclarationPayload, EntityKind, ErasedRef, EvaluationIdentity, LifecycleMetadata,
-    LogicalAddress, RefKind, ReferenceCatalog, SourceAnchor, TypedAddress, TypedRef,
+    Candidate, CandidateDraft, CandidateError, CandidateFragment, CompatibilityError,
+    DeclarationIr, DeclarationKey, DeclarationOwner, DeclarationPayload, EntityKind, ErasedRef,
+    EvaluationIdentity, GroupScope, LifecycleAction, LifecycleMetadata, LifecycleOperationIr,
+    LogicalAddress, ModulePath, ProjectNamespace, RefKind, ReferenceCatalog, ReferenceUse,
+    SourceAnchor, SyntaxKey, TypedAddress, TypedRef,
 };
 use vibelang_core::mutation::{
     AttemptId, CandidateOrigin, Diagnostic, EventSequence, MutationReceipt, RevisionId,
@@ -25,6 +27,12 @@ pub enum FoundationError {
     InvalidConfigurationField(String),
     #[error("invalid Observation: {0}")]
     InvalidObservation(String),
+    #[error("live Observation is unavailable without a runtime observation source")]
+    ObservationUnavailable,
+    #[error("no detached authoring fragment is active")]
+    NoActiveFragment,
+    #[error("a detached authoring fragment was left open")]
+    UnclosedFragment,
     #[error("receipt has no accepted revision")]
     ReceiptHasNoRevision,
     #[error(transparent)]
@@ -36,6 +44,12 @@ pub enum FoundationError {
 struct EvaluationState {
     draft: CandidateDraft,
     references: ReferenceCatalog,
+    captures: Vec<FragmentCapture>,
+}
+
+struct FragmentCapture {
+    owner: DeclarationOwner,
+    fragment: CandidateFragment,
 }
 
 thread_local! {
@@ -51,6 +65,7 @@ pub(crate) fn begin_evaluation(identity: EvaluationIdentity) -> Result<(), Found
         *state = Some(EvaluationState {
             draft: CandidateDraft::new(identity, CandidateOrigin::RhaiHost),
             references: ReferenceCatalog::default(),
+            captures: Vec::new(),
         });
         Ok(())
     })
@@ -62,6 +77,9 @@ pub(crate) fn finish_evaluation() -> Result<Candidate, FoundationError> {
             .borrow_mut()
             .take()
             .ok_or(FoundationError::NoActiveEvaluation)?;
+        if !state.captures.is_empty() {
+            return Err(FoundationError::UnclosedFragment);
+        }
         Ok(state.draft.finish(&state.references)?)
     })
 }
@@ -70,6 +88,132 @@ pub(crate) fn abort_evaluation() {
     EVALUATION.with(|state| {
         state.borrow_mut().take();
     });
+}
+
+pub(crate) fn current_identity() -> Result<EvaluationIdentity, FoundationError> {
+    EVALUATION.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .map(|state| state.draft.identity().clone())
+            .ok_or(FoundationError::NoActiveEvaluation)
+    })
+}
+
+pub(crate) fn authoring_builder<K: RefKind>(
+    key: &str,
+    group_scope: GroupScope,
+) -> Result<BuilderBase, FoundationError> {
+    let identity = current_identity()?;
+    let module = ModulePath::new("main")?;
+    let key = DeclarationKey::new(key)?;
+    Ok(BuilderBase::new(
+        identity,
+        TypedAddress::<K>::new(
+            ProjectNamespace::new("vibelang")?,
+            module.clone(),
+            group_scope,
+            key.clone(),
+        ),
+        SourceAnchor::new(module, SyntaxKey::Explicit(key), None),
+    ))
+}
+
+pub(crate) fn authoring_ref<K: RefKind>(
+    key: &str,
+    group_scope: GroupScope,
+) -> Result<RefBase, FoundationError> {
+    let builder = authoring_builder::<K>(key, group_scope)?;
+    Ok(builder.reference())
+}
+
+pub(crate) fn begin_fragment(owner: DeclarationOwner) -> Result<(), FoundationError> {
+    EVALUATION.with(|state| {
+        let mut state = state.borrow_mut();
+        let state = state.as_mut().ok_or(FoundationError::NoActiveEvaluation)?;
+        state.captures.push(FragmentCapture {
+            owner,
+            fragment: CandidateFragment::default(),
+        });
+        Ok(())
+    })
+}
+
+pub(crate) fn finish_fragment() -> Result<CandidateFragment, FoundationError> {
+    EVALUATION.with(|state| {
+        state
+            .borrow_mut()
+            .as_mut()
+            .ok_or(FoundationError::NoActiveEvaluation)?
+            .captures
+            .pop()
+            .map(|capture| capture.fragment)
+            .ok_or(FoundationError::NoActiveFragment)
+    })
+}
+
+pub(crate) fn abort_fragment() {
+    EVALUATION.with(|state| {
+        if let Some(state) = state.borrow_mut().as_mut() {
+            state.captures.pop();
+        }
+    });
+}
+
+pub(crate) fn capture_fragment<T>(
+    owner: DeclarationOwner,
+    capture: impl FnOnce() -> Result<T, FoundationError>,
+) -> Result<(T, CandidateFragment), FoundationError> {
+    begin_fragment(owner)?;
+    match capture() {
+        Ok(value) => Ok((value, finish_fragment()?)),
+        Err(error) => {
+            abort_fragment();
+            Err(error)
+        }
+    }
+}
+
+pub(crate) fn commit_fragment(fragment: CandidateFragment) -> Result<(), FoundationError> {
+    EVALUATION.with(|state| {
+        let mut state = state.borrow_mut();
+        let state = state.as_mut().ok_or(FoundationError::NoActiveEvaluation)?;
+        if let Some(capture) = state.captures.last_mut() {
+            capture.fragment.extend(fragment);
+            Ok(())
+        } else {
+            state.draft.append_fragment(fragment)?;
+            Ok(())
+        }
+    })
+}
+
+pub(crate) fn commit_action(
+    reference: RefBase,
+    lifecycle: LifecycleMetadata,
+    action: LifecycleAction,
+    source: SourceAnchor,
+) -> Result<RefBase, FoundationError> {
+    let operation = LifecycleOperationIr::new(reference.0.clone(), lifecycle, action, source)?;
+    commit_fragment(CandidateFragment::default().operation(operation))?;
+    Ok(reference)
+}
+
+pub(crate) fn observe(reference: &RefBase) -> Result<Observation, FoundationError> {
+    reference.validate(&current_identity()?)?;
+    Err(FoundationError::ObservationUnavailable)
+}
+
+pub(crate) fn operation_source(
+    reference: &RefBase,
+    role: &str,
+) -> Result<SourceAnchor, FoundationError> {
+    let key = DeclarationKey::new(format!("{}-{role}", reference.address().key().as_str()))?;
+    Ok(SourceAnchor::new(
+        reference.address().module().clone(),
+        SyntaxKey::Explicit(key),
+        None,
+    ))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -133,20 +277,66 @@ impl BuilderBase {
         &self.configuration
     }
 
+    #[must_use]
+    pub fn in_group(mut self, group_scope: GroupScope) -> Self {
+        self.address = LogicalAddress::new(
+            self.address.project().clone(),
+            self.address.module().clone(),
+            self.address.kind(),
+            group_scope,
+            self.address.key().clone(),
+        );
+        self
+    }
+
+    #[must_use]
+    pub fn reference(&self) -> RefBase {
+        RefBase::new(ErasedRef::new(self.identity.clone(), self.address.clone()))
+    }
+
+    pub fn fragment(
+        self,
+        owner: DeclarationOwner,
+        mut lifecycle: LifecycleMetadata,
+        payload: DeclarationPayload,
+        references: impl IntoIterator<Item = (RefBase, SourceAnchor)>,
+    ) -> Result<(CandidateFragment, RefBase), FoundationError> {
+        self.identity.ensure_compatible(&current_identity()?)?;
+        let effective_owner = EVALUATION.with(|state| {
+            state
+                .borrow()
+                .as_ref()
+                .and_then(|state| state.captures.last())
+                .map_or(owner, |capture| capture.owner.clone())
+        });
+        lifecycle.composition = effective_owner.composition();
+        let reference = self.reference();
+        let declaration = DeclarationIr::new_erased(
+            self.address,
+            effective_owner,
+            self.source,
+            lifecycle,
+            payload,
+        );
+        let mut fragment = CandidateFragment::default().declaration(declaration);
+        for (dependency, source) in references {
+            dependency.validate(&self.identity)?;
+            fragment = fragment.reference(ReferenceUse::new(dependency.0, source));
+        }
+        Ok((fragment, reference))
+    }
+
     pub fn apply(
         self,
         owner: DeclarationOwner,
         lifecycle: LifecycleMetadata,
         payload: DeclarationPayload,
     ) -> Result<RefBase, FoundationError> {
-        EVALUATION.with(|state| {
-            let mut state = state.borrow_mut();
-            let state = state.as_mut().ok_or(FoundationError::NoActiveEvaluation)?;
-            self.identity.ensure_compatible(state.draft.identity())?;
-            let declaration =
-                DeclarationIr::new_erased(self.address, owner, self.source, lifecycle, payload);
-            Ok(RefBase::new(state.draft.declare_erased(declaration)?))
-        })
+        let identity = current_identity()?;
+        self.identity.ensure_compatible(&identity)?;
+        let (fragment, reference) = self.fragment(owner, lifecycle, payload, Vec::new())?;
+        commit_fragment(fragment)?;
+        Ok(reference)
     }
 }
 

@@ -11,8 +11,8 @@ use vibelang_core::reload::EffectConfig;
 use vibelang_core::traits::{Clip, FadeConfig, FadeCurve, FadeTarget, SequenceConfig};
 use vibelang_core::types::{Beat, Duration};
 
-use super::melody::Melody;
-use super::pattern::Pattern;
+use super::melody::{Melody, MelodyBuilder, MelodyRef};
+use super::pattern::{Pattern, PatternBuilder, PatternRef};
 use super::route::ParamHandle;
 use super::voice::Voice;
 use crate::context;
@@ -833,4 +833,922 @@ pub fn register(engine: &mut Engine) {
     // `fx.param("name").modulate_by(source, "port")`.
     engine.register_fn("param", Fx::param_handle);
     engine.register_fn("apply", Fx::apply);
+}
+
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CandidateFragment, Composition,
+    DeclarationOwner, DeclarationPayload, DesiredLifecycle, FadeKind, GroupScope, LifecycleAction,
+    LifecycleMetadata, SequenceAuthoring, SequenceClipAuthoring, SequenceContentAuthoring,
+    SequenceKind, StartMode, TerminalEffect,
+};
+
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SequenceRef {
+    base: RefBase,
+}
+
+impl SequenceRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<SequenceKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Start(_) => (TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Stop => (TerminalEffect::Stop, Cancellation::NotCancellable),
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Cancel => (TerminalEffect::Cancel, Cancellation::BeforePlanning),
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported SequenceRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn start(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Normal), "start")
+    }
+
+    pub fn start_now(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Immediate), "start-now")
+    }
+
+    pub fn stop(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Stop, "stop")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn cancel(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Cancel, "cancel")
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SequenceClipContentV2 {
+    Pattern {
+        reference: PatternRef,
+        fragment: Option<CandidateFragment>,
+    },
+    Melody {
+        reference: MelodyRef,
+        fragment: Option<CandidateFragment>,
+    },
+    Fade(RefBase),
+    Sequence {
+        reference: SequenceRef,
+        fragment: Option<CandidateFragment>,
+    },
+}
+
+impl SequenceClipContentV2 {
+    fn reference(&self) -> &RefBase {
+        match self {
+            Self::Pattern { reference, .. } => reference.base(),
+            Self::Melody { reference, .. } => reference.base(),
+            Self::Fade(reference) => reference,
+            Self::Sequence { reference, .. } => reference.base(),
+        }
+    }
+
+    fn authoring(&self) -> Result<SequenceContentAuthoring, FoundationError> {
+        Ok(match self {
+            Self::Pattern { reference, .. } => {
+                SequenceContentAuthoring::Pattern(reference.base().typed()?)
+            }
+            Self::Melody { reference, .. } => {
+                SequenceContentAuthoring::Melody(reference.base().typed()?)
+            }
+            Self::Fade(reference) => SequenceContentAuthoring::Fade(reference.typed()?),
+            Self::Sequence { reference, .. } => {
+                SequenceContentAuthoring::Sequence(reference.base().typed()?)
+            }
+        })
+    }
+
+    fn take_fragment(&mut self) -> Option<CandidateFragment> {
+        match self {
+            Self::Pattern { fragment, .. }
+            | Self::Melody { fragment, .. }
+            | Self::Sequence { fragment, .. } => fragment.take(),
+            Self::Fade(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct SequenceClipV2 {
+    start: f64,
+    end: f64,
+    content: SequenceClipContentV2,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SequenceBuilder {
+    base: BuilderBase,
+    length: f64,
+    looping: bool,
+    clips: Vec<SequenceClipV2>,
+}
+
+impl SequenceBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            length: 16.0,
+            looping: true,
+            clips: Vec::new(),
+        }
+    }
+
+    pub fn loop_bars(mut self, bars: f64) -> Result<Self, FoundationError> {
+        if !bars.is_finite() || bars <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sequence loop bars must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = bars * 4.0;
+        Ok(self)
+    }
+
+    pub fn loop_bars_int(self, bars: i64) -> Result<Self, FoundationError> {
+        self.loop_bars(bars as f64)
+    }
+
+    pub fn loop_beats(mut self, beats: f64) -> Result<Self, FoundationError> {
+        if !beats.is_finite() || beats <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sequence loop beats must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = beats;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn looping(mut self, looping: bool) -> Self {
+        self.looping = looping;
+        self
+    }
+
+    fn validate_range(range: &Range<f64>) -> Result<(), FoundationError> {
+        if !range.start.is_finite()
+            || !range.end.is_finite()
+            || range.start < 0.0
+            || range.end <= range.start
+        {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sequence clip range must be finite, non-negative, and non-empty".into(),
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    fn push_clip(
+        mut self,
+        range: Range<f64>,
+        content: SequenceClipContentV2,
+    ) -> Result<Self, FoundationError> {
+        Self::validate_range(&range)?;
+        self.clips.push(SequenceClipV2 {
+            start: range.start,
+            end: range.end,
+            content,
+        });
+        Ok(self)
+    }
+
+    pub fn clip_pattern(
+        self,
+        range: Range<f64>,
+        reference: PatternRef,
+    ) -> Result<Self, FoundationError> {
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Pattern {
+                reference,
+                fragment: None,
+            },
+        )
+    }
+
+    pub fn clip_pattern_int(
+        self,
+        range: Range<i64>,
+        reference: PatternRef,
+    ) -> Result<Self, FoundationError> {
+        self.clip_pattern(range.start as f64..range.end as f64, reference)
+    }
+
+    pub fn clip_pattern_inline(
+        self,
+        range: Range<f64>,
+        builder: PatternBuilder,
+    ) -> Result<Self, FoundationError> {
+        Self::validate_range(&range)?;
+        let parent = self.base.reference();
+        let (reference, fragment) = foundation::capture_fragment(
+            DeclarationOwner::Parent(parent.address().clone()),
+            || builder.apply(),
+        )?;
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Pattern {
+                reference,
+                fragment: Some(fragment),
+            },
+        )
+    }
+
+    pub fn clip_pattern_inline_int(
+        self,
+        range: Range<i64>,
+        builder: PatternBuilder,
+    ) -> Result<Self, FoundationError> {
+        self.clip_pattern_inline(range.start as f64..range.end as f64, builder)
+    }
+
+    pub fn clip_melody(
+        self,
+        range: Range<f64>,
+        reference: MelodyRef,
+    ) -> Result<Self, FoundationError> {
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Melody {
+                reference,
+                fragment: None,
+            },
+        )
+    }
+
+    pub fn clip_melody_int(
+        self,
+        range: Range<i64>,
+        reference: MelodyRef,
+    ) -> Result<Self, FoundationError> {
+        self.clip_melody(range.start as f64..range.end as f64, reference)
+    }
+
+    pub fn clip_melody_inline(
+        self,
+        range: Range<f64>,
+        builder: MelodyBuilder,
+    ) -> Result<Self, FoundationError> {
+        Self::validate_range(&range)?;
+        let parent = self.base.reference();
+        let (reference, fragment) = foundation::capture_fragment(
+            DeclarationOwner::Parent(parent.address().clone()),
+            || builder.apply(),
+        )?;
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Melody {
+                reference,
+                fragment: Some(fragment),
+            },
+        )
+    }
+
+    pub fn clip_melody_inline_int(
+        self,
+        range: Range<i64>,
+        builder: MelodyBuilder,
+    ) -> Result<Self, FoundationError> {
+        self.clip_melody_inline(range.start as f64..range.end as f64, builder)
+    }
+
+    pub fn clip_fade(self, range: Range<f64>, reference: RefBase) -> Result<Self, FoundationError> {
+        reference.typed::<FadeKind>()?;
+        self.push_clip(range, SequenceClipContentV2::Fade(reference))
+    }
+
+    pub fn clip_fade_int(
+        self,
+        range: Range<i64>,
+        reference: RefBase,
+    ) -> Result<Self, FoundationError> {
+        self.clip_fade(range.start as f64..range.end as f64, reference)
+    }
+
+    pub fn clip_sequence(
+        self,
+        range: Range<f64>,
+        reference: SequenceRef,
+    ) -> Result<Self, FoundationError> {
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Sequence {
+                reference,
+                fragment: None,
+            },
+        )
+    }
+
+    pub fn clip_sequence_int(
+        self,
+        range: Range<i64>,
+        reference: SequenceRef,
+    ) -> Result<Self, FoundationError> {
+        self.clip_sequence(range.start as f64..range.end as f64, reference)
+    }
+
+    pub fn clip_sequence_inline(
+        self,
+        range: Range<f64>,
+        builder: SequenceBuilder,
+    ) -> Result<Self, FoundationError> {
+        Self::validate_range(&range)?;
+        let parent = self.base.reference();
+        let (reference, fragment) = foundation::capture_fragment(
+            DeclarationOwner::Parent(parent.address().clone()),
+            || builder.apply(),
+        )?;
+        self.push_clip(
+            range,
+            SequenceClipContentV2::Sequence {
+                reference,
+                fragment: Some(fragment),
+            },
+        )
+    }
+
+    pub fn clip_sequence_inline_int(
+        self,
+        range: Range<i64>,
+        builder: SequenceBuilder,
+    ) -> Result<Self, FoundationError> {
+        self.clip_sequence_inline(range.start as f64..range.end as f64, builder)
+    }
+
+    pub(crate) fn build_fragment(
+        self,
+        lifecycle: DesiredLifecycle,
+    ) -> Result<(CandidateFragment, SequenceRef), FoundationError> {
+        if !self.length.is_finite() || self.length <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sequence length must be finite and positive".into(),
+            )
+            .into());
+        }
+        let source = self.base.source().clone();
+        let mut clips = Vec::with_capacity(self.clips.len());
+        let mut dependencies = Vec::with_capacity(self.clips.len());
+        let mut inline_fragments = Vec::new();
+        for mut clip in self.clips {
+            if clip.end > self.length {
+                return Err(CandidateError::InvalidAuthoring(
+                    "Sequence clip extends beyond the declared length".into(),
+                )
+                .into());
+            }
+            let start_ticks = Beat::from_f64(clip.start).raw();
+            let end_ticks = Beat::from_f64(clip.end).raw();
+            let content = clip.content.authoring()?;
+            dependencies.push((clip.content.reference().clone(), source.clone()));
+            if let Some(fragment) = clip.content.take_fragment() {
+                inline_fragments.push(fragment);
+            }
+            clips.push(SequenceClipAuthoring {
+                start_ticks,
+                end_ticks,
+                content,
+            });
+        }
+        let payload =
+            DeclarationPayload::authoring(AuthoringDeclaration::Sequence(SequenceAuthoring {
+                clips,
+                length_ticks: Beat::from_f64(self.length).raw(),
+                looping: self.looping,
+                lifecycle,
+            }))?;
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        let owner = DeclarationOwner::Structural(source.syntax_key().clone());
+        let (mut fragment, reference) =
+            self.base.fragment(owner, metadata, payload, dependencies)?;
+        for inline in inline_fragments {
+            fragment.extend(inline);
+        }
+        Ok((fragment, SequenceRef::new(reference)?))
+    }
+
+    fn terminal(self, lifecycle: DesiredLifecycle) -> Result<SequenceRef, FoundationError> {
+        let (fragment, reference) = self.build_fragment(lifecycle)?;
+        foundation::commit_fragment(fragment)?;
+        Ok(reference)
+    }
+
+    pub fn apply(self) -> Result<SequenceRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Dormant)
+    }
+
+    pub fn start(self) -> Result<SequenceRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Normal))
+    }
+
+    pub fn start_now(self) -> Result<SequenceRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Immediate))
+    }
+
+    pub fn launch(self) -> Result<SequenceRef, FoundationError> {
+        self.start()
+    }
+}
+
+pub(crate) fn sequence_builder_v2(name: String) -> Result<SequenceBuilder, Box<EvalAltResult>> {
+    Ok(SequenceBuilder::new(
+        foundation::authoring_builder::<SequenceKind>(&name, GroupScope::root())
+            .map_err(|error| sequence_v2_error(error, Position::NONE))?,
+    ))
+}
+
+pub(crate) fn sequence_ref_v2(name: String) -> Result<SequenceRef, Box<EvalAltResult>> {
+    SequenceRef::new(
+        foundation::authoring_ref::<SequenceKind>(&name, GroupScope::root())
+            .map_err(|error| sequence_v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| sequence_v2_error(error, Position::NONE))
+}
+
+fn sequence_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+#[cfg(test)]
+fn install_v2_for_tests(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<SequenceBuilder>("SequenceBuilder")
+        .register_type_with_name::<SequenceRef>("SequenceRef")
+        .register_fn("sequence", sequence_builder_v2)
+        .register_fn("sequence_ref", sequence_ref_v2)
+        .register_fn("loop_bars", |builder: SequenceBuilder, bars: f64| {
+            builder
+                .loop_bars(bars)
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("loop_bars", |builder: SequenceBuilder, bars: i64| {
+            builder
+                .loop_bars_int(bars)
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("loop_beats", |builder: SequenceBuilder, beats: f64| {
+            builder
+                .loop_beats(beats)
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("looping", SequenceBuilder::looping)
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, reference: PatternRef| {
+                builder
+                    .clip_pattern(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, reference: PatternRef| {
+                builder
+                    .clip_pattern_int(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, inline: PatternBuilder| {
+                builder
+                    .clip_pattern_inline(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, inline: PatternBuilder| {
+                builder
+                    .clip_pattern_inline_int(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, reference: MelodyRef| {
+                builder
+                    .clip_melody(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, reference: MelodyRef| {
+                builder
+                    .clip_melody_int(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, inline: MelodyBuilder| {
+                builder
+                    .clip_melody_inline(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, inline: MelodyBuilder| {
+                builder
+                    .clip_melody_inline_int(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, reference: RefBase| {
+                builder
+                    .clip_fade(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, reference: RefBase| {
+                builder
+                    .clip_fade_int(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, reference: SequenceRef| {
+                builder
+                    .clip_sequence(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, reference: SequenceRef| {
+                builder
+                    .clip_sequence_int(range, reference)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<f64>, inline: SequenceBuilder| {
+                builder
+                    .clip_sequence_inline(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "clip",
+            |builder: SequenceBuilder, range: Range<i64>, inline: SequenceBuilder| {
+                builder
+                    .clip_sequence_inline_int(range, inline)
+                    .map_err(|error| sequence_v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn("apply", |builder: SequenceBuilder| {
+            builder
+                .apply()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |builder: SequenceBuilder| {
+            builder
+                .start()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |builder: SequenceBuilder| {
+            builder
+                .start_now()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("launch", |builder: SequenceBuilder| {
+            builder
+                .launch()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |reference: SequenceRef| {
+            reference
+                .start()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |reference: SequenceRef| {
+            reference
+                .start_now()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("stop", |reference: SequenceRef| {
+            reference
+                .stop()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("remove", |reference: SequenceRef| {
+            reference
+                .remove()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("cancel", |reference: SequenceRef| {
+            reference
+                .cancel()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        })
+        .register_fn("status", |reference: SequenceRef| {
+            reference
+                .status()
+                .map_err(|error| sequence_v2_error(error, Position::NONE))
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vibelang_core::candidate::{
+        AuthoringDeclaration, ContractDigest, DeclarationOwner, EngineInstanceId,
+        EvaluationIdentity, LanguageContract, VoiceKind,
+    };
+    use vibelang_core::mutation::RuntimeEpoch;
+
+    fn v2_identity() -> EvaluationIdentity {
+        EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"sequence-v2-test")),
+            EngineInstanceId::new(),
+            RuntimeEpoch::new(),
+        )
+    }
+
+    fn voice_ref(name: &str) -> super::super::voice::VoiceRef {
+        super::super::voice::VoiceRef::new(
+            foundation::authoring_ref::<VoiceKind>(name, GroupScope::root()).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn v2_inline_sequence_fragments_are_atomic_and_owned_by_their_direct_parent() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let rejected_pattern = PatternBuilder::new(
+            foundation::authoring_builder::<vibelang_core::candidate::PatternKind>(
+                "rejected-pattern",
+                GroupScope::root(),
+            )
+            .unwrap(),
+        )
+        .on(voice_ref("unapplied-voice"))
+        .step("x...".into())
+        .unwrap();
+        let rejected = SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("rejected-sequence", GroupScope::root())
+                .unwrap(),
+        )
+        .clip_pattern_inline(0.0..4.0, rejected_pattern)
+        .unwrap()
+        .loop_beats(2.0)
+        .unwrap()
+        .apply();
+        assert!(matches!(
+            rejected,
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let voice = crate::api::voice::VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap()
+        .apply()
+        .unwrap();
+        let pattern = PatternBuilder::new(
+            foundation::authoring_builder::<vibelang_core::candidate::PatternKind>(
+                "inline-pattern",
+                GroupScope::root(),
+            )
+            .unwrap(),
+        )
+        .on(voice)
+        .step("x...".into())
+        .unwrap();
+        let child = SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("child", GroupScope::root()).unwrap(),
+        )
+        .loop_beats(4.0)
+        .unwrap()
+        .clip_pattern_inline(0.0..4.0, pattern)
+        .unwrap();
+        SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("parent", GroupScope::root()).unwrap(),
+        )
+        .loop_beats(4.0)
+        .unwrap()
+        .clip_sequence_inline(0.0..4.0, child)
+        .unwrap()
+        .apply()
+        .unwrap();
+        let candidate = foundation::finish_evaluation().unwrap();
+
+        assert_eq!(candidate.declarations().len(), 4);
+        let owner_of = |key: &str| {
+            candidate
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.address().key().as_str() == key)
+                .unwrap()
+                .owner()
+        };
+        assert!(matches!(
+            owner_of("child"),
+            DeclarationOwner::Parent(parent) if parent.key().as_str() == "parent"
+        ));
+        assert!(matches!(
+            owner_of("inline-pattern"),
+            DeclarationOwner::Parent(parent) if parent.key().as_str() == "child"
+        ));
+    }
+
+    #[test]
+    fn v2_sequence_content_union_is_tagged_and_rejects_wrong_ref_kinds_during_configuration() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let pattern = PatternRef::new(
+            foundation::authoring_ref::<vibelang_core::candidate::PatternKind>(
+                "pattern",
+                GroupScope::root(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let melody = MelodyRef::new(
+            foundation::authoring_ref::<vibelang_core::candidate::MelodyKind>(
+                "melody",
+                GroupScope::root(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let fade = foundation::authoring_ref::<FadeKind>("fade", GroupScope::root()).unwrap();
+        let nested = SequenceRef::new(
+            foundation::authoring_ref::<SequenceKind>("nested", GroupScope::root()).unwrap(),
+        )
+        .unwrap();
+        let builder = SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("song", GroupScope::root()).unwrap(),
+        )
+        .clip_pattern(0.0..1.0, pattern)
+        .unwrap()
+        .clip_melody(1.0..2.0, melody)
+        .unwrap()
+        .clip_fade(2.0..3.0, fade)
+        .unwrap()
+        .clip_sequence(3.0..4.0, nested)
+        .unwrap();
+        assert!(matches!(
+            &builder.clips[0].content,
+            SequenceClipContentV2::Pattern { .. }
+        ));
+        assert!(matches!(
+            &builder.clips[1].content,
+            SequenceClipContentV2::Melody { .. }
+        ));
+        assert!(matches!(
+            &builder.clips[2].content,
+            SequenceClipContentV2::Fade(_)
+        ));
+        assert!(matches!(
+            &builder.clips[3].content,
+            SequenceClipContentV2::Sequence { .. }
+        ));
+        let wrong = foundation::authoring_ref::<VoiceKind>("voice", GroupScope::root()).unwrap();
+        assert!(matches!(
+            SequenceBuilder::new(
+                foundation::authoring_builder::<SequenceKind>("wrong", GroupScope::root()).unwrap()
+            )
+            .clip_fade(0.0..1.0, wrong),
+            Err(FoundationError::Candidate(
+                CandidateError::WrongRefKind { .. }
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn v2_sequence_reference_cycles_report_the_dependency_path() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let a_ref = SequenceRef::new(
+            foundation::authoring_ref::<SequenceKind>("a", GroupScope::root()).unwrap(),
+        )
+        .unwrap();
+        let b_ref = SequenceRef::new(
+            foundation::authoring_ref::<SequenceKind>("b", GroupScope::root()).unwrap(),
+        )
+        .unwrap();
+        SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("a", GroupScope::root()).unwrap(),
+        )
+        .clip_sequence(0.0..1.0, b_ref)
+        .unwrap()
+        .apply()
+        .unwrap();
+        SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("b", GroupScope::root()).unwrap(),
+        )
+        .clip_sequence(0.0..1.0, a_ref)
+        .unwrap()
+        .apply()
+        .unwrap();
+
+        assert!(matches!(
+            foundation::finish_evaluation(),
+            Err(FoundationError::Candidate(CandidateError::DependencyCycle(path)))
+                if path.len() == 3
+        ));
+    }
+
+    #[test]
+    fn v2_sequence_launch_alias_matches_start_and_status_is_live_source_only() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let started = SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("started", GroupScope::root()).unwrap(),
+        )
+        .start()
+        .unwrap();
+        SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("launched", GroupScope::root()).unwrap(),
+        )
+        .launch()
+        .unwrap();
+        SequenceBuilder::new(
+            foundation::authoring_builder::<SequenceKind>("immediate", GroupScope::root()).unwrap(),
+        )
+        .start_now()
+        .unwrap();
+        assert!(matches!(
+            started.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        let lifecycles = candidate
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.payload() {
+                DeclarationPayload::Authoring {
+                    declaration: AuthoringDeclaration::Sequence(sequence),
+                    ..
+                } => Some((declaration.address().key().as_str(), sequence.lifecycle)),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            lifecycles["started"],
+            DesiredLifecycle::Start(StartMode::Normal)
+        );
+        assert_eq!(lifecycles["launched"], lifecycles["started"]);
+        assert_eq!(
+            lifecycles["immediate"],
+            DesiredLifecycle::Start(StartMode::Immediate)
+        );
+    }
 }

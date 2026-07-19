@@ -8,7 +8,9 @@
 //! succeed.
 
 use crate::backend::AddAction;
-use crate::candidate::{Candidate, DeclarationPayload};
+use crate::candidate::{
+    Candidate, DeclarationOwner, DeclarationPayload, LifecycleAction, LifecycleMetadata, StartMode,
+};
 use crate::capabilities::CapabilitySnapshot;
 use crate::compat::Instant;
 use crate::mutation::{
@@ -1000,6 +1002,25 @@ fn plan_digest(
     fn text(hasher: &mut Sha256, value: &str) {
         field_bytes(hasher, value.as_bytes());
     }
+    fn lifecycle(hasher: &mut Sha256, metadata: &LifecycleMetadata) {
+        hasher.update([
+            metadata.role as u8,
+            metadata.phase as u8,
+            metadata.terminal_effect as u8,
+            metadata.synchronization as u8,
+            metadata.cancellation as u8,
+            metadata.composition as u8,
+            metadata.effect_domain as u8,
+        ]);
+        hasher.update(
+            u64::try_from(metadata.effects.len())
+                .expect("lifecycle effect count fits u64")
+                .to_be_bytes(),
+        );
+        for effect in &metadata.effects {
+            hasher.update([*effect as u8]);
+        }
+    }
 
     let mut hasher = Sha256::new();
     hasher.update(b"vibelang.native-generation-plan.v1\0");
@@ -1042,9 +1063,34 @@ fn plan_digest(
     text(&mut hasher, identity.language().manifest_digest().as_str());
     text(&mut hasher, &identity.engine_instance().to_string());
     text(&mut hasher, &identity.runtime_epoch().to_string());
+    hasher.update(b"declarations\0");
+    hasher.update(
+        u64::try_from(candidate.declarations().len())
+            .expect("candidate declaration count fits u64")
+            .to_be_bytes(),
+    );
     for declaration in candidate.declarations() {
         text(&mut hasher, &declaration.address().to_string());
         hasher.update([declaration.address().kind() as u8]);
+        match declaration.owner() {
+            DeclarationOwner::Structural(key) => {
+                hasher.update([0]);
+                text(&mut hasher, &key.to_string());
+            }
+            DeclarationOwner::Contribution(id) => {
+                hasher.update([1]);
+                text(&mut hasher, &id.to_string());
+            }
+            DeclarationOwner::Parent(parent) => {
+                hasher.update([2]);
+                text(&mut hasher, &parent.to_string());
+            }
+            DeclarationOwner::Override(id) => {
+                hasher.update([3]);
+                text(&mut hasher, &id.to_string());
+            }
+        }
+        lifecycle(&mut hasher, declaration.lifecycle());
         match declaration.payload() {
             DeclarationPayload::Empty => hasher.update([0]),
             DeclarationPayload::Opaque {
@@ -1055,8 +1101,105 @@ fn plan_digest(
                 text(&mut hasher, type_id);
                 field_bytes(&mut hasher, canonical_bytes);
             }
+            DeclarationPayload::Authoring {
+                canonical_bytes, ..
+            } => {
+                hasher.update([2]);
+                field_bytes(&mut hasher, canonical_bytes);
+            }
         }
     }
+    hasher.update(b"references\0");
+    hasher.update(
+        u64::try_from(candidate.references().len())
+            .expect("candidate reference count fits u64")
+            .to_be_bytes(),
+    );
+    for reference in candidate.references() {
+        text(&mut hasher, &reference.reference().address().to_string());
+    }
+    hasher.update(b"contributions\0");
+    hasher.update(
+        u64::try_from(candidate.contributions().len())
+            .expect("candidate contribution count fits u64")
+            .to_be_bytes(),
+    );
+    for contribution in candidate.contributions() {
+        text(&mut hasher, &contribution.id().to_string());
+        text(
+            &mut hasher,
+            &contribution.target_group().address().to_string(),
+        );
+        if let Some(order) = contribution.explicit_order() {
+            hasher.update([1]);
+            hasher.update(order.to_be_bytes());
+        } else {
+            hasher.update([0]);
+        }
+        hasher.update(
+            u64::try_from(contribution.owned_declarations().len())
+                .expect("owned declaration count fits u64")
+                .to_be_bytes(),
+        );
+        for address in contribution.owned_declarations() {
+            text(&mut hasher, &address.to_string());
+        }
+    }
+    hasher.update(b"overrides\0");
+    hasher.update(
+        u64::try_from(candidate.overrides().len())
+            .expect("candidate override count fits u64")
+            .to_be_bytes(),
+    );
+    for override_ir in candidate.overrides() {
+        text(&mut hasher, &override_ir.id().to_string());
+        text(&mut hasher, &override_ir.target().address().to_string());
+        hasher.update(override_ir.precedence().to_be_bytes());
+        hasher.update(
+            u64::try_from(override_ir.fields().len())
+                .expect("override field count fits u64")
+                .to_be_bytes(),
+        );
+        for field in override_ir.fields() {
+            text(&mut hasher, field);
+        }
+    }
+    hasher.update(b"operations\0");
+    hasher.update(
+        u64::try_from(candidate.operations().len())
+            .expect("candidate operation count fits u64")
+            .to_be_bytes(),
+    );
+    for operation in candidate.operations() {
+        text(&mut hasher, &operation.target().address().to_string());
+        text(&mut hasher, &operation.source().syntax_key().to_string());
+        lifecycle(&mut hasher, operation.lifecycle());
+        match operation.action() {
+            LifecycleAction::Start(mode) => {
+                hasher.update([0]);
+                hasher.update([match mode {
+                    StartMode::Normal => 0,
+                    StartMode::Immediate => 1,
+                    StartMode::Continuous => 2,
+                }]);
+            }
+            LifecycleAction::Stop => hasher.update([1]),
+            LifecycleAction::Remove => hasher.update([2]),
+            LifecycleAction::Cancel => hasher.update([3]),
+            LifecycleAction::SetMuted(value) => hasher.update([4, u8::from(*value)]),
+            LifecycleAction::SetSoloed(value) => hasher.update([5, u8::from(*value)]),
+            LifecycleAction::RemoveContribution(id) => {
+                hasher.update([6]);
+                text(&mut hasher, &id.to_string());
+            }
+        }
+    }
+    hasher.update(b"components\0");
+    hasher.update(
+        u64::try_from(components.len())
+            .expect("native component count fits u64")
+            .to_be_bytes(),
+    );
     for component in components {
         text(&mut hasher, &component.declaration);
         text(&mut hasher, &component.path);
@@ -2570,8 +2713,11 @@ pub enum GenerationError {
 mod tests {
     use super::*;
     use crate::candidate::{
-        CandidateDraft, ContractDigest, EngineInstanceId, EvaluationIdentity, LanguageContract,
-        ReferenceCatalog,
+        AuthoringDeclaration, CandidateDraft, CanonicalF64, Composition, ContractDigest,
+        DeclarationIr, DeclarationKey, DeclarationOwner, DeclarationPayload, EngineInstanceId,
+        EvaluationIdentity, GroupAuthoring, GroupKind, GroupScope, LanguageContract,
+        LifecycleMetadata, ModulePath, ProjectNamespace, ReferenceCatalog, SourceAnchor, SyntaxKey,
+        TypedAddress,
     };
     use crate::resource_manager::{
         GenerationHealth, LogicalResource, ResourceAccounting, ResourceError, ResourceKind,
@@ -2881,6 +3027,44 @@ mod tests {
         .expect("empty candidate")
     }
 
+    fn group_candidate(identity: EvaluationIdentity, gain: f64, owner_component: u32) -> Candidate {
+        let module = ModulePath::new("song/main").expect("module");
+        let address = TypedAddress::<GroupKind>::new(
+            ProjectNamespace::new("test-project").expect("project"),
+            module.clone(),
+            GroupScope::root(),
+            DeclarationKey::new("band").expect("key"),
+        );
+        let owner = SyntaxKey::deterministic(&module, &[owner_component], "owner").expect("owner");
+        let source = SourceAnchor::new(
+            module.clone(),
+            SyntaxKey::deterministic(&module, &[99], "declaration").expect("source"),
+            None,
+        );
+        let declaration = DeclarationIr::new(
+            address,
+            DeclarationOwner::Structural(owner),
+            source,
+            LifecycleMetadata::register(Composition::Standalone),
+            DeclarationPayload::authoring(AuthoringDeclaration::Group(GroupAuthoring {
+                parent: None,
+                gain: CanonicalF64::new(gain).expect("gain"),
+                muted: false,
+                soloed: false,
+                params: BTreeMap::new(),
+                output_channels: None,
+            }))
+            .expect("payload"),
+        );
+        let mut draft = CandidateDraft::new(identity, CandidateOrigin::RhaiHost);
+        draft
+            .declare::<GroupKind>(declaration)
+            .expect("declaration");
+        draft
+            .finish(&ReferenceCatalog::default())
+            .expect("candidate")
+    }
+
     fn revision(epoch: RuntimeEpoch, confirmed: Option<RevisionId>) -> PlanningRevision {
         PlanningRevision {
             snapshot_id: PublicDigest::parse(format!("sha256:{}", "1".repeat(64))).expect("digest"),
@@ -3032,6 +3216,45 @@ mod tests {
             ),
             Err(GenerationError::AtomicCapabilityUnavailable)
         );
+    }
+
+    #[test]
+    fn canonical_plan_digest_commits_authoring_payload_and_structural_owner() {
+        let epoch = RuntimeEpoch::new();
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"digest-test")),
+            EngineInstanceId::new(),
+            epoch,
+        );
+        let base = group_candidate(identity.clone(), 1.0, 1);
+        let changed_payload = group_candidate(identity.clone(), 0.5, 1);
+        let changed_owner = group_candidate(identity, 1.0, 2);
+        let resources = ResourceManager::new();
+        let stage = resources.begin_stage().expect("resource stage");
+        let resource_stage = resources.snapshot_stage(stage).expect("resource snapshot");
+        let planning_revision = revision(epoch, None);
+        let allocation = GenerationAllocation {
+            generation: GraphGeneration::new(1).expect("generation"),
+            root: NodeId::new(1000),
+            parent: NodeId::new(1),
+        };
+        let boundary = quantize_boundary(boundary(), 48_000.0, 64).expect("boundary");
+        let digest = |candidate: &Candidate| {
+            plan_digest(
+                candidate,
+                RevisionId::new(1).expect("revision"),
+                &planning_revision,
+                AtomicAdmission::BestEffort,
+                None,
+                &allocation,
+                &resource_stage,
+                &[],
+                &boundary,
+            )
+        };
+
+        assert_ne!(digest(&base), digest(&changed_payload));
+        assert_ne!(digest(&base), digest(&changed_owner));
     }
 
     #[test]

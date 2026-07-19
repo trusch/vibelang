@@ -556,6 +556,11 @@ pub struct ErasedRef {
 
 impl ErasedRef {
     #[must_use]
+    pub fn new(identity: EvaluationIdentity, address: LogicalAddress) -> Self {
+        Self { identity, address }
+    }
+
+    #[must_use]
     pub fn identity(&self) -> &EvaluationIdentity {
         &self.identity
     }
@@ -669,6 +674,12 @@ impl OverrideId {
     #[must_use]
     pub fn new(id: ContributionId) -> Self {
         Self(id)
+    }
+}
+
+impl fmt::Display for OverrideId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
     }
 }
 
@@ -821,6 +832,34 @@ impl LifecycleMetadata {
         }
     }
 
+    #[must_use]
+    pub fn start(composition: Composition) -> Self {
+        Self {
+            role: AuthoringRole::Builder,
+            phase: LifecyclePhase::Register,
+            effects: BTreeSet::from([LifecycleEffect::Register, LifecycleEffect::Start]),
+            terminal_effect: TerminalEffect::Start,
+            synchronization: Synchronization::CandidateLocal,
+            cancellation: Cancellation::BeforePlanning,
+            composition,
+            effect_domain: EffectDomain::Managed,
+        }
+    }
+
+    #[must_use]
+    pub fn reference(effect: TerminalEffect, cancellation: Cancellation) -> Self {
+        Self {
+            role: AuthoringRole::Ref,
+            phase: LifecyclePhase::Register,
+            effects: BTreeSet::from([effect.lifecycle_effect()]),
+            terminal_effect: effect,
+            synchronization: Synchronization::CandidateLocal,
+            cancellation,
+            composition: Composition::Reference,
+            effect_domain: EffectDomain::Managed,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), CandidateError> {
         if !self
             .effects
@@ -851,6 +890,552 @@ impl LifecycleMetadata {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CanonicalF64(u64);
+
+impl CanonicalF64 {
+    pub fn new(value: f64) -> Result<Self, CandidateError> {
+        if !value.is_finite() {
+            return Err(CandidateError::InvalidAuthoring(
+                "authoring numbers must be finite".into(),
+            ));
+        }
+        let value = if value == 0.0 { 0.0 } else { value };
+        Ok(Self(value.to_bits()))
+    }
+
+    #[must_use]
+    pub fn get(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+
+    #[must_use]
+    const fn bits(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StartMode {
+    Normal,
+    Immediate,
+    Continuous,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DesiredLifecycle {
+    Dormant,
+    Start(StartMode),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupAuthoring {
+    pub parent: Option<TypedRef<GroupKind>>,
+    pub gain: CanonicalF64,
+    pub muted: bool,
+    pub soloed: bool,
+    pub params: BTreeMap<String, CanonicalF64>,
+    pub output_channels: Option<(u32, u8)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum VoiceSourceAuthoring {
+    SynthDef(String),
+    Sfz(TypedRef<SfzKind>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VoiceAuthoring {
+    pub group: Option<TypedRef<GroupKind>>,
+    pub source: VoiceSourceAuthoring,
+    pub polyphony: u32,
+    pub gain: CanonicalF64,
+    pub params: BTreeMap<String, CanonicalF64>,
+    pub muted: bool,
+    pub soloed: bool,
+    pub lifecycle: DesiredLifecycle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PatternStepAuthoring {
+    pub beat_ticks: i64,
+    pub velocity: CanonicalF64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PatternAuthoring {
+    pub voice: TypedRef<VoiceKind>,
+    pub steps: Vec<PatternStepAuthoring>,
+    pub length_ticks: i64,
+    pub swing: CanonicalF64,
+    pub params: BTreeMap<String, CanonicalF64>,
+    pub lifecycle: DesiredLifecycle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MelodyEventAuthoring {
+    Note {
+        beat_ticks: i64,
+        duration_ticks: i64,
+        midi_note: u8,
+        velocity: CanonicalF64,
+    },
+    Rest {
+        beat_ticks: i64,
+        duration_ticks: i64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MelodyAuthoring {
+    pub voice: TypedRef<VoiceKind>,
+    pub events: Vec<MelodyEventAuthoring>,
+    pub length_ticks: i64,
+    pub lifecycle: DesiredLifecycle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SequenceContentAuthoring {
+    Pattern(TypedRef<PatternKind>),
+    Melody(TypedRef<MelodyKind>),
+    Fade(TypedRef<FadeKind>),
+    Sequence(TypedRef<SequenceKind>),
+}
+
+impl SequenceContentAuthoring {
+    #[must_use]
+    pub fn reference(&self) -> ErasedRef {
+        match self {
+            Self::Pattern(reference) => reference.erase(),
+            Self::Melody(reference) => reference.erase(),
+            Self::Fade(reference) => reference.erase(),
+            Self::Sequence(reference) => reference.erase(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SequenceClipAuthoring {
+    pub start_ticks: i64,
+    pub end_ticks: i64,
+    pub content: SequenceContentAuthoring,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SequenceAuthoring {
+    pub clips: Vec<SequenceClipAuthoring>,
+    pub length_ticks: i64,
+    pub looping: bool,
+    pub lifecycle: DesiredLifecycle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthoringDeclaration {
+    Group(GroupAuthoring),
+    Voice(VoiceAuthoring),
+    Pattern(PatternAuthoring),
+    Melody(MelodyAuthoring),
+    Sequence(SequenceAuthoring),
+}
+
+impl AuthoringDeclaration {
+    #[must_use]
+    pub const fn kind(&self) -> EntityKind {
+        match self {
+            Self::Group(_) => EntityKind::Group,
+            Self::Voice(_) => EntityKind::Voice,
+            Self::Pattern(_) => EntityKind::Pattern,
+            Self::Melody(_) => EntityKind::Melody,
+            Self::Sequence(_) => EntityKind::Sequence,
+        }
+    }
+
+    fn desired_lifecycle(&self) -> Option<DesiredLifecycle> {
+        match self {
+            Self::Group(_) => None,
+            Self::Voice(voice) => Some(voice.lifecycle),
+            Self::Pattern(pattern) => Some(pattern.lifecycle),
+            Self::Melody(melody) => Some(melody.lifecycle),
+            Self::Sequence(sequence) => Some(sequence.lifecycle),
+        }
+    }
+
+    fn validate(&self) -> Result<(), CandidateError> {
+        fn validate_params(params: &BTreeMap<String, CanonicalF64>) -> Result<(), CandidateError> {
+            for name in params.keys() {
+                validate_component(name, "authoring parameter")?;
+            }
+            Ok(())
+        }
+
+        fn validate_timeline_lifecycle(lifecycle: DesiredLifecycle) -> Result<(), CandidateError> {
+            if lifecycle == DesiredLifecycle::Start(StartMode::Continuous) {
+                return Err(CandidateError::InvalidAuthoring(
+                    "continuous lifecycle is Voice-only".into(),
+                ));
+            }
+            Ok(())
+        }
+
+        match self {
+            Self::Group(group) => {
+                validate_params(&group.params)?;
+                if let Some((bus, channels)) = group.output_channels {
+                    if !matches!(channels, 1 | 2) || bus >= 16 || bus + u32::from(channels) > 16 {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Group output must be one or two channels within buses 0..16".into(),
+                        ));
+                    }
+                }
+            }
+            Self::Voice(voice) => {
+                if voice.polyphony == 0 || voice.polyphony > 128 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Voice polyphony must be in 1..=128".into(),
+                    ));
+                }
+                if let VoiceSourceAuthoring::SynthDef(name) = &voice.source {
+                    validate_component(name, "Voice synthdef")?;
+                }
+                validate_params(&voice.params)?;
+                if matches!(
+                    voice.lifecycle,
+                    DesiredLifecycle::Start(StartMode::Normal | StartMode::Immediate)
+                ) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Voice uses run/continuous lifecycle rather than start timing".into(),
+                    ));
+                }
+            }
+            Self::Pattern(pattern) => {
+                validate_timeline_lifecycle(pattern.lifecycle)?;
+                validate_params(&pattern.params)?;
+                if pattern.length_ticks <= 0 || !(0.0..=1.0).contains(&pattern.swing.get()) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Pattern length must be positive and swing must be in 0.0..=1.0".into(),
+                    ));
+                }
+                if pattern.steps.iter().any(|step| {
+                    step.beat_ticks < 0
+                        || step.beat_ticks >= pattern.length_ticks
+                        || !(0.0..=1.0).contains(&step.velocity.get())
+                }) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Pattern steps must be in-range with normalized velocity".into(),
+                    ));
+                }
+            }
+            Self::Melody(melody) => {
+                validate_timeline_lifecycle(melody.lifecycle)?;
+                if melody.length_ticks <= 0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Melody length must be positive".into(),
+                    ));
+                }
+                for event in &melody.events {
+                    let (beat, duration, velocity) = match event {
+                        MelodyEventAuthoring::Note {
+                            beat_ticks,
+                            duration_ticks,
+                            velocity,
+                            ..
+                        } => (*beat_ticks, *duration_ticks, Some(velocity.get())),
+                        MelodyEventAuthoring::Rest {
+                            beat_ticks,
+                            duration_ticks,
+                        } => (*beat_ticks, *duration_ticks, None),
+                    };
+                    if beat < 0
+                        || duration <= 0
+                        || beat.saturating_add(duration) > melody.length_ticks
+                        || velocity.is_some_and(|value| !(0.0..=1.0).contains(&value))
+                    {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Melody events must be positive, in-range, and normalized".into(),
+                        ));
+                    }
+                }
+            }
+            Self::Sequence(sequence) => {
+                validate_timeline_lifecycle(sequence.lifecycle)?;
+                if sequence.length_ticks <= 0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Sequence length must be positive".into(),
+                    ));
+                }
+                if sequence.clips.iter().any(|clip| {
+                    clip.start_ticks < 0
+                        || clip.end_ticks <= clip.start_ticks
+                        || clip.end_ticks > sequence.length_ticks
+                }) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Sequence clips must be non-empty and within the declared length".into(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_binding(
+        &self,
+        address: &LogicalAddress,
+        owner: &DeclarationOwner,
+        lifecycle: &LifecycleMetadata,
+    ) -> Result<(), CandidateError> {
+        if self.kind() != address.kind() {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "{} authoring payload cannot bind to {} address",
+                self.kind(),
+                address.kind()
+            )));
+        }
+        let expected_effects = match self.desired_lifecycle() {
+            None | Some(DesiredLifecycle::Dormant) => {
+                if lifecycle.terminal_effect != TerminalEffect::Register {
+                    return Err(CandidateError::InvalidLifecycle(
+                        "a dormant authoring declaration requires a register terminal".into(),
+                    ));
+                }
+                BTreeSet::from([LifecycleEffect::Register])
+            }
+            Some(DesiredLifecycle::Start(_)) => {
+                if lifecycle.terminal_effect != TerminalEffect::Start {
+                    return Err(CandidateError::InvalidLifecycle(
+                        "a started authoring declaration requires a start terminal".into(),
+                    ));
+                }
+                BTreeSet::from([LifecycleEffect::Register, LifecycleEffect::Start])
+            }
+        };
+        if lifecycle.role != AuthoringRole::Builder || lifecycle.effects != expected_effects {
+            return Err(CandidateError::InvalidLifecycle(
+                "authoring declaration effects do not match its desired lifecycle".into(),
+            ));
+        }
+        match owner {
+            DeclarationOwner::Parent(parent)
+                if parent.kind() != EntityKind::Sequence
+                    || !matches!(
+                        self,
+                        Self::Pattern(_) | Self::Melody(_) | Self::Sequence(_)
+                    ) =>
+            {
+                Err(CandidateError::InvalidAuthoring(
+                    "parent-owned authoring is limited to Sequence-owned inline Pattern, Melody, and Sequence fragments"
+                        .into(),
+                ))
+            }
+            DeclarationOwner::Override(_) => Err(CandidateError::InvalidAuthoring(
+                "authoring declarations cannot impersonate override layers".into(),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    fn canonical_bytes(&self) -> Arc<[u8]> {
+        struct Encoder(Vec<u8>);
+
+        impl Encoder {
+            fn tag(&mut self, value: u8) {
+                self.0.push(value);
+            }
+
+            fn bool(&mut self, value: bool) {
+                self.tag(u8::from(value));
+            }
+
+            fn u32(&mut self, value: u32) {
+                self.0.extend_from_slice(&value.to_be_bytes());
+            }
+
+            fn u64(&mut self, value: u64) {
+                self.0.extend_from_slice(&value.to_be_bytes());
+            }
+
+            fn i64(&mut self, value: i64) {
+                self.0.extend_from_slice(&value.to_be_bytes());
+            }
+
+            fn number(&mut self, value: CanonicalF64) {
+                self.u64(value.bits());
+            }
+
+            fn text(&mut self, value: &str) {
+                self.u64(u64::try_from(value.len()).expect("authoring text length fits u64"));
+                self.0.extend_from_slice(value.as_bytes());
+            }
+
+            fn reference<K: RefKind>(&mut self, reference: &TypedRef<K>) {
+                self.text(&reference.address().to_string());
+            }
+
+            fn lifecycle(&mut self, lifecycle: DesiredLifecycle) {
+                self.tag(match lifecycle {
+                    DesiredLifecycle::Dormant => 0,
+                    DesiredLifecycle::Start(StartMode::Normal) => 1,
+                    DesiredLifecycle::Start(StartMode::Immediate) => 2,
+                    DesiredLifecycle::Start(StartMode::Continuous) => 3,
+                });
+            }
+
+            fn params(&mut self, params: &BTreeMap<String, CanonicalF64>) {
+                self.u64(u64::try_from(params.len()).expect("authoring parameter count fits u64"));
+                for (name, value) in params {
+                    self.text(name);
+                    self.number(*value);
+                }
+            }
+        }
+
+        let mut encoder = Encoder(b"vibelang.authoring-declaration.v1\0".to_vec());
+        match self {
+            Self::Group(group) => {
+                encoder.tag(0);
+                if let Some(parent) = &group.parent {
+                    encoder.tag(1);
+                    encoder.reference(parent);
+                } else {
+                    encoder.tag(0);
+                }
+                encoder.number(group.gain);
+                encoder.bool(group.muted);
+                encoder.bool(group.soloed);
+                encoder.params(&group.params);
+                if let Some((bus, channels)) = group.output_channels {
+                    encoder.tag(1);
+                    encoder.u32(bus);
+                    encoder.tag(channels);
+                } else {
+                    encoder.tag(0);
+                }
+            }
+            Self::Voice(voice) => {
+                encoder.tag(1);
+                if let Some(group) = &voice.group {
+                    encoder.tag(1);
+                    encoder.reference(group);
+                } else {
+                    encoder.tag(0);
+                }
+                match &voice.source {
+                    VoiceSourceAuthoring::SynthDef(name) => {
+                        encoder.tag(0);
+                        encoder.text(name);
+                    }
+                    VoiceSourceAuthoring::Sfz(reference) => {
+                        encoder.tag(1);
+                        encoder.reference(reference);
+                    }
+                }
+                encoder.u32(voice.polyphony);
+                encoder.number(voice.gain);
+                encoder.bool(voice.muted);
+                encoder.bool(voice.soloed);
+                encoder.lifecycle(voice.lifecycle);
+                encoder.params(&voice.params);
+            }
+            Self::Pattern(pattern) => {
+                encoder.tag(2);
+                encoder.reference(&pattern.voice);
+                encoder.i64(pattern.length_ticks);
+                encoder.number(pattern.swing);
+                encoder.lifecycle(pattern.lifecycle);
+                encoder.u64(
+                    u64::try_from(pattern.steps.len()).expect("authoring step count fits u64"),
+                );
+                for step in &pattern.steps {
+                    encoder.i64(step.beat_ticks);
+                    encoder.number(step.velocity);
+                }
+                encoder.params(&pattern.params);
+            }
+            Self::Melody(melody) => {
+                encoder.tag(3);
+                encoder.reference(&melody.voice);
+                encoder.i64(melody.length_ticks);
+                encoder.lifecycle(melody.lifecycle);
+                encoder.u64(
+                    u64::try_from(melody.events.len()).expect("authoring event count fits u64"),
+                );
+                for event in &melody.events {
+                    match event {
+                        MelodyEventAuthoring::Note {
+                            beat_ticks,
+                            duration_ticks,
+                            midi_note,
+                            velocity,
+                        } => {
+                            encoder.tag(0);
+                            encoder.i64(*beat_ticks);
+                            encoder.i64(*duration_ticks);
+                            encoder.tag(*midi_note);
+                            encoder.number(*velocity);
+                        }
+                        MelodyEventAuthoring::Rest {
+                            beat_ticks,
+                            duration_ticks,
+                        } => {
+                            encoder.tag(1);
+                            encoder.i64(*beat_ticks);
+                            encoder.i64(*duration_ticks);
+                        }
+                    }
+                }
+            }
+            Self::Sequence(sequence) => {
+                encoder.tag(4);
+                encoder.i64(sequence.length_ticks);
+                encoder.bool(sequence.looping);
+                encoder.lifecycle(sequence.lifecycle);
+                encoder.u64(
+                    u64::try_from(sequence.clips.len()).expect("authoring clip count fits u64"),
+                );
+                for clip in &sequence.clips {
+                    encoder.tag(match &clip.content {
+                        SequenceContentAuthoring::Pattern(_) => 0,
+                        SequenceContentAuthoring::Melody(_) => 1,
+                        SequenceContentAuthoring::Fade(_) => 2,
+                        SequenceContentAuthoring::Sequence(_) => 3,
+                    });
+                    encoder.i64(clip.start_ticks);
+                    encoder.i64(clip.end_ticks);
+                    encoder.text(&clip.content.reference().address().to_string());
+                }
+            }
+        }
+        Arc::from(encoder.0)
+    }
+
+    fn references(&self) -> Vec<ErasedRef> {
+        match self {
+            Self::Group(group) => group
+                .parent
+                .as_ref()
+                .map(TypedRef::erase)
+                .into_iter()
+                .collect(),
+            Self::Voice(voice) => {
+                let mut references = Vec::new();
+                if let Some(group) = &voice.group {
+                    references.push(group.erase());
+                }
+                if let VoiceSourceAuthoring::Sfz(sfz) = &voice.source {
+                    references.push(sfz.erase());
+                }
+                references
+            }
+            Self::Pattern(pattern) => vec![pattern.voice.erase()],
+            Self::Melody(melody) => vec![melody.voice.erase()],
+            Self::Sequence(sequence) => sequence
+                .clips
+                .iter()
+                .map(|clip| clip.content.reference())
+                .collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeclarationOwner {
     Structural(SyntaxKey),
@@ -860,7 +1445,8 @@ pub enum DeclarationOwner {
 }
 
 impl DeclarationOwner {
-    fn composition(&self) -> Composition {
+    #[must_use]
+    pub fn composition(&self) -> Composition {
         match self {
             Self::Structural(_) => Composition::Standalone,
             Self::Contribution(_) => Composition::Contribution,
@@ -877,6 +1463,10 @@ pub enum DeclarationPayload {
         type_id: String,
         canonical_bytes: Arc<[u8]>,
     },
+    Authoring {
+        declaration: AuthoringDeclaration,
+        canonical_bytes: Arc<[u8]>,
+    },
 }
 
 impl DeclarationPayload {
@@ -890,6 +1480,39 @@ impl DeclarationPayload {
             type_id,
             canonical_bytes: canonical_bytes.into(),
         })
+    }
+
+    pub fn authoring(declaration: AuthoringDeclaration) -> Result<Self, CandidateError> {
+        declaration.validate()?;
+        let canonical_bytes = declaration.canonical_bytes();
+        Ok(Self::Authoring {
+            declaration,
+            canonical_bytes,
+        })
+    }
+
+    pub fn authoring_checked(
+        declaration: AuthoringDeclaration,
+        canonical_bytes: impl Into<Arc<[u8]>>,
+    ) -> Result<Self, CandidateError> {
+        declaration.validate()?;
+        let canonical_bytes = canonical_bytes.into();
+        if canonical_bytes.as_ref() != declaration.canonical_bytes().as_ref() {
+            return Err(CandidateError::InvalidAuthoring(
+                "authoring payload bytes do not match the canonical tagged declaration".into(),
+            ));
+        }
+        Ok(Self::Authoring {
+            declaration,
+            canonical_bytes,
+        })
+    }
+
+    fn references(&self) -> Vec<ErasedRef> {
+        match self {
+            Self::Authoring { declaration, .. } => declaration.references(),
+            Self::Empty | Self::Opaque { .. } => Vec::new(),
+        }
     }
 }
 
@@ -970,6 +1593,11 @@ pub struct ReferenceUse {
 }
 
 impl ReferenceUse {
+    #[must_use]
+    pub fn new(reference: ErasedRef, source: SourceAnchor) -> Self {
+        Self { reference, source }
+    }
+
     #[must_use]
     pub fn reference(&self) -> &ErasedRef {
         &self.reference
@@ -1097,6 +1725,187 @@ impl OverrideIr {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LifecycleOperationId {
+    target: LogicalAddress,
+    syntax_key: SyntaxKey,
+}
+
+impl LifecycleOperationId {
+    #[must_use]
+    pub fn new(target: LogicalAddress, syntax_key: SyntaxKey) -> Self {
+        Self { target, syntax_key }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LifecycleAction {
+    Start(StartMode),
+    Stop,
+    Remove,
+    Cancel,
+    SetMuted(bool),
+    SetSoloed(bool),
+    RemoveContribution(ContributionId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LifecycleOperationIr {
+    id: LifecycleOperationId,
+    target: ErasedRef,
+    lifecycle: LifecycleMetadata,
+    action: LifecycleAction,
+    source: SourceAnchor,
+}
+
+impl LifecycleOperationIr {
+    pub fn new(
+        target: ErasedRef,
+        lifecycle: LifecycleMetadata,
+        action: LifecycleAction,
+        source: SourceAnchor,
+    ) -> Result<Self, CandidateError> {
+        lifecycle.validate()?;
+        let expected = match &action {
+            LifecycleAction::Start(_) => TerminalEffect::Start,
+            LifecycleAction::Stop => TerminalEffect::Stop,
+            LifecycleAction::Remove | LifecycleAction::Cancel => TerminalEffect::Cancel,
+            LifecycleAction::SetMuted(_)
+            | LifecycleAction::SetSoloed(_)
+            | LifecycleAction::RemoveContribution(_) => TerminalEffect::Register,
+        };
+        if lifecycle.terminal_effect != expected {
+            return Err(CandidateError::InvalidLifecycle(format!(
+                "action {action:?} requires terminal effect {expected:?}"
+            )));
+        }
+        let kind = target.address().kind();
+        let supported = match &action {
+            LifecycleAction::Start(StartMode::Continuous) => kind == EntityKind::Voice,
+            LifecycleAction::Start(StartMode::Normal | StartMode::Immediate)
+            | LifecycleAction::Cancel => matches!(
+                kind,
+                EntityKind::Pattern
+                    | EntityKind::Melody
+                    | EntityKind::Sequence
+                    | EntityKind::Fade
+                    | EntityKind::Recording
+            ),
+            LifecycleAction::Stop => matches!(
+                kind,
+                EntityKind::Voice
+                    | EntityKind::Pattern
+                    | EntityKind::Melody
+                    | EntityKind::Sequence
+                    | EntityKind::Fade
+                    | EntityKind::Recording
+            ),
+            LifecycleAction::Remove => true,
+            LifecycleAction::SetMuted(_) | LifecycleAction::SetSoloed(_) => {
+                matches!(kind, EntityKind::Group | EntityKind::Voice)
+            }
+            LifecycleAction::RemoveContribution(_) => kind == EntityKind::Group,
+        };
+        if !supported {
+            return Err(CandidateError::InvalidLifecycle(format!(
+                "action {action:?} is unsupported for {kind}"
+            )));
+        }
+        let id = LifecycleOperationId::new(target.address().clone(), source.syntax_key().clone());
+        Ok(Self {
+            id,
+            target,
+            lifecycle,
+            action,
+            source,
+        })
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &LifecycleOperationId {
+        &self.id
+    }
+
+    #[must_use]
+    pub fn target(&self) -> &ErasedRef {
+        &self.target
+    }
+
+    #[must_use]
+    pub fn lifecycle(&self) -> &LifecycleMetadata {
+        &self.lifecycle
+    }
+
+    #[must_use]
+    pub fn action(&self) -> &LifecycleAction {
+        &self.action
+    }
+
+    #[must_use]
+    pub fn source(&self) -> &SourceAnchor {
+        &self.source
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CandidateFragment {
+    declarations: Vec<DeclarationIr>,
+    references: Vec<ReferenceUse>,
+    contributions: Vec<ContributionIr>,
+    overrides: Vec<OverrideIr>,
+    operations: Vec<LifecycleOperationIr>,
+}
+
+impl CandidateFragment {
+    #[must_use]
+    pub fn declaration(mut self, declaration: DeclarationIr) -> Self {
+        self.declarations.push(declaration);
+        self
+    }
+
+    #[must_use]
+    pub fn reference(mut self, reference: ReferenceUse) -> Self {
+        self.references.push(reference);
+        self
+    }
+
+    #[must_use]
+    pub fn contribution(mut self, contribution: ContributionIr) -> Self {
+        self.contributions.push(contribution);
+        self
+    }
+
+    #[must_use]
+    pub fn override_ir(mut self, override_ir: OverrideIr) -> Self {
+        self.overrides.push(override_ir);
+        self
+    }
+
+    #[must_use]
+    pub fn operation(mut self, operation: LifecycleOperationIr) -> Self {
+        self.operations.push(operation);
+        self
+    }
+
+    pub fn extend(&mut self, mut other: Self) {
+        self.declarations.append(&mut other.declarations);
+        self.references.append(&mut other.references);
+        self.contributions.append(&mut other.contributions);
+        self.overrides.append(&mut other.overrides);
+        self.operations.append(&mut other.operations);
+    }
+
+    #[must_use]
+    pub fn declarations(&self) -> &[DeclarationIr] {
+        &self.declarations
+    }
+
+    #[must_use]
+    pub fn operations(&self) -> &[LifecycleOperationIr] {
+        &self.operations
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReferenceCatalog {
     addresses: BTreeSet<LogicalAddress>,
@@ -1126,6 +1935,7 @@ struct CandidateIr {
     references: Vec<ReferenceUse>,
     contributions: Vec<ContributionIr>,
     overrides: Vec<OverrideIr>,
+    operations: Vec<LifecycleOperationIr>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1161,9 +1971,14 @@ impl Candidate {
     pub fn overrides(&self) -> &[OverrideIr] {
         &self.0.overrides
     }
+
+    #[must_use]
+    pub fn operations(&self) -> &[LifecycleOperationIr] {
+        &self.0.operations
+    }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CandidateDraft {
     identity: EvaluationIdentity,
     origin: CandidateOrigin,
@@ -1171,6 +1986,7 @@ pub struct CandidateDraft {
     references: BTreeMap<LogicalAddress, ReferenceUse>,
     contributions: BTreeMap<ContributionId, ContributionIr>,
     overrides: BTreeMap<OverrideId, OverrideIr>,
+    operations: BTreeMap<LifecycleOperationId, LifecycleOperationIr>,
 }
 
 impl CandidateDraft {
@@ -1183,6 +1999,7 @@ impl CandidateDraft {
             references: BTreeMap::new(),
             contributions: BTreeMap::new(),
             overrides: BTreeMap::new(),
+            operations: BTreeMap::new(),
         }
     }
 
@@ -1215,6 +2032,17 @@ impl CandidateDraft {
                 "composition {:?} does not match owner {:?}",
                 declaration.lifecycle.composition, declaration.owner
             )));
+        }
+        if let DeclarationPayload::Authoring {
+            declaration: authoring,
+            ..
+        } = &declaration.payload
+        {
+            authoring.validate_binding(
+                &declaration.address,
+                &declaration.owner,
+                &declaration.lifecycle,
+            )?;
         }
         if let Some(first) = self.declarations.get(&declaration.address) {
             return Err(CandidateError::DuplicateDeclaration {
@@ -1291,6 +2119,48 @@ impl CandidateDraft {
         Ok(())
     }
 
+    pub fn add_operation(&mut self, operation: LifecycleOperationIr) -> Result<(), CandidateError> {
+        operation
+            .target
+            .identity
+            .ensure_compatible(&self.identity)?;
+        if self.operations.contains_key(operation.id()) {
+            return Err(CandidateError::DuplicateLifecycleOperation(
+                operation.id().clone(),
+            ));
+        }
+        self.operations.insert(operation.id().clone(), operation);
+        Ok(())
+    }
+
+    pub fn append_fragment(&mut self, fragment: CandidateFragment) -> Result<(), CandidateError> {
+        let mut staged = self.clone();
+        for contribution in fragment.contributions {
+            staged.add_contribution(contribution)?;
+        }
+        for declaration in fragment.declarations {
+            staged.declare_erased(declaration)?;
+        }
+        for reference in fragment.references {
+            reference
+                .reference
+                .identity
+                .ensure_compatible(&staged.identity)?;
+            staged
+                .references
+                .entry(reference.reference.address().clone())
+                .or_insert(reference);
+        }
+        for override_ir in fragment.overrides {
+            staged.add_override(override_ir)?;
+        }
+        for operation in fragment.operations {
+            staged.add_operation(operation)?;
+        }
+        *self = staged;
+        Ok(())
+    }
+
     pub fn finish(self, catalog: &ReferenceCatalog) -> Result<Candidate, CandidateError> {
         let target_exists = |address: &LogicalAddress| {
             self.declarations.contains_key(address) || catalog.contains(address)
@@ -1326,7 +2196,25 @@ impl CandidateDraft {
                 }
                 _ => {}
             }
+            for reference in declaration.payload.references() {
+                if !target_exists(reference.address()) {
+                    return Err(CandidateError::UnresolvedReference(
+                        reference.address().clone(),
+                    ));
+                }
+                reference.identity().ensure_compatible(&self.identity)?;
+            }
         }
+        for operation in self.operations.values() {
+            if !target_exists(operation.target.address()) {
+                return Err(CandidateError::UnresolvedReference(
+                    operation.target.address().clone(),
+                ));
+            }
+        }
+
+        validate_parent_ownership(&self.declarations)?;
+        validate_sequence_dependencies(&self.declarations)?;
 
         let mut contributions: Vec<_> = self.contributions.into_values().collect();
         contributions.sort_by(|left, right| {
@@ -1344,8 +2232,108 @@ impl CandidateDraft {
             references: self.references.into_values().collect(),
             contributions,
             overrides: self.overrides.into_values().collect(),
+            operations: self.operations.into_values().collect(),
         })))
     }
+}
+
+fn validate_parent_ownership(
+    declarations: &BTreeMap<LogicalAddress, DeclarationIr>,
+) -> Result<(), CandidateError> {
+    for (child_address, child) in declarations {
+        let DeclarationOwner::Parent(parent_address) = child.owner() else {
+            continue;
+        };
+        if child_address == parent_address {
+            return Err(CandidateError::InvalidAuthoring(
+                "a parent-owned declaration cannot own itself".into(),
+            ));
+        }
+        let parent = declarations.get(parent_address).ok_or_else(|| {
+            CandidateError::InvalidAuthoring(format!(
+                "parent-owned declaration {child_address} requires its Sequence parent {parent_address} in the same Candidate"
+            ))
+        })?;
+        let DeclarationPayload::Authoring {
+            declaration: AuthoringDeclaration::Sequence(sequence),
+            ..
+        } = parent.payload()
+        else {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "parent-owned declaration {child_address} requires an authoring Sequence parent"
+            )));
+        };
+        if !sequence
+            .clips
+            .iter()
+            .any(|clip| clip.content.reference().address() == child_address)
+        {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "parent-owned declaration {child_address} is not a direct clip of {parent_address}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_sequence_dependencies(
+    declarations: &BTreeMap<LogicalAddress, DeclarationIr>,
+) -> Result<(), CandidateError> {
+    let mut dependencies = BTreeMap::<LogicalAddress, Vec<LogicalAddress>>::new();
+    for (address, declaration) in declarations {
+        let DeclarationPayload::Authoring {
+            declaration: AuthoringDeclaration::Sequence(sequence),
+            ..
+        } = declaration.payload()
+        else {
+            continue;
+        };
+        dependencies.insert(
+            address.clone(),
+            sequence
+                .clips
+                .iter()
+                .filter_map(|clip| match &clip.content {
+                    SequenceContentAuthoring::Sequence(reference) => {
+                        Some(reference.address().erase())
+                    }
+                    _ => None,
+                })
+                .collect(),
+        );
+    }
+
+    fn visit(
+        node: &LogicalAddress,
+        dependencies: &BTreeMap<LogicalAddress, Vec<LogicalAddress>>,
+        visiting: &mut Vec<LogicalAddress>,
+        visited: &mut BTreeSet<LogicalAddress>,
+    ) -> Result<(), CandidateError> {
+        if let Some(index) = visiting.iter().position(|entry| entry == node) {
+            let mut cycle = visiting[index..].to_vec();
+            cycle.push(node.clone());
+            return Err(CandidateError::DependencyCycle(cycle));
+        }
+        if !visited.insert(node.clone()) {
+            return Ok(());
+        }
+        visiting.push(node.clone());
+        if let Some(children) = dependencies.get(node) {
+            for child in children {
+                if dependencies.contains_key(child) {
+                    visit(child, dependencies, visiting, visited)?;
+                }
+            }
+        }
+        visiting.pop();
+        Ok(())
+    }
+
+    let mut visited = BTreeSet::new();
+    for address in dependencies.keys() {
+        visit(address, &dependencies, &mut Vec::new(), &mut visited)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
@@ -1403,6 +2391,12 @@ pub enum CandidateError {
     InvalidOverride(String),
     #[error("invalid lifecycle metadata: {0}")]
     InvalidLifecycle(String),
+    #[error("invalid authoring declaration: {0}")]
+    InvalidAuthoring(String),
+    #[error("duplicate lifecycle operation: {0:?}")]
+    DuplicateLifecycleOperation(LifecycleOperationId),
+    #[error("authoring dependency cycle: {0:?}")]
+    DependencyCycle(Vec<LogicalAddress>),
     #[error("external effects cannot be part of a required-atomic Candidate")]
     ExternalEffect,
     #[error(transparent)]
@@ -1644,5 +2638,239 @@ mod tests {
             Err(CandidateError::ExternalEffect)
         );
         assert_eq!(draft.declaration_count(), 0);
+    }
+
+    #[test]
+    fn canonical_authoring_numbers_normalize_signed_zero_and_reject_non_finite_values() {
+        assert_eq!(
+            CanonicalF64::new(-0.0).unwrap(),
+            CanonicalF64::new(0.0).unwrap()
+        );
+        assert!(matches!(
+            CanonicalF64::new(f64::NAN),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+        assert!(matches!(
+            CanonicalF64::new(f64::INFINITY),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+    }
+
+    #[test]
+    fn canonical_authoring_payload_is_core_owned_and_rejects_forged_bytes() {
+        let declaration = AuthoringDeclaration::Group(GroupAuthoring {
+            parent: None,
+            gain: CanonicalF64::new(-0.0).unwrap(),
+            muted: false,
+            soloed: false,
+            params: BTreeMap::new(),
+            output_channels: None,
+        });
+        let canonical = DeclarationPayload::authoring(declaration.clone()).unwrap();
+        let DeclarationPayload::Authoring {
+            canonical_bytes, ..
+        } = canonical
+        else {
+            panic!("authoring payload")
+        };
+
+        assert!(canonical_bytes.starts_with(b"vibelang.authoring-declaration.v1\0"));
+        assert!(matches!(
+            DeclarationPayload::authoring_checked(declaration, Arc::<[u8]>::from([0_u8])),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+    }
+
+    #[test]
+    fn authoring_kind_lifecycle_and_parent_ownership_reject_before_draft_mutation() {
+        let identity = identity(1);
+        let voice = TypedRef::new(identity.clone(), address::<VoiceKind>("lead"));
+        let pattern = AuthoringDeclaration::Pattern(PatternAuthoring {
+            voice,
+            steps: vec![PatternStepAuthoring {
+                beat_ticks: 0,
+                velocity: CanonicalF64::new(1.0).unwrap(),
+            }],
+            length_ticks: 65_536,
+            swing: CanonicalF64::new(0.0).unwrap(),
+            params: BTreeMap::new(),
+            lifecycle: DesiredLifecycle::Dormant,
+        });
+        let payload = DeclarationPayload::authoring(pattern.clone()).unwrap();
+        let mut draft = CandidateDraft::new(identity, CandidateOrigin::RhaiHost);
+        let wrong_kind = DeclarationIr::new(
+            address::<MelodyKind>("beat"),
+            DeclarationOwner::Structural(source(40).syntax_key().clone()),
+            source(40),
+            LifecycleMetadata::register(Composition::Standalone),
+            payload,
+        );
+        assert!(matches!(
+            draft.declare::<MelodyKind>(wrong_kind),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+
+        let wrong_lifecycle = DeclarationIr::new(
+            address::<PatternKind>("beat"),
+            DeclarationOwner::Structural(source(41).syntax_key().clone()),
+            source(41),
+            LifecycleMetadata::start(Composition::Standalone),
+            DeclarationPayload::authoring(pattern.clone()).unwrap(),
+        );
+        assert!(matches!(
+            draft.declare::<PatternKind>(wrong_lifecycle),
+            Err(CandidateError::InvalidLifecycle(_))
+        ));
+
+        let unsupported_parent = DeclarationIr::new(
+            address::<PatternKind>("beat"),
+            DeclarationOwner::Parent(address::<GroupKind>("band").erase()),
+            source(42),
+            LifecycleMetadata::register(Composition::ParentOwned),
+            DeclarationPayload::authoring(pattern).unwrap(),
+        );
+        assert!(matches!(
+            draft.declare::<PatternKind>(unsupported_parent),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+        assert_eq!(draft.declaration_count(), 0);
+    }
+
+    #[test]
+    fn fragment_append_is_atomic_when_a_late_declaration_rejects() {
+        let identity = identity(1);
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<VoiceKind>(declaration::<VoiceKind>("lead"))
+            .unwrap();
+        let contribution_id = ContributionId::new(
+            module(),
+            SyntaxKey::deterministic(&module(), &[14], "body").unwrap(),
+        );
+        let target = TypedRef::new(identity, address::<GroupKind>("band"));
+        let fragment = CandidateFragment::default()
+            .contribution(ContributionIr::new(
+                contribution_id,
+                target,
+                Some(4),
+                source(14),
+            ))
+            .declaration(declaration::<VoiceKind>("lead"));
+
+        assert!(matches!(
+            draft.append_fragment(fragment),
+            Err(CandidateError::DuplicateDeclaration { .. })
+        ));
+        assert_eq!(draft.declaration_count(), 1);
+        assert!(draft.contributions.is_empty());
+    }
+
+    #[test]
+    fn sequence_reference_cycles_reject_the_whole_candidate() {
+        let identity = identity(1);
+        let a_ref = TypedRef::new(identity.clone(), address::<SequenceKind>("a"));
+        let b_ref = TypedRef::new(identity.clone(), address::<SequenceKind>("b"));
+        let make_sequence = |key: &str, dependency: TypedRef<SequenceKind>, index: u32| {
+            DeclarationIr::new(
+                address::<SequenceKind>(key),
+                DeclarationOwner::Structural(
+                    SyntaxKey::deterministic(&module(), &[index], "owner").unwrap(),
+                ),
+                source(index),
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::authoring(AuthoringDeclaration::Sequence(SequenceAuthoring {
+                    clips: vec![SequenceClipAuthoring {
+                        start_ticks: 0,
+                        end_ticks: 1,
+                        content: SequenceContentAuthoring::Sequence(dependency),
+                    }],
+                    length_ticks: 4,
+                    looping: true,
+                    lifecycle: DesiredLifecycle::Dormant,
+                }))
+                .unwrap(),
+            )
+        };
+        let mut draft = CandidateDraft::new(identity, CandidateOrigin::RhaiHost);
+        draft
+            .declare::<SequenceKind>(make_sequence("a", b_ref, 21))
+            .unwrap();
+        draft
+            .declare::<SequenceKind>(make_sequence("b", a_ref, 22))
+            .unwrap();
+
+        assert!(matches!(
+            draft.finish(&ReferenceCatalog::default()),
+            Err(CandidateError::DependencyCycle(cycle)) if cycle.len() == 3
+        ));
+    }
+
+    #[test]
+    fn parent_owned_declarations_must_be_direct_clips_of_their_sequence_parent() {
+        let identity = identity(1);
+        let parent_address = address::<SequenceKind>("parent");
+        let child_address = address::<SequenceKind>("child");
+        let sequence = |clips| {
+            DeclarationPayload::authoring(AuthoringDeclaration::Sequence(SequenceAuthoring {
+                clips,
+                length_ticks: 4,
+                looping: true,
+                lifecycle: DesiredLifecycle::Dormant,
+            }))
+            .unwrap()
+        };
+        let mut draft = CandidateDraft::new(identity, CandidateOrigin::RhaiHost);
+        draft
+            .declare::<SequenceKind>(DeclarationIr::new(
+                parent_address.clone(),
+                DeclarationOwner::Structural(source(23).syntax_key().clone()),
+                source(23),
+                LifecycleMetadata::register(Composition::Standalone),
+                sequence(Vec::new()),
+            ))
+            .unwrap();
+        draft
+            .declare::<SequenceKind>(DeclarationIr::new(
+                child_address,
+                DeclarationOwner::Parent(parent_address.erase()),
+                source(24),
+                LifecycleMetadata::register(Composition::ParentOwned),
+                sequence(Vec::new()),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            draft.finish(&ReferenceCatalog::default()),
+            Err(CandidateError::InvalidAuthoring(message))
+                if message.contains("not a direct clip")
+        ));
+    }
+
+    #[test]
+    fn lifecycle_actions_reject_a_mismatched_effect_category_before_insertion() {
+        let evaluation = identity(1);
+        let target = TypedRef::new(evaluation.clone(), address::<PatternKind>("beat")).erase();
+        assert!(matches!(
+            LifecycleOperationIr::new(
+                target,
+                LifecycleMetadata::reference(
+                    TerminalEffect::Register,
+                    Cancellation::NotCancellable,
+                ),
+                LifecycleAction::Start(StartMode::Normal),
+                source(30),
+            ),
+            Err(CandidateError::InvalidLifecycle(_))
+        ));
+        let group = TypedRef::new(evaluation, address::<GroupKind>("band")).erase();
+        assert!(matches!(
+            LifecycleOperationIr::new(
+                group,
+                LifecycleMetadata::reference(TerminalEffect::Start, Cancellation::BeforePlanning,),
+                LifecycleAction::Start(StartMode::Normal),
+                source(31),
+            ),
+            Err(CandidateError::InvalidLifecycle(_))
+        ));
     }
 }
