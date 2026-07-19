@@ -234,7 +234,7 @@ impl Eq for DspDefinitionIr {}
 /// Pure candidate-local definition registry. M07 owns publishing a validated
 /// registry through inactive-generation staging; this type only validates and
 /// freezes the batch.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StagedDspRegistry {
     definitions: BTreeMap<(DspDefinitionKind, String), DspDefinitionIr>,
 }

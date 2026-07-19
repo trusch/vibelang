@@ -13,6 +13,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
+use vibelang_dsp::{DspDefinitionIr, DspDefinitionKind, PortRate, StagedDspRegistry};
 
 pub const V2_LANGUAGE_MAJOR: u16 = 2;
 pub const V2_MANIFEST_SCHEMA_VERSION: u16 = 2;
@@ -1030,12 +1031,84 @@ pub struct SequenceAuthoring {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FadeTargetAuthoring {
+    Group(TypedRef<GroupKind>),
+    Voice(TypedRef<VoiceKind>),
+    Effect(TypedRef<EffectKind>),
+    Pattern(TypedRef<PatternKind>),
+    Melody(TypedRef<MelodyKind>),
+}
+
+impl FadeTargetAuthoring {
+    #[must_use]
+    pub fn reference(&self) -> ErasedRef {
+        match self {
+            Self::Group(reference) => reference.erase(),
+            Self::Voice(reference) => reference.erase(),
+            Self::Effect(reference) => reference.erase(),
+            Self::Pattern(reference) => reference.erase(),
+            Self::Melody(reference) => reference.erase(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FadePointAuthoring {
+    pub time: CanonicalF64,
+    pub value: CanonicalF64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FadeCurveAuthoring {
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    SineIn,
+    SineOut,
+    SineInOut,
+    CubicIn,
+    CubicOut,
+    CubicInOut,
+    Exponential(CanonicalF64),
+    Logarithmic,
+    Step,
+    CubicSpline(Vec<FadePointAuthoring>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FadeAuthoring {
+    pub target: FadeTargetAuthoring,
+    pub parameter: String,
+    pub from: CanonicalF64,
+    pub to: CanonicalF64,
+    pub duration_ticks: i64,
+    pub curve: FadeCurveAuthoring,
+    pub lifecycle: DesiredLifecycle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectAuthoring {
+    pub definition: TypedRef<EffectDefKind>,
+    pub params: BTreeMap<String, CanonicalF64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DspDefinitionAuthoring {
+    pub definition: DspDefinitionIr,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthoringDeclaration {
     Group(GroupAuthoring),
     Voice(VoiceAuthoring),
     Pattern(PatternAuthoring),
     Melody(MelodyAuthoring),
     Sequence(SequenceAuthoring),
+    Fade(FadeAuthoring),
+    Effect(EffectAuthoring),
+    SynthDef(DspDefinitionAuthoring),
+    EffectDef(DspDefinitionAuthoring),
 }
 
 impl AuthoringDeclaration {
@@ -1047,6 +1120,10 @@ impl AuthoringDeclaration {
             Self::Pattern(_) => EntityKind::Pattern,
             Self::Melody(_) => EntityKind::Melody,
             Self::Sequence(_) => EntityKind::Sequence,
+            Self::Fade(_) => EntityKind::Fade,
+            Self::Effect(_) => EntityKind::Effect,
+            Self::SynthDef(_) => EntityKind::SynthDef,
+            Self::EffectDef(_) => EntityKind::EffectDef,
         }
     }
 
@@ -1057,6 +1134,8 @@ impl AuthoringDeclaration {
             Self::Pattern(pattern) => Some(pattern.lifecycle),
             Self::Melody(melody) => Some(melody.lifecycle),
             Self::Sequence(sequence) => Some(sequence.lifecycle),
+            Self::Fade(fade) => Some(fade.lifecycle),
+            Self::Effect(_) | Self::SynthDef(_) | Self::EffectDef(_) => None,
         }
     }
 
@@ -1173,6 +1252,55 @@ impl AuthoringDeclaration {
                     ));
                 }
             }
+            Self::Fade(fade) => {
+                validate_timeline_lifecycle(fade.lifecycle)?;
+                validate_component(&fade.parameter, "Fade parameter")?;
+                if fade.duration_ticks <= 0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Fade duration must be positive".into(),
+                    ));
+                }
+                match &fade.curve {
+                    FadeCurveAuthoring::Exponential(exponent)
+                        if !exponent.get().is_finite() || exponent.get() <= 0.0 =>
+                    {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Fade exponential curve needs a finite positive exponent".into(),
+                        ));
+                    }
+                    FadeCurveAuthoring::CubicSpline(points) => {
+                        let mut previous = None;
+                        for point in points {
+                            let time = point.time.get();
+                            if !(0.0..1.0).contains(&time)
+                                || previous.is_some_and(|previous| time <= previous)
+                            {
+                                return Err(CandidateError::InvalidAuthoring(
+                                    "Fade spline points must have strictly increasing times within 0.0..1.0"
+                                        .into(),
+                                ));
+                            }
+                            previous = Some(time);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Self::Effect(effect) => validate_params(&effect.params)?,
+            Self::SynthDef(definition) => {
+                if definition.definition.kind() != DspDefinitionKind::SynthDef {
+                    return Err(CandidateError::InvalidDspDefinition(
+                        "SynthDef declaration contains effect definition IR".into(),
+                    ));
+                }
+            }
+            Self::EffectDef(definition) => {
+                if definition.definition.kind() != DspDefinitionKind::Effect {
+                    return Err(CandidateError::InvalidDspDefinition(
+                        "EffectDef declaration contains synth definition IR".into(),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -1218,13 +1346,40 @@ impl AuthoringDeclaration {
                 if parent.kind() != EntityKind::Sequence
                     || !matches!(
                         self,
-                        Self::Pattern(_) | Self::Melody(_) | Self::Sequence(_)
+                        Self::Pattern(_) | Self::Melody(_) | Self::Sequence(_) | Self::Fade(_)
                     ) =>
             {
                 Err(CandidateError::InvalidAuthoring(
-                    "parent-owned authoring is limited to Sequence-owned inline Pattern, Melody, and Sequence fragments"
+                    "parent-owned authoring is limited to Sequence-owned inline Pattern, Melody, Fade, and Sequence fragments"
                         .into(),
                 ))
+            }
+            DeclarationOwner::Structural(_) if matches!(self, Self::Effect(_)) => {
+                Err(CandidateError::InvalidAuthoring(
+                    "Effect declarations require explicit Group contribution ownership".into(),
+                ))
+            }
+            DeclarationOwner::Contribution(_)
+                if matches!(self, Self::SynthDef(_) | Self::EffectDef(_)) =>
+            {
+                Err(CandidateError::InvalidDspDefinition(
+                    "DSP definitions require structural module ownership".into(),
+                ))
+            }
+            DeclarationOwner::Structural(_)
+                if matches!(self, Self::SynthDef(_) | Self::EffectDef(_)) =>
+            {
+                let definition = self
+                    .dsp_definition()
+                    .expect("DSP definition variants expose definition IR");
+                if definition.name() == address.to_string() {
+                    Ok(())
+                } else {
+                    Err(CandidateError::InvalidDspDefinition(format!(
+                        "definition IR name '{}' does not match module-qualified address {address}",
+                        definition.name()
+                    )))
+                }
             }
             DeclarationOwner::Override(_) => Err(CandidateError::InvalidAuthoring(
                 "authoring declarations cannot impersonate override layers".into(),
@@ -1264,6 +1419,11 @@ impl AuthoringDeclaration {
             fn text(&mut self, value: &str) {
                 self.u64(u64::try_from(value.len()).expect("authoring text length fits u64"));
                 self.0.extend_from_slice(value.as_bytes());
+            }
+
+            fn bytes(&mut self, value: &[u8]) {
+                self.u64(u64::try_from(value.len()).expect("authoring byte length fits u64"));
+                self.0.extend_from_slice(value);
             }
 
             fn reference<K: RefKind>(&mut self, reference: &TypedRef<K>) {
@@ -1403,6 +1563,90 @@ impl AuthoringDeclaration {
                     encoder.text(&clip.content.reference().address().to_string());
                 }
             }
+            Self::Fade(fade) => {
+                encoder.tag(5);
+                encoder.tag(match &fade.target {
+                    FadeTargetAuthoring::Group(_) => 0,
+                    FadeTargetAuthoring::Voice(_) => 1,
+                    FadeTargetAuthoring::Effect(_) => 2,
+                    FadeTargetAuthoring::Pattern(_) => 3,
+                    FadeTargetAuthoring::Melody(_) => 4,
+                });
+                encoder.text(&fade.target.reference().address().to_string());
+                encoder.text(&fade.parameter);
+                encoder.number(fade.from);
+                encoder.number(fade.to);
+                encoder.i64(fade.duration_ticks);
+                encoder.lifecycle(fade.lifecycle);
+                match &fade.curve {
+                    FadeCurveAuthoring::Linear => encoder.tag(0),
+                    FadeCurveAuthoring::EaseIn => encoder.tag(1),
+                    FadeCurveAuthoring::EaseOut => encoder.tag(2),
+                    FadeCurveAuthoring::EaseInOut => encoder.tag(3),
+                    FadeCurveAuthoring::SineIn => encoder.tag(4),
+                    FadeCurveAuthoring::SineOut => encoder.tag(5),
+                    FadeCurveAuthoring::SineInOut => encoder.tag(6),
+                    FadeCurveAuthoring::CubicIn => encoder.tag(7),
+                    FadeCurveAuthoring::CubicOut => encoder.tag(8),
+                    FadeCurveAuthoring::CubicInOut => encoder.tag(9),
+                    FadeCurveAuthoring::Exponential(exponent) => {
+                        encoder.tag(10);
+                        encoder.number(*exponent);
+                    }
+                    FadeCurveAuthoring::Logarithmic => encoder.tag(11),
+                    FadeCurveAuthoring::Step => encoder.tag(12),
+                    FadeCurveAuthoring::CubicSpline(points) => {
+                        encoder.tag(13);
+                        encoder
+                            .u64(u64::try_from(points.len()).expect("Fade point count fits u64"));
+                        for point in points {
+                            encoder.number(point.time);
+                            encoder.number(point.value);
+                        }
+                    }
+                }
+            }
+            Self::Effect(effect) => {
+                encoder.tag(6);
+                encoder.reference(&effect.definition);
+                encoder.params(&effect.params);
+            }
+            Self::SynthDef(definition) | Self::EffectDef(definition) => {
+                encoder.tag(if matches!(self, Self::SynthDef(_)) {
+                    7
+                } else {
+                    8
+                });
+                encoder.text(definition.definition.name());
+                encoder.u64(definition.definition.content_hash());
+                encoder.bytes(definition.definition.canonical_bytes());
+                encoder.u64(
+                    u64::try_from(definition.definition.outputs().len())
+                        .expect("DSP output count fits u64"),
+                );
+                for output in definition.definition.outputs() {
+                    encoder.text(&output.name);
+                    encoder.tag(output.channels);
+                    encoder.tag(match output.rate {
+                        PortRate::Ar => 0,
+                        PortRate::Kr => 1,
+                        PortRate::Tr => 2,
+                    });
+                }
+                encoder.u64(
+                    u64::try_from(definition.definition.inputs().len())
+                        .expect("DSP input count fits u64"),
+                );
+                for input in definition.definition.inputs() {
+                    encoder.text(&input.name);
+                    encoder.tag(input.channels);
+                    encoder.tag(match input.rate {
+                        PortRate::Ar => 0,
+                        PortRate::Kr => 1,
+                        PortRate::Tr => 2,
+                    });
+                }
+            }
         }
         Arc::from(encoder.0)
     }
@@ -1432,6 +1676,18 @@ impl AuthoringDeclaration {
                 .iter()
                 .map(|clip| clip.content.reference())
                 .collect(),
+            Self::Fade(fade) => vec![fade.target.reference()],
+            Self::Effect(effect) => vec![effect.definition.erase()],
+            Self::SynthDef(_) | Self::EffectDef(_) => Vec::new(),
+        }
+    }
+
+    fn dsp_definition(&self) -> Option<&DspDefinitionIr> {
+        match self {
+            Self::SynthDef(definition) | Self::EffectDef(definition) => {
+                Some(&definition.definition)
+            }
+            _ => None,
         }
     }
 }
@@ -1741,6 +1997,7 @@ impl LifecycleOperationId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LifecycleAction {
     Start(StartMode),
+    Restart,
     Stop,
     Remove,
     Cancel,
@@ -1767,7 +2024,7 @@ impl LifecycleOperationIr {
     ) -> Result<Self, CandidateError> {
         lifecycle.validate()?;
         let expected = match &action {
-            LifecycleAction::Start(_) => TerminalEffect::Start,
+            LifecycleAction::Start(_) | LifecycleAction::Restart => TerminalEffect::Start,
             LifecycleAction::Stop => TerminalEffect::Stop,
             LifecycleAction::Remove | LifecycleAction::Cancel => TerminalEffect::Cancel,
             LifecycleAction::SetMuted(_)
@@ -1791,6 +2048,7 @@ impl LifecycleOperationIr {
                     | EntityKind::Fade
                     | EntityKind::Recording
             ),
+            LifecycleAction::Restart => kind == EntityKind::Fade,
             LifecycleAction::Stop => matches!(
                 kind,
                 EntityKind::Voice
@@ -1936,6 +2194,7 @@ struct CandidateIr {
     contributions: Vec<ContributionIr>,
     overrides: Vec<OverrideIr>,
     operations: Vec<LifecycleOperationIr>,
+    dsp_definitions: StagedDspRegistry,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1976,6 +2235,11 @@ impl Candidate {
     pub fn operations(&self) -> &[LifecycleOperationIr] {
         &self.0.operations
     }
+
+    #[must_use]
+    pub fn dsp_definitions(&self) -> &StagedDspRegistry {
+        &self.0.dsp_definitions
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1987,6 +2251,7 @@ pub struct CandidateDraft {
     contributions: BTreeMap<ContributionId, ContributionIr>,
     overrides: BTreeMap<OverrideId, OverrideIr>,
     operations: BTreeMap<LifecycleOperationId, LifecycleOperationIr>,
+    dsp_definitions: StagedDspRegistry,
 }
 
 impl CandidateDraft {
@@ -2000,6 +2265,7 @@ impl CandidateDraft {
             contributions: BTreeMap::new(),
             overrides: BTreeMap::new(),
             operations: BTreeMap::new(),
+            dsp_definitions: StagedDspRegistry::default(),
         }
     }
 
@@ -2052,10 +2318,26 @@ impl CandidateDraft {
             });
         }
         if let DeclarationOwner::Contribution(id) = &declaration.owner {
+            if !self.contributions.contains_key(id) {
+                return Err(CandidateError::UnknownContribution(id.clone()));
+            }
+        }
+        if let DeclarationPayload::Authoring {
+            declaration: authoring,
+            ..
+        } = &declaration.payload
+        {
+            if let Some(definition) = authoring.dsp_definition() {
+                self.dsp_definitions
+                    .stage(definition.clone())
+                    .map_err(|error| CandidateError::InvalidDspDefinition(error.to_string()))?;
+            }
+        }
+        if let DeclarationOwner::Contribution(id) = &declaration.owner {
             let contribution = self
                 .contributions
                 .get_mut(id)
-                .ok_or_else(|| CandidateError::UnknownContribution(id.clone()))?;
+                .expect("contribution existence was validated before DSP staging");
             contribution
                 .owned_declarations
                 .insert(declaration.address.clone());
@@ -2233,6 +2515,7 @@ impl CandidateDraft {
             contributions,
             overrides: self.overrides.into_values().collect(),
             operations: self.operations.into_values().collect(),
+            dsp_definitions: self.dsp_definitions,
         })))
     }
 }
@@ -2393,6 +2676,8 @@ pub enum CandidateError {
     InvalidLifecycle(String),
     #[error("invalid authoring declaration: {0}")]
     InvalidAuthoring(String),
+    #[error("invalid detached DSP definition: {0}")]
+    InvalidDspDefinition(String),
     #[error("duplicate lifecycle operation: {0:?}")]
     DuplicateLifecycleOperation(LifecycleOperationId),
     #[error("authoring dependency cycle: {0:?}")]

@@ -9,7 +9,8 @@
 
 use crate::backend::AddAction;
 use crate::candidate::{
-    Candidate, DeclarationOwner, DeclarationPayload, LifecycleAction, LifecycleMetadata, StartMode,
+    AuthoringDeclaration, Candidate, DeclarationOwner, DeclarationPayload, LifecycleAction,
+    LifecycleMetadata, StartMode,
 };
 use crate::capabilities::CapabilitySnapshot;
 use crate::compat::Instant;
@@ -29,6 +30,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
+use vibelang_dsp::{encode_synthdef, DspDefinitionIr};
 
 const ATOMIC_GENERATION_CAPABILITY: &str = "capability.receipt.atomic_generation_activation";
 const AVAILABLE_STATE: &str = "availability.available";
@@ -476,6 +478,62 @@ impl NativeGenerationPlanner {
             digest,
         })
     }
+}
+
+#[must_use]
+pub fn staged_dsp_definition_name(
+    definition: &DspDefinitionIr,
+    generation: GraphGeneration,
+) -> String {
+    format!(
+        "{}__h{:016x}__g{}",
+        definition.name(),
+        definition.content_hash(),
+        generation.get()
+    )
+}
+
+pub fn lower_dsp_definition_components(
+    candidate: &Candidate,
+    generation: GraphGeneration,
+) -> Result<Vec<NativePlanComponent>, GenerationError> {
+    let mut components = Vec::new();
+    for declaration in candidate.declarations() {
+        let DeclarationPayload::Authoring {
+            declaration: authoring,
+            ..
+        } = declaration.payload()
+        else {
+            continue;
+        };
+        let definition = match authoring {
+            AuthoringDeclaration::SynthDef(definition)
+            | AuthoringDeclaration::EffectDef(definition) => &definition.definition,
+            _ => continue,
+        };
+        let name = staged_dsp_definition_name(definition, generation);
+        let mut graph = definition.graph().clone();
+        graph.name = name.clone();
+        let bytes = encode_synthdef(&graph).map_err(|error| {
+            GenerationError::InvalidPlan(format!(
+                "failed to encode staged DSP definition {}: {error}",
+                declaration.address()
+            ))
+        })?;
+        components.push(NativePlanComponent {
+            declaration: declaration.address().to_string(),
+            path: format!(
+                "definitions/{:016x}/{}",
+                definition.content_hash(),
+                declaration.address()
+            ),
+            operation: NativeStageOperation::LoadSynthDef {
+                name,
+                bytes: Arc::from(bytes),
+            },
+        });
+    }
+    Ok(components)
 }
 
 fn sort_components(components: &mut [NativePlanComponent], topology: &InactiveTopology) {
@@ -1192,6 +1250,7 @@ fn plan_digest(
                 hasher.update([6]);
                 text(&mut hasher, &id.to_string());
             }
+            LifecycleAction::Restart => hasher.update([7]),
         }
     }
     hasher.update(b"components\0");
@@ -2714,10 +2773,10 @@ mod tests {
     use super::*;
     use crate::candidate::{
         AuthoringDeclaration, CandidateDraft, CanonicalF64, Composition, ContractDigest,
-        DeclarationIr, DeclarationKey, DeclarationOwner, DeclarationPayload, EngineInstanceId,
-        EvaluationIdentity, GroupAuthoring, GroupKind, GroupScope, LanguageContract,
-        LifecycleMetadata, ModulePath, ProjectNamespace, ReferenceCatalog, SourceAnchor, SyntaxKey,
-        TypedAddress,
+        DeclarationIr, DeclarationKey, DeclarationOwner, DeclarationPayload,
+        DspDefinitionAuthoring, EngineInstanceId, EvaluationIdentity, GroupAuthoring, GroupKind,
+        GroupScope, LanguageContract, LifecycleMetadata, ModulePath, ProjectNamespace,
+        ReferenceCatalog, SourceAnchor, SyntaxKey, SynthDefKind, TypedAddress,
     };
     use crate::resource_manager::{
         GenerationHealth, LogicalResource, ResourceAccounting, ResourceError, ResourceKind,
@@ -2725,6 +2784,7 @@ mod tests {
     };
     use parking_lot::Mutex;
     use std::collections::HashSet;
+    use vibelang_dsp::{DspDefinitionIr, GraphIR};
 
     #[path = "m07_integration_gate.rs"]
     mod m07_integration_gate;
@@ -3063,6 +3123,98 @@ mod tests {
         draft
             .finish(&ReferenceCatalog::default())
             .expect("candidate")
+    }
+
+    fn synthdef_candidate(identity: EvaluationIdentity, constant: f32) -> Candidate {
+        let module = ModulePath::new("song/main").expect("module");
+        let address = TypedAddress::<SynthDefKind>::new(
+            ProjectNamespace::new("test-project").expect("project"),
+            module.clone(),
+            GroupScope::root(),
+            DeclarationKey::new("tone").expect("key"),
+        );
+        let definition = DspDefinitionIr::synthdef(
+            GraphIR {
+                name: address.to_string(),
+                constants: vec![constant],
+                params: Vec::new(),
+                nodes: Vec::new(),
+                out_bus: 0,
+            },
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("detached definition");
+        let declaration = DeclarationIr::new(
+            address,
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module, &[1], "synthdef").expect("owner"),
+            ),
+            SourceAnchor::new(
+                module,
+                SyntaxKey::Explicit(DeclarationKey::new("tone-source").expect("source")),
+                None,
+            ),
+            LifecycleMetadata::register(Composition::Standalone),
+            DeclarationPayload::authoring(AuthoringDeclaration::SynthDef(DspDefinitionAuthoring {
+                definition,
+            }))
+            .expect("payload"),
+        );
+        let mut draft = CandidateDraft::new(identity, CandidateOrigin::RhaiHost);
+        draft
+            .declare::<SynthDefKind>(declaration)
+            .expect("definition declaration");
+        draft
+            .finish(&ReferenceCatalog::default())
+            .expect("candidate")
+    }
+
+    #[test]
+    fn detached_dsp_lowering_is_module_hash_and_generation_qualified() {
+        let epoch = RuntimeEpoch::new();
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"dsp-lowering")),
+            EngineInstanceId::new(),
+            epoch,
+        );
+        let first = synthdef_candidate(identity.clone(), 0.0);
+        let changed = synthdef_candidate(identity, 1.0);
+        let generation = GraphGeneration::new(9).expect("generation");
+        let first_components =
+            lower_dsp_definition_components(&first, generation).expect("first lowering");
+        let changed_components =
+            lower_dsp_definition_components(&changed, generation).expect("changed lowering");
+
+        assert_eq!(first.dsp_definitions().definitions().count(), 1);
+        assert_eq!(first_components.len(), 1);
+        assert_eq!(changed_components.len(), 1);
+        let (first_name, first_bytes) = match &first_components[0].operation {
+            NativeStageOperation::LoadSynthDef { name, bytes } => (name, bytes),
+            operation => panic!("unexpected operation: {operation:?}"),
+        };
+        let (changed_name, changed_bytes) = match &changed_components[0].operation {
+            NativeStageOperation::LoadSynthDef { name, bytes } => (name, bytes),
+            operation => panic!("unexpected operation: {operation:?}"),
+        };
+        assert!(first_name.starts_with("test-project::song/main::synthdef::tone__h"));
+        assert!(first_name.ends_with("__g9"));
+        assert_ne!(first_name, changed_name);
+        assert_ne!(first_bytes, changed_bytes);
+        assert_eq!(
+            first_components[0].declaration,
+            "test-project::song/main::synthdef::tone"
+        );
+        assert!(first_components[0]
+            .path
+            .contains("test-project::song/main::synthdef::tone"));
+        assert!(!vibelang_dsp::synthdef_exists(
+            "test-project::song/main::synthdef::tone"
+        ));
+        assert_eq!(
+            vibelang_dsp::get_synthdef_hash("test-project::song/main::synthdef::tone"),
+            None
+        );
     }
 
     fn revision(epoch: RuntimeEpoch, confirmed: Option<RevisionId>) -> PlanningRevision {
