@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -40,14 +40,43 @@ impl ResourceStage {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceStageSnapshot {
     stage: ResourceStage,
     digest: String,
     claims: BTreeMap<LogicalResource, ResourceGeneration>,
     removals: BTreeMap<LogicalResource, ResourceGeneration>,
     cleanup_generations: BTreeSet<ResourceGeneration>,
+    manager: Weak<Mutex<ResourceInner>>,
+    authority: Option<u64>,
 }
+
+impl fmt::Debug for ResourceStageSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResourceStageSnapshot")
+            .field("stage", &self.stage)
+            .field("digest", &self.digest)
+            .field("claims", &self.claims)
+            .field("removals", &self.removals)
+            .field("cleanup_generations", &self.cleanup_generations)
+            .field("captured", &self.authority.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for ResourceStageSnapshot {
+    fn eq(&self, other: &Self) -> bool {
+        self.stage == other.stage
+            && self.digest == other.digest
+            && self.claims == other.claims
+            && self.removals == other.removals
+            && self.cleanup_generations == other.cleanup_generations
+            && self.authority == other.authority
+            && Weak::ptr_eq(&self.manager, &other.manager)
+    }
+}
+
+impl Eq for ResourceStageSnapshot {}
 
 impl ResourceStageSnapshot {
     #[must_use]
@@ -77,6 +106,80 @@ impl ResourceStageSnapshot {
     pub(crate) fn requires_cleanup(&self, generation: ResourceGeneration) -> bool {
         self.cleanup_generations.contains(&generation)
     }
+
+    pub(crate) const fn is_captured(&self) -> bool {
+        self.authority.is_some()
+    }
+
+    pub(crate) fn capture(&mut self) -> Result<(), ResourceError> {
+        if self.authority.is_some() {
+            return Err(ResourceError::StageAlreadyCaptured(self.stage));
+        }
+        let manager = self
+            .manager
+            .upgrade()
+            .ok_or(ResourceError::ManagerUnavailable)?;
+        let mut inner = manager.lock();
+        let record = inner
+            .stages
+            .get(&self.stage)
+            .ok_or_else(|| inner.stage_terminal_error(self.stage))?;
+        if record.authority.is_some() {
+            return Err(ResourceError::StageAlreadyCaptured(self.stage));
+        }
+        let actual = inner.stage_digest(self.stage, record)?;
+        if actual != self.digest {
+            return Err(ResourceError::StageSnapshotChanged {
+                expected: self.digest.clone(),
+                actual,
+            });
+        }
+        inner.validate_stage(record)?;
+        for generation in record.claims.values() {
+            let generation_record = inner
+                .generations
+                .get(generation)
+                .ok_or(ResourceError::UnknownGeneration(*generation))?;
+            if generation_record.committed_bindings.is_empty()
+                && generation_record
+                    .staged_claims
+                    .iter()
+                    .any(|(stage, _)| *stage != self.stage)
+            {
+                return Err(ResourceError::StageGenerationShared {
+                    stage: self.stage,
+                    generation: *generation,
+                });
+            }
+        }
+        inner.next_stage_authority = inner
+            .next_stage_authority
+            .checked_add(1)
+            .ok_or(ResourceError::Exhausted("resource stage authority"))?;
+        let authority = inner.next_stage_authority;
+        inner
+            .stages
+            .get_mut(&self.stage)
+            .expect("captured resource stage was validated")
+            .authority = Some(authority);
+        self.authority = Some(authority);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceStageOwner {
+    External,
+    Transaction,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceStageState {
+    Open,
+    Captured,
+    Committed(ResourceStageOwner),
+    Discarded(ResourceStageOwner),
+    Quarantined(ResourceStageOwner),
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -317,11 +420,13 @@ impl fmt::Debug for ResourceManager {
 struct ResourceInner {
     next_generation: u64,
     next_stage: u64,
+    next_stage_authority: u64,
     next_reader: u64,
     next_free_attempt: u64,
     bindings: BTreeMap<LogicalResource, ResourceGeneration>,
     generations: BTreeMap<ResourceGeneration, GenerationRecord>,
     stages: BTreeMap<ResourceStage, StageRecord>,
+    terminal_stages: BTreeMap<ResourceStage, ResourceStageState>,
     physical_owner: BTreeMap<PhysicalResourceId, ResourceGeneration>,
 }
 
@@ -347,6 +452,7 @@ struct StageRecord {
     expected_bindings: BTreeMap<LogicalResource, Option<ResourceGeneration>>,
     removals: BTreeMap<LogicalResource, ResourceGeneration>,
     cleanup_only: BTreeSet<ResourceGeneration>,
+    authority: Option<u64>,
 }
 
 pub struct ReaderLease {
@@ -634,9 +740,7 @@ impl ResourceManager {
     ) -> Result<ResourceGeneration, ResourceError> {
         validate_sfz_identity(&identity)?;
         let mut inner = self.inner.lock();
-        if !inner.stages.contains_key(&stage) {
-            return Err(ResourceError::UnknownStage(stage));
-        }
+        inner.ensure_stage_open(stage)?;
         let generation = inner.create_generation(
             ResourceIdentity::Sfz(identity),
             BTreeSet::new(),
@@ -675,22 +779,33 @@ impl ResourceManager {
         let record = inner
             .stages
             .get(&stage)
-            .ok_or(ResourceError::UnknownStage(stage))?;
+            .ok_or_else(|| inner.stage_terminal_error(stage))?;
+        if record.authority.is_some() {
+            return Err(ResourceError::StageAlreadyCaptured(stage));
+        }
         Ok(ResourceStageSnapshot {
             stage,
             digest: inner.stage_digest(stage, record)?,
             claims: record.claims.clone(),
             removals: record.removals.clone(),
             cleanup_generations: inner.stage_cleanup_generations(stage, record)?,
+            manager: Arc::downgrade(&self.inner),
+            authority: None,
         })
     }
 
     pub fn prepare_snapshot(&self, snapshot: &ResourceStageSnapshot) -> Result<(), ResourceError> {
+        if !Weak::ptr_eq(&snapshot.manager, &Arc::downgrade(&self.inner)) {
+            return Err(ResourceError::SnapshotManagerMismatch);
+        }
         let inner = self.inner.lock();
         let record = inner
             .stages
             .get(&snapshot.stage)
-            .ok_or(ResourceError::UnknownStage(snapshot.stage))?;
+            .ok_or_else(|| inner.stage_terminal_error(snapshot.stage))?;
+        if record.authority != snapshot.authority {
+            return Err(ResourceError::StageAuthorityMismatch(snapshot.stage));
+        }
         let actual = inner.stage_digest(snapshot.stage, record)?;
         if actual != snapshot.digest {
             return Err(ResourceError::StageSnapshotChanged {
@@ -705,24 +820,44 @@ impl ResourceManager {
         &self,
         snapshot: &ResourceStageSnapshot,
     ) -> Result<ResourceRetirement, ResourceError> {
-        self.commit_stage_checked(snapshot.stage, Some(&snapshot.digest))
+        if !Weak::ptr_eq(&snapshot.manager, &Arc::downgrade(&self.inner)) {
+            return Err(ResourceError::SnapshotManagerMismatch);
+        }
+        let authority = snapshot
+            .authority
+            .ok_or(ResourceError::StageNotCaptured(snapshot.stage))?;
+        self.commit_stage_checked(
+            snapshot.stage,
+            Some(&snapshot.digest),
+            Some(authority),
+            ResourceStageOwner::Transaction,
+        )
     }
 
     pub fn commit_stage(&self, stage: ResourceStage) -> Result<ResourceRetirement, ResourceError> {
-        self.commit_stage_checked(stage, None)
+        self.commit_stage_checked(stage, None, None, ResourceStageOwner::External)
     }
 
     fn commit_stage_checked(
         &self,
         stage: ResourceStage,
         expected_digest: Option<&str>,
+        authority: Option<u64>,
+        owner: ResourceStageOwner,
     ) -> Result<ResourceRetirement, ResourceError> {
         let mut inner = self.inner.lock();
+        let record = inner
+            .stages
+            .get(&stage)
+            .ok_or_else(|| inner.stage_terminal_error(stage))?;
+        if record.authority != authority {
+            return Err(if record.authority.is_some() && authority.is_none() {
+                ResourceError::StageCaptured(stage)
+            } else {
+                ResourceError::StageAuthorityMismatch(stage)
+            });
+        }
         if let Some(expected) = expected_digest {
-            let record = inner
-                .stages
-                .get(&stage)
-                .ok_or(ResourceError::UnknownStage(stage))?;
             let actual = inner.stage_digest(stage, record)?;
             if actual != expected {
                 return Err(ResourceError::StageSnapshotChanged {
@@ -734,7 +869,7 @@ impl ResourceManager {
         let staged = inner
             .stages
             .remove(&stage)
-            .ok_or(ResourceError::UnknownStage(stage))?;
+            .expect("resource stage was validated before removal");
         if let Err(error) = inner.validate_stage(&staged) {
             inner.stages.insert(stage, staged);
             return Err(error);
@@ -770,17 +905,57 @@ impl ResourceManager {
             record.staged_claims.remove(&(stage, logical.clone()));
             record.committed_bindings.insert(logical);
         }
+        inner
+            .terminal_stages
+            .insert(stage, ResourceStageState::Committed(owner));
         Ok(ResourceRetirement {
             generations: retired,
         })
     }
 
     pub fn discard_stage(&self, stage: ResourceStage) -> Result<ResourceRetirement, ResourceError> {
+        self.discard_stage_checked(stage, None, ResourceStageOwner::External)
+    }
+
+    pub(crate) fn discard_snapshot(
+        &self,
+        snapshot: &ResourceStageSnapshot,
+    ) -> Result<ResourceRetirement, ResourceError> {
+        if !Weak::ptr_eq(&snapshot.manager, &Arc::downgrade(&self.inner)) {
+            return Err(ResourceError::SnapshotManagerMismatch);
+        }
+        let authority = snapshot
+            .authority
+            .ok_or(ResourceError::StageNotCaptured(snapshot.stage))?;
+        self.discard_stage_checked(
+            snapshot.stage,
+            Some(authority),
+            ResourceStageOwner::Transaction,
+        )
+    }
+
+    fn discard_stage_checked(
+        &self,
+        stage: ResourceStage,
+        authority: Option<u64>,
+        owner: ResourceStageOwner,
+    ) -> Result<ResourceRetirement, ResourceError> {
         let mut inner = self.inner.lock();
+        let record = inner
+            .stages
+            .get(&stage)
+            .ok_or_else(|| inner.stage_terminal_error(stage))?;
+        if record.authority != authority {
+            return Err(if record.authority.is_some() && authority.is_none() {
+                ResourceError::StageCaptured(stage)
+            } else {
+                ResourceError::StageAuthorityMismatch(stage)
+            });
+        }
         let staged = inner
             .stages
             .remove(&stage)
-            .ok_or(ResourceError::UnknownStage(stage))?;
+            .expect("resource stage was validated before discard");
         let mut retired = staged.cleanup_only;
         for generation in &retired {
             inner
@@ -800,6 +975,9 @@ impl ResourceManager {
                 retired.insert(generation);
             }
         }
+        inner
+            .terminal_stages
+            .insert(stage, ResourceStageState::Discarded(owner));
         Ok(ResourceRetirement {
             generations: retired,
         })
@@ -810,40 +988,99 @@ impl ResourceManager {
     /// backend may still have readers in the unconfirmed graph. Reused
     /// generations simply lose the provisional claim; their committed claims
     /// continue to provide authority.
-    pub(crate) fn quarantine_stage(
+    pub(crate) fn quarantine_snapshot(
         &self,
-        stage: ResourceStage,
+        snapshot: &ResourceStageSnapshot,
     ) -> Result<ResourceRetirement, ResourceError> {
-        let retirement = self.discard_stage(stage)?;
+        if !Weak::ptr_eq(&snapshot.manager, &Arc::downgrade(&self.inner)) {
+            return Err(ResourceError::SnapshotManagerMismatch);
+        }
+        let authority = snapshot
+            .authority
+            .ok_or(ResourceError::StageNotCaptured(snapshot.stage))?;
         let mut inner = self.inner.lock();
-        let retired = retirement.generations().collect::<BTreeSet<_>>();
-        for generation in retirement.generations() {
+        let staged = inner
+            .stages
+            .get(&snapshot.stage)
+            .ok_or_else(|| inner.stage_terminal_error(snapshot.stage))?;
+        if staged.authority != Some(authority) {
+            return Err(ResourceError::StageAuthorityMismatch(snapshot.stage));
+        }
+        let actual = inner.stage_digest(snapshot.stage, staged)?;
+        if actual != snapshot.digest {
+            return Err(ResourceError::StageSnapshotChanged {
+                expected: snapshot.digest.clone(),
+                actual,
+            });
+        }
+
+        let mut retired = staged.cleanup_only.clone();
+        for generation in staged.claims.values() {
             let record = inner
                 .generations
-                .get(&generation)
-                .ok_or(ResourceError::UnknownGeneration(generation))?;
-            if !record.committed_bindings.is_empty()
-                || !record.staged_claims.is_empty()
-                || !record.cleanup_stages.is_empty()
-                || !record.readers.is_empty()
-                || record
+                .get(generation)
+                .ok_or(ResourceError::UnknownGeneration(*generation))?;
+            if record.committed_bindings.is_empty()
+                && record
+                    .staged_claims
+                    .iter()
+                    .all(|(stage, _)| *stage == snapshot.stage)
+            {
+                retired.insert(*generation);
+            }
+        }
+
+        loop {
+            let externally_owned = retired.iter().copied().find(|generation| {
+                inner
+                    .generations
+                    .get(generation)
+                    .expect("stage digest validated the quarantine generation")
                     .dependents
                     .iter()
                     .any(|dependent| !retired.contains(dependent))
-            {
-                return Err(ResourceError::GenerationClaimed(generation));
-            }
+            });
+            let Some(externally_owned) = externally_owned else {
+                break;
+            };
+            retired.remove(&externally_owned);
         }
-        for generation in retirement.generations() {
+
+        let staged = inner
+            .stages
+            .remove(&snapshot.stage)
+            .expect("captured quarantine stage was validated");
+        for generation in &staged.cleanup_only {
             let record = inner
                 .generations
+                .get_mut(generation)
+                .ok_or(ResourceError::UnknownGeneration(*generation))?;
+            record.cleanup_stages.remove(&snapshot.stage);
+        }
+        for (logical, generation) in staged.claims {
+            inner
+                .generations
                 .get_mut(&generation)
+                .ok_or(ResourceError::UnknownGeneration(generation))?
+                .staged_claims
+                .remove(&(snapshot.stage, logical));
+        }
+        for generation in &retired {
+            let record = inner
+                .generations
+                .get_mut(generation)
                 .expect("quarantine generation was validated");
             if record.health == GenerationHealth::Live {
                 record.health = GenerationHealth::Quarantined;
             }
         }
-        Ok(retirement)
+        inner.terminal_stages.insert(
+            snapshot.stage,
+            ResourceStageState::Quarantined(ResourceStageOwner::Transaction),
+        );
+        Ok(ResourceRetirement {
+            generations: retired,
+        })
     }
 
     pub fn acquire(&self, logical: &LogicalResource) -> Result<ReaderLease, ResourceError> {
@@ -912,6 +1149,21 @@ impl ResourceManager {
     #[must_use]
     pub fn stage_exists(&self, stage: ResourceStage) -> bool {
         self.inner.lock().stages.contains_key(&stage)
+    }
+
+    #[must_use]
+    pub fn stage_state(&self, stage: ResourceStage) -> Option<ResourceStageState> {
+        let inner = self.inner.lock();
+        inner.stages.get(&stage).map_or_else(
+            || inner.terminal_stages.get(&stage).copied(),
+            |record| {
+                Some(if record.authority.is_some() {
+                    ResourceStageState::Captured
+                } else {
+                    ResourceStageState::Open
+                })
+            },
+        )
     }
 
     pub fn freeable_generations(&self) -> Vec<ResourceGeneration> {
@@ -1185,6 +1437,26 @@ impl ResourceManager {
 }
 
 impl ResourceInner {
+    fn stage_terminal_error(&self, stage: ResourceStage) -> ResourceError {
+        self.terminal_stages
+            .get(&stage)
+            .copied()
+            .map_or(ResourceError::UnknownStage(stage), |state| {
+                ResourceError::StageTerminal { stage, state }
+            })
+    }
+
+    fn ensure_stage_open(&self, stage: ResourceStage) -> Result<(), ResourceError> {
+        let record = self
+            .stages
+            .get(&stage)
+            .ok_or_else(|| self.stage_terminal_error(stage))?;
+        if record.authority.is_some() {
+            return Err(ResourceError::StageCaptured(stage));
+        }
+        Ok(())
+    }
+
     fn validate_stage_dependencies(
         &self,
         stage: ResourceStage,
@@ -1369,7 +1641,10 @@ impl ResourceInner {
         let record = self
             .stages
             .get(&stage)
-            .ok_or(ResourceError::UnknownStage(stage))?;
+            .ok_or_else(|| self.stage_terminal_error(stage))?;
+        if record.authority.is_some() {
+            return Err(ResourceError::StageCaptured(stage));
+        }
         if record.claims.contains_key(logical) {
             return Err(ResourceError::DuplicateStageClaim(logical.clone()));
         }
@@ -1385,11 +1660,16 @@ impl ResourceInner {
         dependencies: &BTreeSet<ResourceGeneration>,
     ) -> Option<ResourceGeneration> {
         self.generations.iter().find_map(|(generation, record)| {
-            (record.health == GenerationHealth::Live
+            let reusable = record.health == GenerationHealth::Live
                 && !record.cleanup_only
                 && &record.identity == identity
-                && &record.dependencies == dependencies)
-                .then_some(*generation)
+                && &record.dependencies == dependencies;
+            let unreserved = record.staged_claims.iter().all(|(stage, _)| {
+                self.stages
+                    .get(stage)
+                    .is_none_or(|stage_record| stage_record.authority.is_none())
+            });
+            (reusable && unreserved).then_some(*generation)
         })
     }
 
@@ -1581,6 +1861,30 @@ pub enum ResourceError {
     KindMismatch,
     #[error("unknown resource stage {0:?}")]
     UnknownStage(ResourceStage),
+    #[error("resource stage {stage:?} is terminal in state {state:?}")]
+    StageTerminal {
+        stage: ResourceStage,
+        state: ResourceStageState,
+    },
+    #[error("resource stage {0:?} is captured by its transaction owner")]
+    StageCaptured(ResourceStage),
+    #[error("resource stage {0:?} was already captured")]
+    StageAlreadyCaptured(ResourceStage),
+    #[error("resource stage {0:?} has not been captured by a transaction")]
+    StageNotCaptured(ResourceStage),
+    #[error("resource stage {0:?} transaction authority does not match")]
+    StageAuthorityMismatch(ResourceStage),
+    #[error(
+        "resource stage {stage:?} cannot exclusively capture shared generation {generation:?}"
+    )]
+    StageGenerationShared {
+        stage: ResourceStage,
+        generation: ResourceGeneration,
+    },
+    #[error("resource stage snapshot belongs to another ResourceManager")]
+    SnapshotManagerMismatch,
+    #[error("resource stage snapshot manager is no longer available")]
+    ManagerUnavailable,
     #[error("unknown resource generation {0:?}")]
     UnknownGeneration(ResourceGeneration),
     #[error("duplicate staged claim for {0:?}")]
@@ -1675,6 +1979,180 @@ mod tests {
                 token: format!("free-{physical:?}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn captured_stage_has_one_terminal_owner_and_retains_exact_terminal_state() {
+        let manager = ResourceManager::new();
+        let competing_handle = manager.clone();
+        let stage = manager.begin_stage().expect("stage");
+        manager
+            .stage_sample(
+                stage,
+                logical(ResourceKind::Sample, "sample/captured"),
+                sample("/captured.wav", "sha256:captured"),
+                [PhysicalResourceId::Buffer(900)],
+            )
+            .expect("captured sample");
+        let mut snapshot = manager.snapshot_stage(stage).expect("snapshot");
+        snapshot.capture().expect("capture");
+
+        assert_eq!(
+            manager.stage_state(stage),
+            Some(ResourceStageState::Captured)
+        );
+        assert_eq!(
+            competing_handle.commit_stage(stage),
+            Err(ResourceError::StageCaptured(stage))
+        );
+        assert_eq!(
+            competing_handle.discard_stage(stage),
+            Err(ResourceError::StageCaptured(stage))
+        );
+        assert_eq!(
+            manager.stage_state(stage),
+            Some(ResourceStageState::Captured)
+        );
+
+        manager
+            .commit_snapshot(&snapshot)
+            .expect("transaction-owner commit");
+        let committed = ResourceStageState::Committed(ResourceStageOwner::Transaction);
+        assert_eq!(manager.stage_state(stage), Some(committed));
+        assert_eq!(
+            competing_handle.commit_stage(stage),
+            Err(ResourceError::StageTerminal {
+                stage,
+                state: committed,
+            })
+        );
+        assert_eq!(
+            competing_handle.discard_stage(stage),
+            Err(ResourceError::StageTerminal {
+                stage,
+                state: committed,
+            })
+        );
+
+        let discarded_stage = manager.begin_stage().expect("discard stage");
+        let mut discarded_snapshot = manager
+            .snapshot_stage(discarded_stage)
+            .expect("discard snapshot");
+        discarded_snapshot.capture().expect("capture discard");
+        manager
+            .discard_snapshot(&discarded_snapshot)
+            .expect("transaction-owner discard");
+        assert_eq!(
+            manager.stage_state(discarded_stage),
+            Some(ResourceStageState::Discarded(
+                ResourceStageOwner::Transaction
+            ))
+        );
+
+        let quarantined_stage = manager.begin_stage().expect("quarantine stage");
+        let mut quarantined_snapshot = manager
+            .snapshot_stage(quarantined_stage)
+            .expect("quarantine snapshot");
+        quarantined_snapshot.capture().expect("capture quarantine");
+        manager
+            .quarantine_snapshot(&quarantined_snapshot)
+            .expect("transaction-owner quarantine");
+        assert_eq!(
+            manager.stage_state(quarantined_stage),
+            Some(ResourceStageState::Quarantined(
+                ResourceStageOwner::Transaction
+            ))
+        );
+
+        let external_commit = manager.begin_stage().expect("external commit stage");
+        manager
+            .commit_stage(external_commit)
+            .expect("external commit");
+        assert_eq!(
+            manager.stage_state(external_commit),
+            Some(ResourceStageState::Committed(ResourceStageOwner::External))
+        );
+        let external_discard = manager.begin_stage().expect("external discard stage");
+        manager
+            .discard_stage(external_discard)
+            .expect("external discard");
+        assert_eq!(
+            manager.stage_state(external_discard),
+            Some(ResourceStageState::Discarded(ResourceStageOwner::External))
+        );
+    }
+
+    #[test]
+    fn captured_stage_exclusively_reserves_its_uncommitted_generations() {
+        let manager = ResourceManager::new();
+        let key = logical(ResourceKind::Sample, "sample/exclusive-capture");
+        let identity = sample("/exclusive.wav", "sha256:exclusive");
+        let stage = manager.begin_stage().expect("stage");
+        let staged = manager
+            .stage_sample(
+                stage,
+                key.clone(),
+                identity.clone(),
+                [PhysicalResourceId::Buffer(901)],
+            )
+            .expect("sample");
+        let mut snapshot = manager.snapshot_stage(stage).expect("snapshot");
+
+        let competing_stage = manager.begin_stage().expect("competing stage");
+        let competing = manager
+            .stage_sample(competing_stage, key.clone(), identity.clone(), [])
+            .expect("pre-capture reuse");
+        assert_eq!(competing.generation, staged.generation);
+        assert_eq!(
+            snapshot.capture(),
+            Err(ResourceError::StageGenerationShared {
+                stage,
+                generation: staged.generation,
+            })
+        );
+        manager.discard_stage(stage).expect("discard first owner");
+        manager
+            .discard_stage(competing_stage)
+            .expect("discard competing owner");
+
+        let exclusive_identity = sample("/exclusive.wav", "sha256:exclusive-captured");
+        let exclusive_stage = manager.begin_stage().expect("exclusive stage");
+        let exclusive = manager
+            .stage_sample(
+                exclusive_stage,
+                key.clone(),
+                exclusive_identity.clone(),
+                [PhysicalResourceId::Buffer(902)],
+            )
+            .expect("exclusive sample");
+        let mut exclusive_snapshot = manager
+            .snapshot_stage(exclusive_stage)
+            .expect("exclusive snapshot");
+        exclusive_snapshot.capture().expect("exclusive capture");
+        assert_eq!(
+            manager.stage_sample(
+                exclusive_stage,
+                logical(ResourceKind::Sample, "sample/captured-mutation"),
+                sample("/captured-mutation.wav", "sha256:captured-mutation"),
+                [PhysicalResourceId::Buffer(903)],
+            ),
+            Err(ResourceError::StageCaptured(exclusive_stage))
+        );
+
+        let later_stage = manager.begin_stage().expect("later stage");
+        let later = manager
+            .stage_sample(
+                later_stage,
+                key,
+                exclusive_identity,
+                [PhysicalResourceId::Buffer(904)],
+            )
+            .expect("captured generation is not reusable");
+        assert_ne!(later.generation, exclusive.generation);
+        manager
+            .discard_snapshot(&exclusive_snapshot)
+            .expect("transaction discard");
+        manager.discard_stage(later_stage).expect("later discard");
     }
 
     #[test]
@@ -1931,9 +2409,10 @@ mod tests {
         let current = manager
             .stage_remove(current_removal, key.clone())
             .expect("remove current");
-        let current_snapshot = manager
+        let mut current_snapshot = manager
             .snapshot_stage(current_removal)
             .expect("snapshot current");
+        current_snapshot.capture().expect("capture current removal");
         manager
             .commit_snapshot(&current_snapshot)
             .expect("commit removal");
@@ -2030,8 +2509,10 @@ mod tests {
                 [PhysicalResourceId::Native(24)],
             )
             .expect("same-stage dependency");
+        let mut snapshot = manager.snapshot_stage(sample_stage).expect("snapshot");
+        snapshot.capture().expect("capture");
         manager
-            .quarantine_stage(sample_stage)
+            .quarantine_snapshot(&snapshot)
             .expect("the whole uncertain stage can be quarantined together");
         assert_eq!(
             manager.health(dependency.generation),

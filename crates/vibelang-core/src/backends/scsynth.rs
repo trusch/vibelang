@@ -16,8 +16,8 @@
 
 use crate::backend::{AddAction, Backend, BufferInfo};
 use crate::native_generation::{
-    ActivationSwitch, BackendCorrelation, GenerationAllocation, NativeGenerationDriver,
-    NativeGenerationPlan, NativePlanComponent, NativeStageOperation,
+    ActivationAcknowledgement, ActivationSwitch, BackendCorrelation, GenerationAllocation,
+    NativeGenerationDriver, NativeGenerationPlan, NativePlanComponent, NativeStageOperation,
 };
 use crate::resource_manager::PhysicalResourceId;
 use crate::types::{BufferId, NodeId, ParamMap};
@@ -1000,6 +1000,14 @@ impl ScsynthBackend {
         args
     }
 
+    fn g_new_args(node: NodeId, target: NodeId, action: AddAction) -> Vec<OscType> {
+        vec![
+            OscType::Int(node.0 as i32),
+            OscType::Int(action.to_sc_int()),
+            OscType::Int(target.0 as i32),
+        ]
+    }
+
     async fn send_msg_and_await_done(
         &self,
         path: &str,
@@ -1431,14 +1439,7 @@ impl Backend for ScsynthBackend {
         target: NodeId,
         action: AddAction,
     ) -> Result<(), Self::Error> {
-        self.send_msg(
-            "/g_new",
-            vec![
-                OscType::Int(node.0 as i32),
-                OscType::Int(action.to_sc_int()),
-                OscType::Int(target.0 as i32),
-            ],
-        )?;
+        self.send_msg("/g_new", Self::g_new_args(node, target, action))?;
         Ok(())
     }
 
@@ -1765,6 +1766,10 @@ impl Backend for ScsynthBackend {
 impl NativeGenerationDriver for ScsynthBackend {
     type Error = ScsynthError;
 
+    fn backend_identity(&self) -> &str {
+        "scsynth"
+    }
+
     fn has_exact_component_acknowledgements(&self) -> bool {
         false
     }
@@ -1853,7 +1858,7 @@ impl NativeGenerationDriver for ScsynthBackend {
         &self,
         activation: &ActivationSwitch,
         expected: &BackendCorrelation,
-    ) -> Result<BackendCorrelation, Self::Error> {
+    ) -> Result<ActivationAcknowledgement, Self::Error> {
         let mut messages = Vec::with_capacity(2);
         if let Some(previous) = activation.previous_root {
             messages.push((
@@ -1872,7 +1877,10 @@ impl NativeGenerationDriver for ScsynthBackend {
         if let Some(deadline) = activation.deadline {
             tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
         }
-        self.sync_reserved(expected).await
+        Ok(ActivationAcknowledgement {
+            correlation: self.sync_reserved(expected).await?,
+            timing: None,
+        })
     }
 
     async fn precommit(&self, _plan: &NativeGenerationPlan) -> Result<(), Self::Error> {
@@ -2053,6 +2061,33 @@ mod tests {
         assert_eq!(AddAction::Before.to_sc_int(), 2);
         assert_eq!(AddAction::After.to_sc_int(), 3);
         assert_eq!(AddAction::Replace.to_sc_int(), 4);
+    }
+
+    #[test]
+    fn inactive_group_and_synth_adapters_preserve_all_add_action_targets_exactly() {
+        let node = NodeId::new(101);
+        let target = NodeId::new(202);
+        for (action, encoded) in [
+            (AddAction::Head, 0),
+            (AddAction::Tail, 1),
+            (AddAction::Before, 2),
+            (AddAction::After, 3),
+            (AddAction::Replace, 4),
+        ] {
+            assert_eq!(
+                ScsynthBackend::g_new_args(node, target, action),
+                vec![OscType::Int(101), OscType::Int(encoded), OscType::Int(202),]
+            );
+            assert_eq!(
+                ScsynthBackend::s_new_args("voice", node, target, action, &ParamMap::new()),
+                vec![
+                    OscType::String("voice".into()),
+                    OscType::Int(101),
+                    OscType::Int(encoded),
+                    OscType::Int(202),
+                ]
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,8 @@
 //! Native inactive-generation planning, activation, and restoration.
 //!
-//! Planning is side-effect free and captures one confirmed receipt revision,
-//! one capability snapshot, one allocation snapshot, and one resource stage.
+//! Planning performs no backend or live-binding mutation. It captures one
+//! confirmed receipt revision, capability snapshot, allocation snapshot, and
+//! exclusive resource-stage authority.
 //! Execution keeps the previously confirmed graph authoritative until a
 //! correlated activation acknowledgment and the local commit boundary both
 //! succeed.
@@ -306,11 +307,12 @@ impl PlanDigest {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct NativeGenerationPlan {
     target_revision: RevisionId,
     revision: PlanningRevision,
     atomicity: AtomicAdmission,
+    atomic_backend: Option<String>,
     allocation: GenerationAllocation,
     resource_stage: ResourceStageSnapshot,
     components: Vec<NativePlanComponent>,
@@ -342,9 +344,12 @@ impl NativeGenerationPlan {
 
 #[derive(Clone, Debug, PartialEq)]
 struct QuantizedBoundary {
-    effective: EffectiveAt,
+    requested_beat: Option<BeatTicks>,
+    backend_time_seconds: FiniteSeconds,
     deadline: Option<Instant>,
-    audible_tail_until: Option<EffectiveAt>,
+    audible_tail_beats: Option<BeatTicks>,
+    audible_tail_seconds: Option<FiniteSeconds>,
+    observed_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -386,7 +391,7 @@ impl NativeGenerationPlanner {
         atomicity: AtomicAdmission,
         atomic_evidence: Option<&AtomicGenerationEvidence>,
         allocation: GenerationAllocation,
-        resource_stage: ResourceStageSnapshot,
+        mut resource_stage: ResourceStageSnapshot,
         mut components: Vec<NativePlanComponent>,
         boundary: ActivationBoundary,
         sample_rate: f64,
@@ -406,6 +411,12 @@ impl NativeGenerationPlanner {
         {
             return Err(GenerationError::AtomicCapabilityUnavailable);
         }
+        let atomic_backend = (atomicity == AtomicAdmission::Required).then(|| {
+            atomic_evidence
+                .expect("required atomic evidence was validated")
+                .backend
+                .clone()
+        });
         let expected = candidate
             .declarations()
             .iter()
@@ -436,39 +447,26 @@ impl NativeGenerationPlanner {
             return Err(GenerationError::ComponentSetMismatch { expected, actual });
         }
         validate_resource_operations(&resource_stage, &components)?;
-        let group_depths = validate_inactive_operations(&allocation, &components)?;
-        components.sort_by(|left, right| {
-            left.phase()
-                .cmp(&right.phase())
-                .then_with(|| {
-                    operation_rank(&left.operation).cmp(&operation_rank(&right.operation))
-                })
-                .then_with(|| {
-                    group_depth(&left.operation, &group_depths)
-                        .cmp(&group_depth(&right.operation, &group_depths))
-                })
-                .then_with(|| left.path.cmp(&right.path))
-                .then_with(|| {
-                    left.operation
-                        .action_name()
-                        .cmp(right.operation.action_name())
-                })
-        });
+        let topology = validate_inactive_operations(&allocation, &components)?;
+        sort_components(&mut components, &topology);
         let boundary = quantize_boundary(boundary, sample_rate, block_size)?;
         let digest = plan_digest(
             candidate,
             target_revision,
             &revision,
             atomicity,
+            atomic_backend.as_deref(),
             &allocation,
             &resource_stage,
             &components,
             &boundary,
         );
+        resource_stage.capture()?;
         Ok(NativeGenerationPlan {
             target_revision,
             revision,
             atomicity,
+            atomic_backend,
             allocation,
             resource_stage,
             components,
@@ -476,6 +474,28 @@ impl NativeGenerationPlanner {
             digest,
         })
     }
+}
+
+fn sort_components(components: &mut [NativePlanComponent], topology: &InactiveTopology) {
+    components.sort_by(|left, right| {
+        left.phase()
+            .cmp(&right.phase())
+            .then_with(|| operation_rank(&left.operation).cmp(&operation_rank(&right.operation)))
+            .then_with(|| {
+                topology_order(&left.operation, topology)
+                    .cmp(&topology_order(&right.operation, topology))
+            })
+            .then_with(|| {
+                group_depth(&left.operation, &topology.depths)
+                    .cmp(&group_depth(&right.operation, &topology.depths))
+            })
+            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| {
+                left.operation
+                    .action_name()
+                    .cmp(right.operation.action_name())
+            })
+    });
 }
 
 fn validate_resource_operations(
@@ -522,10 +542,41 @@ fn validate_resource_operations(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlannedNodeKind {
+    Group,
+    Synth,
+    Effect,
+}
+
+impl PlannedNodeKind {
+    const fn rank(self) -> u8 {
+        match self {
+            Self::Group => 0,
+            Self::Synth => 1,
+            Self::Effect => 2,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PlannedPlacement {
+    path: String,
+    target: u32,
+    action: AddAction,
+    kind: PlannedNodeKind,
+}
+
+#[derive(Debug)]
+struct InactiveTopology {
+    depths: BTreeMap<u32, usize>,
+    creation_order: BTreeMap<u32, usize>,
+}
+
 fn validate_inactive_operations(
     allocation: &GenerationAllocation,
     components: &[NativePlanComponent],
-) -> Result<BTreeMap<u32, usize>, GenerationError> {
+) -> Result<InactiveTopology, GenerationError> {
     if allocation.root == allocation.parent {
         return Err(GenerationError::InvalidPlan(
             "the inactive generation root must differ from its parent".into(),
@@ -541,7 +592,7 @@ fn validate_inactive_operations(
     }
     let mut created_nodes = BTreeSet::new();
     let mut created_before_updates = BTreeSet::new();
-    let mut groups = BTreeMap::new();
+    let mut placements = BTreeMap::new();
     let mut loaded_definitions = BTreeSet::new();
     let mut used_definitions = Vec::new();
     for component in components {
@@ -560,7 +611,11 @@ fn validate_inactive_operations(
                     )));
                 }
             }
-            NativeStageOperation::CreateGroup { node, target, .. } => {
+            NativeStageOperation::CreateGroup {
+                node,
+                target,
+                action,
+            } => {
                 let node = node.raw();
                 if node == root || node == parent || !created_nodes.insert(node) {
                     return Err(GenerationError::InvalidPlan(format!(
@@ -568,11 +623,21 @@ fn validate_inactive_operations(
                     )));
                 }
                 created_before_updates.insert(node);
-                groups.insert(node, target.raw());
+                placements.insert(
+                    node,
+                    PlannedPlacement {
+                        path: component.path.clone(),
+                        target: target.raw(),
+                        action: *action,
+                        kind: PlannedNodeKind::Group,
+                    },
+                );
             }
             NativeStageOperation::CreateSynth {
                 definition,
                 node,
+                target,
+                action,
                 params,
                 ..
             } => {
@@ -585,10 +650,21 @@ fn validate_inactive_operations(
                 validate_params(params)?;
                 used_definitions.push(definition.clone());
                 created_before_updates.insert(node);
+                placements.insert(
+                    node,
+                    PlannedPlacement {
+                        path: component.path.clone(),
+                        target: target.raw(),
+                        action: *action,
+                        kind: PlannedNodeKind::Synth,
+                    },
+                );
             }
             NativeStageOperation::CreateEffect {
                 definition,
                 node,
+                target,
+                action,
                 params,
                 ..
             } => {
@@ -600,6 +676,15 @@ fn validate_inactive_operations(
                 }
                 validate_params(params)?;
                 used_definitions.push(definition.clone());
+                placements.insert(
+                    node,
+                    PlannedPlacement {
+                        path: component.path.clone(),
+                        target: target.raw(),
+                        action: *action,
+                        kind: PlannedNodeKind::Effect,
+                    },
+                );
             }
             NativeStageOperation::SetParams { params, .. } => validate_params(params)?,
             NativeStageOperation::MapRoute { parameter, .. } if parameter.is_empty() => {
@@ -622,14 +707,88 @@ fn validate_inactive_operations(
         }
     }
 
-    let mut depths = BTreeMap::from([(root, 0usize)]);
-    while depths.len() <= groups.len() {
+    for (node, placement) in &placements {
+        match placement.action {
+            AddAction::Head | AddAction::Tail => {
+                if placement.target != root
+                    && placements
+                        .get(&placement.target)
+                        .is_none_or(|target| target.kind != PlannedNodeKind::Group)
+                {
+                    return Err(GenerationError::InvalidPlan(format!(
+                        "{} {:?} target {} is not a staged group beneath the inactive root",
+                        placement.path, placement.action, placement.target
+                    )));
+                }
+            }
+            AddAction::Before | AddAction::After | AddAction::Replace => {
+                if placement.target == root || placement.target == parent {
+                    return Err(GenerationError::InvalidPlan(format!(
+                        "{} {:?} would escape or replace the inactive generation root",
+                        placement.path, placement.action
+                    )));
+                }
+                let target = placements.get(&placement.target).ok_or_else(|| {
+                    GenerationError::InvalidPlan(format!(
+                        "{} {:?} target {} is outside the inactive generation",
+                        placement.path, placement.action, placement.target
+                    ))
+                })?;
+                if target.kind.rank() > placement.kind.rank()
+                    || (placement.kind == PlannedNodeKind::Group
+                        && target.kind != PlannedNodeKind::Group)
+                {
+                    return Err(GenerationError::InvalidPlan(format!(
+                        "{} {:?} target {} is not available in its staging phase",
+                        placement.path, placement.action, placement.target
+                    )));
+                }
+            }
+        }
+        if *node == placement.target {
+            return Err(GenerationError::InvalidPlan(format!(
+                "{} cannot place a node relative to itself",
+                placement.path
+            )));
+        }
+    }
+
+    let mut parents = BTreeMap::new();
+    while parents.len() < placements.len() {
         let mut progressed = false;
-        for (node, target) in &groups {
+        for (node, placement) in &placements {
+            if parents.contains_key(node) {
+                continue;
+            }
+            let resolved = match placement.action {
+                AddAction::Head | AddAction::Tail => Some(placement.target),
+                AddAction::Before | AddAction::After | AddAction::Replace => {
+                    parents.get(&placement.target).copied()
+                }
+            };
+            if let Some(resolved) = resolved {
+                parents.insert(*node, resolved);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    if parents.len() != placements.len() {
+        return Err(GenerationError::InvalidPlan(
+            "native add-action topology contains an unresolved or cyclic sibling placement".into(),
+        ));
+    }
+
+    let mut depths = BTreeMap::from([(root, 0usize)]);
+    while depths.len() <= parents.len() {
+        let mut progressed = false;
+        for (node, node_parent) in &parents {
             if depths.contains_key(node) {
                 continue;
             }
-            if let Some(parent_depth) = depths.get(target).copied() {
+            if let Some(parent_depth) = depths.get(node_parent).copied() {
                 depths.insert(*node, parent_depth + 1);
                 progressed = true;
             }
@@ -638,23 +797,59 @@ fn validate_inactive_operations(
             break;
         }
     }
-    if depths.len() != groups.len() + 1 {
+    if depths.len() != placements.len() + 1 {
         return Err(GenerationError::InvalidPlan(
-            "every staged group must descend from the inactive generation root".into(),
+            "every staged node placement must remain beneath the inactive generation root".into(),
         ));
+    }
+
+    let replaced = placements
+        .iter()
+        .filter_map(|(node, placement)| {
+            (placement.action == AddAction::Replace).then_some((*node, placement.target))
+        })
+        .collect::<Vec<_>>();
+    let replaced_targets = replaced
+        .iter()
+        .map(|(_, target)| *target)
+        .collect::<BTreeSet<_>>();
+    for (replacement, target) in &replaced {
+        if parents.values().any(|parent| parent == target)
+            || placements.iter().any(|(node, placement)| {
+                *node != *replacement && *node != *target && placement.target == *target
+            })
+        {
+            return Err(GenerationError::InvalidPlan(format!(
+                "replacing staged node {target} would invalidate another inactive placement"
+            )));
+        }
+    }
+
+    let mut creation_order = BTreeMap::new();
+    while creation_order.len() < placements.len() {
+        let next = placements
+            .iter()
+            .filter(|(node, _)| !creation_order.contains_key(*node))
+            .filter(|(_, placement)| {
+                placement.target == root || creation_order.contains_key(&placement.target)
+            })
+            .min_by(|(_, left), (_, right)| {
+                left.kind
+                    .rank()
+                    .cmp(&right.kind.rank())
+                    .then_with(|| left.path.cmp(&right.path))
+            })
+            .map(|(node, _)| *node);
+        let Some(next) = next else {
+            return Err(GenerationError::InvalidPlan(
+                "native add-action topology cannot be staged in dependency order".into(),
+            ));
+        };
+        creation_order.insert(next, creation_order.len());
     }
 
     for component in components {
         match &component.operation {
-            NativeStageOperation::CreateSynth { target, .. }
-            | NativeStageOperation::CreateEffect { target, .. } => {
-                if !depths.contains_key(&target.raw()) {
-                    return Err(GenerationError::InvalidPlan(format!(
-                        "native node target {} is outside the inactive generation root",
-                        target.raw()
-                    )));
-                }
-            }
             NativeStageOperation::SetParams { node, .. }
             | NativeStageOperation::MapRoute { node, .. } => {
                 if !created_before_updates.contains(&node.raw()) {
@@ -663,12 +858,21 @@ fn validate_inactive_operations(
                         node.raw()
                     )));
                 }
+                if replaced_targets.contains(&node.raw()) {
+                    return Err(GenerationError::InvalidPlan(format!(
+                        "native update target {} is removed by a staged replacement",
+                        node.raw()
+                    )));
+                }
             }
             _ => {}
         }
     }
     depths.remove(&root);
-    Ok(depths)
+    Ok(InactiveTopology {
+        depths,
+        creation_order,
+    })
 }
 
 fn validate_params(params: &ParamMap) -> Result<(), GenerationError> {
@@ -704,6 +908,19 @@ fn group_depth(operation: &NativeStageOperation, depths: &BTreeMap<u32, usize>) 
     }
 }
 
+fn topology_order(operation: &NativeStageOperation, topology: &InactiveTopology) -> usize {
+    match operation {
+        NativeStageOperation::CreateGroup { node, .. }
+        | NativeStageOperation::CreateSynth { node, .. }
+        | NativeStageOperation::CreateEffect { node, .. } => topology
+            .creation_order
+            .get(&node.raw())
+            .copied()
+            .unwrap_or(usize::MAX),
+        _ => 0,
+    }
+}
+
 fn quantize_boundary(
     requested: ActivationBoundary,
     sample_rate: f64,
@@ -734,41 +951,29 @@ fn quantize_boundary(
                 .ok_or(GenerationError::InvalidBoundary)
         })
         .transpose()?;
-    let effective = EffectiveAt {
-        observed_at: Timestamp::from_system_time(requested.observed_at),
-        musical_beat: requested.requested_beat,
-        backend_time_seconds: Some(
-            FiniteSeconds::new(quantized_seconds).map_err(GenerationError::InvalidPlan)?,
-        ),
-    };
+    let backend_time_seconds =
+        FiniteSeconds::new(quantized_seconds).map_err(GenerationError::InvalidPlan)?;
     let tail_seconds = requested.audible_tail_seconds.unwrap_or(0.0);
     if !tail_seconds.is_finite() || tail_seconds < 0.0 {
         return Err(GenerationError::InvalidBoundary);
     }
-    let tail_beat = match (requested.requested_beat, requested.audible_tail_beats) {
-        (Some(beat), Some(tail)) => Some(BeatTicks::new(
-            beat.get()
-                .checked_add(tail.get())
-                .ok_or(GenerationError::InvalidBoundary)?,
-        )),
-        _ => None,
-    };
-    let audible_tail_until = if tail_seconds > 0.0 || requested.audible_tail_beats.is_some() {
-        let tail_backend_seconds = quantized_seconds + tail_seconds;
-        let tail_backend_seconds = FiniteSeconds::new(tail_backend_seconds)
+    if let (Some(beat), Some(tail)) = (requested.requested_beat, requested.audible_tail_beats) {
+        beat.get()
+            .checked_add(tail.get())
+            .ok_or(GenerationError::InvalidBoundary)?;
+    }
+    if tail_seconds > 0.0 {
+        FiniteSeconds::new(quantized_seconds + tail_seconds)
             .map_err(|_| GenerationError::InvalidBoundary)?;
-        Some(EffectiveAt {
-            observed_at: Timestamp::from_system_time(requested.observed_at),
-            musical_beat: tail_beat,
-            backend_time_seconds: Some(tail_backend_seconds),
-        })
-    } else {
-        None
-    };
+    }
     Ok(QuantizedBoundary {
-        effective,
+        requested_beat: requested.requested_beat,
+        backend_time_seconds,
         deadline,
-        audible_tail_until,
+        audible_tail_beats: requested.audible_tail_beats,
+        audible_tail_seconds: (tail_seconds > 0.0)
+            .then(|| FiniteSeconds::new(tail_seconds).expect("validated finite tail")),
+        observed_at: Timestamp::from_system_time(requested.observed_at),
     })
 }
 
@@ -778,6 +983,7 @@ fn plan_digest(
     target_revision: RevisionId,
     revision: &PlanningRevision,
     atomicity: AtomicAdmission,
+    atomic_backend: Option<&str>,
     allocation: &GenerationAllocation,
     resource_stage: &ResourceStageSnapshot,
     components: &[NativePlanComponent],
@@ -811,6 +1017,12 @@ fn plan_digest(
         AtomicAdmission::BestEffort => 0,
         AtomicAdmission::Required => 1,
     }]);
+    if let Some(backend) = atomic_backend {
+        hasher.update([1]);
+        text(&mut hasher, backend);
+    } else {
+        hasher.update([0]);
+    }
     hasher.update(allocation.generation.get().to_be_bytes());
     hasher.update(allocation.root.raw().to_be_bytes());
     hasher.update(allocation.parent.raw().to_be_bytes());
@@ -850,34 +1062,23 @@ fn plan_digest(
         text(&mut hasher, &component.path);
         hash_operation(&mut hasher, &component.operation);
     }
-    text(&mut hasher, boundary.effective.observed_at.as_str());
-    if let Some(beat) = boundary.effective.musical_beat {
+    text(&mut hasher, boundary.observed_at.as_str());
+    if let Some(beat) = boundary.requested_beat {
         hasher.update([1]);
         hasher.update(beat.get().to_be_bytes());
     } else {
         hasher.update([0]);
     }
-    if let Some(seconds) = boundary.effective.backend_time_seconds {
+    hasher.update(boundary.backend_time_seconds.get().to_bits().to_be_bytes());
+    if let Some(tail) = boundary.audible_tail_beats {
         hasher.update([1]);
-        hasher.update(seconds.get().to_bits().to_be_bytes());
+        hasher.update(tail.get().to_be_bytes());
     } else {
         hasher.update([0]);
     }
-    if let Some(tail) = &boundary.audible_tail_until {
+    if let Some(tail) = boundary.audible_tail_seconds {
         hasher.update([1]);
-        text(&mut hasher, tail.observed_at.as_str());
-        if let Some(beat) = tail.musical_beat {
-            hasher.update([1]);
-            hasher.update(beat.get().to_be_bytes());
-        } else {
-            hasher.update([0]);
-        }
-        if let Some(seconds) = tail.backend_time_seconds {
-            hasher.update([1]);
-            hasher.update(seconds.get().to_bits().to_be_bytes());
-        } else {
-            hasher.update([0]);
-        }
+        hasher.update(tail.get().to_bits().to_be_bytes());
     } else {
         hasher.update([0]);
     }
@@ -997,6 +1198,13 @@ impl CorrelationLedger {
         if correlation.backend.is_empty() || correlation.token.is_empty() {
             return Err("the backend reserved an empty generation correlation".into());
         }
+        if correlation.backend != driver.backend_identity() {
+            return Err(format!(
+                "the reserved generation correlation belongs to backend {}, not executing backend {}",
+                correlation.backend,
+                driver.backend_identity()
+            ));
+        }
         if !self.reserved.insert(correlation.clone()) {
             return Err(
                 "the backend reused a generation correlation within one transaction".into(),
@@ -1011,11 +1219,35 @@ pub struct ActivationSwitch {
     pub previous_root: Option<NodeId>,
     pub next_root: NodeId,
     pub deadline: Option<Instant>,
+    pub scheduled_backend_time: Option<FiniteSeconds>,
+    pub requested_beat: Option<BeatTicks>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActivationTimingKind {
+    Scheduled,
+    Executed,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ActivationTimingProof {
+    pub kind: ActivationTimingKind,
+    pub observed_at: Timestamp,
+    pub backend_time_seconds: FiniteSeconds,
+    pub musical_beat: Option<BeatTicks>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ActivationAcknowledgement {
+    pub correlation: BackendCorrelation,
+    pub timing: Option<ActivationTimingProof>,
 }
 
 #[async_trait]
 pub trait NativeGenerationDriver: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
+
+    fn backend_identity(&self) -> &str;
 
     /// True only when a matching component acknowledgement proves semantic
     /// success, rather than merely proving ordering through a later barrier.
@@ -1047,7 +1279,7 @@ pub trait NativeGenerationDriver: Send + Sync {
         &self,
         activation: &ActivationSwitch,
         expected: &BackendCorrelation,
-    ) -> Result<BackendCorrelation, Self::Error>;
+    ) -> Result<ActivationAcknowledgement, Self::Error>;
 
     async fn precommit(&self, plan: &NativeGenerationPlan) -> Result<(), Self::Error>;
 
@@ -1181,10 +1413,26 @@ impl NativeGenerationCoordinator {
 
     pub async fn execute<D: NativeGenerationDriver>(
         &mut self,
-        plan: NativeGenerationPlan,
+        mut plan: NativeGenerationPlan,
         resources: &ResourceManager,
         driver: &D,
     ) -> GenerationOutcome {
+        if !plan.resource_stage.is_captured() {
+            if let Err(error) = plan.resource_stage.capture() {
+                self.fenced = true;
+                return GenerationOutcome::Partial {
+                    receipt: Partial {
+                        phase: FailurePhase::Planning,
+                        code: "resource_stage_capture_failed".into(),
+                        components: uncertain_plan_components(&plan, 0),
+                        rollback: RollbackState::NotNeeded,
+                        fenced: true,
+                        last_confirmed_revision: self.active.as_ref().map(|active| active.revision),
+                    },
+                    cleanup: CleanupHealth::Degraded(vec![error.to_string()]),
+                };
+            }
+        }
         let mut correlations = CorrelationLedger::default();
         if self.fenced {
             let cleanup =
@@ -1200,6 +1448,24 @@ impl NativeGenerationCoordinator {
             );
         }
         let active_revision = self.active.as_ref().map(|active| active.revision);
+        if driver.backend_identity().is_empty()
+            || plan
+                .atomic_backend
+                .as_deref()
+                .is_some_and(|backend| backend != driver.backend_identity())
+        {
+            let cleanup =
+                cleanup_unactivated_resources(&plan, resources, driver, &mut correlations).await;
+            return self.finish_pre_activation_failure(
+                &plan,
+                FailurePhase::Capability,
+                "executing_backend_identity_mismatch",
+                "the executing backend does not match the backend that proved atomic capability",
+                active_revision,
+                0,
+                cleanup,
+            );
+        }
         if !driver.has_exact_component_acknowledgements() {
             let cleanup =
                 cleanup_unactivated_resources(&plan, resources, driver, &mut correlations).await;
@@ -1246,27 +1512,37 @@ impl NativeGenerationCoordinator {
             }
         }
         if !resources.stage_exists(plan.resource_stage.stage()) {
-            return rejected(
-                FailurePhase::Planning,
-                "resource_stage_missing",
-                "the plan's exact resource stage is no longer retained",
-                RollbackState::NotNeeded,
-                active_revision,
-                CleanupHealth::Retained,
-            );
+            self.fenced = true;
+            return GenerationOutcome::Partial {
+                receipt: Partial {
+                    phase: FailurePhase::Planning,
+                    code: "resource_stage_authority_lost".into(),
+                    components: uncertain_plan_components(&plan, 0),
+                    rollback: RollbackState::Uncertain,
+                    fenced: true,
+                    last_confirmed_revision: active_revision,
+                },
+                cleanup: CleanupHealth::Degraded(vec![format!(
+                    "resource stage terminal state is {:?}",
+                    resources.stage_state(plan.resource_stage.stage())
+                )]),
+            };
         }
-        if let Err(error) = resources.prepare_snapshot(&plan.resource_stage) {
+        if let Err(_error) = resources.prepare_snapshot(&plan.resource_stage) {
             let cleanup =
                 cleanup_unactivated_resources(&plan, resources, driver, &mut correlations).await;
-            return self.finish_pre_activation_failure(
-                &plan,
-                FailurePhase::Planning,
-                "resource_stage_invalid",
-                &error.to_string(),
-                active_revision,
-                0,
+            self.fenced = true;
+            return GenerationOutcome::Partial {
+                receipt: Partial {
+                    phase: FailurePhase::Planning,
+                    code: "resource_authority_changed_after_planning".into(),
+                    components: uncertain_plan_components(&plan, 0),
+                    rollback: RollbackState::NotNeeded,
+                    fenced: true,
+                    last_confirmed_revision: active_revision,
+                },
                 cleanup,
-            );
+            };
         }
 
         if self.quarantined_roots.contains(&plan.allocation.root) {
@@ -1477,6 +1753,11 @@ impl NativeGenerationCoordinator {
             previous_root: self.active.as_ref().map(|active| active.root),
             next_root: plan.allocation.root,
             deadline: plan.boundary.deadline,
+            scheduled_backend_time: plan
+                .boundary
+                .deadline
+                .map(|_| plan.boundary.backend_time_seconds),
+            requested_beat: plan.boundary.requested_beat,
         };
         let activation_correlation = match correlations.reserve(driver) {
             Ok(correlation) => correlation,
@@ -1501,8 +1782,10 @@ impl NativeGenerationCoordinator {
             }
         };
         let activation_result = driver.activate(&activation, &activation_correlation).await;
-        match activation_result {
-            Ok(acknowledgement) if acknowledgement == activation_correlation => {}
+        let activation_acknowledgement = match activation_result {
+            Ok(acknowledgement) if acknowledgement.correlation == activation_correlation => {
+                acknowledgement
+            }
             Ok(_) => {
                 return self
                     .restore_after_activation_failure(
@@ -1533,7 +1816,26 @@ impl NativeGenerationCoordinator {
                     )
                     .await;
             }
-        }
+        };
+        let (effective_at, audible_tail_until) =
+            match correlated_effective_at(&plan.boundary, &activation_acknowledgement) {
+                Ok(effective) => effective,
+                Err((code, message)) => {
+                    return self
+                        .restore_after_activation_failure(
+                            &plan,
+                            resources,
+                            driver,
+                            &mut correlations,
+                            activation,
+                            active_revision,
+                            code,
+                            &message,
+                            outcomes,
+                        )
+                        .await;
+                }
+            };
 
         if let Err(error) = driver.precommit(&plan).await {
             return self
@@ -1572,7 +1874,7 @@ impl NativeGenerationCoordinator {
 
         for outcome in &mut outcomes {
             outcome.state = ComponentState::Applied;
-            outcome.effective_at = Some(plan.boundary.effective.clone());
+            outcome.effective_at = Some(effective_at.clone());
         }
         let previous = self.active.replace(AppliedGeneration {
             generation: plan.allocation.generation,
@@ -1591,17 +1893,17 @@ impl NativeGenerationCoordinator {
             },
             Confirmation::RuntimeCommit,
         ];
-        if let Some(beat) = plan.boundary.effective.musical_beat {
+        if let Some(beat) = effective_at.musical_beat {
             confirmations.push(Confirmation::MusicalBoundary {
                 beat,
-                backend_time: plan.boundary.effective.backend_time_seconds,
+                backend_time: effective_at.backend_time_seconds,
             });
         }
         let receipt = Applied {
-            effective_at: plan.boundary.effective.clone(),
+            effective_at,
             confirmations,
             components: outcomes,
-            audible_tail_until: plan.boundary.audible_tail_until.clone(),
+            audible_tail_until,
         };
         let cleanup = cleanup_committed(
             previous,
@@ -1710,7 +2012,26 @@ impl NativeGenerationCoordinator {
             } else {
                 FailurePhase::Activate
             };
-            if matches!(cleanup, CleanupHealth::Degraded(_)) {
+            if code == "resource_commit_failed" {
+                self.fenced = true;
+                GenerationOutcome::Partial {
+                    receipt: Partial {
+                        phase: FailurePhase::Reconcile,
+                        code: "resource_commit_failed_authority_unproven".into(),
+                        components: components
+                            .into_iter()
+                            .map(|mut component| {
+                                component.state = ComponentState::Uncertain;
+                                component
+                            })
+                            .collect(),
+                        rollback: RollbackState::Confirmed,
+                        fenced: true,
+                        last_confirmed_revision: preserved_revision,
+                    },
+                    cleanup,
+                }
+            } else if matches!(cleanup, CleanupHealth::Degraded(_)) {
                 GenerationOutcome::Partial {
                     receipt: Partial {
                         phase: FailurePhase::Rollback,
@@ -1743,7 +2064,7 @@ impl NativeGenerationCoordinator {
             self.quarantined_roots.insert(plan.allocation.root);
             let mut cleanup_issues =
                 vec!["staged graph quarantined after unconfirmed restoration".into()];
-            if let Err(error) = resources.quarantine_stage(plan.resource_stage.stage()) {
+            if let Err(error) = resources.quarantine_snapshot(&plan.resource_stage) {
                 cleanup_issues.push(format!("resource stage quarantine failed: {error}"));
             }
             GenerationOutcome::Partial {
@@ -1765,6 +2086,92 @@ impl NativeGenerationCoordinator {
             }
         }
     }
+}
+
+fn correlated_effective_at(
+    boundary: &QuantizedBoundary,
+    acknowledgement: &ActivationAcknowledgement,
+) -> Result<(EffectiveAt, Option<EffectiveAt>), (&'static str, String)> {
+    let Some(proof) = &acknowledgement.timing else {
+        return Ok((
+            EffectiveAt {
+                observed_at: Timestamp::from_system_time(SystemTime::now()),
+                musical_beat: None,
+                backend_time_seconds: None,
+            },
+            None,
+        ));
+    };
+
+    if proof.kind == ActivationTimingKind::Scheduled {
+        let Some(expected) = boundary.deadline.map(|_| boundary.backend_time_seconds) else {
+            return Err((
+                "immediate_activation_timing_unproven",
+                "a scheduling acknowledgement cannot prove immediate execution time".into(),
+            ));
+        };
+        if proof.backend_time_seconds != expected {
+            return Err((
+                "activation_backend_time_mismatch",
+                format!(
+                    "the backend acknowledged scheduled time {}, expected {}",
+                    proof.backend_time_seconds.get(),
+                    expected.get()
+                ),
+            ));
+        }
+        if let (Some(expected), Some(actual)) = (boundary.requested_beat, proof.musical_beat) {
+            if actual != expected {
+                return Err((
+                    "activation_musical_time_mismatch",
+                    format!(
+                        "the backend acknowledged musical beat {}, expected {}",
+                        actual.get(),
+                        expected.get()
+                    ),
+                ));
+            }
+        }
+    }
+
+    let effective = EffectiveAt {
+        observed_at: proof.observed_at.clone(),
+        musical_beat: proof.musical_beat,
+        backend_time_seconds: Some(proof.backend_time_seconds),
+    };
+    let has_tail = boundary.audible_tail_beats.is_some() || boundary.audible_tail_seconds.is_some();
+    let audible_tail_until = if has_tail {
+        let musical_beat = match (proof.musical_beat, boundary.audible_tail_beats) {
+            (Some(beat), Some(tail)) => Some(BeatTicks::new(
+                beat.get().checked_add(tail.get()).ok_or((
+                    "activation_timing_overflow",
+                    "the acknowledged musical time overflows the audible tail".into(),
+                ))?,
+            )),
+            _ => None,
+        };
+        let backend_time_seconds = match boundary.audible_tail_seconds {
+            Some(tail) => Some(
+                FiniteSeconds::new(proof.backend_time_seconds.get() + tail.get()).map_err(
+                    |_| {
+                        (
+                            "activation_timing_overflow",
+                            "the acknowledged backend time overflows the audible tail".into(),
+                        )
+                    },
+                )?,
+            ),
+            None => Some(proof.backend_time_seconds),
+        };
+        Some(EffectiveAt {
+            observed_at: proof.observed_at.clone(),
+            musical_beat,
+            backend_time_seconds,
+        })
+    } else {
+        None
+    };
+    Ok((effective, audible_tail_until))
 }
 
 fn uncertain_plan_components(
@@ -1886,7 +2293,7 @@ async fn cleanup_unactivated_resources<D: NativeGenerationDriver>(
     correlations: &mut CorrelationLedger,
 ) -> CleanupHealth {
     let mut issues = Vec::new();
-    let retirement = match resources.discard_stage(plan.resource_stage.stage()) {
+    let retirement = match resources.discard_snapshot(&plan.resource_stage) {
         Ok(retirement) => retirement,
         Err(error) => {
             issues.push(format!("resource stage discard failed: {error}"));
@@ -1943,7 +2350,7 @@ async fn cleanup_staged<D: NativeGenerationDriver>(
     quarantined_roots: &mut HashSet<NodeId>,
 ) -> CleanupHealth {
     let mut issues = Vec::new();
-    let retirement = match resources.discard_stage(plan.resource_stage.stage()) {
+    let retirement = match resources.discard_snapshot(&plan.resource_stage) {
         Ok(retirement) => retirement,
         Err(error) => {
             issues.push(format!("resource stage discard failed: {error}"));
@@ -2167,7 +2574,8 @@ mod tests {
         ReferenceCatalog,
     };
     use crate::resource_manager::{
-        GenerationHealth, LogicalResource, ResourceAccounting, ResourceKind, SampleIdentity,
+        GenerationHealth, LogicalResource, ResourceAccounting, ResourceError, ResourceKind,
+        ResourceStage, ResourceStageOwner, ResourceStageState, SampleIdentity,
     };
     use parking_lot::Mutex;
     use std::collections::HashSet;
@@ -2199,22 +2607,54 @@ mod tests {
 
     #[derive(Debug)]
     struct FaultDriver {
+        identity: &'static str,
         next: Mutex<u64>,
         faults: Mutex<HashSet<Fault>>,
         wrong_acks: Mutex<HashSet<Fault>>,
         exact_acknowledgements: bool,
         duplicate_correlations: bool,
+        timing_proof: Mutex<Option<ActivationTimingProof>>,
+        stage_race: Mutex<Option<StageRace>>,
+        stage_race_results: Mutex<
+            Vec<(
+                StageRacePoint,
+                Result<(), ResourceError>,
+                Result<(), ResourceError>,
+            )>,
+        >,
+        competing_commit: Mutex<Option<(ResourceManager, ResourceStage)>>,
+        competing_commit_result: Mutex<Option<Result<(), ResourceError>>>,
         events: Mutex<Vec<String>>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum StageRacePoint {
+        AfterPrepare,
+        AfterActivation,
+        AtCommit,
+    }
+
+    #[derive(Debug)]
+    struct StageRace {
+        point: StageRacePoint,
+        resources: ResourceManager,
+        stage: ResourceStage,
     }
 
     impl Default for FaultDriver {
         fn default() -> Self {
             Self {
+                identity: "mock",
                 next: Mutex::new(0),
                 faults: Mutex::new(HashSet::new()),
                 wrong_acks: Mutex::new(HashSet::new()),
                 exact_acknowledgements: true,
                 duplicate_correlations: false,
+                timing_proof: Mutex::new(None),
+                stage_race: Mutex::new(None),
+                stage_race_results: Mutex::new(Vec::new()),
+                competing_commit: Mutex::new(None),
+                competing_commit_result: Mutex::new(None),
                 events: Mutex::new(Vec::new()),
             }
         }
@@ -2239,6 +2679,60 @@ mod tests {
             Self {
                 duplicate_correlations: true,
                 ..Self::default()
+            }
+        }
+
+        fn with_timing_proof(proof: ActivationTimingProof) -> Self {
+            Self {
+                timing_proof: Mutex::new(Some(proof)),
+                ..Self::default()
+            }
+        }
+
+        fn with_stage_race(
+            point: StageRacePoint,
+            resources: ResourceManager,
+            stage: ResourceStage,
+        ) -> Self {
+            Self {
+                stage_race: Mutex::new(Some(StageRace {
+                    point,
+                    resources,
+                    stage,
+                })),
+                ..Self::default()
+            }
+        }
+
+        fn with_competing_commit(resources: ResourceManager, stage: ResourceStage) -> Self {
+            Self {
+                competing_commit: Mutex::new(Some((resources, stage))),
+                ..Self::default()
+            }
+        }
+
+        fn with_identity(identity: &'static str) -> Self {
+            Self {
+                identity,
+                ..Self::default()
+            }
+        }
+
+        fn run_stage_race(&self, point: StageRacePoint) {
+            let race = {
+                let mut race = self.stage_race.lock();
+                if race.as_ref().is_some_and(|race| race.point == point) {
+                    race.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(race) = race {
+                let commit = race.resources.commit_stage(race.stage).map(|_| ());
+                let discard = race.resources.discard_stage(race.stage).map(|_| ());
+                self.stage_race_results
+                    .lock()
+                    .push((point, commit, discard));
             }
         }
 
@@ -2272,6 +2766,10 @@ mod tests {
     impl NativeGenerationDriver for FaultDriver {
         type Error = DriverError;
 
+        fn backend_identity(&self) -> &str {
+            self.identity
+        }
+
         fn has_exact_component_acknowledgements(&self) -> bool {
             self.exact_acknowledgements
         }
@@ -2280,14 +2778,14 @@ mod tests {
             self.fail(Fault::CorrelationExhaustion)?;
             if self.duplicate_correlations {
                 return Ok(BackendCorrelation {
-                    backend: "mock".into(),
+                    backend: self.identity.into(),
                     token: "sync-1".into(),
                 });
             }
             let mut next = self.next.lock();
             *next += 1;
             Ok(BackendCorrelation {
-                backend: "mock".into(),
+                backend: self.identity.into(),
                 token: format!("sync-{next}"),
             })
         }
@@ -2297,6 +2795,7 @@ mod tests {
             _allocation: &GenerationAllocation,
             expected: &BackendCorrelation,
         ) -> Result<BackendCorrelation, Self::Error> {
+            self.run_stage_race(StageRacePoint::AfterPrepare);
             self.ack(Fault::Root, expected)
         }
 
@@ -2329,12 +2828,21 @@ mod tests {
             &self,
             _activation: &ActivationSwitch,
             expected: &BackendCorrelation,
-        ) -> Result<BackendCorrelation, Self::Error> {
+        ) -> Result<ActivationAcknowledgement, Self::Error> {
             self.fail(Fault::ActivationSendFailure)?;
-            self.ack(Fault::Activation, expected)
+            self.run_stage_race(StageRacePoint::AfterActivation);
+            Ok(ActivationAcknowledgement {
+                correlation: self.ack(Fault::Activation, expected)?,
+                timing: self.timing_proof.lock().clone(),
+            })
         }
 
         async fn precommit(&self, _plan: &NativeGenerationPlan) -> Result<(), Self::Error> {
+            self.run_stage_race(StageRacePoint::AtCommit);
+            if let Some((resources, stage)) = self.competing_commit.lock().take() {
+                *self.competing_commit_result.lock() =
+                    Some(resources.commit_stage(stage).map(|_| ()));
+            }
             self.fail(Fault::Commit)
         }
 
@@ -2394,6 +2902,20 @@ mod tests {
         }
     }
 
+    fn timing_proof(
+        kind: ActivationTimingKind,
+        backend_time_seconds: f64,
+        musical_beat: Option<BeatTicks>,
+    ) -> ActivationTimingProof {
+        ActivationTimingProof {
+            kind,
+            observed_at: Timestamp::parse("2026-07-19T01:00:00Z").expect("timestamp"),
+            backend_time_seconds: FiniteSeconds::new(backend_time_seconds)
+                .expect("finite backend time"),
+            musical_beat,
+        }
+    }
+
     fn plan(
         resources: &ResourceManager,
         phases: &[StagePhase],
@@ -2436,6 +2958,7 @@ mod tests {
                 .expect("revision"),
             revision: revision(RuntimeEpoch::new(), confirmed),
             atomicity: AtomicAdmission::BestEffort,
+            atomic_backend: None,
             allocation: GenerationAllocation {
                 generation: GraphGeneration::new(2).expect("generation"),
                 root: NodeId::new(1001),
@@ -2463,10 +2986,9 @@ mod tests {
         let candidate = empty_candidate(epoch);
         let planner = NativeGenerationPlanner;
         let revision = revision(epoch, None);
-        let resources = ResourceManager::new();
-        let stage = resources.begin_stage().expect("resource stage");
-        let snapshot = resources.snapshot_stage(stage).expect("resource snapshot");
         let make = || {
+            let resources = ResourceManager::new();
+            let stage = resources.begin_stage().expect("resource stage");
             planner.plan_captured(
                 &candidate,
                 RevisionId::new(1).expect("revision"),
@@ -2478,17 +3000,18 @@ mod tests {
                     root: NodeId::new(1000),
                     parent: NodeId::new(1),
                 },
-                snapshot.clone(),
+                resources.snapshot_stage(stage).expect("resource snapshot"),
                 Vec::new(),
                 boundary(),
                 48_000.0,
                 64,
             )
         };
-        assert_eq!(
-            make().expect("first").digest(),
-            make().expect("second").digest()
-        );
+        let first = make().expect("first");
+        let second = make().expect("second");
+        assert_eq!(first.digest(), second.digest());
+        let resources = ResourceManager::new();
+        let stage = resources.begin_stage().expect("resource stage");
         assert_eq!(
             planner.plan_captured(
                 &candidate,
@@ -2501,7 +3024,7 @@ mod tests {
                     root: NodeId::new(1000),
                     parent: NodeId::new(1),
                 },
-                snapshot,
+                resources.snapshot_stage(stage).expect("resource snapshot"),
                 Vec::new(),
                 boundary(),
                 48_000.0,
@@ -2514,15 +3037,14 @@ mod tests {
     #[test]
     fn boundary_and_tail_are_quantized_and_reported() {
         let quantized = quantize_boundary(boundary(), 48_000.0, 64).expect("boundary");
-        let seconds = quantized
-            .effective
-            .backend_time_seconds
-            .expect("backend time")
-            .get();
+        let seconds = quantized.backend_time_seconds.get();
         assert!((seconds - 1.0013333333333334).abs() < 1e-12);
-        let tail = quantized.audible_tail_until.expect("tail");
-        assert_eq!(tail.musical_beat, Some(BeatTicks::new(98_304)));
-        assert!((tail.backend_time_seconds.expect("time").get() - (seconds + 0.25)).abs() < 1e-12);
+        assert_eq!(quantized.requested_beat, Some(BeatTicks::new(65_536)));
+        assert_eq!(quantized.audible_tail_beats, Some(BeatTicks::new(32_768)));
+        assert_eq!(
+            quantized.audible_tail_seconds.map(FiniteSeconds::get),
+            Some(0.25)
+        );
     }
 
     #[test]
@@ -2542,6 +3064,216 @@ mod tests {
             quantize_boundary(tail_overflow, 1.0, 1),
             Err(GenerationError::InvalidBoundary)
         );
+    }
+
+    #[tokio::test]
+    async fn timing_receipts_omit_unproven_immediate_claims_and_publish_correlated_execution() {
+        let base = RevisionId::new(1).expect("revision");
+        let resources = ResourceManager::new();
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let unproven = coordinator
+            .execute(
+                plan(&resources, &[StagePhase::Create], Some(base)),
+                &resources,
+                &FaultDriver::default(),
+            )
+            .await;
+        assert!(matches!(
+            unproven,
+            GenerationOutcome::Applied {
+                receipt: Applied {
+                    effective_at: EffectiveAt {
+                        musical_beat: None,
+                        backend_time_seconds: None,
+                        ..
+                    },
+                    audible_tail_until: None,
+                    ref confirmations,
+                    ref components,
+                },
+                ..
+            } if confirmations.len() == 3
+                && components.iter().all(|component| component
+                    .effective_at
+                    .as_ref()
+                    .is_some_and(|effective| effective.musical_beat.is_none()
+                        && effective.backend_time_seconds.is_none()))
+        ));
+
+        let resources = ResourceManager::new();
+        let proof = timing_proof(
+            ActivationTimingKind::Executed,
+            1.25,
+            Some(BeatTicks::new(70_000)),
+        );
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let proven = coordinator
+            .execute(
+                plan(&resources, &[StagePhase::Create], Some(base)),
+                &resources,
+                &FaultDriver::with_timing_proof(proof.clone()),
+            )
+            .await;
+        let GenerationOutcome::Applied { receipt, .. } = proven else {
+            panic!("correlated execution timing must apply")
+        };
+        assert_eq!(receipt.effective_at.observed_at, proof.observed_at);
+        assert_eq!(
+            receipt.effective_at.backend_time_seconds,
+            Some(proof.backend_time_seconds)
+        );
+        assert_eq!(receipt.effective_at.musical_beat, proof.musical_beat);
+        assert_eq!(receipt.confirmations.len(), 4);
+        let tail = receipt.audible_tail_until.expect("correlated tail");
+        assert_eq!(tail.musical_beat, Some(BeatTicks::new(102_768)));
+        assert_eq!(tail.backend_time_seconds.map(FiniteSeconds::get), Some(1.5));
+    }
+
+    #[tokio::test]
+    async fn scheduled_late_mismatch_and_overflow_timing_paths_are_truthful() {
+        let base = RevisionId::new(1).expect("revision");
+
+        let resources = ResourceManager::new();
+        let mut immediate = plan(&resources, &[], Some(base));
+        immediate.boundary.deadline = None;
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let outcome = coordinator
+            .execute(
+                immediate,
+                &resources,
+                &FaultDriver::with_timing_proof(timing_proof(
+                    ActivationTimingKind::Scheduled,
+                    1.0013333333333334,
+                    Some(BeatTicks::new(65_536)),
+                )),
+            )
+            .await;
+        assert!(matches!(
+            outcome,
+            GenerationOutcome::Rejected {
+                receipt: Rejected {
+                    ref code,
+                    rollback: RollbackState::Confirmed,
+                    preserved_revision: Some(revision),
+                    ..
+                },
+                cleanup: CleanupHealth::Clean,
+            } if code == "immediate_activation_timing_unproven" && revision == base
+        ));
+
+        let resources = ResourceManager::new();
+        let mut future = plan(&resources, &[], Some(base));
+        future.boundary.deadline = Some(Instant::now());
+        let expected = future.boundary.backend_time_seconds;
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let scheduled = coordinator
+            .execute(
+                future,
+                &resources,
+                &FaultDriver::with_timing_proof(timing_proof(
+                    ActivationTimingKind::Scheduled,
+                    expected.get(),
+                    Some(BeatTicks::new(65_536)),
+                )),
+            )
+            .await;
+        assert!(matches!(
+            scheduled,
+            GenerationOutcome::Applied {
+                receipt: Applied {
+                    effective_at: EffectiveAt {
+                        backend_time_seconds: Some(actual),
+                        musical_beat: Some(beat),
+                        ..
+                    },
+                    ..
+                },
+                ..
+            } if actual == expected && beat == BeatTicks::new(65_536)
+        ));
+
+        let resources = ResourceManager::new();
+        let mut future = plan(&resources, &[], Some(base));
+        future.boundary.deadline = Some(Instant::now());
+        let expected = future.boundary.backend_time_seconds.get();
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let mismatch = coordinator
+            .execute(
+                future,
+                &resources,
+                &FaultDriver::with_timing_proof(timing_proof(
+                    ActivationTimingKind::Scheduled,
+                    expected + 1.0,
+                    Some(BeatTicks::new(65_536)),
+                )),
+            )
+            .await;
+        assert!(matches!(
+            mismatch,
+            GenerationOutcome::Rejected {
+                receipt: Rejected {
+                    ref code,
+                    rollback: RollbackState::Confirmed,
+                    ..
+                },
+                cleanup: CleanupHealth::Clean,
+            } if code == "activation_backend_time_mismatch"
+        ));
+
+        let resources = ResourceManager::new();
+        let mut late = plan(&resources, &[], Some(base));
+        late.boundary.deadline = Some(Instant::now());
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let late = coordinator
+            .execute(
+                late,
+                &resources,
+                &FaultDriver::with_timing_proof(timing_proof(
+                    ActivationTimingKind::Executed,
+                    2.5,
+                    Some(BeatTicks::new(80_000)),
+                )),
+            )
+            .await;
+        assert!(matches!(
+            late,
+            GenerationOutcome::Applied {
+                receipt: Applied {
+                    effective_at: EffectiveAt {
+                        backend_time_seconds: Some(actual),
+                        musical_beat: Some(beat),
+                        ..
+                    },
+                    ..
+                },
+                ..
+            } if actual.get() == 2.5 && beat == BeatTicks::new(80_000)
+        ));
+
+        let resources = ResourceManager::new();
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let overflow = coordinator
+            .execute(
+                plan(&resources, &[], Some(base)),
+                &resources,
+                &FaultDriver::with_timing_proof(timing_proof(
+                    ActivationTimingKind::Executed,
+                    1.0,
+                    Some(BeatTicks::new(i64::MAX)),
+                )),
+            )
+            .await;
+        assert!(matches!(
+            overflow,
+            GenerationOutcome::Rejected {
+                receipt: Rejected {
+                    ref code,
+                    rollback: RollbackState::Confirmed,
+                    ..
+                },
+                cleanup: CleanupHealth::Clean,
+            } if code == "activation_timing_overflow"
+        ));
     }
 
     #[test]
@@ -2626,6 +3358,188 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn inactive_topology_resolves_all_add_actions_without_escaping_the_root() {
+        let allocation = GenerationAllocation {
+            generation: GraphGeneration::new(7).expect("generation"),
+            root: NodeId::new(1001),
+            parent: NodeId::new(1),
+        };
+        let components = vec![
+            NativePlanComponent {
+                declaration: "group/anchor".into(),
+                path: "group/anchor".into(),
+                operation: NativeStageOperation::CreateGroup {
+                    node: NodeId::new(2000),
+                    target: allocation.root,
+                    action: AddAction::Head,
+                },
+            },
+            NativePlanComponent {
+                declaration: "group/before".into(),
+                path: "group/before".into(),
+                operation: NativeStageOperation::CreateGroup {
+                    node: NodeId::new(2001),
+                    target: NodeId::new(2000),
+                    action: AddAction::Before,
+                },
+            },
+            NativePlanComponent {
+                declaration: "voice/definition".into(),
+                path: "voice/definition".into(),
+                operation: NativeStageOperation::LoadSynthDef {
+                    name: "voice__g7".into(),
+                    bytes: Arc::from([1_u8]),
+                },
+            },
+            NativePlanComponent {
+                declaration: "voice/tail".into(),
+                path: "voice/tail".into(),
+                operation: NativeStageOperation::CreateSynth {
+                    definition: "voice__g7".into(),
+                    node: NodeId::new(3000),
+                    target: allocation.root,
+                    action: AddAction::Tail,
+                    params: ParamMap::new(),
+                },
+            },
+            NativePlanComponent {
+                declaration: "voice/after".into(),
+                path: "voice/after".into(),
+                operation: NativeStageOperation::CreateSynth {
+                    definition: "voice__g7".into(),
+                    node: NodeId::new(3001),
+                    target: NodeId::new(3000),
+                    action: AddAction::After,
+                    params: ParamMap::new(),
+                },
+            },
+            NativePlanComponent {
+                declaration: "effect/definition".into(),
+                path: "effect/definition".into(),
+                operation: NativeStageOperation::LoadSynthDef {
+                    name: "effect__g7".into(),
+                    bytes: Arc::from([2_u8]),
+                },
+            },
+            NativePlanComponent {
+                declaration: "effect/replace".into(),
+                path: "effect/replace".into(),
+                operation: NativeStageOperation::CreateEffect {
+                    definition: "effect__g7".into(),
+                    node: NodeId::new(4000),
+                    target: NodeId::new(3001),
+                    action: AddAction::Replace,
+                    params: ParamMap::new(),
+                },
+            },
+        ];
+        let topology =
+            validate_inactive_operations(&allocation, &components).expect("contained topology");
+        assert!(topology.depths.values().all(|depth| *depth == 1));
+        assert!(topology.creation_order[&2000] < topology.creation_order[&2001]);
+        assert!(topology.creation_order[&3000] < topology.creation_order[&3001]);
+        assert!(topology.creation_order[&3001] < topology.creation_order[&4000]);
+        let mut sorted = components.clone();
+        sort_components(&mut sorted, &topology);
+        let sorted_nodes = sorted
+            .iter()
+            .filter_map(|component| match &component.operation {
+                NativeStageOperation::CreateGroup { node, .. }
+                | NativeStageOperation::CreateSynth { node, .. }
+                | NativeStageOperation::CreateEffect { node, .. } => Some(node.raw()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let position = |node| {
+            sorted_nodes
+                .iter()
+                .position(|candidate| *candidate == node)
+                .expect("sorted node")
+        };
+        assert!(position(2000) < position(2001));
+        assert!(position(3000) < position(3001));
+        assert!(position(3001) < position(4000));
+
+        for kind in [
+            PlannedNodeKind::Group,
+            PlannedNodeKind::Synth,
+            PlannedNodeKind::Effect,
+        ] {
+            for action in [
+                AddAction::Head,
+                AddAction::Tail,
+                AddAction::Before,
+                AddAction::After,
+                AddAction::Replace,
+            ] {
+                let target = if matches!(action, AddAction::Head | AddAction::Tail) {
+                    allocation.parent
+                } else {
+                    allocation.root
+                };
+                let operation = match kind {
+                    PlannedNodeKind::Group => NativeStageOperation::CreateGroup {
+                        node: NodeId::new(5000),
+                        target,
+                        action,
+                    },
+                    PlannedNodeKind::Synth => NativeStageOperation::CreateSynth {
+                        definition: "escape__g7".into(),
+                        node: NodeId::new(5000),
+                        target,
+                        action,
+                        params: ParamMap::new(),
+                    },
+                    PlannedNodeKind::Effect => NativeStageOperation::CreateEffect {
+                        definition: "escape__g7".into(),
+                        node: NodeId::new(5000),
+                        target,
+                        action,
+                        params: ParamMap::new(),
+                    },
+                };
+                let mut attack = Vec::new();
+                if kind != PlannedNodeKind::Group {
+                    attack.push(NativePlanComponent {
+                        declaration: "escape/definition".into(),
+                        path: "escape/definition".into(),
+                        operation: NativeStageOperation::LoadSynthDef {
+                            name: "escape__g7".into(),
+                            bytes: Arc::from([3_u8]),
+                        },
+                    });
+                }
+                attack.push(NativePlanComponent {
+                    declaration: "escape/node".into(),
+                    path: "escape/node".into(),
+                    operation,
+                });
+                assert!(matches!(
+                    validate_inactive_operations(&allocation, &attack),
+                    Err(GenerationError::InvalidPlan(message))
+                        if message.contains("inactive generation root")
+                            || message.contains("inactive root")
+                ));
+            }
+        }
+
+        let mut invalid_update = components;
+        invalid_update.push(NativePlanComponent {
+            declaration: "voice/replaced-update".into(),
+            path: "voice/replaced-update".into(),
+            operation: NativeStageOperation::SetParams {
+                node: NodeId::new(3001),
+                params: ParamMap::new(),
+            },
+        });
+        assert!(matches!(
+            validate_inactive_operations(&allocation, &invalid_update),
+            Err(GenerationError::InvalidPlan(message))
+                if message.contains("removed by a staged replacement")
+        ));
+    }
+
     #[tokio::test]
     async fn next_generation_cannot_alias_or_descend_from_the_active_root() {
         let base = RevisionId::new(1).expect("revision");
@@ -2654,6 +3568,203 @@ mod tests {
             assert_eq!(coordinator.active().map(|value| value.revision), Some(base));
             assert!(driver.events.lock().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn captured_stage_excludes_external_terminal_races_at_every_execution_boundary() {
+        let base = RevisionId::new(1).expect("revision");
+        for point in [
+            StageRacePoint::AfterPrepare,
+            StageRacePoint::AfterActivation,
+            StageRacePoint::AtCommit,
+        ] {
+            let resources = ResourceManager::new();
+            let mut planned = plan(&resources, &[], Some(base));
+            let stage = planned.resource_stage.stage();
+            planned.resource_stage.capture().expect("capture");
+            assert_eq!(
+                resources.commit_stage(stage),
+                Err(ResourceError::StageCaptured(stage))
+            );
+            assert_eq!(
+                resources.discard_stage(stage),
+                Err(ResourceError::StageCaptured(stage))
+            );
+
+            let driver = FaultDriver::with_stage_race(point, resources.clone(), stage);
+            let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+            let outcome = coordinator.execute(planned, &resources, &driver).await;
+            assert!(
+                matches!(outcome, GenerationOutcome::Applied { .. }),
+                "{point:?}"
+            );
+            assert_eq!(
+                *driver.stage_race_results.lock(),
+                vec![(
+                    point,
+                    Err(ResourceError::StageCaptured(stage)),
+                    Err(ResourceError::StageCaptured(stage)),
+                )]
+            );
+            assert_eq!(
+                resources.stage_state(stage),
+                Some(ResourceStageState::Committed(
+                    ResourceStageOwner::Transaction
+                ))
+            );
+            assert_eq!(
+                coordinator.active().map(|active| active.revision.get()),
+                Some(2)
+            );
+            assert!(!coordinator.is_fenced());
+        }
+    }
+
+    #[tokio::test]
+    async fn executing_backend_identity_must_match_required_atomic_proof() {
+        let resources = ResourceManager::new();
+        let base = RevisionId::new(1).expect("revision");
+        let mut planned = plan(&resources, &[], Some(base));
+        planned.atomicity = AtomicAdmission::Required;
+        planned.atomic_backend = Some("proved-backend".into());
+        let stage = planned.resource_stage.stage();
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let outcome = coordinator
+            .execute(
+                planned,
+                &resources,
+                &FaultDriver::with_identity("executing-backend"),
+            )
+            .await;
+        assert!(matches!(
+            outcome,
+            GenerationOutcome::Rejected {
+                receipt: Rejected {
+                    phase: FailurePhase::Capability,
+                    ref code,
+                    rollback: RollbackState::NotNeeded,
+                    preserved_revision: Some(revision),
+                    ..
+                },
+                cleanup: CleanupHealth::Clean,
+            } if code == "executing_backend_identity_mismatch" && revision == base
+        ));
+        assert_eq!(
+            resources.stage_state(stage),
+            Some(ResourceStageState::Discarded(
+                ResourceStageOwner::Transaction
+            ))
+        );
+        assert_eq!(
+            coordinator.active().map(|active| active.revision),
+            Some(base)
+        );
+        assert!(!coordinator.is_fenced());
+    }
+
+    #[tokio::test]
+    async fn real_resource_commit_failure_restores_graph_and_fences_split_authority() {
+        let resources = ResourceManager::new();
+        let key = LogicalResource::new(ResourceKind::Sample, "sample/commit-race")
+            .expect("logical resource");
+        let old_stage = resources.begin_stage().expect("old stage");
+        let old = resources
+            .stage_sample(
+                old_stage,
+                key.clone(),
+                SampleIdentity {
+                    canonical_source: "/commit-race.wav".into(),
+                    content_fingerprint: "sha256:old".into(),
+                    decode_options_digest: "decode".into(),
+                    loader_version: "loader".into(),
+                    backend: "mock".into(),
+                },
+                [PhysicalResourceId::Buffer(500)],
+            )
+            .expect("old resource");
+        resources.commit_stage(old_stage).expect("old commit");
+
+        let base = RevisionId::new(1).expect("revision");
+        let mut planned = plan(&resources, &[], Some(base));
+        let planned_stage = planned.resource_stage.stage();
+        let replacement = resources
+            .stage_sample(
+                planned_stage,
+                key.clone(),
+                SampleIdentity {
+                    canonical_source: "/commit-race.wav".into(),
+                    content_fingerprint: "sha256:planned".into(),
+                    decode_options_digest: "decode".into(),
+                    loader_version: "loader".into(),
+                    backend: "mock".into(),
+                },
+                [PhysicalResourceId::Buffer(501)],
+            )
+            .expect("planned replacement");
+        planned.components.push(NativePlanComponent {
+            declaration: "resource/commit-race".into(),
+            path: "resource/commit-race".into(),
+            operation: NativeStageOperation::Resource {
+                logical: key.clone(),
+                generation: replacement.generation,
+            },
+        });
+        planned.resource_stage = resources
+            .snapshot_stage(planned_stage)
+            .expect("planned snapshot");
+
+        let competing_stage = resources.begin_stage().expect("competing stage");
+        let competing = resources
+            .stage_sample(
+                competing_stage,
+                key.clone(),
+                SampleIdentity {
+                    canonical_source: "/commit-race.wav".into(),
+                    content_fingerprint: "sha256:competing".into(),
+                    decode_options_digest: "decode".into(),
+                    loader_version: "loader".into(),
+                    backend: "mock".into(),
+                },
+                [PhysicalResourceId::Buffer(502)],
+            )
+            .expect("competing replacement");
+        let driver = FaultDriver::with_competing_commit(resources.clone(), competing_stage);
+        let mut coordinator = NativeGenerationCoordinator::new(Some(active(base)));
+        let outcome = coordinator.execute(planned, &resources, &driver).await;
+        assert!(matches!(
+            outcome,
+            GenerationOutcome::Partial {
+                receipt: Partial {
+                    phase: FailurePhase::Reconcile,
+                    ref code,
+                    rollback: RollbackState::Confirmed,
+                    fenced: true,
+                    last_confirmed_revision: Some(revision),
+                    ref components,
+                },
+                cleanup: CleanupHealth::Clean,
+            } if code == "resource_commit_failed_authority_unproven"
+                && revision == base
+                && components.iter().all(|component| component.state == ComponentState::Uncertain)
+        ));
+        assert_eq!(*driver.competing_commit_result.lock(), Some(Ok(())));
+        assert_eq!(resources.generation_for(&key), Some(competing.generation));
+        assert_ne!(resources.generation_for(&key), Some(old.generation));
+        assert_eq!(
+            resources.stage_state(planned_stage),
+            Some(ResourceStageState::Discarded(
+                ResourceStageOwner::Transaction
+            ))
+        );
+        assert_eq!(
+            resources.stage_state(competing_stage),
+            Some(ResourceStageState::Committed(ResourceStageOwner::External))
+        );
+        assert_eq!(
+            coordinator.active().map(|active| active.revision),
+            Some(base)
+        );
+        assert!(coordinator.is_fenced());
     }
 
     #[tokio::test]

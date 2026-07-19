@@ -566,7 +566,7 @@ async fn restoration_cleanup_and_commit_enforce_rejected_partial_and_applied_ter
             },
             ref generation,
             cleanup: CleanupHealth::Degraded(_),
-        } if confirmations.len() == 4
+        } if confirmations.len() == 3
             && components.iter().all(|component| component.state == ComponentState::Applied)
             && generation.revision.get() == 2
     ));
@@ -581,12 +581,7 @@ async fn restoration_cleanup_and_commit_enforce_rejected_partial_and_applied_ter
 fn quantized_timing_and_exact_resource_stage_reject_nonfinite_overflow_and_drift() {
     let quantized = quantize_boundary(boundary(), 48_000.0, 64).expect("quantized boundary");
     assert_eq!(
-        quantized
-            .effective
-            .backend_time_seconds
-            .expect("backend time")
-            .get()
-            .to_bits(),
+        quantized.backend_time_seconds.get().to_bits(),
         1.0013333333333334_f64.to_bits()
     );
     let mut nonfinite = boundary();
