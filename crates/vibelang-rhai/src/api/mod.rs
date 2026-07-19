@@ -81,3 +81,17 @@ pub fn register_api(engine: &mut Engine) {
     #[cfg(feature = "midi")]
     midi::register(engine);
 }
+
+/// Install the vibe-api 2 authoring-family surface into a Rhai engine.
+///
+/// Families install in the deterministic M08 order: Group, Voice, Pattern,
+/// Melody, then Sequence. The sequence module also owns the Fade, Effect,
+/// SynthDef, and EffectDef families and layers them over the DSP surface it
+/// installs first, so it must stay last.
+pub(crate) fn install_v2_api(engine: &mut Engine) {
+    group::install_v2(engine);
+    voice::install_v2(engine);
+    pattern::install_v2(engine);
+    melody::install_v2(engine);
+    sequence::install_v2(engine);
+}

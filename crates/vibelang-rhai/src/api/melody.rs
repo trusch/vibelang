@@ -1461,8 +1461,7 @@ fn melody_v2_error(error: FoundationError, position: Position) -> Box<EvalAltRes
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     engine
         .register_type_with_name::<MelodyContent>("MelodyContent")
         .register_type_with_name::<MelodyBuilder>("MelodyBuilder")

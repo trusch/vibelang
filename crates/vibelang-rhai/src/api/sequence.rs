@@ -2208,8 +2208,7 @@ fn sequence_v2_error(error: FoundationError, position: Position) -> Box<EvalAltR
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     vibelang_dsp::register_dsp_api(engine);
     engine
         .register_type_with_name::<FadeBuilder>("FadeBuilder")
@@ -3054,7 +3053,7 @@ mod tests {
         foundation::begin_evaluation(v2_identity()).unwrap();
         let group = group_ref("mix");
         let mut engine = Engine::new();
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let spline = engine
             .eval::<FadeBuilder>(r#"fade("spline").spline([0.0, 0.0, 0.5, 0.75])"#)
             .unwrap();
@@ -3222,7 +3221,7 @@ mod tests {
         foundation::abort_evaluation();
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
 
         let synth = engine
             .eval::<SynthDefBuilder>(
@@ -3313,7 +3312,7 @@ mod tests {
         foundation::abort_evaluation();
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let canonical = engine.eval::<EffectBuilder>(r#"effect("room")"#).unwrap();
         let alias = engine.eval::<EffectBuilder>(r#"fx("room")"#).unwrap();
         assert_eq!(canonical, alias);

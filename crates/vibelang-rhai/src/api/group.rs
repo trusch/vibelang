@@ -883,8 +883,7 @@ fn v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     let error = |error| v2_error(error, Position::NONE);
     engine
         .register_type_with_name::<GroupBuilder>("GroupBuilder")
@@ -990,7 +989,7 @@ mod tests {
         foundation::abort_evaluation();
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let alias = engine.eval::<GroupRef>(r#"group("band")"#).unwrap();
         let canonical = engine.eval::<GroupRef>(r#"group_ref("band")"#).unwrap();
         let configured = group_builder_v2("band".into())
@@ -1037,7 +1036,7 @@ mod tests {
         foundation::abort_evaluation();
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         engine
             .eval::<GroupRef>(
                 r#"

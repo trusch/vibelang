@@ -507,6 +507,7 @@ fn v1_engine() -> Engine {
 fn v2_engine(identity: EvaluationIdentity) -> V2Engine {
     let mut engine = base_engine();
     foundation::register(&mut engine);
+    api::install_v2_api(&mut engine);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -1401,6 +1402,39 @@ mod tests {
             panic!("cross-engine rejection must leave no active Candidate");
         };
         assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn v2_engine_installs_all_m08_authoring_families_for_production_scripts() {
+        let mut engine = ScriptEngine::with_v2(v2_config(8)).unwrap();
+        let ScriptEvaluation::V2(candidate) = engine
+            .evaluate(
+                r#"// vibe-api: 2
+define_group("band", || {});
+let lead = voice("lead").synth("sine").apply();
+pattern("kick").on(lead).step("x...").apply();
+melody("hook").on(lead).notes("C4 E4 G4 C5").apply();
+sequence("intro").loop_beats(4.0).apply();
+fade("swell").on_group(group("band")).over(2.0).apply();
+define_synthdef("tone").param("freq", 440.0).body(|freq| dc_ar(0.0)).apply();
+define_effect("room").param("mix", 0.5).body(|input, mix| input).apply();
+fx("verb");
+"#,
+            )
+            .unwrap()
+        else {
+            panic!("the v2 directive must produce a candidate");
+        };
+
+        let keys: std::collections::BTreeSet<_> = candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().key().as_str().to_owned())
+            .collect();
+        for key in ["band", "lead", "kick", "hook", "intro", "swell"] {
+            assert!(keys.contains(key), "missing v2 {key} declaration");
+        }
+        assert_eq!(candidate.dsp_definitions().definitions().count(), 2);
     }
 
     #[test]
