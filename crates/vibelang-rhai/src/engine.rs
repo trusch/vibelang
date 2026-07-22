@@ -1438,6 +1438,51 @@ fx("verb");
     }
 
     #[test]
+    #[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
+    fn v2_engine_installs_all_m09_families_for_production_scripts() {
+        let mut engine = ScriptEngine::with_v2(v2_config(9)).unwrap();
+        let ScriptEvaluation::V2(candidate) = engine
+            .evaluate(
+                r#"// vibe-api: 2
+define_group("band", || {});
+let lead = voice("lead").synth("sine").apply();
+let wob = voice("wob").synth("sine").apply();
+sample("kick", "samples/kick.wav").one_shot().apply();
+buffer("scratch").frames(64).channels(2).clear().apply();
+sfz("piano", "instruments/piano.sfz").apply();
+record("take1")
+    .from(group_ref("band"))
+    .beats(16.0)
+    .to_file("takes/one.wav")
+    .channels(2)
+    .apply();
+output(lead, "out").to(group_ref("band")).apply();
+output(wob, "cv").scale(0.5).set(lead, "cutoff");
+let mpk = midi_device("mpk").port("MPK Mini").input().apply();
+keyboard_route(mpk).channel(2).to(lead);
+"#,
+            )
+            .unwrap()
+        else {
+            panic!("the v2 directive must produce a candidate");
+        };
+
+        let keys: std::collections::BTreeSet<_> = candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().key().as_str().to_owned())
+            .collect();
+        for key in [
+            "band", "lead", "wob", "kick", "scratch", "piano", "take1", "mpk",
+        ] {
+            assert!(keys.contains(key), "missing v2 {key} declaration");
+        }
+        let topology = candidate.route_topology();
+        assert_eq!(topology.audio.len(), 1);
+        assert_eq!(topology.params.len(), 1);
+    }
+
+    #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn imports_inherit_v2_and_cached_cross_major_changes_reject() {
         let dir = write_test_project(&[("helper.vibe", "let helper_value = 1;")]);

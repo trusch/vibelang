@@ -528,9 +528,8 @@ mod tests {
 // ============================================================================
 // Detached v2 MIDI family (M09). Everything below this line sits past the
 // frozen v1 manifest anchors; imports live only in this detached section.
-// The shared install_v2_api root is owned by the M09 registration
-// integration gate; until then only cfg(test) installs reference the
-// install helpers.
+// The install_v2 helper below is wired into the shared
+// api::install_v2_api root by the M09 registration integration landing.
 //
 // V1 names with no v2 respelling (migration classifications):
 // - `midi_device("partial name")` partial case-insensitive matching and the
@@ -1471,9 +1470,6 @@ impl MidiOutBuilder {
     }
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn midi_device_v2(name: String) -> Result<MidiDeviceBuilder, Box<EvalAltResult>> {
     Ok(MidiDeviceBuilder::new(
         foundation::authoring_builder::<MidiDeviceKind>(&name, GroupScope::root())
@@ -1481,9 +1477,6 @@ pub(crate) fn midi_device_v2(name: String) -> Result<MidiDeviceBuilder, Box<Eval
     ))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn midi_device_ref_v2(name: String) -> Result<MidiDeviceRef, Box<EvalAltResult>> {
     MidiDeviceRef::new(
         foundation::authoring_ref::<MidiDeviceKind>(&name, GroupScope::root())
@@ -1492,9 +1485,6 @@ pub(crate) fn midi_device_ref_v2(name: String) -> Result<MidiDeviceRef, Box<Eval
     .map_err(|error| midi_v2_error(&error))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn midi_v2_error(error: &dyn std::fmt::Display) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -1502,8 +1492,7 @@ fn midi_v2_error(error: &dyn std::fmt::Display) -> Box<EvalAltResult> {
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     fn strict<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, Box<EvalAltResult>> {
         result.map_err(|error| midi_v2_error(&error))
     }
@@ -2107,7 +2096,7 @@ mod v2_tests {
 
         let mut engine = Engine::new();
         crate::foundation::register(&mut engine);
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let command = engine
             .eval::<MidiOutputCommand>(
                 r#"

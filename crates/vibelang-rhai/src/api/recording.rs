@@ -562,9 +562,6 @@ impl RecordBuilder {
     }
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn record_builder_v2(name: String) -> Result<RecordBuilder, Box<EvalAltResult>> {
     Ok(RecordBuilder::new(
         foundation::authoring_builder::<RecordingKind>(&name, GroupScope::root())
@@ -572,9 +569,6 @@ pub(crate) fn record_builder_v2(name: String) -> Result<RecordBuilder, Box<EvalA
     ))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn record_ref_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
     RecordRef::new(
         foundation::authoring_ref::<RecordingKind>(&name, GroupScope::root())
@@ -585,9 +579,6 @@ pub(crate) fn record_ref_v2(name: String) -> Result<RecordRef, Box<EvalAltResult
 
 /// Effective replacement for the v1 log-only `stop_recording(id)` stub:
 /// commits a real Stop operation against the typed recording address.
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn stop_recording_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
     record_ref_v2(name)?
         .stop()
@@ -597,18 +588,12 @@ pub(crate) fn stop_recording_v2(name: String) -> Result<RecordRef, Box<EvalAltRe
 /// Effective replacement for the v1 log-only `cancel_recording(id)`
 /// stub: commits a real Cancel operation against the typed recording
 /// address.
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cancel_recording_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
     record_ref_v2(name)?
         .cancel()
         .map_err(|error| record_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn record_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -616,8 +601,7 @@ fn record_v2_error(error: FoundationError, position: Position) -> Box<EvalAltRes
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
         result.map_err(|error| record_v2_error(error, Position::NONE))
     }
@@ -635,6 +619,18 @@ fn install_v2_for_tests(engine: &mut Engine) {
         .register_fn("from_group", |builder: RecordBuilder, source: RefBase| {
             strict(builder.from_group(source))
         })
+        .register_fn(
+            "from",
+            |builder: RecordBuilder, source: super::group::GroupRef| {
+                strict(builder.from(source.base().clone()))
+            },
+        )
+        .register_fn(
+            "from_group",
+            |builder: RecordBuilder, source: super::group::GroupRef| {
+                strict(builder.from_group(source.base().clone()))
+            },
+        )
         .register_fn("beats", |builder: RecordBuilder, beats: f64| {
             strict(builder.beats(beats))
         })
@@ -897,7 +893,7 @@ mod v2_tests {
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
         crate::foundation::register(&mut engine);
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         engine.register_fn(
             "group_ref",
             |name: String| -> Result<RefBase, Box<EvalAltResult>> {

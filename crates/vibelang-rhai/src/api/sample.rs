@@ -820,9 +820,6 @@ impl SampleBuilder {
     }
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn sample_builder_v2(
     name: String,
     source: String,
@@ -835,9 +832,6 @@ pub(crate) fn sample_builder_v2(
     .map_err(|error| sample_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn sample_ref_v2(name: String) -> Result<SampleRef, Box<EvalAltResult>> {
     SampleRef::new(
         foundation::authoring_ref::<SampleKind>(&name, GroupScope::root())
@@ -846,9 +840,6 @@ pub(crate) fn sample_ref_v2(name: String) -> Result<SampleRef, Box<EvalAltResult
     .map_err(|error| sample_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn sample_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -856,8 +847,7 @@ fn sample_v2_error(error: FoundationError, position: Position) -> Box<EvalAltRes
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
         result.map_err(|error| sample_v2_error(error, Position::NONE))
     }
@@ -1073,7 +1063,7 @@ mod v2_tests {
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
         crate::foundation::register(&mut engine);
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let reference = engine
             .eval::<SampleRef>(
                 r#"sample("kick", "samples/kick.wav")

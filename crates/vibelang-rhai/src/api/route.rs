@@ -2745,9 +2745,8 @@ mod tests {
 // ============================================================================
 // Detached v2 route family (M09). Everything below this line sits past the
 // frozen v1 manifest anchors; imports live only in this detached section.
-// The shared install_v2_api root is owned by the M09 registration
-// integration gate; until then only cfg(test) installs reference the
-// install helpers.
+// The install_v2 helper below is wired into the shared
+// api::install_v2_api root by the M09 registration integration landing.
 //
 // V1 names with no v2 respelling (migration classifications):
 // - `.to_current_group()` / `.from_current_group()`: v2 builders are pure
@@ -3241,9 +3240,6 @@ impl ParamRouteBuilder {
     }
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn output_route_v2(
     voice: VoiceRef,
     port: String,
@@ -3251,9 +3247,6 @@ pub(crate) fn output_route_v2(
     OutputRouteBuilder::new(&voice, port).map_err(|error| route_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn input_route_v2(
     voice: VoiceRef,
     port: String,
@@ -3261,9 +3254,6 @@ pub(crate) fn input_route_v2(
     InputRouteBuilder::new(&voice, port).map_err(|error| route_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn param_route_v2(
     voice: VoiceRef,
     param: String,
@@ -3271,9 +3261,6 @@ pub(crate) fn param_route_v2(
     ParamRouteBuilder::new(&voice, param).map_err(|error| route_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn param_route_fx_v2(
     fx: EffectRef,
     param: String,
@@ -3281,9 +3268,6 @@ pub(crate) fn param_route_fx_v2(
     ParamRouteBuilder::new_fx(&fx, param).map_err(|error| route_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn route_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -3291,8 +3275,7 @@ fn route_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResu
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
         result.map_err(|error| route_v2_error(error, Position::NONE))
     }
@@ -3761,7 +3744,7 @@ mod v2_tests {
 
         let mut engine = Engine::new();
         crate::foundation::register(&mut engine);
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let reference = engine
             .eval::<RouteRef>(
                 r#"

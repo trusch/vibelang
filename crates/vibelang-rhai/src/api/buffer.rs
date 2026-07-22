@@ -350,9 +350,6 @@ impl BufferBuilder {
     }
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn buffer_builder_v2(name: String) -> Result<BufferBuilder, Box<EvalAltResult>> {
     Ok(BufferBuilder::new(
         foundation::authoring_builder::<BufferKind>(&name, GroupScope::root())
@@ -363,9 +360,6 @@ pub(crate) fn buffer_builder_v2(name: String) -> Result<BufferBuilder, Box<EvalA
 /// Effective forwarding alias for the v1 `allocate_buffer(name, frames,
 /// channels)` shape. The result is still a pure builder: the v2-required
 /// replacement policy and the `apply` terminal remain explicit.
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn allocate_buffer_v2(
     name: String,
     frames: i64,
@@ -377,9 +371,6 @@ pub(crate) fn allocate_buffer_v2(
         .map_err(|error| buffer_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn buffer_ref_v2(name: String) -> Result<BufferRef, Box<EvalAltResult>> {
     BufferRef::new(
         foundation::authoring_ref::<BufferKind>(&name, GroupScope::root())
@@ -388,9 +379,6 @@ pub(crate) fn buffer_ref_v2(name: String) -> Result<BufferRef, Box<EvalAltResult
     .map_err(|error| buffer_v2_error(error, Position::NONE))
 }
 
-// Wired into the shared install_v2_api root by the M09 registration
-// integration gate; until then only cfg(test) installs reference it.
-#[cfg_attr(not(test), allow(dead_code))]
 fn buffer_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -398,8 +386,7 @@ fn buffer_v2_error(error: FoundationError, position: Position) -> Box<EvalAltRes
     ))
 }
 
-#[cfg(test)]
-fn install_v2_for_tests(engine: &mut Engine) {
+pub(crate) fn install_v2(engine: &mut Engine) {
     fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
         result.map_err(|error| buffer_v2_error(error, Position::NONE))
     }
@@ -522,7 +509,7 @@ mod v2_tests {
         foundation::begin_evaluation(v2_identity()).unwrap();
         let mut engine = Engine::new();
         crate::foundation::register(&mut engine);
-        install_v2_for_tests(&mut engine);
+        install_v2(&mut engine);
         let reference = engine
             .eval::<BufferRef>(r#"allocate_buffer("spec_arrays", 65536, 1).clear().apply()"#)
             .unwrap();
