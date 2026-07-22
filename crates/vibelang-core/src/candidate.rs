@@ -1098,6 +1098,80 @@ pub struct DspDefinitionAuthoring {
     pub definition: DspDefinitionIr,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SampleTriggerAuthoring {
+    Gate,
+    OneShot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SampleWarpAuthoring {
+    pub speed: CanonicalF64,
+    pub pitch: CanonicalF64,
+    pub target_bpm: Option<CanonicalF64>,
+    pub window_size: CanonicalF64,
+    pub overlaps: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SampleAuthoring {
+    pub source: String,
+    pub attack: CanonicalF64,
+    pub sustain: CanonicalF64,
+    pub release: CanonicalF64,
+    pub amp: CanonicalF64,
+    pub rate: CanonicalF64,
+    pub loop_mode: bool,
+    pub offset: CanonicalF64,
+    pub length: Option<CanonicalF64>,
+    pub trigger: SampleTriggerAuthoring,
+    pub warp: Option<SampleWarpAuthoring>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BufferReplacementAuthoring {
+    Clear,
+    CopyOverlap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BufferAuthoring {
+    pub frames: u32,
+    pub channels: u16,
+    pub replacement: BufferReplacementAuthoring,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SfzAuthoring {
+    pub source: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecordingLengthAuthoring {
+    Beats(i64),
+    Seconds(CanonicalF64),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordingAuthoring {
+    pub source: TypedRef<GroupKind>,
+    pub length: Option<RecordingLengthAuthoring>,
+    pub count_in_ticks: i64,
+    pub metronome: bool,
+    pub destination: Option<String>,
+    pub channels: u8,
+    pub lifecycle: DesiredLifecycle,
+}
+
+fn validate_resource_source(value: &str, role: &str) -> Result<(), CandidateError> {
+    if value.is_empty() || value.trim() != value || value.bytes().any(|byte| byte < 0x20) {
+        return Err(CandidateError::InvalidAuthoring(format!(
+            "{role} must be a non-empty path without surrounding whitespace or control bytes"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthoringDeclaration {
     Group(GroupAuthoring),
@@ -1109,6 +1183,10 @@ pub enum AuthoringDeclaration {
     Effect(EffectAuthoring),
     SynthDef(DspDefinitionAuthoring),
     EffectDef(DspDefinitionAuthoring),
+    Sample(SampleAuthoring),
+    Buffer(BufferAuthoring),
+    Sfz(SfzAuthoring),
+    Recording(RecordingAuthoring),
 }
 
 impl AuthoringDeclaration {
@@ -1124,6 +1202,10 @@ impl AuthoringDeclaration {
             Self::Effect(_) => EntityKind::Effect,
             Self::SynthDef(_) => EntityKind::SynthDef,
             Self::EffectDef(_) => EntityKind::EffectDef,
+            Self::Sample(_) => EntityKind::Sample,
+            Self::Buffer(_) => EntityKind::Buffer,
+            Self::Sfz(_) => EntityKind::Sfz,
+            Self::Recording(_) => EntityKind::Recording,
         }
     }
 
@@ -1136,6 +1218,8 @@ impl AuthoringDeclaration {
             Self::Sequence(sequence) => Some(sequence.lifecycle),
             Self::Fade(fade) => Some(fade.lifecycle),
             Self::Effect(_) | Self::SynthDef(_) | Self::EffectDef(_) => None,
+            Self::Sample(_) | Self::Buffer(_) | Self::Sfz(_) => None,
+            Self::Recording(recording) => Some(recording.lifecycle),
         }
     }
 
@@ -1299,6 +1383,92 @@ impl AuthoringDeclaration {
                     return Err(CandidateError::InvalidDspDefinition(
                         "EffectDef declaration contains synth definition IR".into(),
                     ));
+                }
+            }
+            Self::Sample(sample) => {
+                validate_resource_source(&sample.source, "Sample source")?;
+                if sample.attack.get() < 0.0
+                    || sample.release.get() < 0.0
+                    || !(0.0..=1.0).contains(&sample.sustain.get())
+                {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Sample envelope needs non-negative attack/release and sustain in 0.0..=1.0"
+                            .into(),
+                    ));
+                }
+                if sample.amp.get() < 0.0 || sample.rate.get() <= 0.0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Sample amp must be non-negative and rate must be positive".into(),
+                    ));
+                }
+                if sample.offset.get() < 0.0
+                    || sample.length.is_some_and(|length| length.get() <= 0.0)
+                {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Sample offset must be non-negative and length must be positive".into(),
+                    ));
+                }
+                if let Some(warp) = &sample.warp {
+                    if warp.speed.get() <= 0.0
+                        || warp.pitch.get() <= 0.0
+                        || warp.target_bpm.is_some_and(|bpm| bpm.get() <= 0.0)
+                        || !(0.01..=1.0).contains(&warp.window_size.get())
+                        || !(1..=32).contains(&warp.overlaps)
+                    {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Sample warp needs positive speed/pitch/BPM, window in 0.01..=1.0, and overlaps in 1..=32"
+                                .into(),
+                        ));
+                    }
+                }
+            }
+            Self::Buffer(buffer) => {
+                if buffer.frames == 0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Buffer frames must be at least 1".into(),
+                    ));
+                }
+                if !(1..=16).contains(&buffer.channels) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Buffer channels must be in 1..=16".into(),
+                    ));
+                }
+            }
+            Self::Sfz(sfz) => {
+                validate_resource_source(&sfz.source, "SFZ source")?;
+                if !sfz.source.to_ascii_lowercase().ends_with(".sfz") {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "SFZ source must name an .sfz file".into(),
+                    ));
+                }
+            }
+            Self::Recording(recording) => {
+                validate_timeline_lifecycle(recording.lifecycle)?;
+                match &recording.length {
+                    Some(RecordingLengthAuthoring::Beats(ticks)) if *ticks <= 0 => {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Recording length in beats must be positive".into(),
+                        ));
+                    }
+                    Some(RecordingLengthAuthoring::Seconds(seconds)) if seconds.get() <= 0.0 => {
+                        return Err(CandidateError::InvalidAuthoring(
+                            "Recording length in seconds must be positive".into(),
+                        ));
+                    }
+                    _ => {}
+                }
+                if recording.count_in_ticks < 0 {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Recording count-in must be non-negative".into(),
+                    ));
+                }
+                if !(1..=2).contains(&recording.channels) {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "Recording channels must be 1 or 2".into(),
+                    ));
+                }
+                if let Some(destination) = &recording.destination {
+                    validate_resource_source(destination, "Recording destination")?;
                 }
             }
         }
@@ -1647,6 +1817,80 @@ impl AuthoringDeclaration {
                     });
                 }
             }
+            Self::Sample(sample) => {
+                encoder.tag(9);
+                encoder.text(&sample.source);
+                encoder.number(sample.attack);
+                encoder.number(sample.sustain);
+                encoder.number(sample.release);
+                encoder.number(sample.amp);
+                encoder.number(sample.rate);
+                encoder.bool(sample.loop_mode);
+                encoder.number(sample.offset);
+                if let Some(length) = sample.length {
+                    encoder.tag(1);
+                    encoder.number(length);
+                } else {
+                    encoder.tag(0);
+                }
+                encoder.tag(match sample.trigger {
+                    SampleTriggerAuthoring::Gate => 0,
+                    SampleTriggerAuthoring::OneShot => 1,
+                });
+                if let Some(warp) = &sample.warp {
+                    encoder.tag(1);
+                    encoder.number(warp.speed);
+                    encoder.number(warp.pitch);
+                    if let Some(bpm) = warp.target_bpm {
+                        encoder.tag(1);
+                        encoder.number(bpm);
+                    } else {
+                        encoder.tag(0);
+                    }
+                    encoder.number(warp.window_size);
+                    encoder.tag(warp.overlaps);
+                } else {
+                    encoder.tag(0);
+                }
+            }
+            Self::Buffer(buffer) => {
+                encoder.tag(10);
+                encoder.u32(buffer.frames);
+                encoder.u32(u32::from(buffer.channels));
+                encoder.tag(match buffer.replacement {
+                    BufferReplacementAuthoring::Clear => 0,
+                    BufferReplacementAuthoring::CopyOverlap => 1,
+                });
+            }
+            Self::Sfz(sfz) => {
+                encoder.tag(11);
+                encoder.text(&sfz.source);
+            }
+            Self::Recording(recording) => {
+                encoder.tag(12);
+                encoder.reference(&recording.source);
+                match &recording.length {
+                    None => encoder.tag(0),
+                    Some(RecordingLengthAuthoring::Beats(ticks)) => {
+                        encoder.tag(1);
+                        encoder.i64(*ticks);
+                    }
+                    Some(RecordingLengthAuthoring::Seconds(seconds)) => {
+                        encoder.tag(2);
+                        encoder.number(*seconds);
+                    }
+                }
+                encoder.i64(recording.count_in_ticks);
+                encoder.bool(recording.metronome);
+                if let Some(destination) = &recording.destination {
+                    encoder.tag(1);
+                    encoder.text(destination);
+                } else {
+                    encoder.tag(0);
+                }
+                encoder.tag(recording.channels);
+                encoder.lifecycle(recording.lifecycle);
+            }
         }
         Arc::from(encoder.0)
     }
@@ -1679,6 +1923,8 @@ impl AuthoringDeclaration {
             Self::Fade(fade) => vec![fade.target.reference()],
             Self::Effect(effect) => vec![effect.definition.erase()],
             Self::SynthDef(_) | Self::EffectDef(_) => Vec::new(),
+            Self::Sample(_) | Self::Buffer(_) | Self::Sfz(_) => Vec::new(),
+            Self::Recording(recording) => vec![recording.source.erase()],
         }
     }
 
@@ -2497,6 +2743,7 @@ impl CandidateDraft {
 
         validate_parent_ownership(&self.declarations)?;
         validate_sequence_dependencies(&self.declarations)?;
+        validate_recording_runs(&self.declarations, &self.operations)?;
 
         let mut contributions: Vec<_> = self.contributions.into_values().collect();
         contributions.sort_by(|left, right| {
@@ -2553,6 +2800,44 @@ fn validate_parent_ownership(
         {
             return Err(CandidateError::InvalidAuthoring(format!(
                 "parent-owned declaration {child_address} is not a direct clip of {parent_address}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_recording_runs(
+    declarations: &BTreeMap<LogicalAddress, DeclarationIr>,
+    operations: &BTreeMap<LifecycleOperationId, LifecycleOperationIr>,
+) -> Result<(), CandidateError> {
+    let mut start_requests = BTreeMap::<LogicalAddress, usize>::new();
+    for (address, declaration) in declarations {
+        if let DeclarationPayload::Authoring {
+            declaration: AuthoringDeclaration::Recording(recording),
+            ..
+        } = declaration.payload()
+        {
+            if matches!(recording.lifecycle, DesiredLifecycle::Start(_)) {
+                *start_requests.entry(address.clone()).or_default() += 1;
+            }
+        }
+    }
+    for operation in operations.values() {
+        if operation.target().address().kind() == EntityKind::Recording
+            && matches!(
+                operation.action(),
+                LifecycleAction::Start(_) | LifecycleAction::Restart
+            )
+        {
+            *start_requests
+                .entry(operation.target().address().clone())
+                .or_default() += 1;
+        }
+    }
+    for (address, count) in start_requests {
+        if count > 1 {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "Recording {address} admits one active run; this candidate requests {count} starts"
             )));
         }
     }
@@ -3157,5 +3442,357 @@ mod tests {
             ),
             Err(CandidateError::InvalidLifecycle(_))
         ));
+    }
+
+    fn sample_authoring(source_path: &str) -> SampleAuthoring {
+        SampleAuthoring {
+            source: source_path.into(),
+            attack: CanonicalF64::new(0.001).unwrap(),
+            sustain: CanonicalF64::new(1.0).unwrap(),
+            release: CanonicalF64::new(0.01).unwrap(),
+            amp: CanonicalF64::new(1.0).unwrap(),
+            rate: CanonicalF64::new(1.0).unwrap(),
+            loop_mode: false,
+            offset: CanonicalF64::new(0.0).unwrap(),
+            length: None,
+            trigger: SampleTriggerAuthoring::Gate,
+            warp: None,
+        }
+    }
+
+    fn recording_authoring(
+        identity: &EvaluationIdentity,
+        lifecycle: DesiredLifecycle,
+    ) -> RecordingAuthoring {
+        RecordingAuthoring {
+            source: TypedRef::new(identity.clone(), address::<GroupKind>("drums")),
+            length: Some(RecordingLengthAuthoring::Beats(3840)),
+            count_in_ticks: 0,
+            metronome: false,
+            destination: None,
+            channels: 2,
+            lifecycle,
+        }
+    }
+
+    fn recording_declaration(
+        key: &str,
+        identity: &EvaluationIdentity,
+        lifecycle: DesiredLifecycle,
+        index: u32,
+    ) -> DeclarationIr {
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        DeclarationIr::new(
+            address::<RecordingKind>(key),
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module(), &[index], "owner").unwrap(),
+            ),
+            source(index),
+            metadata,
+            DeclarationPayload::authoring(AuthoringDeclaration::Recording(recording_authoring(
+                identity, lifecycle,
+            )))
+            .unwrap(),
+        )
+    }
+
+    fn recording_start_operation(
+        identity: &EvaluationIdentity,
+        key: &str,
+        mode: StartMode,
+        index: u32,
+    ) -> LifecycleOperationIr {
+        LifecycleOperationIr::new(
+            TypedRef::new(identity.clone(), address::<RecordingKind>(key)).erase(),
+            LifecycleMetadata::reference(TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Start(mode),
+            source(index),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn resource_authoring_validates_strict_ranges_and_sources() {
+        assert!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Sample(sample_authoring(
+                "samples/kick.wav"
+            )))
+            .is_ok()
+        );
+        for invalid in [
+            SampleAuthoring {
+                source: " samples/kick.wav".into(),
+                ..sample_authoring("x")
+            },
+            SampleAuthoring {
+                sustain: CanonicalF64::new(1.5).unwrap(),
+                ..sample_authoring("samples/kick.wav")
+            },
+            SampleAuthoring {
+                rate: CanonicalF64::new(0.0).unwrap(),
+                ..sample_authoring("samples/kick.wav")
+            },
+            SampleAuthoring {
+                length: Some(CanonicalF64::new(0.0).unwrap()),
+                ..sample_authoring("samples/kick.wav")
+            },
+            SampleAuthoring {
+                warp: Some(SampleWarpAuthoring {
+                    speed: CanonicalF64::new(1.0).unwrap(),
+                    pitch: CanonicalF64::new(1.0).unwrap(),
+                    target_bpm: None,
+                    window_size: CanonicalF64::new(0.1).unwrap(),
+                    overlaps: 33,
+                }),
+                ..sample_authoring("samples/kick.wav")
+            },
+        ] {
+            assert!(matches!(
+                DeclarationPayload::authoring(AuthoringDeclaration::Sample(invalid)),
+                Err(CandidateError::InvalidAuthoring(_))
+            ));
+        }
+
+        assert!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Buffer(BufferAuthoring {
+                frames: 65536,
+                channels: 1,
+                replacement: BufferReplacementAuthoring::Clear,
+            }))
+            .is_ok()
+        );
+        for (frames, channels) in [(0_u32, 1_u16), (1024, 0), (1024, 17)] {
+            assert!(matches!(
+                DeclarationPayload::authoring(AuthoringDeclaration::Buffer(BufferAuthoring {
+                    frames,
+                    channels,
+                    replacement: BufferReplacementAuthoring::CopyOverlap,
+                })),
+                Err(CandidateError::InvalidAuthoring(_))
+            ));
+        }
+
+        assert!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Sfz(SfzAuthoring {
+                source: "instruments/piano.SFZ".into(),
+            }))
+            .is_ok()
+        );
+        for source in ["", "instruments/piano.wav", "piano.sfz "] {
+            assert!(matches!(
+                DeclarationPayload::authoring(AuthoringDeclaration::Sfz(SfzAuthoring {
+                    source: source.into(),
+                })),
+                Err(CandidateError::InvalidAuthoring(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn resource_payload_bytes_are_canonical_and_carry_no_physical_ids() {
+        let base = sample_authoring("samples/kick.wav");
+        let one_shot = SampleAuthoring {
+            trigger: SampleTriggerAuthoring::OneShot,
+            ..sample_authoring("samples/kick.wav")
+        };
+        assert_eq!(
+            AuthoringDeclaration::Sample(base.clone()).canonical_bytes(),
+            AuthoringDeclaration::Sample(base.clone()).canonical_bytes()
+        );
+        assert_ne!(
+            AuthoringDeclaration::Sample(base.clone()).canonical_bytes(),
+            AuthoringDeclaration::Sample(one_shot).canonical_bytes()
+        );
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Sample(base)).unwrap();
+        let DeclarationPayload::Authoring {
+            canonical_bytes, ..
+        } = &payload
+        else {
+            panic!("sample payload must be authoring-tagged");
+        };
+        DeclarationPayload::authoring_checked(
+            AuthoringDeclaration::Sample(sample_authoring("samples/kick.wav")),
+            canonical_bytes.clone(),
+        )
+        .unwrap();
+
+        let clear = AuthoringDeclaration::Buffer(BufferAuthoring {
+            frames: 1024,
+            channels: 2,
+            replacement: BufferReplacementAuthoring::Clear,
+        });
+        let copy = AuthoringDeclaration::Buffer(BufferAuthoring {
+            frames: 1024,
+            channels: 2,
+            replacement: BufferReplacementAuthoring::CopyOverlap,
+        });
+        assert_ne!(clear.canonical_bytes(), copy.canonical_bytes());
+    }
+
+    #[test]
+    fn recording_authoring_validates_length_channels_and_destination() {
+        let identity = identity(1);
+        assert!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Recording(recording_authoring(
+                &identity,
+                DesiredLifecycle::Dormant
+            )))
+            .is_ok()
+        );
+        let invalid = [
+            RecordingAuthoring {
+                length: Some(RecordingLengthAuthoring::Beats(0)),
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            RecordingAuthoring {
+                length: Some(RecordingLengthAuthoring::Seconds(
+                    CanonicalF64::new(0.0).unwrap(),
+                )),
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            RecordingAuthoring {
+                count_in_ticks: -1,
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            RecordingAuthoring {
+                channels: 0,
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            RecordingAuthoring {
+                channels: 3,
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            RecordingAuthoring {
+                destination: Some("takes/one.wav ".into()),
+                ..recording_authoring(&identity, DesiredLifecycle::Dormant)
+            },
+            recording_authoring(&identity, DesiredLifecycle::Start(StartMode::Continuous)),
+        ];
+        for authoring in invalid {
+            assert!(matches!(
+                DeclarationPayload::authoring(AuthoringDeclaration::Recording(authoring)),
+                Err(CandidateError::InvalidAuthoring(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn recording_requires_its_source_group_to_resolve() {
+        let identity = identity(1);
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<RecordingKind>(recording_declaration(
+                "take1",
+                &identity,
+                DesiredLifecycle::Dormant,
+                40,
+            ))
+            .unwrap();
+        assert!(matches!(
+            draft.clone().finish(&ReferenceCatalog::default()),
+            Err(CandidateError::UnresolvedReference(address))
+                if address.kind() == EntityKind::Group
+        ));
+
+        let mut catalog = ReferenceCatalog::default();
+        catalog
+            .insert(
+                &TypedRef::new(identity.clone(), address::<GroupKind>("drums")),
+                &identity,
+            )
+            .unwrap();
+        draft.finish(&catalog).unwrap();
+    }
+
+    #[test]
+    fn recording_admits_one_active_run_per_candidate() {
+        let identity = identity(1);
+        let catalog = {
+            let mut catalog = ReferenceCatalog::default();
+            catalog
+                .insert(
+                    &TypedRef::new(identity.clone(), address::<GroupKind>("drums")),
+                    &identity,
+                )
+                .unwrap();
+            catalog
+        };
+
+        let mut started_twice = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        started_twice
+            .declare::<RecordingKind>(recording_declaration(
+                "take1",
+                &identity,
+                DesiredLifecycle::Start(StartMode::Normal),
+                41,
+            ))
+            .unwrap();
+        started_twice
+            .add_operation(recording_start_operation(
+                &identity,
+                "take1",
+                StartMode::Immediate,
+                42,
+            ))
+            .unwrap();
+        assert!(matches!(
+            started_twice.finish(&catalog),
+            Err(CandidateError::InvalidAuthoring(message))
+                if message.contains("one active run")
+        ));
+
+        let mut double_operation = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        double_operation
+            .declare::<RecordingKind>(recording_declaration(
+                "take1",
+                &identity,
+                DesiredLifecycle::Dormant,
+                43,
+            ))
+            .unwrap();
+        double_operation
+            .add_operation(recording_start_operation(
+                &identity,
+                "take1",
+                StartMode::Normal,
+                44,
+            ))
+            .unwrap();
+        double_operation
+            .add_operation(recording_start_operation(
+                &identity,
+                "take1",
+                StartMode::Immediate,
+                45,
+            ))
+            .unwrap();
+        assert!(matches!(
+            double_operation.finish(&catalog),
+            Err(CandidateError::InvalidAuthoring(message))
+                if message.contains("one active run")
+        ));
+
+        let mut single_run = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        single_run
+            .declare::<RecordingKind>(recording_declaration(
+                "take1",
+                &identity,
+                DesiredLifecycle::Dormant,
+                46,
+            ))
+            .unwrap();
+        single_run
+            .add_operation(recording_start_operation(
+                &identity,
+                "take1",
+                StartMode::Normal,
+                47,
+            ))
+            .unwrap();
+        let candidate = single_run.finish(&catalog).unwrap();
+        assert_eq!(candidate.operations().len(), 1);
     }
 }
