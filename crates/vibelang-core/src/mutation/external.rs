@@ -14,7 +14,8 @@
 use super::digest::{DigestError, RequestMaterial};
 use super::ledger::{LedgerError, MutationLedger, Submission, SubmissionResult};
 use super::wire::{
-    Atomicity, MessageDomain, MutationKind, MutationSource, RuntimeEpoch, SupersessionPolicy,
+    Atomicity, ExternalDomain, MessageDomain, MutationKind, MutationSource, RuntimeEpoch,
+    SupersessionPolicy,
 };
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -109,11 +110,6 @@ pub enum ExternalEffectError {
          internal parent/child receipts for them"
     )]
     InternalSourceForbidden,
-    #[error(
-        "the {domain} external domain has no dedicated mutation wire kind yet; the ordered M09 \
-         integration landing owns that MutationKind variant"
-    )]
-    WireKindUnavailable { domain: ExternalEffectDomain },
     #[error(transparent)]
     Digest(#[from] DigestError),
     #[error(transparent)]
@@ -180,30 +176,39 @@ impl ExternalEffectOperation {
         format!("external.{}.{}", self.domain.as_str(), self.operation)
     }
 
-    /// Project this operation onto the current mutation wire vocabulary.
+    /// Project this operation onto the mutation wire vocabulary.
     ///
     /// MIDI has an exact v1 message domain and file effects land on the
     /// Recording domain that owns v1 file I/O. Filesystem, process, and
-    /// network effects are validated and sequenced by this model, but a
-    /// dedicated wire variant is owned by the ordered M09 integration
-    /// landing — projecting them today is a typed unavailability, never a
-    /// receipt mislabeled under an unrelated music domain.
-    pub fn wire_kind(&self) -> Result<MutationKind, ExternalEffectError> {
-        let domain = match self.domain {
-            ExternalEffectDomain::Midi => MessageDomain::Midi,
-            ExternalEffectDomain::File => MessageDomain::Recording,
-            ExternalEffectDomain::Filesystem
-            | ExternalEffectDomain::Process
-            | ExternalEffectDomain::Network => {
-                return Err(ExternalEffectError::WireKindUnavailable {
-                    domain: self.domain,
-                })
-            }
-        };
-        Ok(MutationKind::Command {
-            domain,
-            operation: self.qualified_operation(),
-        })
+    /// network effects have no music domain to borrow and address the
+    /// wire through the dedicated `MutationKind::External` variant, so
+    /// every external operation projects totally — no receipt is ever
+    /// mislabeled under an unrelated music domain.
+    #[must_use]
+    pub fn wire_kind(&self) -> MutationKind {
+        let operation = self.qualified_operation();
+        match self.domain {
+            ExternalEffectDomain::Midi => MutationKind::Command {
+                domain: MessageDomain::Midi,
+                operation,
+            },
+            ExternalEffectDomain::File => MutationKind::Command {
+                domain: MessageDomain::Recording,
+                operation,
+            },
+            ExternalEffectDomain::Filesystem => MutationKind::External {
+                domain: ExternalDomain::Filesystem,
+                operation,
+            },
+            ExternalEffectDomain::Process => MutationKind::External {
+                domain: ExternalDomain::Process,
+                operation,
+            },
+            ExternalEffectDomain::Network => MutationKind::External {
+                domain: ExternalDomain::Network,
+                operation,
+            },
+        }
     }
 }
 
@@ -268,9 +273,10 @@ impl ExternalEffectSubmission {
 
     /// The ledger submission this effect enters as: keyed, top-level, and
     /// best-effort only.
-    pub fn submission(&self, retry_epoch: RuntimeEpoch) -> Result<Submission, ExternalEffectError> {
-        Ok(Submission {
-            kind: self.operation.wire_kind()?,
+    #[must_use]
+    pub fn submission(&self, retry_epoch: RuntimeEpoch) -> Submission {
+        Submission {
+            kind: self.operation.wire_kind(),
             source: self.source.clone(),
             caller_namespace: self.caller_namespace.clone(),
             idempotency_key: Some(self.idempotency_key.clone()),
@@ -280,7 +286,7 @@ impl ExternalEffectSubmission {
             atomicity: Atomicity::BestEffort,
             supersession: SupersessionPolicy::Fifo,
             material: self.operation.material.clone(),
-        })
+        }
     }
 }
 
@@ -290,7 +296,7 @@ pub fn submit_external_effect(
     effect: &ExternalEffectSubmission,
     now: SystemTime,
 ) -> Result<SubmissionResult, ExternalEffectError> {
-    let submission = effect.submission(ledger.runtime_epoch())?;
+    let submission = effect.submission(ledger.runtime_epoch());
     Ok(ledger.submit(submission, now)?)
 }
 
@@ -312,6 +318,7 @@ impl CandidateSubmission {
             let kind = match &submission.kind {
                 MutationKind::Candidate { .. } => unreachable!("candidate kinds pass through"),
                 MutationKind::Command { .. } => "command",
+                MutationKind::External { .. } => "external",
                 MutationKind::Compensation { .. } => "compensation",
             };
             return Err(ExternalEffectError::NotACandidate(kind.into()));
@@ -413,11 +420,11 @@ impl SequencedExternalPlan {
         let epoch = ledger.runtime_epoch();
         let mut ordered = Vec::new();
         for effect in &self.before {
-            ordered.push(effect.submission(epoch)?);
+            ordered.push(effect.submission(epoch));
         }
         ordered.push(self.candidate.submission.clone());
         for effect in &self.after {
-            ordered.push(effect.submission(epoch)?);
+            ordered.push(effect.submission(epoch));
         }
 
         let mut results = Vec::new();
@@ -566,15 +573,36 @@ mod tests {
 
     #[test]
     fn v2_external_submissions_are_best_effort_top_level_only() {
-        let table: [(ExternalEffectDomain, Result<MessageDomain, ()>); 5] = [
-            (ExternalEffectDomain::Midi, Ok(MessageDomain::Midi)),
-            (ExternalEffectDomain::File, Ok(MessageDomain::Recording)),
-            (ExternalEffectDomain::Filesystem, Err(())),
-            (ExternalEffectDomain::Process, Err(())),
-            (ExternalEffectDomain::Network, Err(())),
+        // Every external domain projects totally onto the wire: MIDI and
+        // file effects borrow their exact v1 music domains, while
+        // filesystem/process/network address the dedicated External kind.
+        let command = |domain: MessageDomain| -> Box<dyn Fn(String) -> MutationKind> {
+            Box::new(move |operation| MutationKind::Command { domain, operation })
+        };
+        let external = |domain: ExternalDomain| -> Box<dyn Fn(String) -> MutationKind> {
+            Box::new(move |operation| MutationKind::External { domain, operation })
+        };
+        let table = [
+            (ExternalEffectDomain::Midi, command(MessageDomain::Midi)),
+            (
+                ExternalEffectDomain::File,
+                command(MessageDomain::Recording),
+            ),
+            (
+                ExternalEffectDomain::Filesystem,
+                external(ExternalDomain::Filesystem),
+            ),
+            (
+                ExternalEffectDomain::Process,
+                external(ExternalDomain::Process),
+            ),
+            (
+                ExternalEffectDomain::Network,
+                external(ExternalDomain::Network),
+            ),
         ];
         let epoch = RuntimeEpoch::new();
-        for (domain, expected) in table {
+        for (domain, expected_kind) in table {
             let effect = ExternalEffectSubmission::new(
                 operation(domain, "op", 7),
                 "key-wire",
@@ -582,29 +610,15 @@ mod tests {
                 "v2.test.local",
             )
             .expect("keyed effect is accepted");
-            match (effect.submission(epoch), expected) {
-                (Ok(submission), Ok(message_domain)) => {
-                    assert_eq!(submission.atomicity, Atomicity::BestEffort);
-                    assert!(submission.require_idempotency_key);
-                    assert_eq!(submission.retry_epoch, Some(epoch));
-                    assert_eq!(
-                        submission.kind,
-                        MutationKind::Command {
-                            domain: message_domain,
-                            operation: format!("external.{domain}.op"),
-                        }
-                    );
-                }
-                (Err(error), Err(())) => assert!(
-                    matches!(
-                        &error,
-                        ExternalEffectError::WireKindUnavailable { domain: got }
-                        if *got == domain
-                    ),
-                    "unexpected projection error for {domain}: {error}"
-                ),
-                (result, _) => panic!("unexpected wire projection for {domain}: {result:?}"),
-            }
+            let submission = effect.submission(epoch);
+            assert_eq!(submission.atomicity, Atomicity::BestEffort);
+            assert!(submission.require_idempotency_key);
+            assert_eq!(submission.retry_epoch, Some(epoch));
+            assert_eq!(
+                submission.kind,
+                expected_kind(format!("external.{domain}.op")),
+                "wire projection for {domain}"
+            );
         }
 
         // The internal parent/child spelling is unrepresentable.

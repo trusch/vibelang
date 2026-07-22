@@ -1858,10 +1858,7 @@ mod v2_tests {
             ExternalEffectDomain::Midi
         ));
 
-        let ledger_submission = command
-            .submission()
-            .submission(RuntimeEpoch::new())
-            .unwrap();
+        let ledger_submission = command.submission().submission(RuntimeEpoch::new());
         assert!(matches!(ledger_submission.atomicity, Atomicity::BestEffort));
         assert!(ledger_submission.require_idempotency_key);
         assert_eq!(

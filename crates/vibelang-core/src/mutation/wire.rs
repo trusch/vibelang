@@ -516,6 +516,10 @@ pub enum MutationKind {
         domain: MessageDomain,
         operation: String,
     },
+    External {
+        domain: ExternalDomain,
+        operation: String,
+    },
     Compensation {
         for_revision: RevisionId,
     },
@@ -531,6 +535,21 @@ pub enum CandidateOrigin {
     RhaiHost,
     WasmRuntime,
     WasmCompiler,
+}
+
+/// External-effect domains with no v1 message domain of their own.
+///
+/// MIDI and file effects project onto their existing v1 domains
+/// (`MessageDomain::Midi` and `MessageDomain::Recording`); filesystem,
+/// process, and network effects are wire-addressed only through
+/// `MutationKind::External`, never mislabeled under a music domain.
+#[doc = "@vibelang-contract-wire"]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalDomain {
+    Filesystem,
+    Process,
+    Network,
 }
 
 #[doc = "@vibelang-contract-wire"]
