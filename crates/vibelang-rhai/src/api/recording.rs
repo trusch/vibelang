@@ -292,3 +292,658 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("stop_recording", stop_recording);
     engine.register_fn("cancel_recording", cancel_recording);
 }
+
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CanonicalF64, Composition,
+    DeclarationOwner, DeclarationPayload, DesiredLifecycle, ErasedRef, GroupKind, GroupScope,
+    LifecycleAction, LifecycleMetadata, RecordingAuthoring, RecordingKind,
+    RecordingLengthAuthoring, SampleKind, StartMode, TerminalEffect, TypedAddress,
+};
+use vibelang_core::types::Beat;
+
+use super::sample::SampleRef;
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordRef {
+    base: RefBase,
+}
+
+impl RecordRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<RecordingKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Start(_) => (TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Stop => (TerminalEffect::Stop, Cancellation::NotCancellable),
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Cancel => (TerminalEffect::Cancel, Cancellation::BeforePlanning),
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported RecordRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn start(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Normal), "start")
+    }
+
+    pub fn start_now(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Immediate), "start-now")
+    }
+
+    /// Finalize the active run and keep its normal result.
+    pub fn stop(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Stop, "stop")
+    }
+
+    /// Abort the pending or active run; it produces no normal result.
+    pub fn cancel(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Cancel, "cancel")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+
+    /// Typed completion handle: the logical Sample address a completed
+    /// run binds its take to. No physical buffer ID is exposed at any
+    /// point — lowering resolves the applied generation during planning,
+    /// and the SampleRef becomes usable only once the recording outcome
+    /// and resource binding are applied (observable via `status`).
+    pub fn sample(&self) -> Result<SampleRef, FoundationError> {
+        let address = self.base.address();
+        let sample_address = TypedAddress::<SampleKind>::new(
+            address.project().clone(),
+            address.module().clone(),
+            address.group_scope().clone(),
+            address.key().clone(),
+        );
+        SampleRef::new(RefBase::new(ErasedRef::new(
+            self.base.identity().clone(),
+            sample_address.erase(),
+        )))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum RecordLengthV2 {
+    Beats(i64),
+    Seconds(f64),
+}
+
+/// Pure recording builder. Each recording admits exactly one active run
+/// per candidate; `apply` registers a dormant declaration and
+/// `start`/`start_now` request the run. The v1 `.immediate()` flag was
+/// never effective and has no v2 spelling — use the `start_now`
+/// terminal. The v1 `.bars(n)` spelling has no pure v2 equivalent (bar
+/// length depends on runtime time-signature state); migrate to
+/// `.beats(n * beats_per_bar)`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordBuilder {
+    base: BuilderBase,
+    source: Option<RefBase>,
+    length: Option<RecordLengthV2>,
+    count_in_ticks: i64,
+    metronome: bool,
+    destination: Option<String>,
+    channels: u8,
+}
+
+impl RecordBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            source: None,
+            length: None,
+            count_in_ticks: 0,
+            metronome: false,
+            destination: None,
+            channels: 2,
+        }
+    }
+
+    /// Record from a typed group. The source is mandatory: a terminal
+    /// without one is a structured failure, never a silent default.
+    pub fn from(mut self, source: RefBase) -> Result<Self, FoundationError> {
+        source.typed::<GroupKind>()?;
+        self.source = Some(source);
+        Ok(self)
+    }
+
+    /// Effective forwarding alias for the v1 `.from_group(path)`
+    /// spelling; the argument is now a typed group Ref, never a raw
+    /// path resolved against ambient script state.
+    pub fn from_group(self, source: RefBase) -> Result<Self, FoundationError> {
+        self.from(source)
+    }
+
+    pub fn beats(mut self, beats: f64) -> Result<Self, FoundationError> {
+        if !beats.is_finite() || beats <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Recording length in beats must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = Some(RecordLengthV2::Beats(Beat::from_f64(beats).raw()));
+        Ok(self)
+    }
+
+    pub fn seconds(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Recording length in seconds must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = Some(RecordLengthV2::Seconds(seconds));
+        Ok(self)
+    }
+
+    /// Count-in before the run starts, in beats. The v1 spelling counted
+    /// bars against runtime time-signature state, which a pure builder
+    /// cannot consult; migrate by multiplying bars by beats-per-bar.
+    pub fn count_in(mut self, beats: f64) -> Result<Self, FoundationError> {
+        if !beats.is_finite() || beats < 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Recording count-in must be finite and non-negative".into(),
+            )
+            .into());
+        }
+        self.count_in_ticks = Beat::from_f64(beats).raw();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn metronome(mut self, enabled: bool) -> Self {
+        self.metronome = enabled;
+        self
+    }
+
+    pub fn to_file(mut self, path: String) -> Result<Self, FoundationError> {
+        if path.is_empty() || path.trim() != path || path.bytes().any(|byte| byte < 0x20) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Recording destination must be a non-empty path without surrounding whitespace or control bytes"
+                    .into(),
+            )
+            .into());
+        }
+        self.destination = Some(path);
+        Ok(self)
+    }
+
+    pub fn channels(mut self, channels: i64) -> Result<Self, FoundationError> {
+        if !(1..=2).contains(&channels) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Recording channels must be 1 or 2".into(),
+            )
+            .into());
+        }
+        self.channels = channels as u8;
+        Ok(self)
+    }
+
+    fn terminal(self, lifecycle: DesiredLifecycle) -> Result<RecordRef, FoundationError> {
+        let source = self.source.ok_or_else(|| {
+            CandidateError::InvalidAuthoring(
+                "RecordBuilder needs a typed source group before a terminal: declare .from(group)"
+                    .into(),
+            )
+        })?;
+        let length = self
+            .length
+            .map(|length| {
+                Ok::<_, CandidateError>(match length {
+                    RecordLengthV2::Beats(ticks) => RecordingLengthAuthoring::Beats(ticks),
+                    RecordLengthV2::Seconds(seconds) => {
+                        RecordingLengthAuthoring::Seconds(CanonicalF64::new(seconds)?)
+                    }
+                })
+            })
+            .transpose()?;
+        let declaration = RecordingAuthoring {
+            source: source.typed::<GroupKind>()?,
+            length,
+            count_in_ticks: self.count_in_ticks,
+            metronome: self.metronome,
+            destination: self.destination,
+            channels: self.channels,
+            lifecycle,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Recording(declaration))?;
+        let references = vec![(source, self.base.source().clone())];
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        let (fragment, reference) = self.base.fragment(owner, metadata, payload, references)?;
+        foundation::commit_fragment(fragment)?;
+        RecordRef::new(reference)
+    }
+
+    /// Register the recording dormant; no run is requested.
+    pub fn apply(self) -> Result<RecordRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Dormant)
+    }
+
+    /// Register and request one run at the declared normal quantization.
+    pub fn start(self) -> Result<RecordRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Normal))
+    }
+
+    /// Register and request one immediate, unquantized run.
+    pub fn start_now(self) -> Result<RecordRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Immediate))
+    }
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn record_builder_v2(name: String) -> Result<RecordBuilder, Box<EvalAltResult>> {
+    Ok(RecordBuilder::new(
+        foundation::authoring_builder::<RecordingKind>(&name, GroupScope::root())
+            .map_err(|error| record_v2_error(error, Position::NONE))?,
+    ))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn record_ref_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
+    RecordRef::new(
+        foundation::authoring_ref::<RecordingKind>(&name, GroupScope::root())
+            .map_err(|error| record_v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| record_v2_error(error, Position::NONE))
+}
+
+/// Effective replacement for the v1 log-only `stop_recording(id)` stub:
+/// commits a real Stop operation against the typed recording address.
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn stop_recording_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
+    record_ref_v2(name)?
+        .stop()
+        .map_err(|error| record_v2_error(error, Position::NONE))
+}
+
+/// Effective replacement for the v1 log-only `cancel_recording(id)`
+/// stub: commits a real Cancel operation against the typed recording
+/// address.
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn cancel_recording_v2(name: String) -> Result<RecordRef, Box<EvalAltResult>> {
+    record_ref_v2(name)?
+        .cancel()
+        .map_err(|error| record_v2_error(error, Position::NONE))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+fn record_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+#[cfg(test)]
+fn install_v2_for_tests(engine: &mut Engine) {
+    fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
+        result.map_err(|error| record_v2_error(error, Position::NONE))
+    }
+
+    engine
+        .register_type_with_name::<RecordBuilder>("RecordBuilder")
+        .register_type_with_name::<RecordRef>("RecordRef")
+        .register_fn("record", record_builder_v2)
+        .register_fn("record_ref", record_ref_v2)
+        .register_fn("stop_recording", stop_recording_v2)
+        .register_fn("cancel_recording", cancel_recording_v2)
+        .register_fn("from", |builder: RecordBuilder, source: RefBase| {
+            strict(builder.from(source))
+        })
+        .register_fn("from_group", |builder: RecordBuilder, source: RefBase| {
+            strict(builder.from_group(source))
+        })
+        .register_fn("beats", |builder: RecordBuilder, beats: f64| {
+            strict(builder.beats(beats))
+        })
+        .register_fn("beats", |builder: RecordBuilder, beats: i64| {
+            strict(builder.beats(beats as f64))
+        })
+        .register_fn("seconds", |builder: RecordBuilder, seconds: f64| {
+            strict(builder.seconds(seconds))
+        })
+        .register_fn("seconds", |builder: RecordBuilder, seconds: i64| {
+            strict(builder.seconds(seconds as f64))
+        })
+        .register_fn("count_in", |builder: RecordBuilder, beats: f64| {
+            strict(builder.count_in(beats))
+        })
+        .register_fn("count_in", |builder: RecordBuilder, beats: i64| {
+            strict(builder.count_in(beats as f64))
+        })
+        .register_fn("metronome", RecordBuilder::metronome)
+        .register_fn("to_file", |builder: RecordBuilder, path: String| {
+            strict(builder.to_file(path))
+        })
+        .register_fn("channels", |builder: RecordBuilder, channels: i64| {
+            strict(builder.channels(channels))
+        })
+        .register_fn("apply", |builder: RecordBuilder| strict(builder.apply()))
+        .register_fn("start", |builder: RecordBuilder| strict(builder.start()))
+        .register_fn("start_now", |builder: RecordBuilder| {
+            strict(builder.start_now())
+        })
+        .register_fn("start", |reference: RecordRef| strict(reference.start()))
+        .register_fn("start_now", |reference: RecordRef| {
+            strict(reference.start_now())
+        })
+        .register_fn("stop", |reference: RecordRef| strict(reference.stop()))
+        .register_fn("cancel", |reference: RecordRef| strict(reference.cancel()))
+        .register_fn("remove", |reference: RecordRef| strict(reference.remove()))
+        .register_fn("status", |reference: RecordRef| strict(reference.status()))
+        .register_fn("sample", |reference: RecordRef| strict(reference.sample()));
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+    use crate::api::group::GroupBuilder;
+    use vibelang_core::candidate::EntityKind;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"record-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn builder(name: &str) -> RecordBuilder {
+        RecordBuilder::new(
+            foundation::authoring_builder::<RecordingKind>(name, GroupScope::root()).unwrap(),
+        )
+    }
+
+    fn declare_group(key: &str) -> RefBase {
+        GroupBuilder::new(
+            foundation::authoring_builder::<GroupKind>(key, GroupScope::root()).unwrap(),
+        )
+        .apply()
+        .unwrap()
+        .base()
+        .clone()
+    }
+
+    #[test]
+    fn v2_record_configuration_is_pure_and_strict() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        assert!(matches!(
+            builder("take").beats(0.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").beats(f64::NAN),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").seconds(0.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").count_in(-1.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").channels(0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").channels(3),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("take").to_file(" takes/one.wav".into()),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(
+            builder("take")
+                .from(foundation::authoring_ref::<SampleKind>("kick", GroupScope::root()).unwrap())
+                .is_err(),
+            "a non-group source must be rejected at the typed binding"
+        );
+        assert!(matches!(
+            builder("take").apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(message)
+            )) if message.contains("source group")
+        ));
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(
+            candidate.declarations().is_empty(),
+            "rejected configuration must leave no candidate residue"
+        );
+    }
+
+    #[test]
+    fn v2_record_terminals_are_typed_and_lifecycle_distinct() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let drums = declare_group("drums");
+        let dormant = builder("take")
+            .from(drums.clone())
+            .unwrap()
+            .beats(16.0)
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert_eq!(dormant.base().kind(), EntityKind::Recording);
+        assert!(matches!(
+            dormant.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        assert!(matches!(
+            builder("take").from(drums.clone()).unwrap().apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::DuplicateDeclaration { .. }
+            ))
+        ));
+        let started = builder("take2")
+            .from(drums)
+            .unwrap()
+            .seconds(30.0)
+            .unwrap()
+            .start()
+            .unwrap();
+        assert_eq!(started.base().kind(), EntityKind::Recording);
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 3);
+        let effects = candidate
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.address().kind() == EntityKind::Recording)
+            .map(|declaration| {
+                (
+                    declaration.address().key().as_str().to_string(),
+                    declaration.lifecycle().terminal_effect,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(effects.contains(&("take".into(), TerminalEffect::Register)));
+        assert!(effects.contains(&("take2".into(), TerminalEffect::Start)));
+    }
+
+    #[test]
+    fn v2_record_admits_exactly_one_active_run() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let drums = declare_group("drums");
+        let take = builder("take")
+            .from(drums)
+            .unwrap()
+            .beats(16.0)
+            .unwrap()
+            .start()
+            .unwrap();
+        take.clone().start().unwrap();
+        assert!(
+            matches!(
+                foundation::finish_evaluation(),
+                Err(FoundationError::Candidate(
+                    CandidateError::InvalidAuthoring(message)
+                )) if message.contains("one active run")
+            ),
+            "a started declaration plus a start operation is two runs"
+        );
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let drums = declare_group("drums");
+        let take = builder("take").from(drums).unwrap().apply().unwrap();
+        let take = take.start().unwrap();
+        take.clone().stop().unwrap();
+        take.cancel().unwrap();
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(
+            candidate.operations().len(),
+            3,
+            "stop and cancel must not count against the single active run"
+        );
+    }
+
+    #[test]
+    fn v2_record_completion_is_a_typed_sample_ref_without_physical_ids() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let drums = declare_group("drums");
+        let take = builder("take")
+            .from(drums)
+            .unwrap()
+            .beats(16.0)
+            .unwrap()
+            .to_file("takes/one.wav".into())
+            .unwrap()
+            .start()
+            .unwrap();
+        foundation::finish_evaluation().unwrap();
+
+        let sample = take.sample().unwrap();
+        assert_eq!(sample.base().kind(), EntityKind::Sample);
+        assert_eq!(
+            sample.base().address().key(),
+            take.base().address().key(),
+            "the completion handle must name the recording's own logical address"
+        );
+        assert_eq!(
+            sample.base().address().module(),
+            take.base().address().module()
+        );
+        assert_eq!(sample.base().identity(), take.base().identity());
+        sample.base().typed::<SampleKind>().unwrap();
+    }
+
+    #[test]
+    fn v2_record_rhai_surface_and_stop_cancel_replacements_author_from_script() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        crate::foundation::register(&mut engine);
+        install_v2_for_tests(&mut engine);
+        engine.register_fn(
+            "group_ref",
+            |name: String| -> Result<RefBase, Box<EvalAltResult>> {
+                foundation::authoring_ref::<GroupKind>(&name, GroupScope::root())
+                    .map_err(|error| record_v2_error(error, Position::NONE))
+            },
+        );
+        declare_group("drums");
+        let reference = engine
+            .eval::<RecordRef>(
+                r#"record("take1")
+                    .from(group_ref("drums"))
+                    .beats(16.0)
+                    .count_in(4)
+                    .metronome(true)
+                    .to_file("takes/one.wav")
+                    .channels(2)
+                    .apply()"#,
+            )
+            .unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Recording);
+        engine
+            .eval::<RecordRef>(r#"record_ref("take1").start()"#)
+            .unwrap();
+        engine
+            .eval::<RecordRef>(r#"stop_recording("take1")"#)
+            .unwrap();
+        engine
+            .eval::<RecordRef>(r#"cancel_recording("take1")"#)
+            .unwrap();
+        assert!(
+            engine
+                .eval::<RecordRef>(r#"record("bad").apply()"#)
+                .is_err(),
+            "a terminal without a source group must fail, not no-op"
+        );
+        assert!(engine
+            .eval::<RecordBuilder>(r#"record("bad").beats(0.0)"#)
+            .is_err());
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 2);
+        assert_eq!(
+            candidate.operations().len(),
+            3,
+            "start, stop, and cancel must each be real committed operations"
+        );
+    }
+}
