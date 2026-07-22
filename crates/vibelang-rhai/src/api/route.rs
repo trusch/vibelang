@@ -2741,3 +2741,1057 @@ mod tests {
         });
     }
 }
+
+// ============================================================================
+// Detached v2 route family (M09). Everything below this line sits past the
+// frozen v1 manifest anchors; imports live only in this detached section.
+// The shared install_v2_api root is owned by the M09 registration
+// integration gate; until then only cfg(test) installs reference the
+// install helpers.
+//
+// V1 names with no v2 respelling (migration classifications):
+// - `.to_current_group()` / `.from_current_group()`: v2 builders are pure
+//   and carry no ambient voice-group context — migrate to an explicit
+//   `group_ref(...)` destination/source.
+// - post-terminal `.scale(...)` / `.offset(...)` chaining: v2 declarations
+//   are immutable, so shaping is builder configuration BEFORE the terminal
+//   (`output(v, "cv").scale(2.0).set(target, "cutoff")`).
+// - `MultiRouteHandle` plural verbs (`outputs([...]).to(...)`): v2 routes
+//   are one declaration per source port — author one route per port.
+// ============================================================================
+
+use vibelang_core::candidate::{
+    AudioRouteDestinationAuthoring, AuthoringDeclaration, Cancellation, CandidateError,
+    CanonicalF64, Composition, DeclarationOwner, DeclarationPayload, EffectKind, GroupScope,
+    InputRouteSourceAuthoring, LifecycleAction, LifecycleMetadata, RouteAuthoring, RouteKind,
+    RoutePortAuthoring, RoutePortRate, RouteShapingAuthoring, RouteTargetAuthoring, TerminalEffect,
+    TypedRef, VoiceKind,
+};
+
+use super::group::GroupRef;
+use super::sequence::EffectRef;
+use super::voice::VoiceRef;
+use crate::foundation::{self, FoundationError, Observation, RefBase};
+
+/// Stable typed handle to a v2 route declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RouteRef {
+    base: RefBase,
+}
+
+impl RouteRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<RouteKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    /// Explicit disconnect terminal: removes this route edge from the next
+    /// applied revision. Distinct from `remove` only in its recorded
+    /// cancellation mode — both are real operations, never no-ops.
+    pub fn disconnect(self) -> Result<Self, FoundationError> {
+        let source = foundation::operation_source(&self.base, "disconnect")?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(TerminalEffect::Cancel, Cancellation::DisconnectEdge),
+            LifecycleAction::Remove,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        let source = foundation::operation_source(&self.base, "remove")?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Remove,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+fn commit_route(route: RouteAuthoring) -> Result<RouteRef, FoundationError> {
+    let key = route.canonical_key()?;
+    let base = foundation::authoring_builder::<RouteKind>(key.as_str(), GroupScope::root())?;
+    let payload = DeclarationPayload::authoring(AuthoringDeclaration::Route(route))?;
+    let owner = DeclarationOwner::Structural(base.source().syntax_key().clone());
+    RouteRef::new(base.apply(
+        owner,
+        LifecycleMetadata::register(Composition::Standalone),
+        payload,
+    )?)
+}
+
+fn strict_shaping_value(value: f64, role: &str) -> Result<CanonicalF64, FoundationError> {
+    if !value.is_finite() {
+        return Err(
+            CandidateError::InvalidAuthoring(format!("route {role} must be finite")).into(),
+        );
+    }
+    Ok(CanonicalF64::new(value)?)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ShapingConfig {
+    scale: Option<CanonicalF64>,
+    offset: Option<CanonicalF64>,
+}
+
+impl ShapingConfig {
+    fn is_configured(self) -> bool {
+        self.scale.is_some() || self.offset.is_some()
+    }
+
+    fn authoring(self) -> RouteShapingAuthoring {
+        let identity = RouteShapingAuthoring::identity();
+        RouteShapingAuthoring {
+            scale: self.scale.unwrap_or(identity.scale),
+            offset: self.offset.unwrap_or(identity.offset),
+        }
+    }
+}
+
+/// Pure source-first builder over one named output port.
+///
+/// Audio destinations accumulate with the v1-effective variant semantics —
+/// `to`/`add` group edges are additive and idempotent, `to_main`/`mute`
+/// replace, and switching variants clears the prior list — then one `apply`
+/// terminal declares the complete ordered fan-out. The param verbs are
+/// standalone terminals; shaping is configured before them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutputRouteBuilder {
+    source: TypedRef<VoiceKind>,
+    port: String,
+    destinations: Vec<AudioRouteDestinationAuthoring>,
+    shaping: ShapingConfig,
+}
+
+impl OutputRouteBuilder {
+    pub fn new(source: &VoiceRef, port: String) -> Result<Self, FoundationError> {
+        if port.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(
+                "route source port cannot be empty".into(),
+            )
+            .into());
+        }
+        Ok(Self {
+            source: source.base().typed::<VoiceKind>()?,
+            port,
+            destinations: Vec::new(),
+            shaping: ShapingConfig::default(),
+        })
+    }
+
+    fn source_port(&self, rate: RoutePortRate) -> RoutePortAuthoring {
+        RoutePortAuthoring {
+            voice: self.source.clone(),
+            port: self.port.clone(),
+            rate,
+        }
+    }
+
+    fn no_audio_destinations(&self, verb: &str) -> Result<(), FoundationError> {
+        if self.destinations.is_empty() {
+            return Ok(());
+        }
+        Err(CandidateError::InvalidAuthoring(format!(
+            "{verb} cannot follow accumulated audio destinations on the same builder"
+        ))
+        .into())
+    }
+
+    fn no_shaping(&self, verb: &str) -> Result<(), FoundationError> {
+        if !self.shaping.is_configured() {
+            return Ok(());
+        }
+        Err(
+            CandidateError::InvalidAuthoring(format!("{verb} carries no scale/offset shaping"))
+                .into(),
+        )
+    }
+
+    /// Add one additive group fan-out edge (v1 `.to(group)` semantics:
+    /// idempotent re-add, clears a prior Main/Muted variant).
+    #[must_use]
+    pub fn add(mut self, group: &GroupRef) -> Self {
+        let destination = AudioRouteDestinationAuthoring::Group(
+            group
+                .base()
+                .typed()
+                .expect("GroupRef is constructed kind-checked"),
+        );
+        let group_only = self
+            .destinations
+            .iter()
+            .all(|entry| matches!(entry, AudioRouteDestinationAuthoring::Group(_)));
+        if !group_only {
+            self.destinations.clear();
+        }
+        if !self.destinations.contains(&destination) {
+            self.destinations.push(destination);
+        }
+        self
+    }
+
+    /// Effective forwarding alias for [`Self::add`] (v1 spelling).
+    #[must_use]
+    pub fn to(self, group: &GroupRef) -> Self {
+        self.add(group)
+    }
+
+    /// Replace the destination list with the main hardware output.
+    #[must_use]
+    pub fn to_main(mut self) -> Self {
+        self.destinations = vec![AudioRouteDestinationAuthoring::Main];
+        self
+    }
+
+    /// Replace the destination list with an explicit mute.
+    #[must_use]
+    pub fn mute(mut self) -> Self {
+        self.destinations = vec![AudioRouteDestinationAuthoring::Muted];
+        self
+    }
+
+    pub fn scale(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.shaping.scale = Some(strict_shaping_value(value, "scale")?);
+        Ok(self)
+    }
+
+    pub fn offset(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.shaping.offset = Some(strict_shaping_value(value, "offset")?);
+        Ok(self)
+    }
+
+    /// Audio terminal: declare the accumulated ordered fan-out.
+    pub fn apply(self) -> Result<RouteRef, FoundationError> {
+        self.no_shaping("an audio route")?;
+        if self.destinations.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(
+                "an audio route needs at least one destination before apply".into(),
+            )
+            .into());
+        }
+        let source = self.source_port(RoutePortRate::Audio);
+        commit_route(RouteAuthoring::Audio {
+            source,
+            destinations: self.destinations,
+        })
+    }
+
+    fn set_target(
+        self,
+        target: RouteTargetAuthoring,
+        target_param: String,
+        coerce_audio: bool,
+        verb: &str,
+    ) -> Result<RouteRef, FoundationError> {
+        self.no_audio_destinations(verb)?;
+        let rate = if coerce_audio {
+            RoutePortRate::Audio
+        } else {
+            RoutePortRate::Control
+        };
+        let source = self.source_port(rate);
+        let shaping = self.shaping.authoring();
+        commit_route(RouteAuthoring::Set {
+            source,
+            coerce_audio,
+            target,
+            target_param,
+            shaping,
+        })
+    }
+
+    /// SET terminal: this control-rate port becomes the single writer of the
+    /// target parameter.
+    pub fn set(self, target: &VoiceRef, target_param: String) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Voice(target.base().typed::<VoiceKind>()?);
+        self.set_target(target, target_param, false, "set")
+    }
+
+    /// Fx-target SET variant.
+    pub fn set_fx(
+        self,
+        target: &EffectRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Effect(target.base().typed::<EffectKind>()?);
+        self.set_target(target, target_param, false, "set")
+    }
+
+    /// A2K terminal: an audio-rate source coerced into the same SET slot.
+    pub fn set_from_audio(
+        self,
+        target: &VoiceRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Voice(target.base().typed::<VoiceKind>()?);
+        self.set_target(target, target_param, true, "set_from_audio")
+    }
+
+    /// Fx-target A2K variant.
+    pub fn set_from_audio_fx(
+        self,
+        target: &EffectRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Effect(target.base().typed::<EffectKind>()?);
+        self.set_target(target, target_param, true, "set_from_audio")
+    }
+
+    fn trigger_target(
+        self,
+        target: RouteTargetAuthoring,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        self.no_audio_destinations("trigger")?;
+        self.no_shaping("a trigger route")?;
+        let source = self.source_port(RoutePortRate::Trigger);
+        commit_route(RouteAuthoring::Trigger {
+            source,
+            target,
+            target_param,
+        })
+    }
+
+    /// TRIGGER terminal: 1:1 trigger-rate edge, no shaping, no fan-in.
+    pub fn trigger(
+        self,
+        target: &VoiceRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Voice(target.base().typed::<VoiceKind>()?);
+        self.trigger_target(target, target_param)
+    }
+
+    /// Fx-target TRIGGER variant.
+    pub fn trigger_fx(
+        self,
+        target: &EffectRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        let target = RouteTargetAuthoring::Effect(target.base().typed::<EffectKind>()?);
+        self.trigger_target(target, target_param)
+    }
+
+    /// Source-first input sugar: wire this audio-rate port into the target's
+    /// named input (v1 `.to_input(...)`).
+    pub fn to_input(
+        self,
+        target: &VoiceRef,
+        input_port: String,
+    ) -> Result<RouteRef, FoundationError> {
+        self.no_audio_destinations("to_input")?;
+        self.no_shaping("an input route")?;
+        commit_route(RouteAuthoring::Input {
+            target: target.base().typed::<VoiceKind>()?,
+            input_port,
+            source: InputRouteSourceAuthoring::VoicePort {
+                voice: self.source,
+                port: self.port,
+            },
+        })
+    }
+
+    /// Effective forwarding alias for [`Self::set`] (v1 spelling).
+    pub fn to_param(
+        self,
+        target: &VoiceRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        self.set(target, target_param)
+    }
+
+    /// Effective forwarding alias for [`Self::set_from_audio`] (v1 spelling).
+    pub fn to_param_audio(
+        self,
+        target: &VoiceRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        self.set_from_audio(target, target_param)
+    }
+
+    /// Effective forwarding alias for [`Self::trigger`] (v1 spelling).
+    pub fn to_trigger(
+        self,
+        target: &VoiceRef,
+        target_param: String,
+    ) -> Result<RouteRef, FoundationError> {
+        self.trigger(target, target_param)
+    }
+}
+
+/// Pure target-first builder over one named input port.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputRouteBuilder {
+    target: TypedRef<VoiceKind>,
+    input_port: String,
+}
+
+impl InputRouteBuilder {
+    pub fn new(target: &VoiceRef, input_port: String) -> Result<Self, FoundationError> {
+        if input_port.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(
+                "route input port cannot be empty".into(),
+            )
+            .into());
+        }
+        Ok(Self {
+            target: target.base().typed::<VoiceKind>()?,
+            input_port,
+        })
+    }
+
+    fn commit(self, source: InputRouteSourceAuthoring) -> Result<RouteRef, FoundationError> {
+        commit_route(RouteAuthoring::Input {
+            target: self.target,
+            input_port: self.input_port,
+            source,
+        })
+    }
+
+    /// Pin this input to a selected audio-rate port on a source voice.
+    pub fn from(self, source: &VoiceRef, port: String) -> Result<RouteRef, FoundationError> {
+        let voice = source.base().typed::<VoiceKind>()?;
+        self.commit(InputRouteSourceAuthoring::VoicePort { voice, port })
+    }
+
+    /// Effective forwarding alias for the v1 default-port `.from(voice)`.
+    pub fn from_voice_default(self, source: &VoiceRef) -> Result<RouteRef, FoundationError> {
+        self.from(source, "out".into())
+    }
+
+    /// Pin this input to a group's mix bus.
+    pub fn from_group(self, source: &GroupRef) -> Result<RouteRef, FoundationError> {
+        let group = source.base().typed()?;
+        self.commit(InputRouteSourceAuthoring::Group(group))
+    }
+
+    /// Explicit disconnect terminal: pin this input to the shared silent bus.
+    pub fn disconnect(self) -> Result<RouteRef, FoundationError> {
+        self.commit(InputRouteSourceAuthoring::Silent)
+    }
+}
+
+/// Pure target-first BEND builder: one additive fan-in edge per terminal.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamRouteBuilder {
+    target: RouteTargetAuthoring,
+    target_param: String,
+    shaping: ShapingConfig,
+}
+
+impl ParamRouteBuilder {
+    pub fn new(target: &VoiceRef, target_param: String) -> Result<Self, FoundationError> {
+        Ok(Self {
+            target: RouteTargetAuthoring::Voice(target.base().typed::<VoiceKind>()?),
+            target_param,
+            shaping: ShapingConfig::default(),
+        })
+    }
+
+    pub fn new_fx(target: &EffectRef, target_param: String) -> Result<Self, FoundationError> {
+        Ok(Self {
+            target: RouteTargetAuthoring::Effect(target.base().typed::<EffectKind>()?),
+            target_param,
+            shaping: ShapingConfig::default(),
+        })
+    }
+
+    pub fn scale(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.shaping.scale = Some(strict_shaping_value(value, "scale")?);
+        Ok(self)
+    }
+
+    pub fn offset(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.shaping.offset = Some(strict_shaping_value(value, "offset")?);
+        Ok(self)
+    }
+
+    /// BEND terminal: declare one additive fan-in edge from the given
+    /// control-rate source port onto this target parameter.
+    pub fn bend_from(self, source: &VoiceRef, port: String) -> Result<RouteRef, FoundationError> {
+        let voice = source.base().typed::<VoiceKind>()?;
+        commit_route(RouteAuthoring::Bend {
+            source: RoutePortAuthoring {
+                voice,
+                port,
+                rate: RoutePortRate::Control,
+            },
+            target: self.target,
+            target_param: self.target_param,
+            shaping: self.shaping.authoring(),
+        })
+    }
+
+    /// Effective forwarding alias for [`Self::bend_from`] (v1 spelling).
+    pub fn modulate_by(self, source: &VoiceRef, port: String) -> Result<RouteRef, FoundationError> {
+        self.bend_from(source, port)
+    }
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn output_route_v2(
+    voice: VoiceRef,
+    port: String,
+) -> Result<OutputRouteBuilder, Box<EvalAltResult>> {
+    OutputRouteBuilder::new(&voice, port).map_err(|error| route_v2_error(error, Position::NONE))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn input_route_v2(
+    voice: VoiceRef,
+    port: String,
+) -> Result<InputRouteBuilder, Box<EvalAltResult>> {
+    InputRouteBuilder::new(&voice, port).map_err(|error| route_v2_error(error, Position::NONE))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn param_route_v2(
+    voice: VoiceRef,
+    param: String,
+) -> Result<ParamRouteBuilder, Box<EvalAltResult>> {
+    ParamRouteBuilder::new(&voice, param).map_err(|error| route_v2_error(error, Position::NONE))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn param_route_fx_v2(
+    fx: EffectRef,
+    param: String,
+) -> Result<ParamRouteBuilder, Box<EvalAltResult>> {
+    ParamRouteBuilder::new_fx(&fx, param).map_err(|error| route_v2_error(error, Position::NONE))
+}
+
+// Wired into the shared install_v2_api root by the M09 registration
+// integration gate; until then only cfg(test) installs reference it.
+#[cfg_attr(not(test), allow(dead_code))]
+fn route_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+#[cfg(test)]
+fn install_v2_for_tests(engine: &mut Engine) {
+    fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
+        result.map_err(|error| route_v2_error(error, Position::NONE))
+    }
+
+    engine
+        .register_type_with_name::<OutputRouteBuilder>("OutputRouteBuilder")
+        .register_type_with_name::<InputRouteBuilder>("InputRouteBuilder")
+        .register_type_with_name::<ParamRouteBuilder>("ParamRouteBuilder")
+        .register_type_with_name::<RouteRef>("RouteRef")
+        .register_fn("voice_ref", super::voice::voice_ref_v2)
+        .register_fn("group_ref", super::group::group_ref_v2)
+        .register_fn("output", output_route_v2)
+        .register_fn("input", input_route_v2)
+        .register_fn("param", param_route_v2)
+        .register_fn("param", param_route_fx_v2)
+        .register_fn("add", |builder: OutputRouteBuilder, group: GroupRef| {
+            builder.add(&group)
+        })
+        .register_fn("to", |builder: OutputRouteBuilder, group: GroupRef| {
+            builder.to(&group)
+        })
+        .register_fn("to_main", OutputRouteBuilder::to_main)
+        .register_fn("mute", OutputRouteBuilder::mute)
+        .register_fn("scale", |builder: OutputRouteBuilder, value: f64| {
+            strict(builder.scale(value))
+        })
+        .register_fn("offset", |builder: OutputRouteBuilder, value: f64| {
+            strict(builder.offset(value))
+        })
+        .register_fn("apply", |builder: OutputRouteBuilder| {
+            strict(builder.apply())
+        })
+        .register_fn(
+            "set",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.set(&target, param))
+            },
+        )
+        .register_fn(
+            "set",
+            |builder: OutputRouteBuilder, target: EffectRef, param: String| {
+                strict(builder.set_fx(&target, param))
+            },
+        )
+        .register_fn(
+            "set_from_audio",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.set_from_audio(&target, param))
+            },
+        )
+        .register_fn(
+            "set_from_audio",
+            |builder: OutputRouteBuilder, target: EffectRef, param: String| {
+                strict(builder.set_from_audio_fx(&target, param))
+            },
+        )
+        .register_fn(
+            "trigger",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.trigger(&target, param))
+            },
+        )
+        .register_fn(
+            "trigger",
+            |builder: OutputRouteBuilder, target: EffectRef, param: String| {
+                strict(builder.trigger_fx(&target, param))
+            },
+        )
+        .register_fn(
+            "to_param",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.to_param(&target, param))
+            },
+        )
+        .register_fn(
+            "to_param_audio",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.to_param_audio(&target, param))
+            },
+        )
+        .register_fn(
+            "to_trigger",
+            |builder: OutputRouteBuilder, target: VoiceRef, param: String| {
+                strict(builder.to_trigger(&target, param))
+            },
+        )
+        .register_fn(
+            "to_input",
+            |builder: OutputRouteBuilder, target: VoiceRef, port: String| {
+                strict(builder.to_input(&target, port))
+            },
+        )
+        .register_fn(
+            "from",
+            |builder: InputRouteBuilder, source: VoiceRef, port: String| {
+                strict(builder.from(&source, port))
+            },
+        )
+        .register_fn("from", |builder: InputRouteBuilder, source: VoiceRef| {
+            strict(builder.from_voice_default(&source))
+        })
+        .register_fn("from", |builder: InputRouteBuilder, source: GroupRef| {
+            strict(builder.from_group(&source))
+        })
+        .register_fn("disconnect", |builder: InputRouteBuilder| {
+            strict(builder.disconnect())
+        })
+        .register_fn("scale", |builder: ParamRouteBuilder, value: f64| {
+            strict(builder.scale(value))
+        })
+        .register_fn("offset", |builder: ParamRouteBuilder, value: f64| {
+            strict(builder.offset(value))
+        })
+        .register_fn(
+            "bend_from",
+            |builder: ParamRouteBuilder, source: VoiceRef, port: String| {
+                strict(builder.bend_from(&source, port))
+            },
+        )
+        .register_fn(
+            "modulate_by",
+            |builder: ParamRouteBuilder, source: VoiceRef, port: String| {
+                strict(builder.modulate_by(&source, port))
+            },
+        )
+        .register_fn("disconnect", |reference: RouteRef| {
+            strict(reference.disconnect())
+        })
+        .register_fn("remove", |reference: RouteRef| strict(reference.remove()))
+        .register_fn("status", |reference: RouteRef| strict(reference.status()));
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+    use vibelang_core::candidate::{EntityKind, RefKind, RouteVerb};
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"route-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn declare_empty<K: RefKind>(key: &str) {
+        let builder = foundation::authoring_builder::<K>(key, GroupScope::root()).unwrap();
+        let owner = DeclarationOwner::Structural(builder.source().syntax_key().clone());
+        builder
+            .apply(
+                owner,
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::Empty,
+            )
+            .unwrap();
+    }
+
+    fn voice_ref(name: &str) -> VoiceRef {
+        super::super::voice::voice_ref_v2(name.into()).unwrap()
+    }
+
+    fn group_ref(path: &str) -> GroupRef {
+        super::super::group::group_ref_v2(path.into()).unwrap()
+    }
+
+    #[test]
+    fn v2_route_builders_are_pure_and_strict() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let lead = voice_ref("lead");
+        let leads = group_ref("leads");
+
+        let builder = OutputRouteBuilder::new(&lead, "out".into())
+            .unwrap()
+            .add(&leads)
+            .add(&leads);
+        assert_eq!(
+            builder.destinations.len(),
+            1,
+            "group re-add is idempotent like v1"
+        );
+        let replaced = builder.clone().to_main().add(&leads);
+        assert_eq!(
+            replaced.destinations.len(),
+            1,
+            "switching variants clears the prior list"
+        );
+        assert!(matches!(
+            replaced.destinations[0],
+            AudioRouteDestinationAuthoring::Group(_)
+        ));
+
+        assert!(OutputRouteBuilder::new(&lead, "".into()).is_err());
+        assert!(builder.clone().scale(f64::NAN).is_err());
+        assert!(
+            builder.clone().scale(2.0).unwrap().apply().is_err(),
+            "audio routes carry no shaping"
+        );
+        assert!(
+            OutputRouteBuilder::new(&lead, "tick".into())
+                .unwrap()
+                .scale(2.0)
+                .unwrap()
+                .trigger(&lead, "gate".into())
+                .is_err(),
+            "triggers don't bend"
+        );
+        assert!(
+            builder.clone().set(&lead, "cutoff".into()).is_err(),
+            "param terminals reject accumulated audio destinations"
+        );
+        assert!(
+            OutputRouteBuilder::new(&lead, "out".into())
+                .unwrap()
+                .apply()
+                .is_err(),
+            "apply needs at least one destination"
+        );
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(
+            candidate.declarations().is_empty(),
+            "configuration alone must not declare anything"
+        );
+    }
+
+    #[test]
+    fn v2_route_terminals_return_typed_refs_and_slots_stay_single_writer() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        declare_empty::<VoiceKind>("lfo");
+        declare_empty::<VoiceKind>("env");
+
+        let bass = voice_ref("bass");
+        let lfo = voice_ref("lfo");
+        let env = voice_ref("env");
+
+        let reference = OutputRouteBuilder::new(&lfo, "cv".into())
+            .unwrap()
+            .scale(0.5)
+            .unwrap()
+            .set(&bass, "cutoff".into())
+            .unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Route);
+        assert!(matches!(
+            reference.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+
+        let second_writer = OutputRouteBuilder::new(&env, "cv".into())
+            .unwrap()
+            .set(&bass, "cutoff".into());
+        assert!(
+            matches!(
+                second_writer,
+                Err(FoundationError::Candidate(
+                    CandidateError::DuplicateDeclaration { .. }
+                ))
+            ),
+            "a second SET writer lands on the same registry slot"
+        );
+
+        ParamRouteBuilder::new(&bass, "resonance".into())
+            .unwrap()
+            .bend_from(&lfo, "cv".into())
+            .unwrap();
+        ParamRouteBuilder::new(&bass, "resonance".into())
+            .unwrap()
+            .bend_from(&env, "cv".into())
+            .unwrap();
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        let topology = candidate.route_topology();
+        let resonance = topology
+            .params
+            .iter()
+            .find(|((_, param), _)| param == "resonance")
+            .map(|(_, slot)| slot)
+            .unwrap();
+        assert_eq!(resonance.verb, RouteVerb::Bend);
+        assert_eq!(resonance.fan_in(), 2, "BEND fan-in stays additive");
+    }
+
+    #[test]
+    fn v2_route_cross_verb_conflict_rejects_the_candidate() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        declare_empty::<VoiceKind>("lfo");
+        declare_empty::<VoiceKind>("env");
+
+        let bass = voice_ref("bass");
+        OutputRouteBuilder::new(&voice_ref("lfo"), "cv".into())
+            .unwrap()
+            .set(&bass, "cutoff".into())
+            .unwrap();
+        ParamRouteBuilder::new(&bass, "cutoff".into())
+            .unwrap()
+            .bend_from(&voice_ref("env"), "cv".into())
+            .unwrap();
+
+        assert!(matches!(
+            foundation::finish_evaluation(),
+            Err(FoundationError::Candidate(
+                CandidateError::RouteConflict { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn v2_route_forwarding_aliases_are_effective() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        declare_empty::<VoiceKind>("lfo");
+        let bass = voice_ref("bass");
+        let lfo = voice_ref("lfo");
+        OutputRouteBuilder::new(&lfo, "cv".into())
+            .unwrap()
+            .to_param(&bass, "cutoff".into())
+            .unwrap();
+        let via_alias = foundation::finish_evaluation().unwrap();
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        declare_empty::<VoiceKind>("lfo");
+        let bass = voice_ref("bass");
+        let lfo = voice_ref("lfo");
+        OutputRouteBuilder::new(&lfo, "cv".into())
+            .unwrap()
+            .set(&bass, "cutoff".into())
+            .unwrap();
+        let via_set = foundation::finish_evaluation().unwrap();
+
+        let payload_bytes_of = |candidate: &vibelang_core::candidate::Candidate| {
+            candidate
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.address().kind() == EntityKind::Route)
+                .map(|declaration| match declaration.payload() {
+                    DeclarationPayload::Authoring {
+                        canonical_bytes, ..
+                    } => canonical_bytes.clone(),
+                    other => panic!("expected an authoring route payload, got {other:?}"),
+                })
+                .unwrap()
+        };
+        assert_eq!(
+            payload_bytes_of(&via_alias),
+            payload_bytes_of(&via_set),
+            "to_param forwards to the SET terminal byte-identically"
+        );
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        declare_empty::<VoiceKind>("lfo");
+        let bass = voice_ref("bass");
+        let lfo = voice_ref("lfo");
+        let via_modulate = ParamRouteBuilder::new(&bass, "cutoff".into())
+            .unwrap()
+            .modulate_by(&lfo, "cv".into())
+            .unwrap();
+        assert_eq!(via_modulate.base().kind(), EntityKind::Route);
+        foundation::abort_evaluation();
+    }
+
+    #[test]
+    fn v2_route_disconnects_are_real_operations() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("bass");
+        let bass = voice_ref("bass");
+
+        let disconnect = InputRouteBuilder::new(&bass, "sidechain".into())
+            .unwrap()
+            .disconnect()
+            .unwrap();
+        assert_eq!(disconnect.base().kind(), EntityKind::Route);
+        disconnect.clone().disconnect().unwrap();
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        let topology = candidate.route_topology();
+        let input = topology.inputs.values().next().unwrap();
+        assert!(
+            input.source.is_none(),
+            "explicit disconnect declares the silent source"
+        );
+        assert_eq!(
+            candidate.operations().len(),
+            1,
+            "RouteRef::disconnect commits a real lifecycle operation"
+        );
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let reference = commit_route(RouteAuthoring::Input {
+            target: voice_ref("ghost").base().typed::<VoiceKind>().unwrap(),
+            input_port: "in".into(),
+            source: InputRouteSourceAuthoring::Silent,
+        })
+        .unwrap();
+        reference.disconnect().unwrap();
+        assert!(
+            foundation::finish_evaluation().is_err(),
+            "an input disconnect against an undeclared voice must not resolve"
+        );
+    }
+
+    #[test]
+    fn v2_route_fx_targets_share_the_registry() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("lfo");
+        declare_empty::<EffectKind>("verb");
+        let fx_target = RouteTargetAuthoring::Effect(
+            foundation::authoring_ref::<EffectKind>("verb", GroupScope::root())
+                .unwrap()
+                .typed::<EffectKind>()
+                .unwrap(),
+        );
+        let lfo = voice_ref("lfo");
+        commit_route(RouteAuthoring::Set {
+            source: RoutePortAuthoring {
+                voice: lfo.base().typed::<VoiceKind>().unwrap(),
+                port: "cv".into(),
+                rate: RoutePortRate::Control,
+            },
+            coerce_audio: false,
+            target: fx_target.clone(),
+            target_param: "mix".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        })
+        .unwrap();
+        let conflict = commit_route(RouteAuthoring::Set {
+            source: RoutePortAuthoring {
+                voice: lfo.base().typed::<VoiceKind>().unwrap(),
+                port: "cv2".into(),
+                rate: RoutePortRate::Control,
+            },
+            coerce_audio: false,
+            target: fx_target,
+            target_param: "mix".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        });
+        assert!(
+            matches!(
+                conflict,
+                Err(FoundationError::Candidate(
+                    CandidateError::DuplicateDeclaration { .. }
+                ))
+            ),
+            "effect targets occupy the same single-writer registry slots"
+        );
+        foundation::abort_evaluation();
+    }
+
+    #[test]
+    fn v2_route_rhai_surface_authors_from_script() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        declare_empty::<VoiceKind>("lead");
+        declare_empty::<VoiceKind>("lfo");
+        declare_empty::<vibelang_core::candidate::GroupKind>("leads");
+
+        let mut engine = Engine::new();
+        crate::foundation::register(&mut engine);
+        install_v2_for_tests(&mut engine);
+        let reference = engine
+            .eval::<RouteRef>(
+                r#"
+                let lead = voice_ref("lead");
+                let lfo = voice_ref("lfo");
+                output(lead, "out").to(group_ref("leads")).apply();
+                output(lfo, "cv").scale(0.5).offset(0.1).set(lead, "cutoff");
+                input(lead, "sidechain").disconnect();
+                param(lead, "resonance").bend_from(lfo, "cv2")
+                "#,
+            )
+            .unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Route);
+        assert!(engine
+            .eval::<RouteRef>(r#"output(voice_ref("lead"), "out").apply()"#)
+            .is_err());
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        let topology = candidate.route_topology();
+        assert_eq!(topology.audio.len(), 1);
+        assert_eq!(topology.inputs.len(), 1);
+        assert_eq!(topology.params.len(), 2);
+        let cutoff = topology
+            .params
+            .iter()
+            .find(|((_, param), _)| param == "cutoff")
+            .map(|(_, slot)| slot)
+            .unwrap();
+        assert_eq!(cutoff.verb, RouteVerb::Set);
+        assert_eq!(cutoff.edges[0].scale.unwrap().get(), 0.5);
+        assert_eq!(cutoff.edges[0].offset.unwrap().get(), 0.1);
+    }
+}
