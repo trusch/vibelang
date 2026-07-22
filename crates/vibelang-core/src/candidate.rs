@@ -1421,6 +1421,278 @@ impl RouteAuthoring {
     }
 }
 
+/// A MIDI channel. The public spelling is uniformly 1-16; the zero-based
+/// index exists only behind the explicit `from_index` API per the M09
+/// roadmap. Out-of-range values reject strictly — the v1 clamp has no v2
+/// respelling.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MidiChannel(u8);
+
+impl MidiChannel {
+    /// Public one-based channel number, 1..=16.
+    pub fn from_number(number: i64) -> Result<Self, CandidateError> {
+        if !(1..=16).contains(&number) {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "MIDI channel numbers are 1..=16, got {number}"
+            )));
+        }
+        Ok(Self((number - 1) as u8))
+    }
+
+    /// Explicit zero-based channel index, 0..=15.
+    pub fn from_index(index: i64) -> Result<Self, CandidateError> {
+        if !(0..=15).contains(&index) {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "MIDI channel indexes are 0..=15, got {index}"
+            )));
+        }
+        Ok(Self(index as u8))
+    }
+
+    #[must_use]
+    pub const fn number(self) -> u8 {
+        self.0 + 1
+    }
+
+    #[must_use]
+    pub const fn index(self) -> u8 {
+        self.0
+    }
+}
+
+/// A MIDI 2.0 group with the same public 1-16 / explicit-index contract
+/// as [`MidiChannel`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MidiGroup(u8);
+
+impl MidiGroup {
+    /// Public one-based group number, 1..=16.
+    pub fn from_number(number: i64) -> Result<Self, CandidateError> {
+        if !(1..=16).contains(&number) {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "MIDI group numbers are 1..=16, got {number}"
+            )));
+        }
+        Ok(Self((number - 1) as u8))
+    }
+
+    /// Explicit zero-based group index, 0..=15.
+    pub fn from_index(index: i64) -> Result<Self, CandidateError> {
+        if !(0..=15).contains(&index) {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "MIDI group indexes are 0..=15, got {index}"
+            )));
+        }
+        Ok(Self(index as u8))
+    }
+
+    #[must_use]
+    pub const fn number(self) -> u8 {
+        self.0 + 1
+    }
+
+    #[must_use]
+    pub const fn index(self) -> u8 {
+        self.0
+    }
+}
+
+/// A width-qualified MIDI data value. Every constructor names its width
+/// and rejects out-of-range input strictly — v1 clamping has no v2
+/// respelling.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MidiValue {
+    V7(u8),
+    V14(u16),
+    V16(u16),
+    V32(u32),
+}
+
+impl MidiValue {
+    fn ranged(value: i64, max: i64, width: &'static str) -> Result<i64, CandidateError> {
+        if !(0..=max).contains(&value) {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "{width} MIDI values are 0..={max}, got {value}"
+            )));
+        }
+        Ok(value)
+    }
+
+    pub fn v7(value: i64) -> Result<Self, CandidateError> {
+        Ok(Self::V7(Self::ranged(value, 127, "7-bit")? as u8))
+    }
+
+    pub fn v14(value: i64) -> Result<Self, CandidateError> {
+        Ok(Self::V14(Self::ranged(value, 16_383, "14-bit")? as u16))
+    }
+
+    pub fn v16(value: i64) -> Result<Self, CandidateError> {
+        Ok(Self::V16(Self::ranged(value, 65_535, "16-bit")? as u16))
+    }
+
+    pub fn v32(value: i64) -> Result<Self, CandidateError> {
+        Ok(Self::V32(
+            Self::ranged(value, i64::from(u32::MAX), "32-bit")? as u32,
+        ))
+    }
+
+    #[must_use]
+    pub const fn width_bits(self) -> u8 {
+        match self {
+            Self::V7(_) => 7,
+            Self::V14(_) => 14,
+            Self::V16(_) => 16,
+            Self::V32(_) => 32,
+        }
+    }
+
+    #[must_use]
+    pub const fn raw(self) -> u32 {
+        match self {
+            Self::V7(value) => value as u32,
+            Self::V14(value) | Self::V16(value) => value as u32,
+            Self::V32(value) => value,
+        }
+    }
+}
+
+/// Which direction(s) a declared MIDI device binding covers.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MidiDeviceDirectionAuthoring {
+    Input,
+    Output,
+    Bidirectional,
+}
+
+/// V2 MIDI device declarations bind one exact port name. The v1 partial
+/// case-insensitive match and the not-found sentinel device have no v2
+/// respelling — resolution failures are typed results, never placeholder
+/// handles.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MidiDeviceAuthoring {
+    pub port: String,
+    pub direction: MidiDeviceDirectionAuthoring,
+}
+
+/// V2 MIDI route declarations under [`EntityKind::MidiRoute`].
+///
+/// Keyboard routes are edge-wise (one declaration per device/channel/
+/// voice edge, matching the additive v1 route list); CC routes are
+/// target-side single-writer (a second CC writer on the same target
+/// parameter is a duplicate declaration).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MidiRouteAuthoring {
+    Keyboard {
+        device: TypedRef<MidiDeviceKind>,
+        /// `None` listens on all channels.
+        channel: Option<MidiChannel>,
+        voice: TypedRef<VoiceKind>,
+    },
+    Cc {
+        device: TypedRef<MidiDeviceKind>,
+        /// `None` listens on all channels.
+        channel: Option<MidiChannel>,
+        controller: u8,
+        target: RouteTargetAuthoring,
+        target_param: String,
+        /// Mapped value at controller 0. Reverse mappings (min > max)
+        /// stay legal exactly as in v1.
+        min: CanonicalF64,
+        /// Mapped value at the controller maximum.
+        max: CanonicalF64,
+    },
+}
+
+fn midi_channel_key_component(channel: Option<MidiChannel>) -> String {
+    channel.map_or_else(|| "all".into(), |channel| channel.number().to_string())
+}
+
+impl MidiRouteAuthoring {
+    /// Derive the stable declaration key encoding this route's identity.
+    pub fn canonical_key(&self) -> Result<DeclarationKey, CandidateError> {
+        let key = match self {
+            Self::Keyboard {
+                device,
+                channel,
+                voice,
+            } => format!(
+                "keyboard.{}.{}.{}",
+                scoped_key_component(&device.address().erase()),
+                midi_channel_key_component(*channel),
+                scoped_key_component(&voice.address().erase())
+            ),
+            Self::Cc {
+                target,
+                target_param,
+                ..
+            } => format!(
+                "cc.{}.{}.{}",
+                target.key_prefix(),
+                scoped_key_component(&target.address()),
+                target_param
+            ),
+        };
+        DeclarationKey::new(key)
+    }
+}
+
+/// What fires a V2 MIDI callback.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallbackTriggerAuthoring {
+    NoteOn {
+        channel: Option<MidiChannel>,
+        /// `None` fires for every note.
+        note: Option<u8>,
+    },
+    ControlChange {
+        channel: Option<MidiChannel>,
+        /// `None` fires for every controller.
+        controller: Option<u8>,
+    },
+    ClockSync,
+    AnyMessage,
+}
+
+/// V2 MIDI callback declarations under [`EntityKind::Callback`]. The
+/// handler is a named script function — candidate IR is pure data, so
+/// the v1 captured-closure spelling has no v2 respelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallbackAuthoring {
+    pub device: TypedRef<MidiDeviceKind>,
+    pub trigger: CallbackTriggerAuthoring,
+    pub handler: String,
+}
+
+impl CallbackAuthoring {
+    /// Derive the stable declaration key encoding this callback's
+    /// identity: one declaration per device/trigger/handler edge.
+    pub fn canonical_key(&self) -> Result<DeclarationKey, CandidateError> {
+        let trigger = match &self.trigger {
+            CallbackTriggerAuthoring::NoteOn { channel, note } => format!(
+                "note-on.{}.{}",
+                midi_channel_key_component(*channel),
+                note.map_or_else(|| "any".into(), |note| note.to_string())
+            ),
+            CallbackTriggerAuthoring::ControlChange {
+                channel,
+                controller,
+            } => format!(
+                "control-change.{}.{}",
+                midi_channel_key_component(*channel),
+                controller.map_or_else(|| "any".into(), |controller| controller.to_string())
+            ),
+            CallbackTriggerAuthoring::ClockSync => "clock-sync".into(),
+            CallbackTriggerAuthoring::AnyMessage => "any-message".into(),
+        };
+        DeclarationKey::new(format!(
+            "callback.{}.{}.{}",
+            scoped_key_component(&self.device.address().erase()),
+            trigger,
+            self.handler
+        ))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthoringDeclaration {
     Group(GroupAuthoring),
@@ -1437,6 +1709,9 @@ pub enum AuthoringDeclaration {
     Sfz(SfzAuthoring),
     Recording(RecordingAuthoring),
     Route(RouteAuthoring),
+    MidiDevice(MidiDeviceAuthoring),
+    MidiRoute(MidiRouteAuthoring),
+    Callback(CallbackAuthoring),
 }
 
 impl AuthoringDeclaration {
@@ -1457,6 +1732,9 @@ impl AuthoringDeclaration {
             Self::Sfz(_) => EntityKind::Sfz,
             Self::Recording(_) => EntityKind::Recording,
             Self::Route(_) => EntityKind::Route,
+            Self::MidiDevice(_) => EntityKind::MidiDevice,
+            Self::MidiRoute(_) => EntityKind::MidiRoute,
+            Self::Callback(_) => EntityKind::Callback,
         }
     }
 
@@ -1472,6 +1750,7 @@ impl AuthoringDeclaration {
             Self::Sample(_) | Self::Buffer(_) | Self::Sfz(_) => None,
             Self::Recording(recording) => Some(recording.lifecycle),
             Self::Route(_) => None,
+            Self::MidiDevice(_) | Self::MidiRoute(_) | Self::Callback(_) => None,
         }
     }
 
@@ -1819,6 +2098,56 @@ impl AuthoringDeclaration {
                         validate_port(target_param, "route target parameter")?;
                         validate_rate(source.rate, RoutePortRate::Trigger, "TRIGGER routing")?;
                     }
+                }
+            }
+            Self::MidiDevice(device) => {
+                let port = &device.port;
+                if port.is_empty()
+                    || port.len() > 255
+                    || port.trim() != port
+                    || port.bytes().any(|byte| byte < 0x20)
+                {
+                    return Err(CandidateError::InvalidAuthoring(
+                        "MIDI device port must be a non-empty exact port name of at most 255 \
+                         bytes without surrounding whitespace or control bytes"
+                            .into(),
+                    ));
+                }
+            }
+            Self::MidiRoute(route) => match route {
+                MidiRouteAuthoring::Keyboard { .. } => {}
+                MidiRouteAuthoring::Cc {
+                    controller,
+                    target_param,
+                    ..
+                } => {
+                    if *controller > 127 {
+                        return Err(CandidateError::InvalidAuthoring(format!(
+                            "MIDI controller numbers are 0..=127, got {controller}"
+                        )));
+                    }
+                    validate_component(target_param, "MIDI CC target parameter")?;
+                }
+            },
+            Self::Callback(callback) => {
+                validate_component(&callback.handler, "MIDI callback handler")?;
+                match &callback.trigger {
+                    CallbackTriggerAuthoring::NoteOn {
+                        note: Some(note), ..
+                    } if *note > 127 => {
+                        return Err(CandidateError::InvalidAuthoring(format!(
+                            "MIDI note numbers are 0..=127, got {note}"
+                        )));
+                    }
+                    CallbackTriggerAuthoring::ControlChange {
+                        controller: Some(controller),
+                        ..
+                    } if *controller > 127 => {
+                        return Err(CandidateError::InvalidAuthoring(format!(
+                            "MIDI controller numbers are 0..=127, got {controller}"
+                        )));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -2349,6 +2678,112 @@ impl AuthoringDeclaration {
                     }
                 }
             }
+            Self::MidiDevice(device) => {
+                encoder.tag(14);
+                encoder.text(&device.port);
+                encoder.tag(match device.direction {
+                    MidiDeviceDirectionAuthoring::Input => 0,
+                    MidiDeviceDirectionAuthoring::Output => 1,
+                    MidiDeviceDirectionAuthoring::Bidirectional => 2,
+                });
+            }
+            Self::MidiRoute(route) => {
+                fn channel(encoder: &mut Encoder, channel: Option<MidiChannel>) {
+                    match channel {
+                        None => encoder.tag(0),
+                        Some(channel) => {
+                            encoder.tag(1);
+                            encoder.tag(channel.index());
+                        }
+                    }
+                }
+                fn target(encoder: &mut Encoder, target: &RouteTargetAuthoring) {
+                    match target {
+                        RouteTargetAuthoring::Voice(reference) => {
+                            encoder.tag(0);
+                            encoder.reference(reference);
+                        }
+                        RouteTargetAuthoring::Effect(reference) => {
+                            encoder.tag(1);
+                            encoder.reference(reference);
+                        }
+                    }
+                }
+                encoder.tag(15);
+                match route {
+                    MidiRouteAuthoring::Keyboard {
+                        device,
+                        channel: route_channel,
+                        voice,
+                    } => {
+                        encoder.tag(0);
+                        encoder.reference(device);
+                        channel(&mut encoder, *route_channel);
+                        encoder.reference(voice);
+                    }
+                    MidiRouteAuthoring::Cc {
+                        device,
+                        channel: route_channel,
+                        controller,
+                        target: route_target,
+                        target_param,
+                        min,
+                        max,
+                    } => {
+                        encoder.tag(1);
+                        encoder.reference(device);
+                        channel(&mut encoder, *route_channel);
+                        encoder.tag(*controller);
+                        target(&mut encoder, route_target);
+                        encoder.text(target_param);
+                        encoder.number(*min);
+                        encoder.number(*max);
+                    }
+                }
+            }
+            Self::Callback(callback) => {
+                fn channel(encoder: &mut Encoder, channel: Option<MidiChannel>) {
+                    match channel {
+                        None => encoder.tag(0),
+                        Some(channel) => {
+                            encoder.tag(1);
+                            encoder.tag(channel.index());
+                        }
+                    }
+                }
+                fn optional_data(encoder: &mut Encoder, data: Option<u8>) {
+                    match data {
+                        None => encoder.tag(0),
+                        Some(data) => {
+                            encoder.tag(1);
+                            encoder.tag(data);
+                        }
+                    }
+                }
+                encoder.tag(16);
+                encoder.reference(&callback.device);
+                match &callback.trigger {
+                    CallbackTriggerAuthoring::NoteOn {
+                        channel: trigger_channel,
+                        note,
+                    } => {
+                        encoder.tag(0);
+                        channel(&mut encoder, *trigger_channel);
+                        optional_data(&mut encoder, *note);
+                    }
+                    CallbackTriggerAuthoring::ControlChange {
+                        channel: trigger_channel,
+                        controller,
+                    } => {
+                        encoder.tag(1);
+                        channel(&mut encoder, *trigger_channel);
+                        optional_data(&mut encoder, *controller);
+                    }
+                    CallbackTriggerAuthoring::ClockSync => encoder.tag(2),
+                    CallbackTriggerAuthoring::AnyMessage => encoder.tag(3),
+                }
+                encoder.text(&callback.handler);
+            }
         }
         Arc::from(encoder.0)
     }
@@ -2413,6 +2848,16 @@ impl AuthoringDeclaration {
                     vec![source.voice.erase(), target.reference()]
                 }
             },
+            Self::MidiDevice(_) => Vec::new(),
+            Self::MidiRoute(route) => match route {
+                MidiRouteAuthoring::Keyboard { device, voice, .. } => {
+                    vec![device.erase(), voice.erase()]
+                }
+                MidiRouteAuthoring::Cc { device, target, .. } => {
+                    vec![device.erase(), target.reference()]
+                }
+            },
+            Self::Callback(callback) => vec![callback.device.erase()],
         }
     }
 
@@ -4989,5 +5434,241 @@ mod tests {
             sidechain.source.is_none(),
             "explicit disconnect reports no source"
         );
+    }
+
+    fn midi_device_ref(identity: &EvaluationIdentity, key: &str) -> TypedRef<MidiDeviceKind> {
+        TypedRef::new(identity.clone(), address::<MidiDeviceKind>(key))
+    }
+
+    fn midi_route_declaration(route: MidiRouteAuthoring, index: u32) -> DeclarationIr {
+        DeclarationIr::new(
+            TypedAddress::<MidiRouteKind>::new(
+                ProjectNamespace::new("test-project").unwrap(),
+                module(),
+                GroupScope::root(),
+                route.canonical_key().unwrap(),
+            ),
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module(), &[index], "owner").unwrap(),
+            ),
+            source(index),
+            LifecycleMetadata::register(Composition::Standalone),
+            DeclarationPayload::authoring(AuthoringDeclaration::MidiRoute(route)).unwrap(),
+        )
+    }
+
+    #[test]
+    fn midi_channels_groups_and_values_are_strict_width_qualified_boundaries() {
+        for number in [1, 8, 16] {
+            let channel = MidiChannel::from_number(number).unwrap();
+            assert_eq!(i64::from(channel.number()), number);
+            assert_eq!(i64::from(channel.index()), number - 1);
+            let group = MidiGroup::from_number(number).unwrap();
+            assert_eq!(i64::from(group.number()), number);
+        }
+        for number in [0, 17, -1] {
+            assert!(MidiChannel::from_number(number).is_err());
+            assert!(MidiGroup::from_number(number).is_err());
+        }
+        assert_eq!(MidiChannel::from_index(0).unwrap().number(), 1);
+        assert_eq!(MidiChannel::from_index(15).unwrap().number(), 16);
+        assert!(MidiChannel::from_index(16).is_err());
+        assert!(MidiGroup::from_index(-1).is_err());
+
+        let table: [(fn(i64) -> Result<MidiValue, CandidateError>, i64, u8); 4] = [
+            (MidiValue::v7, 127, 7),
+            (MidiValue::v14, 16_383, 14),
+            (MidiValue::v16, 65_535, 16),
+            (MidiValue::v32, i64::from(u32::MAX), 32),
+        ];
+        for (constructor, max, width) in table {
+            let value = constructor(max).unwrap();
+            assert_eq!(value.width_bits(), width);
+            assert_eq!(i64::try_from(value.raw()).unwrap(), max);
+            assert_eq!(constructor(0).unwrap().raw(), 0);
+            assert!(constructor(max + 1).is_err(), "{width}-bit max+1 rejects");
+            assert!(constructor(-1).is_err(), "{width}-bit negatives reject");
+        }
+    }
+
+    #[test]
+    fn midi_authoring_validates_devices_routes_and_callbacks_strictly() {
+        let identity = identity(31);
+        let device = midi_device_ref(&identity, "mpk");
+        let voice = TypedRef::new(identity.clone(), address::<VoiceKind>("lead"));
+        let target = RouteTargetAuthoring::Voice(voice.clone());
+
+        for port in ["", " padded ", "ctrl\u{1}byte", &"p".repeat(256)] {
+            let declaration = AuthoringDeclaration::MidiDevice(MidiDeviceAuthoring {
+                port: port.into(),
+                direction: MidiDeviceDirectionAuthoring::Output,
+            });
+            assert!(
+                matches!(
+                    DeclarationPayload::authoring(declaration),
+                    Err(CandidateError::InvalidAuthoring(_))
+                ),
+                "port {port:?} rejects"
+            );
+        }
+
+        assert!(matches!(
+            DeclarationPayload::authoring(AuthoringDeclaration::MidiRoute(
+                MidiRouteAuthoring::Cc {
+                    device: device.clone(),
+                    channel: None,
+                    controller: 128,
+                    target: target.clone(),
+                    target_param: "cutoff".into(),
+                    min: CanonicalF64::new(0.0).unwrap(),
+                    max: CanonicalF64::new(1.0).unwrap(),
+                }
+            )),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+
+        assert!(matches!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Callback(CallbackAuthoring {
+                device: device.clone(),
+                trigger: CallbackTriggerAuthoring::NoteOn {
+                    channel: None,
+                    note: Some(128),
+                },
+                handler: "on_pad".into(),
+            })),
+            Err(CandidateError::InvalidAuthoring(_))
+        ));
+        assert!(matches!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Callback(CallbackAuthoring {
+                device,
+                trigger: CallbackTriggerAuthoring::ClockSync,
+                handler: "bad handler".into(),
+            })),
+            Err(CandidateError::InvalidAddress(_))
+        ));
+    }
+
+    #[test]
+    fn midi_route_keys_are_edgewise_for_keyboard_and_single_writer_for_cc() {
+        let identity = identity(32);
+        let device = midi_device_ref(&identity, "mpk");
+        let voice = TypedRef::new(identity.clone(), address::<VoiceKind>("lead"));
+        let channel = MidiChannel::from_number(2).unwrap();
+
+        let keyboard = MidiRouteAuthoring::Keyboard {
+            device: device.clone(),
+            channel: Some(channel),
+            voice: voice.clone(),
+        };
+        assert_eq!(
+            keyboard.canonical_key().unwrap().as_str(),
+            "keyboard.mpk.2.lead"
+        );
+        let other_voice = MidiRouteAuthoring::Keyboard {
+            device: device.clone(),
+            channel: Some(channel),
+            voice: TypedRef::new(identity.clone(), address::<VoiceKind>("pad")),
+        };
+        assert_ne!(
+            keyboard.canonical_key().unwrap(),
+            other_voice.canonical_key().unwrap(),
+            "keyboard routes are edge-wise: another voice is another declaration"
+        );
+
+        let cc = |controller: u8| MidiRouteAuthoring::Cc {
+            device: device.clone(),
+            channel: None,
+            controller,
+            target: RouteTargetAuthoring::Voice(voice.clone()),
+            target_param: "cutoff".into(),
+            min: CanonicalF64::new(0.0).unwrap(),
+            max: CanonicalF64::new(1.0).unwrap(),
+        };
+        assert_eq!(
+            cc(20).canonical_key().unwrap(),
+            cc(21).canonical_key().unwrap(),
+            "CC routes are target-side single-writer: a second controller on the same \
+             target parameter lands on the same address"
+        );
+
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<MidiRouteKind>(midi_route_declaration(cc(20), 1))
+            .unwrap();
+        assert!(matches!(
+            draft.declare::<MidiRouteKind>(midi_route_declaration(cc(21), 2)),
+            Err(CandidateError::DuplicateDeclaration { .. })
+        ));
+    }
+
+    #[test]
+    fn midi_payload_bytes_are_canonical_and_channel_sensitive() {
+        let identity = identity(33);
+        let device = midi_device_ref(&identity, "mpk");
+        let voice = TypedRef::new(identity.clone(), address::<VoiceKind>("lead"));
+        let keyboard = |channel: Option<MidiChannel>| {
+            AuthoringDeclaration::MidiRoute(MidiRouteAuthoring::Keyboard {
+                device: device.clone(),
+                channel,
+                voice: voice.clone(),
+            })
+        };
+
+        let all_channels = keyboard(None).canonical_bytes();
+        assert_eq!(
+            all_channels,
+            keyboard(None).canonical_bytes(),
+            "identical MIDI authoring encodes identical canonical bytes"
+        );
+        assert_ne!(
+            all_channels,
+            keyboard(Some(MidiChannel::from_number(3).unwrap())).canonical_bytes(),
+            "the channel qualifier is part of the canonical payload"
+        );
+
+        let callback = AuthoringDeclaration::Callback(CallbackAuthoring {
+            device: device.clone(),
+            trigger: CallbackTriggerAuthoring::ControlChange {
+                channel: Some(MidiChannel::from_number(1).unwrap()),
+                controller: Some(64),
+            },
+            handler: "on_sustain".into(),
+        });
+        let renamed = AuthoringDeclaration::Callback(CallbackAuthoring {
+            device: device.clone(),
+            trigger: CallbackTriggerAuthoring::ControlChange {
+                channel: Some(MidiChannel::from_number(1).unwrap()),
+                controller: Some(64),
+            },
+            handler: "on_sustain_b".into(),
+        });
+        assert_ne!(callback.canonical_bytes(), renamed.canonical_bytes());
+    }
+
+    #[test]
+    fn midi_routes_and_callbacks_must_resolve_their_device_in_the_candidate() {
+        let identity = identity(34);
+        let device = midi_device_ref(&identity, "ghost");
+        let voice = TypedRef::new(identity.clone(), address::<VoiceKind>("lead"));
+
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("lead", 1))
+            .unwrap();
+        draft
+            .declare::<MidiRouteKind>(midi_route_declaration(
+                MidiRouteAuthoring::Keyboard {
+                    device: device.clone(),
+                    channel: None,
+                    voice,
+                },
+                2,
+            ))
+            .unwrap();
+        assert!(matches!(
+            draft.finish(&ReferenceCatalog::default()),
+            Err(CandidateError::UnresolvedReference(address))
+                if address.kind() == EntityKind::MidiDevice
+        ));
     }
 }
