@@ -21,7 +21,7 @@ use crate::mutation::{
 };
 use crate::resource_manager::{
     LogicalResource, PhysicalFreeConfirmation, PhysicalResourceId, QuiescenceProof, ResourceError,
-    ResourceGeneration, ResourceManager, ResourceRetirement, ResourceStageSnapshot,
+    ResourceGeneration, ResourceKind, ResourceManager, ResourceRetirement, ResourceStageSnapshot,
 };
 use crate::types::{NodeId, ParamMap};
 use async_trait::async_trait;
@@ -534,6 +534,104 @@ pub fn lower_dsp_definition_components(
         });
     }
     Ok(components)
+}
+
+/// A candidate resource declaration bound to its typed logical address.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CandidateResourceBinding {
+    /// Fully qualified address of the owning candidate declaration.
+    pub declaration: String,
+    /// The manager-facing logical binding derived from that address.
+    pub logical: LogicalResource,
+}
+
+/// Extract the typed logical resource bindings a candidate declares.
+///
+/// Sample, Buffer, and SFZ declarations bind by fully qualified logical
+/// address only — candidate IR never carries backend buffer numbers or other
+/// physical IDs, so the `ResourceManager` remains the sole physical owner.
+/// Recording declarations are runtime lifecycle entities rather than managed
+/// generations and are deliberately not bound here.
+pub fn candidate_resource_bindings(
+    candidate: &Candidate,
+) -> Result<Vec<CandidateResourceBinding>, GenerationError> {
+    let mut bindings = Vec::new();
+    for declaration in candidate.declarations() {
+        let DeclarationPayload::Authoring {
+            declaration: authoring,
+            ..
+        } = declaration.payload()
+        else {
+            continue;
+        };
+        let kind = match authoring {
+            AuthoringDeclaration::Sample(_) => ResourceKind::Sample,
+            AuthoringDeclaration::Buffer(_) => ResourceKind::Buffer,
+            AuthoringDeclaration::Sfz(_) => ResourceKind::Sfz,
+            _ => continue,
+        };
+        let address = declaration.address().to_string();
+        let logical = LogicalResource::new(kind, address.clone()).map_err(|error| {
+            GenerationError::InvalidPlan(format!(
+                "candidate resource declaration {address} has no valid logical binding: {error}"
+            ))
+        })?;
+        bindings.push(CandidateResourceBinding {
+            declaration: address,
+            logical,
+        });
+    }
+    Ok(bindings)
+}
+
+/// Lower candidate resource declarations onto staged resource generations.
+///
+/// Every declared Sample/Buffer/SFZ logical binding must carry exactly one
+/// staged generation claim, and every staged claim must belong to a declared
+/// binding; any mismatch rejects the whole lowering instead of silently
+/// dropping or inventing claims. Emitted components bind logical addresses to
+/// generations only — physical resource IDs stay inside the manager.
+pub fn lower_resource_components(
+    candidate: &Candidate,
+    staged: &BTreeMap<LogicalResource, ResourceGeneration>,
+) -> Result<Vec<NativePlanComponent>, GenerationError> {
+    let bindings = candidate_resource_bindings(candidate)?;
+    let declared = bindings
+        .iter()
+        .map(|binding| binding.logical.clone())
+        .collect::<BTreeSet<_>>();
+    let claimed = staged.keys().cloned().collect::<BTreeSet<_>>();
+    if declared != claimed {
+        let missing = declared
+            .difference(&claimed)
+            .map(|logical| logical.address().to_string())
+            .collect::<Vec<_>>();
+        let unexpected = claimed
+            .difference(&declared)
+            .map(|logical| logical.address().to_string())
+            .collect::<Vec<_>>();
+        return Err(GenerationError::InvalidPlan(format!(
+            "staged resource claims do not match candidate resource declarations \
+             (unstaged declarations: [{}], undeclared claims: [{}])",
+            missing.join(", "),
+            unexpected.join(", "),
+        )));
+    }
+    Ok(bindings
+        .into_iter()
+        .map(|binding| {
+            let generation = staged[&binding.logical];
+            let kind = format!("{:?}", binding.logical.kind()).to_ascii_lowercase();
+            NativePlanComponent {
+                declaration: binding.declaration,
+                path: format!("resources/{kind}/{}", binding.logical.address()),
+                operation: NativeStageOperation::Resource {
+                    logical: binding.logical,
+                    generation,
+                },
+            }
+        })
+        .collect())
 }
 
 fn sort_components(components: &mut [NativePlanComponent], topology: &InactiveTopology) {
@@ -2772,15 +2870,19 @@ pub enum GenerationError {
 mod tests {
     use super::*;
     use crate::candidate::{
-        AuthoringDeclaration, CandidateDraft, CanonicalF64, Composition, ContractDigest,
-        DeclarationIr, DeclarationKey, DeclarationOwner, DeclarationPayload,
-        DspDefinitionAuthoring, EngineInstanceId, EvaluationIdentity, GroupAuthoring, GroupKind,
-        GroupScope, LanguageContract, LifecycleMetadata, ModulePath, ProjectNamespace,
-        ReferenceCatalog, SourceAnchor, SyntaxKey, SynthDefKind, TypedAddress,
+        AuthoringDeclaration, BufferAuthoring, BufferKind, BufferReplacementAuthoring,
+        CandidateDraft, CanonicalF64, Composition, ContractDigest, DeclarationIr, DeclarationKey,
+        DeclarationOwner, DeclarationPayload, DesiredLifecycle, DspDefinitionAuthoring,
+        EngineInstanceId, EvaluationIdentity, GroupAuthoring, GroupKind, GroupScope,
+        LanguageContract, LifecycleMetadata, ModulePath, ProjectNamespace, RecordingAuthoring,
+        RecordingKind, RecordingLengthAuthoring, ReferenceCatalog, SampleAuthoring, SampleKind,
+        SampleTriggerAuthoring, SfzAuthoring, SfzKind, SourceAnchor, SyntaxKey, SynthDefKind,
+        TypedAddress, TypedRef,
     };
     use crate::resource_manager::{
-        GenerationHealth, LogicalResource, ResourceAccounting, ResourceError, ResourceKind,
-        ResourceStage, ResourceStageOwner, ResourceStageState, SampleIdentity,
+        BufferPersistence, BufferShapePolicy, BufferSpec, GenerationHealth, LogicalResource,
+        ResourceAccounting, ResourceError, ResourceKind, ResourceStage, ResourceStageOwner,
+        ResourceStageState, SampleIdentity, SfzIdentity,
     };
     use parking_lot::Mutex;
     use std::collections::HashSet;
@@ -4730,5 +4832,480 @@ mod tests {
             resources.health(old.generation),
             Some(GenerationHealth::Freed)
         );
+    }
+
+    fn resource_test_number(value: f64) -> CanonicalF64 {
+        CanonicalF64::new(value).expect("finite authoring number")
+    }
+
+    fn resource_candidate(identity: EvaluationIdentity) -> Candidate {
+        let module = ModulePath::new("song/main").expect("module");
+        let project = ProjectNamespace::new("test-project").expect("project");
+        let declaration_source = |index: u32| {
+            SourceAnchor::new(
+                module.clone(),
+                SyntaxKey::deterministic(&module, &[index], "declaration").expect("syntax key"),
+                None,
+            )
+        };
+        let owner = |index: u32| {
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module, &[index], "owner").expect("owner key"),
+            )
+        };
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<SampleKind>(DeclarationIr::new(
+                TypedAddress::<SampleKind>::new(
+                    project.clone(),
+                    module.clone(),
+                    GroupScope::root(),
+                    DeclarationKey::new("kick").expect("key"),
+                ),
+                owner(1),
+                declaration_source(1),
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::authoring(AuthoringDeclaration::Sample(SampleAuthoring {
+                    source: "samples/kick.wav".into(),
+                    attack: resource_test_number(0.001),
+                    sustain: resource_test_number(1.0),
+                    release: resource_test_number(0.01),
+                    amp: resource_test_number(1.0),
+                    rate: resource_test_number(1.0),
+                    loop_mode: false,
+                    offset: resource_test_number(0.0),
+                    length: None,
+                    trigger: SampleTriggerAuthoring::Gate,
+                    warp: None,
+                }))
+                .expect("sample payload"),
+            ))
+            .expect("sample declaration");
+        draft
+            .declare::<BufferKind>(DeclarationIr::new(
+                TypedAddress::<BufferKind>::new(
+                    project.clone(),
+                    module.clone(),
+                    GroupScope::root(),
+                    DeclarationKey::new("scratch").expect("key"),
+                ),
+                owner(2),
+                declaration_source(2),
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::authoring(AuthoringDeclaration::Buffer(BufferAuthoring {
+                    frames: 1024,
+                    channels: 1,
+                    replacement: BufferReplacementAuthoring::Clear,
+                }))
+                .expect("buffer payload"),
+            ))
+            .expect("buffer declaration");
+        draft
+            .declare::<SfzKind>(DeclarationIr::new(
+                TypedAddress::<SfzKind>::new(
+                    project.clone(),
+                    module.clone(),
+                    GroupScope::root(),
+                    DeclarationKey::new("piano").expect("key"),
+                ),
+                owner(3),
+                declaration_source(3),
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::authoring(AuthoringDeclaration::Sfz(SfzAuthoring {
+                    source: "instruments/piano.sfz".into(),
+                }))
+                .expect("sfz payload"),
+            ))
+            .expect("sfz declaration");
+        let group = TypedRef::new(
+            identity.clone(),
+            TypedAddress::<GroupKind>::new(
+                project,
+                module.clone(),
+                GroupScope::root(),
+                DeclarationKey::new("drums").expect("key"),
+            ),
+        );
+        draft
+            .declare::<RecordingKind>(DeclarationIr::new(
+                TypedAddress::<RecordingKind>::new(
+                    group.address().as_untyped().project().clone(),
+                    module.clone(),
+                    GroupScope::root(),
+                    DeclarationKey::new("take1").expect("key"),
+                ),
+                owner(4),
+                declaration_source(4),
+                LifecycleMetadata::register(Composition::Standalone),
+                DeclarationPayload::authoring(AuthoringDeclaration::Recording(
+                    RecordingAuthoring {
+                        source: group.clone(),
+                        length: Some(RecordingLengthAuthoring::Beats(3840)),
+                        count_in_ticks: 0,
+                        metronome: false,
+                        destination: None,
+                        channels: 2,
+                        lifecycle: DesiredLifecycle::Dormant,
+                    },
+                ))
+                .expect("recording payload"),
+            ))
+            .expect("recording declaration");
+        let mut catalog = ReferenceCatalog::default();
+        catalog
+            .insert(&group, &identity)
+            .expect("catalog group reference");
+        draft.finish(&catalog).expect("resource candidate")
+    }
+
+    fn sample_identity(fingerprint: &str) -> SampleIdentity {
+        SampleIdentity {
+            canonical_source: "samples/kick.wav".into(),
+            content_fingerprint: fingerprint.into(),
+            decode_options_digest: "default".into(),
+            loader_version: "loader-1".into(),
+            backend: "mock".into(),
+        }
+    }
+
+    fn logical_by_kind(
+        bindings: &[CandidateResourceBinding],
+        kind: ResourceKind,
+    ) -> LogicalResource {
+        bindings
+            .iter()
+            .find(|binding| binding.logical.kind() == kind)
+            .expect("binding for kind")
+            .logical
+            .clone()
+    }
+
+    #[test]
+    fn candidate_resource_bindings_are_typed_logical_addresses_without_physical_ids() {
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"resource bindings")),
+            EngineInstanceId::new(),
+            RuntimeEpoch::new(),
+        );
+        let candidate = resource_candidate(identity);
+        let bindings = candidate_resource_bindings(&candidate).expect("bindings");
+
+        assert_eq!(bindings.len(), 3);
+        let kinds = bindings
+            .iter()
+            .map(|binding| binding.logical.kind())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            kinds,
+            BTreeSet::from([
+                ResourceKind::Sample,
+                ResourceKind::Buffer,
+                ResourceKind::Sfz
+            ])
+        );
+        for binding in &bindings {
+            assert_eq!(binding.declaration, binding.logical.address());
+        }
+        assert!(
+            !bindings
+                .iter()
+                .any(|binding| binding.declaration.contains("::recording::")),
+            "Recording declarations are lifecycle entities, not managed resource bindings"
+        );
+    }
+
+    #[test]
+    fn resource_lowering_requires_exact_staged_claim_accounting() {
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"resource accounting")),
+            EngineInstanceId::new(),
+            RuntimeEpoch::new(),
+        );
+        let candidate = resource_candidate(identity);
+        let bindings = candidate_resource_bindings(&candidate).expect("bindings");
+        let resources = ResourceManager::new();
+        let stage = resources.begin_stage().expect("stage");
+        let sample = resources
+            .stage_sample(
+                stage,
+                logical_by_kind(&bindings, ResourceKind::Sample),
+                sample_identity("fp-1"),
+                [PhysicalResourceId::Buffer(7)],
+            )
+            .expect("staged sample");
+        let buffer = resources
+            .stage_buffer(
+                stage,
+                logical_by_kind(&bindings, ResourceKind::Buffer),
+                BufferSpec {
+                    frames: 1024,
+                    channels: 1,
+                    sample_format: "f32".into(),
+                    backend: "mock".into(),
+                    persistence: BufferPersistence::Persistent,
+                },
+                BufferShapePolicy::Clear,
+                [PhysicalResourceId::Buffer(8)],
+            )
+            .expect("staged buffer");
+
+        let mut partial = BTreeMap::new();
+        partial.insert(
+            logical_by_kind(&bindings, ResourceKind::Sample),
+            sample.generation,
+        );
+        partial.insert(
+            logical_by_kind(&bindings, ResourceKind::Buffer),
+            buffer.generation,
+        );
+        assert!(matches!(
+            lower_resource_components(&candidate, &partial),
+            Err(GenerationError::InvalidPlan(message))
+                if message.contains("unstaged declarations") && message.contains("::sfz::")
+        ));
+
+        let sfz = resources
+            .stage_sfz(
+                stage,
+                logical_by_kind(&bindings, ResourceKind::Sfz),
+                SfzIdentity {
+                    canonical_root: "instruments/piano.sfz".into(),
+                    transitive_fingerprint: "sfz-fp-1".into(),
+                    load_options_digest: "default".into(),
+                    loader_version: "loader-1".into(),
+                    backend: "mock".into(),
+                },
+                [PhysicalResourceId::Native(9)],
+            )
+            .expect("staged sfz");
+        let mut complete = partial.clone();
+        complete.insert(
+            logical_by_kind(&bindings, ResourceKind::Sfz),
+            sfz.generation,
+        );
+        let undeclared =
+            LogicalResource::new(ResourceKind::Sample, "test-project::other::sample::ghost")
+                .expect("logical");
+        let mut extra = complete.clone();
+        extra.insert(undeclared, sample.generation);
+        assert!(matches!(
+            lower_resource_components(&candidate, &extra),
+            Err(GenerationError::InvalidPlan(message))
+                if message.contains("undeclared claims") && message.contains("ghost")
+        ));
+
+        let components = lower_resource_components(&candidate, &complete).expect("components");
+        assert_eq!(components.len(), 3);
+        let paths = components
+            .iter()
+            .map(|component| component.path.clone())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(paths.len(), 3);
+        for component in &components {
+            assert_eq!(component.phase(), StagePhase::Create);
+            let NativeStageOperation::Resource {
+                logical,
+                generation,
+            } = &component.operation
+            else {
+                panic!("resource lowering must emit resource bind operations");
+            };
+            assert_eq!(component.declaration, logical.address());
+            assert_eq!(complete[logical], *generation);
+            assert!(component
+                .path
+                .starts_with(&format!("resources/{:?}/", logical.kind()).to_ascii_lowercase()));
+        }
+
+        let snapshot = resources.snapshot_stage(stage).expect("snapshot");
+        assert!(validate_resource_operations(&snapshot, &components).is_ok());
+    }
+
+    #[test]
+    fn resource_lowering_binds_manager_generations_with_reader_pinning_and_quarantine() {
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"resource binding lifecycle")),
+            EngineInstanceId::new(),
+            RuntimeEpoch::new(),
+        );
+        let candidate = resource_candidate(identity);
+        let bindings = candidate_resource_bindings(&candidate).expect("bindings");
+        let sample_logical = logical_by_kind(&bindings, ResourceKind::Sample);
+        let resources = ResourceManager::new();
+
+        let stage = resources.begin_stage().expect("stage");
+        let staged_sample = resources
+            .stage_sample(
+                stage,
+                sample_logical.clone(),
+                sample_identity("fp-1"),
+                [PhysicalResourceId::Buffer(7)],
+            )
+            .expect("staged sample");
+        resources
+            .stage_buffer(
+                stage,
+                logical_by_kind(&bindings, ResourceKind::Buffer),
+                BufferSpec {
+                    frames: 1024,
+                    channels: 1,
+                    sample_format: "f32".into(),
+                    backend: "mock".into(),
+                    persistence: BufferPersistence::Persistent,
+                },
+                BufferShapePolicy::Clear,
+                [PhysicalResourceId::Buffer(8)],
+            )
+            .expect("staged buffer");
+        resources
+            .stage_sfz(
+                stage,
+                logical_by_kind(&bindings, ResourceKind::Sfz),
+                SfzIdentity {
+                    canonical_root: "instruments/piano.sfz".into(),
+                    transitive_fingerprint: "sfz-fp-1".into(),
+                    load_options_digest: "default".into(),
+                    loader_version: "loader-1".into(),
+                    backend: "mock".into(),
+                },
+                [PhysicalResourceId::Native(9)],
+            )
+            .expect("staged sfz");
+
+        let accounting = resources.accounting();
+        assert_eq!(accounting.staged_claims, 3);
+        assert_eq!(accounting.logical_bindings, 0);
+        assert_eq!(resources.generation_for(&sample_logical), None);
+
+        resources.commit_stage(stage).expect("commit");
+        let accounting = resources.accounting();
+        assert_eq!(accounting.staged_claims, 0);
+        assert_eq!(accounting.logical_bindings, 3);
+        assert_eq!(
+            resources.generation_for(&sample_logical),
+            Some(staged_sample.generation)
+        );
+
+        let lease = resources.acquire(&sample_logical).expect("reader lease");
+        assert_eq!(lease.generation(), staged_sample.generation);
+
+        let replacement_stage = resources.begin_stage().expect("replacement stage");
+        let replacement = resources
+            .stage_sample(
+                replacement_stage,
+                sample_logical.clone(),
+                sample_identity("fp-2"),
+                [PhysicalResourceId::Buffer(17)],
+            )
+            .expect("staged replacement");
+        assert_ne!(replacement.generation, staged_sample.generation);
+        let retirement = resources
+            .commit_stage(replacement_stage)
+            .expect("replacement commit");
+        assert_eq!(
+            retirement.generations().collect::<Vec<_>>(),
+            vec![staged_sample.generation]
+        );
+        assert_eq!(
+            resources.generation_for(&sample_logical),
+            Some(replacement.generation)
+        );
+
+        assert!(
+            !resources
+                .freeable_generations()
+                .contains(&staged_sample.generation),
+            "a reader lease pins the retired generation beyond commit"
+        );
+        drop(lease);
+        assert!(resources
+            .freeable_generations()
+            .contains(&staged_sample.generation));
+
+        resources
+            .quarantine(staged_sample.generation)
+            .expect("quarantine");
+        assert_eq!(
+            resources.health(staged_sample.generation),
+            Some(GenerationHealth::Quarantined)
+        );
+        assert!(
+            !resources
+                .freeable_generations()
+                .contains(&staged_sample.generation),
+            "a quarantined generation cannot return to the free path"
+        );
+    }
+
+    #[test]
+    fn discarded_resource_stage_releases_only_its_own_claims() {
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(ContractDigest::from_bytes(b"resource discard")),
+            EngineInstanceId::new(),
+            RuntimeEpoch::new(),
+        );
+        let candidate = resource_candidate(identity);
+        let bindings = candidate_resource_bindings(&candidate).expect("bindings");
+        let buffer_logical = logical_by_kind(&bindings, ResourceKind::Buffer);
+        let resources = ResourceManager::new();
+
+        let stage = resources.begin_stage().expect("stage");
+        let committed = resources
+            .stage_buffer(
+                stage,
+                buffer_logical.clone(),
+                BufferSpec {
+                    frames: 1024,
+                    channels: 1,
+                    sample_format: "f32".into(),
+                    backend: "mock".into(),
+                    persistence: BufferPersistence::Persistent,
+                },
+                BufferShapePolicy::Clear,
+                [PhysicalResourceId::Buffer(8)],
+            )
+            .expect("staged buffer");
+        resources.commit_stage(stage).expect("commit");
+
+        let failed_stage = resources.begin_stage().expect("failed stage");
+        let staged = resources
+            .stage_buffer(
+                failed_stage,
+                buffer_logical.clone(),
+                BufferSpec {
+                    frames: 4096,
+                    channels: 2,
+                    sample_format: "f32".into(),
+                    backend: "mock".into(),
+                    persistence: BufferPersistence::Persistent,
+                },
+                BufferShapePolicy::CopyOverlap,
+                [PhysicalResourceId::Buffer(20)],
+            )
+            .expect("staged replacement");
+        let retirement = resources.discard_stage(failed_stage).expect("discard");
+        assert_eq!(
+            retirement.generations().collect::<Vec<_>>(),
+            vec![staged.generation]
+        );
+        assert_eq!(
+            resources.generation_for(&buffer_logical),
+            Some(committed.generation),
+            "a discarded stage cannot rebind the committed generation"
+        );
+        let accounting = resources.accounting();
+        assert_eq!(accounting.staged_claims, 0);
+        assert_eq!(accounting.logical_bindings, 1);
+        assert_eq!(
+            resources.health(committed.generation),
+            Some(GenerationHealth::Live)
+        );
+        assert!(resources
+            .freeable_generations()
+            .contains(&staged.generation));
+        assert!(matches!(
+            resources.discard_stage(failed_stage),
+            Err(ResourceError::StageTerminal { .. }),
+        ));
     }
 }
