@@ -1172,6 +1172,255 @@ fn validate_resource_source(value: &str, role: &str) -> Result<(), CandidateErro
     Ok(())
 }
 
+/// Rate a v2 route terminal declares for its source port.
+///
+/// The verb fixes the declared rate — SET and BEND are control-rate, A2K
+/// coerces an audio-rate source into the SET registry, TRIGGER is
+/// trigger-rate, and the audio destinations require audio rate. The runtime
+/// cross-checks the declared rate against the synthdef's real port rate at
+/// plan time; a mismatch is a structured plan rejection, never a coercion.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RoutePortRate {
+    Audio,
+    Control,
+    Trigger,
+}
+
+/// A named output port on a source voice, rate-qualified by the verb.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoutePortAuthoring {
+    pub voice: TypedRef<VoiceKind>,
+    pub port: String,
+    pub rate: RoutePortRate,
+}
+
+/// Target entity of a param route: a Voice's or an Effect's parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RouteTargetAuthoring {
+    Voice(TypedRef<VoiceKind>),
+    Effect(TypedRef<EffectKind>),
+}
+
+impl RouteTargetAuthoring {
+    #[must_use]
+    pub fn reference(&self) -> ErasedRef {
+        match self {
+            Self::Voice(reference) => reference.erase(),
+            Self::Effect(reference) => reference.erase(),
+        }
+    }
+
+    #[must_use]
+    pub fn address(&self) -> LogicalAddress {
+        match self {
+            Self::Voice(reference) => reference.address().erase(),
+            Self::Effect(reference) => reference.address().erase(),
+        }
+    }
+
+    const fn key_prefix(&self) -> &'static str {
+        match self {
+            Self::Voice(_) => "voice",
+            Self::Effect(_) => "effect",
+        }
+    }
+}
+
+/// One ordered fan-out destination of an audio route.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AudioRouteDestinationAuthoring {
+    Group(TypedRef<GroupKind>),
+    Main,
+    Muted,
+}
+
+/// Per-edge SET/BEND shaping. TRIGGER routes carry none — triggers don't
+/// bend, matching the v1 registry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RouteShapingAuthoring {
+    pub scale: CanonicalF64,
+    pub offset: CanonicalF64,
+}
+
+impl RouteShapingAuthoring {
+    #[must_use]
+    pub fn identity() -> Self {
+        Self {
+            scale: CanonicalF64::new(1.0).expect("1.0 is finite"),
+            offset: CanonicalF64::new(0.0).expect("0.0 is finite"),
+        }
+    }
+}
+
+impl Default for RouteShapingAuthoring {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+/// Source of a single-source named-input wiring.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InputRouteSourceAuthoring {
+    /// An audio-rate output port on a source voice.
+    VoicePort {
+        voice: TypedRef<VoiceKind>,
+        port: String,
+    },
+    /// A group's mix bus.
+    Group(TypedRef<GroupKind>),
+    /// The shared silent bus — an explicit disconnect declaration.
+    Silent,
+}
+
+/// Verb namespace of a param route. The three verbs feed one shared
+/// modulation registry and stay mutually exclusive per `(target, param)`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RouteVerb {
+    Set,
+    Bend,
+    Trigger,
+}
+
+impl fmt::Display for RouteVerb {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", format!("{self:?}").to_ascii_lowercase())
+    }
+}
+
+/// V2 route declarations under [`EntityKind::Route`].
+///
+/// Route identity is target-side for the single-writer verbs (SET, A2K, and
+/// TRIGGER own the registry slot for their `(target, param)`), edge-wise for
+/// additive BEND fan-in, and port-side for audio and input routes. A repeated
+/// single-writer terminal therefore lands on the same logical address and is
+/// a duplicate-declaration error, preserving the v1 registry's
+/// one-writer-per-slot rule as a candidate validation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RouteAuthoring {
+    /// Ordered audio fan-out from one source port. Group destinations are
+    /// additive edges; Main and Muted replace — the variants stay mutually
+    /// exclusive on a single port exactly like the v1 route map.
+    Audio {
+        source: RoutePortAuthoring,
+        destinations: Vec<AudioRouteDestinationAuthoring>,
+    },
+    /// Single-source named-input wiring, replace-by-declaration.
+    Input {
+        target: TypedRef<VoiceKind>,
+        input_port: String,
+        source: InputRouteSourceAuthoring,
+    },
+    /// SET: one source writes the target param. `coerce_audio` is the A2K
+    /// variant — an audio-rate source downsampled into the same SET slot.
+    Set {
+        source: RoutePortAuthoring,
+        coerce_audio: bool,
+        target: RouteTargetAuthoring,
+        target_param: String,
+        shaping: RouteShapingAuthoring,
+    },
+    /// BEND: additive fan-in modulation edge onto the target param.
+    Bend {
+        source: RoutePortAuthoring,
+        target: RouteTargetAuthoring,
+        target_param: String,
+        shaping: RouteShapingAuthoring,
+    },
+    /// TRIGGER: 1:1 trigger-rate edge, no shaping, no fan-in.
+    Trigger {
+        source: RoutePortAuthoring,
+        target: RouteTargetAuthoring,
+        target_param: String,
+    },
+}
+
+fn scoped_key_component(address: &LogicalAddress) -> String {
+    let mut component = String::new();
+    for scope in address.group_scope().components() {
+        component.push_str(scope.as_str());
+        component.push('.');
+    }
+    component.push_str(address.key().as_str());
+    component
+}
+
+impl RouteAuthoring {
+    /// Derive the stable declaration key encoding this route's identity.
+    pub fn canonical_key(&self) -> Result<DeclarationKey, CandidateError> {
+        let key = match self {
+            Self::Audio { source, .. } => format!(
+                "audio.{}.{}",
+                scoped_key_component(&source.voice.address().erase()),
+                source.port
+            ),
+            Self::Input {
+                target, input_port, ..
+            } => format!(
+                "input.{}.{}",
+                scoped_key_component(&target.address().erase()),
+                input_port
+            ),
+            Self::Set {
+                target,
+                target_param,
+                ..
+            } => format!(
+                "set.{}.{}.{}",
+                target.key_prefix(),
+                scoped_key_component(&target.address()),
+                target_param
+            ),
+            Self::Bend {
+                source,
+                target,
+                target_param,
+                ..
+            } => format!(
+                "bend.{}.{}.{}.{}.{}",
+                target.key_prefix(),
+                scoped_key_component(&target.address()),
+                target_param,
+                scoped_key_component(&source.voice.address().erase()),
+                source.port
+            ),
+            Self::Trigger {
+                target,
+                target_param,
+                ..
+            } => format!(
+                "trigger.{}.{}.{}",
+                target.key_prefix(),
+                scoped_key_component(&target.address()),
+                target_param
+            ),
+        };
+        DeclarationKey::new(key)
+    }
+
+    /// The shared-registry slot this route occupies, if it is a param route.
+    #[must_use]
+    pub fn registry_slot(&self) -> Option<(RouteVerb, LogicalAddress, &str)> {
+        match self {
+            Self::Set {
+                target,
+                target_param,
+                ..
+            } => Some((RouteVerb::Set, target.address(), target_param.as_str())),
+            Self::Bend {
+                target,
+                target_param,
+                ..
+            } => Some((RouteVerb::Bend, target.address(), target_param.as_str())),
+            Self::Trigger {
+                target,
+                target_param,
+                ..
+            } => Some((RouteVerb::Trigger, target.address(), target_param.as_str())),
+            Self::Audio { .. } | Self::Input { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthoringDeclaration {
     Group(GroupAuthoring),
@@ -1187,6 +1436,7 @@ pub enum AuthoringDeclaration {
     Buffer(BufferAuthoring),
     Sfz(SfzAuthoring),
     Recording(RecordingAuthoring),
+    Route(RouteAuthoring),
 }
 
 impl AuthoringDeclaration {
@@ -1206,6 +1456,7 @@ impl AuthoringDeclaration {
             Self::Buffer(_) => EntityKind::Buffer,
             Self::Sfz(_) => EntityKind::Sfz,
             Self::Recording(_) => EntityKind::Recording,
+            Self::Route(_) => EntityKind::Route,
         }
     }
 
@@ -1220,6 +1471,7 @@ impl AuthoringDeclaration {
             Self::Effect(_) | Self::SynthDef(_) | Self::EffectDef(_) => None,
             Self::Sample(_) | Self::Buffer(_) | Self::Sfz(_) => None,
             Self::Recording(recording) => Some(recording.lifecycle),
+            Self::Route(_) => None,
         }
     }
 
@@ -1469,6 +1721,104 @@ impl AuthoringDeclaration {
                 }
                 if let Some(destination) = &recording.destination {
                     validate_resource_source(destination, "Recording destination")?;
+                }
+            }
+            Self::Route(route) => {
+                fn validate_port(port: &str, role: &'static str) -> Result<(), CandidateError> {
+                    validate_component(port, role).map_err(|_| {
+                        CandidateError::InvalidAuthoring(format!(
+                            "{role} must be a canonical port name, got {port:?}"
+                        ))
+                    })
+                }
+                fn validate_rate(
+                    declared: RoutePortRate,
+                    required: RoutePortRate,
+                    verb: &str,
+                ) -> Result<(), CandidateError> {
+                    if declared != required {
+                        return Err(CandidateError::InvalidAuthoring(format!(
+                            "{verb} requires a {required:?}-rate source port, got {declared:?}"
+                        )));
+                    }
+                    Ok(())
+                }
+                match route {
+                    RouteAuthoring::Audio {
+                        source,
+                        destinations,
+                    } => {
+                        validate_port(&source.port, "route source port")?;
+                        validate_rate(source.rate, RoutePortRate::Audio, "audio routing")?;
+                        if destinations.is_empty() {
+                            return Err(CandidateError::InvalidAuthoring(
+                                "an audio route needs at least one destination".into(),
+                            ));
+                        }
+                        let group_count = destinations
+                            .iter()
+                            .filter(|destination| {
+                                matches!(destination, AudioRouteDestinationAuthoring::Group(_))
+                            })
+                            .count();
+                        if group_count != destinations.len() && destinations.len() != 1 {
+                            return Err(CandidateError::InvalidAuthoring(
+                                "Main and Muted audio destinations replace — they cannot join a fan-out list"
+                                    .into(),
+                            ));
+                        }
+                        let mut seen = BTreeSet::new();
+                        for destination in destinations {
+                            if let AudioRouteDestinationAuthoring::Group(group) = destination {
+                                if !seen.insert(group.address().erase()) {
+                                    return Err(CandidateError::InvalidAuthoring(format!(
+                                        "duplicate audio fan-out destination {}",
+                                        group.address()
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    RouteAuthoring::Input {
+                        input_port, source, ..
+                    } => {
+                        validate_port(input_port, "route input port")?;
+                        if let InputRouteSourceAuthoring::VoicePort { port, .. } = source {
+                            validate_port(port, "route source port")?;
+                        }
+                    }
+                    RouteAuthoring::Set {
+                        source,
+                        coerce_audio,
+                        target_param,
+                        ..
+                    } => {
+                        validate_port(&source.port, "route source port")?;
+                        validate_port(target_param, "route target parameter")?;
+                        if *coerce_audio {
+                            validate_rate(source.rate, RoutePortRate::Audio, "A2K routing")?;
+                        } else {
+                            validate_rate(source.rate, RoutePortRate::Control, "SET routing")?;
+                        }
+                    }
+                    RouteAuthoring::Bend {
+                        source,
+                        target_param,
+                        ..
+                    } => {
+                        validate_port(&source.port, "route source port")?;
+                        validate_port(target_param, "route target parameter")?;
+                        validate_rate(source.rate, RoutePortRate::Control, "BEND routing")?;
+                    }
+                    RouteAuthoring::Trigger {
+                        source,
+                        target_param,
+                        ..
+                    } => {
+                        validate_port(&source.port, "route source port")?;
+                        validate_port(target_param, "route target parameter")?;
+                        validate_rate(source.rate, RoutePortRate::Trigger, "TRIGGER routing")?;
+                    }
                 }
             }
         }
@@ -1891,6 +2241,114 @@ impl AuthoringDeclaration {
                 encoder.tag(recording.channels);
                 encoder.lifecycle(recording.lifecycle);
             }
+            Self::Route(route) => {
+                fn port(encoder: &mut Encoder, port: &RoutePortAuthoring) {
+                    encoder.reference(&port.voice);
+                    encoder.text(&port.port);
+                    encoder.tag(match port.rate {
+                        RoutePortRate::Audio => 0,
+                        RoutePortRate::Control => 1,
+                        RoutePortRate::Trigger => 2,
+                    });
+                }
+                fn target(encoder: &mut Encoder, target: &RouteTargetAuthoring) {
+                    match target {
+                        RouteTargetAuthoring::Voice(reference) => {
+                            encoder.tag(0);
+                            encoder.reference(reference);
+                        }
+                        RouteTargetAuthoring::Effect(reference) => {
+                            encoder.tag(1);
+                            encoder.reference(reference);
+                        }
+                    }
+                }
+                fn shaping(encoder: &mut Encoder, shaping: &RouteShapingAuthoring) {
+                    encoder.number(shaping.scale);
+                    encoder.number(shaping.offset);
+                }
+                encoder.tag(13);
+                match route {
+                    RouteAuthoring::Audio {
+                        source,
+                        destinations,
+                    } => {
+                        encoder.tag(0);
+                        port(&mut encoder, source);
+                        encoder.u64(
+                            u64::try_from(destinations.len())
+                                .expect("route destination count fits u64"),
+                        );
+                        for destination in destinations {
+                            match destination {
+                                AudioRouteDestinationAuthoring::Group(group) => {
+                                    encoder.tag(0);
+                                    encoder.reference(group);
+                                }
+                                AudioRouteDestinationAuthoring::Main => encoder.tag(1),
+                                AudioRouteDestinationAuthoring::Muted => encoder.tag(2),
+                            }
+                        }
+                    }
+                    RouteAuthoring::Input {
+                        target: input_target,
+                        input_port,
+                        source,
+                    } => {
+                        encoder.tag(1);
+                        encoder.reference(input_target);
+                        encoder.text(input_port);
+                        match source {
+                            InputRouteSourceAuthoring::VoicePort { voice, port } => {
+                                encoder.tag(0);
+                                encoder.reference(voice);
+                                encoder.text(port);
+                            }
+                            InputRouteSourceAuthoring::Group(group) => {
+                                encoder.tag(1);
+                                encoder.reference(group);
+                            }
+                            InputRouteSourceAuthoring::Silent => encoder.tag(2),
+                        }
+                    }
+                    RouteAuthoring::Set {
+                        source,
+                        coerce_audio,
+                        target: route_target,
+                        target_param,
+                        shaping: route_shaping,
+                    } => {
+                        encoder.tag(2);
+                        port(&mut encoder, source);
+                        encoder.bool(*coerce_audio);
+                        target(&mut encoder, route_target);
+                        encoder.text(target_param);
+                        shaping(&mut encoder, route_shaping);
+                    }
+                    RouteAuthoring::Bend {
+                        source,
+                        target: route_target,
+                        target_param,
+                        shaping: route_shaping,
+                    } => {
+                        encoder.tag(3);
+                        port(&mut encoder, source);
+                        target(&mut encoder, route_target);
+                        encoder.text(target_param);
+                        shaping(&mut encoder, route_shaping);
+                    }
+                    RouteAuthoring::Trigger {
+                        source,
+                        target: route_target,
+                        target_param,
+                    } => {
+                        encoder.tag(4);
+                        port(&mut encoder, source);
+                        target(&mut encoder, route_target);
+                        encoder.text(target_param);
+                    }
+                }
+            }
         }
         Arc::from(encoder.0)
     }
@@ -1925,6 +2383,36 @@ impl AuthoringDeclaration {
             Self::SynthDef(_) | Self::EffectDef(_) => Vec::new(),
             Self::Sample(_) | Self::Buffer(_) | Self::Sfz(_) => Vec::new(),
             Self::Recording(recording) => vec![recording.source.erase()],
+            Self::Route(route) => match route {
+                RouteAuthoring::Audio {
+                    source,
+                    destinations,
+                } => {
+                    let mut references = vec![source.voice.erase()];
+                    for destination in destinations {
+                        if let AudioRouteDestinationAuthoring::Group(group) = destination {
+                            references.push(group.erase());
+                        }
+                    }
+                    references
+                }
+                RouteAuthoring::Input { target, source, .. } => {
+                    let mut references = vec![target.erase()];
+                    match source {
+                        InputRouteSourceAuthoring::VoicePort { voice, .. } => {
+                            references.push(voice.erase());
+                        }
+                        InputRouteSourceAuthoring::Group(group) => references.push(group.erase()),
+                        InputRouteSourceAuthoring::Silent => {}
+                    }
+                    references
+                }
+                RouteAuthoring::Set { source, target, .. }
+                | RouteAuthoring::Bend { source, target, .. }
+                | RouteAuthoring::Trigger { source, target, .. } => {
+                    vec![source.voice.erase(), target.reference()]
+                }
+            },
         }
     }
 
@@ -2486,6 +2974,230 @@ impl Candidate {
     pub fn dsp_definitions(&self) -> &StagedDspRegistry {
         &self.0.dsp_definitions
     }
+
+    /// Complete fan-in/fan-out/conflict metadata over this candidate's
+    /// route declarations.
+    #[must_use]
+    pub fn route_topology(&self) -> RouteTopology {
+        RouteTopology::from_declarations(&self.0.declarations)
+    }
+}
+
+/// A `(source voice, port)` endpoint in route topology metadata.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RouteEndpoint {
+    pub voice: LogicalAddress,
+    pub port: String,
+}
+
+/// Summary of one audio route declaration: the ordered fan-out list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioRouteSummary {
+    pub route: LogicalAddress,
+    pub source: RouteEndpoint,
+    /// Group destinations in declaration order; `None` entries are the
+    /// replacing Main/Muted destinations.
+    pub group_destinations: Vec<LogicalAddress>,
+    pub to_main: bool,
+    pub muted: bool,
+}
+
+impl AudioRouteSummary {
+    #[must_use]
+    pub fn fan_out(&self) -> usize {
+        self.group_destinations.len() + usize::from(self.to_main)
+    }
+}
+
+/// One modulation edge feeding a `(target, param)` registry slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParamRouteEdge {
+    pub route: LogicalAddress,
+    pub source: RouteEndpoint,
+    pub coerced_from_audio: bool,
+    pub scale: Option<CanonicalF64>,
+    pub offset: Option<CanonicalF64>,
+}
+
+/// The shared-registry slot for one `(target, param)` pair: exactly one verb
+/// with its complete fan-in edge list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParamRouteSlot {
+    pub verb: RouteVerb,
+    pub edges: Vec<ParamRouteEdge>,
+}
+
+impl ParamRouteSlot {
+    #[must_use]
+    pub fn fan_in(&self) -> usize {
+        self.edges.len()
+    }
+}
+
+/// Summary of one named-input wiring; `source: None` is an explicit
+/// disconnect onto the shared silent bus.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InputRouteSummary {
+    pub route: LogicalAddress,
+    pub source: Option<InputRouteSourceAuthoring>,
+}
+
+/// Complete route metadata of a candidate: audio fan-out per source port,
+/// param fan-in per registry slot, and input wiring per target port.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RouteTopology {
+    pub audio: BTreeMap<RouteEndpoint, AudioRouteSummary>,
+    pub params: BTreeMap<(LogicalAddress, String), ParamRouteSlot>,
+    pub inputs: BTreeMap<(LogicalAddress, String), InputRouteSummary>,
+}
+
+impl RouteTopology {
+    fn from_declarations(declarations: &[DeclarationIr]) -> Self {
+        let mut topology = Self::default();
+        for declaration in declarations {
+            let DeclarationPayload::Authoring {
+                declaration: AuthoringDeclaration::Route(route),
+                ..
+            } = declaration.payload()
+            else {
+                continue;
+            };
+            let address = declaration.address().clone();
+            match route {
+                RouteAuthoring::Audio {
+                    source,
+                    destinations,
+                } => {
+                    let endpoint = RouteEndpoint {
+                        voice: source.voice.address().erase(),
+                        port: source.port.clone(),
+                    };
+                    let mut summary = AudioRouteSummary {
+                        route: address,
+                        source: endpoint.clone(),
+                        group_destinations: Vec::new(),
+                        to_main: false,
+                        muted: false,
+                    };
+                    for destination in destinations {
+                        match destination {
+                            AudioRouteDestinationAuthoring::Group(group) => {
+                                summary.group_destinations.push(group.address().erase());
+                            }
+                            AudioRouteDestinationAuthoring::Main => summary.to_main = true,
+                            AudioRouteDestinationAuthoring::Muted => summary.muted = true,
+                        }
+                    }
+                    topology.audio.insert(endpoint, summary);
+                }
+                RouteAuthoring::Input {
+                    target,
+                    input_port,
+                    source,
+                } => {
+                    let key = (target.address().erase(), input_port.clone());
+                    topology.inputs.insert(
+                        key,
+                        InputRouteSummary {
+                            route: address,
+                            source: match source {
+                                InputRouteSourceAuthoring::Silent => None,
+                                other => Some(other.clone()),
+                            },
+                        },
+                    );
+                }
+                RouteAuthoring::Set {
+                    source,
+                    coerce_audio,
+                    target,
+                    target_param,
+                    shaping,
+                } => topology.record_param_edge(
+                    RouteVerb::Set,
+                    target,
+                    target_param,
+                    ParamRouteEdge {
+                        route: address,
+                        source: RouteEndpoint {
+                            voice: source.voice.address().erase(),
+                            port: source.port.clone(),
+                        },
+                        coerced_from_audio: *coerce_audio,
+                        scale: Some(shaping.scale),
+                        offset: Some(shaping.offset),
+                    },
+                ),
+                RouteAuthoring::Bend {
+                    source,
+                    target,
+                    target_param,
+                    shaping,
+                } => topology.record_param_edge(
+                    RouteVerb::Bend,
+                    target,
+                    target_param,
+                    ParamRouteEdge {
+                        route: address,
+                        source: RouteEndpoint {
+                            voice: source.voice.address().erase(),
+                            port: source.port.clone(),
+                        },
+                        coerced_from_audio: false,
+                        scale: Some(shaping.scale),
+                        offset: Some(shaping.offset),
+                    },
+                ),
+                RouteAuthoring::Trigger {
+                    source,
+                    target,
+                    target_param,
+                } => topology.record_param_edge(
+                    RouteVerb::Trigger,
+                    target,
+                    target_param,
+                    ParamRouteEdge {
+                        route: address,
+                        source: RouteEndpoint {
+                            voice: source.voice.address().erase(),
+                            port: source.port.clone(),
+                        },
+                        coerced_from_audio: false,
+                        scale: None,
+                        offset: None,
+                    },
+                ),
+            }
+        }
+        topology
+    }
+
+    fn record_param_edge(
+        &mut self,
+        verb: RouteVerb,
+        target: &RouteTargetAuthoring,
+        target_param: &str,
+        edge: ParamRouteEdge,
+    ) {
+        self.params
+            .entry((target.address(), target_param.to_string()))
+            .or_insert_with(|| ParamRouteSlot {
+                verb,
+                edges: Vec::new(),
+            })
+            .edges
+            .push(edge);
+    }
+
+    /// Number of distinct `(target, param)` slots fed by the given source
+    /// port — the SET/BEND fan-out metric.
+    #[must_use]
+    pub fn param_fan_out(&self, source: &RouteEndpoint) -> usize {
+        self.params
+            .values()
+            .filter(|slot| slot.edges.iter().any(|edge| &edge.source == source))
+            .count()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -2744,6 +3456,7 @@ impl CandidateDraft {
         validate_parent_ownership(&self.declarations)?;
         validate_sequence_dependencies(&self.declarations)?;
         validate_recording_runs(&self.declarations, &self.operations)?;
+        validate_route_registry(&self.declarations)?;
 
         let mut contributions: Vec<_> = self.contributions.into_values().collect();
         contributions.sort_by(|left, right| {
@@ -2839,6 +3552,41 @@ fn validate_recording_runs(
             return Err(CandidateError::InvalidAuthoring(format!(
                 "Recording {address} admits one active run; this candidate requests {count} starts"
             )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_route_registry(
+    declarations: &BTreeMap<LogicalAddress, DeclarationIr>,
+) -> Result<(), CandidateError> {
+    let mut slots =
+        BTreeMap::<(LogicalAddress, String), (RouteVerb, LogicalAddress, SourceAnchor)>::new();
+    for (address, declaration) in declarations {
+        let DeclarationPayload::Authoring {
+            declaration: AuthoringDeclaration::Route(route),
+            ..
+        } = declaration.payload()
+        else {
+            continue;
+        };
+        let Some((verb, target, target_param)) = route.registry_slot() else {
+            continue;
+        };
+        let key = (target, target_param.to_string());
+        if let Some((existing_verb, _, existing_anchor)) = slots.get(&key) {
+            if *existing_verb != verb {
+                return Err(CandidateError::RouteConflict {
+                    target: Box::new(key.0),
+                    target_param: key.1,
+                    existing_verb: *existing_verb,
+                    existing: Box::new(existing_anchor.clone()),
+                    conflicting_verb: verb,
+                    conflicting: Box::new(declaration.source().clone()),
+                });
+            }
+        } else {
+            slots.insert(key, (verb, address.clone(), declaration.source().clone()));
         }
     }
     Ok(())
@@ -2965,6 +3713,18 @@ pub enum CandidateError {
     InvalidDspDefinition(String),
     #[error("duplicate lifecycle operation: {0:?}")]
     DuplicateLifecycleOperation(LifecycleOperationId),
+    #[error(
+        "conflicting route verbs: {existing_verb} and {conflicting_verb} both claim parameter \
+         {target_param} on {target}; SET, BEND, and TRIGGER stay mutually exclusive per target"
+    )]
+    RouteConflict {
+        target: Box<LogicalAddress>,
+        target_param: String,
+        existing_verb: RouteVerb,
+        existing: Box<SourceAnchor>,
+        conflicting_verb: RouteVerb,
+        conflicting: Box<SourceAnchor>,
+    },
     #[error("authoring dependency cycle: {0:?}")]
     DependencyCycle(Vec<LogicalAddress>),
     #[error("external effects cannot be part of a required-atomic Candidate")]
@@ -3794,5 +4554,440 @@ mod tests {
             .unwrap();
         let candidate = single_run.finish(&catalog).unwrap();
         assert_eq!(candidate.operations().len(), 1);
+    }
+
+    fn entity_declaration<K: RefKind>(key: &str, index: u32) -> DeclarationIr {
+        DeclarationIr::new(
+            address::<K>(key),
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module(), &[index], "owner").unwrap(),
+            ),
+            source(index),
+            LifecycleMetadata::register(Composition::Standalone),
+            DeclarationPayload::Empty,
+        )
+    }
+
+    fn route_port(
+        identity: &EvaluationIdentity,
+        voice_key: &str,
+        port: &str,
+        rate: RoutePortRate,
+    ) -> RoutePortAuthoring {
+        RoutePortAuthoring {
+            voice: TypedRef::new(identity.clone(), address::<VoiceKind>(voice_key)),
+            port: port.into(),
+            rate,
+        }
+    }
+
+    fn route_declaration(route: RouteAuthoring, index: u32) -> DeclarationIr {
+        DeclarationIr::new(
+            TypedAddress::<RouteKind>::new(
+                ProjectNamespace::new("test-project").unwrap(),
+                module(),
+                GroupScope::root(),
+                route.canonical_key().unwrap(),
+            ),
+            DeclarationOwner::Structural(
+                SyntaxKey::deterministic(&module(), &[index], "owner").unwrap(),
+            ),
+            source(index),
+            LifecycleMetadata::register(Composition::Standalone),
+            DeclarationPayload::authoring(AuthoringDeclaration::Route(route)).unwrap(),
+        )
+    }
+
+    #[test]
+    fn route_authoring_validates_rates_ports_and_destinations() {
+        let identity = identity(21);
+        let group = TypedRef::new(identity.clone(), address::<GroupKind>("leads"));
+        let target = RouteTargetAuthoring::Voice(TypedRef::new(
+            identity.clone(),
+            address::<VoiceKind>("bass"),
+        ));
+        let rejected = [
+            AuthoringDeclaration::Route(RouteAuthoring::Audio {
+                source: route_port(&identity, "lfo", "out", RoutePortRate::Control),
+                destinations: vec![AudioRouteDestinationAuthoring::Group(group.clone())],
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Audio {
+                source: route_port(&identity, "lead", "out", RoutePortRate::Audio),
+                destinations: Vec::new(),
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Audio {
+                source: route_port(&identity, "lead", "out", RoutePortRate::Audio),
+                destinations: vec![
+                    AudioRouteDestinationAuthoring::Group(group.clone()),
+                    AudioRouteDestinationAuthoring::Main,
+                ],
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Audio {
+                source: route_port(&identity, "lead", "out", RoutePortRate::Audio),
+                destinations: vec![
+                    AudioRouteDestinationAuthoring::Group(group.clone()),
+                    AudioRouteDestinationAuthoring::Group(group.clone()),
+                ],
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Set {
+                source: route_port(&identity, "lfo", "out", RoutePortRate::Audio),
+                coerce_audio: false,
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring::identity(),
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Set {
+                source: route_port(&identity, "lead", "env", RoutePortRate::Control),
+                coerce_audio: true,
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring::identity(),
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Bend {
+                source: route_port(&identity, "lfo", "out", RoutePortRate::Trigger),
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring::identity(),
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Trigger {
+                source: route_port(&identity, "clock", "tick", RoutePortRate::Control),
+                target: target.clone(),
+                target_param: "gate".into(),
+            }),
+            AuthoringDeclaration::Route(RouteAuthoring::Set {
+                source: route_port(&identity, "lfo", "bad port", RoutePortRate::Control),
+                coerce_audio: false,
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring::identity(),
+            }),
+        ];
+        for declaration in rejected {
+            assert!(
+                matches!(
+                    DeclarationPayload::authoring(declaration.clone()),
+                    Err(CandidateError::InvalidAuthoring(_))
+                ),
+                "expected strict rejection for {declaration:?}"
+            );
+        }
+
+        assert!(
+            DeclarationPayload::authoring(AuthoringDeclaration::Route(RouteAuthoring::Set {
+                source: route_port(&identity, "lead", "env", RoutePortRate::Audio),
+                coerce_audio: true,
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring::identity(),
+            }))
+            .is_ok()
+        );
+        assert!(DeclarationPayload::authoring(AuthoringDeclaration::Route(
+            RouteAuthoring::Audio {
+                source: route_port(&identity, "lead", "out", RoutePortRate::Audio),
+                destinations: vec![AudioRouteDestinationAuthoring::Muted],
+            }
+        ))
+        .is_ok());
+    }
+
+    #[test]
+    fn route_keys_encode_single_writer_and_fan_in_identity() {
+        let identity = identity(22);
+        let target = RouteTargetAuthoring::Voice(TypedRef::new(
+            identity.clone(),
+            address::<VoiceKind>("bass"),
+        ));
+        let set_from_lfo = RouteAuthoring::Set {
+            source: route_port(&identity, "lfo", "out", RoutePortRate::Control),
+            coerce_audio: false,
+            target: target.clone(),
+            target_param: "cutoff".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        };
+        let set_from_env = RouteAuthoring::Set {
+            source: route_port(&identity, "env", "out", RoutePortRate::Control),
+            coerce_audio: false,
+            target: target.clone(),
+            target_param: "cutoff".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        };
+        assert_eq!(
+            set_from_lfo.canonical_key().unwrap(),
+            set_from_env.canonical_key().unwrap(),
+            "SET identity is target-side: a second source lands on the same slot"
+        );
+
+        let bend_from_lfo = RouteAuthoring::Bend {
+            source: route_port(&identity, "lfo", "out", RoutePortRate::Control),
+            target: target.clone(),
+            target_param: "cutoff".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        };
+        let bend_from_env = RouteAuthoring::Bend {
+            source: route_port(&identity, "env", "out", RoutePortRate::Control),
+            target: target.clone(),
+            target_param: "cutoff".into(),
+            shaping: RouteShapingAuthoring::identity(),
+        };
+        assert_ne!(
+            bend_from_lfo.canonical_key().unwrap(),
+            bend_from_env.canonical_key().unwrap(),
+            "BEND identity is edge-wise: fan-in edges are distinct declarations"
+        );
+
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("bass", 1))
+            .unwrap();
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("lfo", 2))
+            .unwrap();
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("env", 3))
+            .unwrap();
+        draft
+            .declare::<RouteKind>(route_declaration(set_from_lfo, 4))
+            .unwrap();
+        let error = draft
+            .declare::<RouteKind>(route_declaration(set_from_env, 5))
+            .unwrap_err();
+        assert!(
+            matches!(error, CandidateError::DuplicateDeclaration { .. }),
+            "a second SET writer is a duplicate of the registry slot, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn route_cross_verb_conflicts_reject_with_both_anchors() {
+        let identity = identity(23);
+        let target = RouteTargetAuthoring::Voice(TypedRef::new(
+            identity.clone(),
+            address::<VoiceKind>("bass"),
+        ));
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("bass", 1))
+            .unwrap();
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("lfo", 2))
+            .unwrap();
+        draft
+            .declare::<VoiceKind>(entity_declaration::<VoiceKind>("env", 3))
+            .unwrap();
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Set {
+                    source: route_port(&identity, "lfo", "out", RoutePortRate::Control),
+                    coerce_audio: false,
+                    target: target.clone(),
+                    target_param: "cutoff".into(),
+                    shaping: RouteShapingAuthoring::identity(),
+                },
+                4,
+            ))
+            .unwrap();
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Bend {
+                    source: route_port(&identity, "env", "out", RoutePortRate::Control),
+                    target: target.clone(),
+                    target_param: "cutoff".into(),
+                    shaping: RouteShapingAuthoring::identity(),
+                },
+                5,
+            ))
+            .unwrap();
+
+        let error = draft.finish(&ReferenceCatalog::default()).unwrap_err();
+        match error {
+            CandidateError::RouteConflict {
+                target: conflict_target,
+                target_param,
+                existing_verb,
+                existing,
+                conflicting_verb,
+                conflicting,
+            } => {
+                assert_eq!(conflict_target.kind(), EntityKind::Voice);
+                assert_eq!(target_param, "cutoff");
+                assert_ne!(existing_verb, conflicting_verb);
+                assert_ne!(existing, conflicting, "both source anchors are reported");
+                assert!(matches!(
+                    (existing_verb, conflicting_verb),
+                    (RouteVerb::Bend, RouteVerb::Set) | (RouteVerb::Set, RouteVerb::Bend)
+                ));
+            }
+            other => panic!("expected RouteConflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn route_payload_bytes_are_canonical_and_shaping_sensitive() {
+        let identity = identity(24);
+        let target = RouteTargetAuthoring::Voice(TypedRef::new(
+            identity.clone(),
+            address::<VoiceKind>("bass"),
+        ));
+        let make = |scale: f64| {
+            AuthoringDeclaration::Route(RouteAuthoring::Set {
+                source: route_port(&identity, "lfo", "out", RoutePortRate::Control),
+                coerce_audio: false,
+                target: target.clone(),
+                target_param: "cutoff".into(),
+                shaping: RouteShapingAuthoring {
+                    scale: CanonicalF64::new(scale).unwrap(),
+                    offset: CanonicalF64::new(0.0).unwrap(),
+                },
+            })
+        };
+        assert_eq!(make(2.0).canonical_bytes(), make(2.0).canonical_bytes());
+        assert_ne!(make(2.0).canonical_bytes(), make(3.0).canonical_bytes());
+    }
+
+    #[test]
+    fn route_endpoints_must_resolve_in_the_candidate() {
+        let identity = identity(25);
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Audio {
+                    source: route_port(&identity, "ghost", "out", RoutePortRate::Audio),
+                    destinations: vec![AudioRouteDestinationAuthoring::Main],
+                },
+                1,
+            ))
+            .unwrap();
+        assert!(matches!(
+            draft.finish(&ReferenceCatalog::default()),
+            Err(CandidateError::UnresolvedReference(_))
+        ));
+    }
+
+    #[test]
+    fn route_topology_reports_complete_fan_metadata() {
+        let identity = identity(26);
+        let bass = RouteTargetAuthoring::Voice(TypedRef::new(
+            identity.clone(),
+            address::<VoiceKind>("bass"),
+        ));
+        let mut draft = CandidateDraft::new(identity.clone(), CandidateOrigin::RhaiHost);
+        for (key, index) in [("bass", 1), ("lead", 2), ("lfo", 3), ("env", 4)] {
+            draft
+                .declare::<VoiceKind>(entity_declaration::<VoiceKind>(key, index))
+                .unwrap();
+        }
+        draft
+            .declare::<GroupKind>(entity_declaration::<GroupKind>("leads", 5))
+            .unwrap();
+        draft
+            .declare::<GroupKind>(entity_declaration::<GroupKind>("sends", 6))
+            .unwrap();
+        let leads = TypedRef::new(identity.clone(), address::<GroupKind>("leads"));
+        let sends = TypedRef::new(identity.clone(), address::<GroupKind>("sends"));
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Audio {
+                    source: route_port(&identity, "lead", "out", RoutePortRate::Audio),
+                    destinations: vec![
+                        AudioRouteDestinationAuthoring::Group(leads),
+                        AudioRouteDestinationAuthoring::Group(sends),
+                    ],
+                },
+                7,
+            ))
+            .unwrap();
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Set {
+                    source: route_port(&identity, "lead", "body", RoutePortRate::Audio),
+                    coerce_audio: true,
+                    target: bass.clone(),
+                    target_param: "cutoff".into(),
+                    shaping: RouteShapingAuthoring {
+                        scale: CanonicalF64::new(0.5).unwrap(),
+                        offset: CanonicalF64::new(0.25).unwrap(),
+                    },
+                },
+                8,
+            ))
+            .unwrap();
+        for (voice, index) in [("lfo", 9_u32), ("env", 10)] {
+            draft
+                .declare::<RouteKind>(route_declaration(
+                    RouteAuthoring::Bend {
+                        source: route_port(&identity, voice, "out", RoutePortRate::Control),
+                        target: bass.clone(),
+                        target_param: "resonance".into(),
+                        shaping: RouteShapingAuthoring::identity(),
+                    },
+                    index,
+                ))
+                .unwrap();
+        }
+        draft
+            .declare::<RouteKind>(route_declaration(
+                RouteAuthoring::Input {
+                    target: TypedRef::new(identity.clone(), address::<VoiceKind>("bass")),
+                    input_port: "sidechain".into(),
+                    source: InputRouteSourceAuthoring::Silent,
+                },
+                11,
+            ))
+            .unwrap();
+
+        let candidate = draft.finish(&ReferenceCatalog::default()).unwrap();
+        let topology = candidate.route_topology();
+
+        let lead_out = RouteEndpoint {
+            voice: address::<VoiceKind>("lead").erase(),
+            port: "out".into(),
+        };
+        let audio = topology.audio.get(&lead_out).unwrap();
+        assert_eq!(audio.fan_out(), 2);
+        assert_eq!(audio.group_destinations.len(), 2);
+        assert!(!audio.to_main);
+        assert!(!audio.muted);
+
+        let cutoff = topology
+            .params
+            .get(&(address::<VoiceKind>("bass").erase(), "cutoff".into()))
+            .unwrap();
+        assert_eq!(cutoff.verb, RouteVerb::Set);
+        assert_eq!(cutoff.fan_in(), 1);
+        assert!(cutoff.edges[0].coerced_from_audio);
+        assert_eq!(cutoff.edges[0].scale.unwrap().get(), 0.5);
+        assert_eq!(cutoff.edges[0].offset.unwrap().get(), 0.25);
+
+        let resonance = topology
+            .params
+            .get(&(address::<VoiceKind>("bass").erase(), "resonance".into()))
+            .unwrap();
+        assert_eq!(resonance.verb, RouteVerb::Bend);
+        assert_eq!(resonance.fan_in(), 2, "BEND fan-in is additive");
+        assert!(resonance
+            .edges
+            .iter()
+            .all(|edge| !edge.coerced_from_audio && edge.scale.is_some()));
+
+        let lfo_out = RouteEndpoint {
+            voice: address::<VoiceKind>("lfo").erase(),
+            port: "out".into(),
+        };
+        assert_eq!(topology.param_fan_out(&lfo_out), 1);
+        let lead_body = RouteEndpoint {
+            voice: address::<VoiceKind>("lead").erase(),
+            port: "body".into(),
+        };
+        assert_eq!(topology.param_fan_out(&lead_body), 1);
+
+        let sidechain = topology
+            .inputs
+            .get(&(address::<VoiceKind>("bass").erase(), "sidechain".into()))
+            .unwrap();
+        assert!(
+            sidechain.source.is_none(),
+            "explicit disconnect reports no source"
+        );
     }
 }
