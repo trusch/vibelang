@@ -32,6 +32,9 @@ pub mod sfz;
 #[cfg(feature = "midi")]
 pub mod midi;
 
+#[cfg(all(test, feature = "midi", not(target_arch = "wasm32")))]
+mod v2_integration;
+
 use rhai::Engine;
 
 /// Register all VibeLang API functions with a Rhai engine.
