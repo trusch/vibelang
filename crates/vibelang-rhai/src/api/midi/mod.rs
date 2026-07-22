@@ -801,8 +801,8 @@ impl MidiDeviceBuilder {
 }
 
 /// A point-in-time inventory of the host's MIDI ports, injected so
-/// resolution stays pure and testable. The integration gate wires the
-/// live midir/pipewire enumeration into this shape.
+/// resolution stays pure and testable. [`MidiPortDirectory::from_host`]
+/// captures the live midir/pipewire enumeration into this shape.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MidiPortDirectory {
     inputs: Vec<String>,
@@ -812,6 +812,38 @@ pub struct MidiPortDirectory {
 impl MidiPortDirectory {
     #[must_use]
     pub fn new(inputs: Vec<String>, outputs: Vec<String>) -> Self {
+        Self { inputs, outputs }
+    }
+
+    /// Snapshot the host's current MIDI ports: midir inputs and outputs
+    /// plus PipeWire MIDI 2.0 inputs. An unavailable backend contributes
+    /// no ports — resolution against the snapshot then reports the typed
+    /// not-found/disappeared results instead of failing enumeration.
+    #[must_use]
+    pub fn from_host() -> Self {
+        use midir::{MidiInput, MidiOutput};
+        use vibelang_core::midi::list_pipewire_midi2_inputs;
+
+        let mut inputs = Vec::new();
+        if let Ok(midi_in) = MidiInput::new("vibelang-v2-port-directory") {
+            for port in midi_in.ports() {
+                if let Ok(name) = midi_in.port_name(&port) {
+                    inputs.push(name);
+                }
+            }
+        }
+        for input in list_pipewire_midi2_inputs() {
+            inputs.push(input.name);
+        }
+
+        let mut outputs = Vec::new();
+        if let Ok(midi_out) = MidiOutput::new("vibelang-v2-port-directory") {
+            for port in midi_out.ports() {
+                if let Ok(name) = midi_out.port_name(&port) {
+                    outputs.push(name);
+                }
+            }
+        }
         Self { inputs, outputs }
     }
 
@@ -1759,6 +1791,56 @@ mod v2_tests {
             ),
             "a vanished port is the typed disappearance result, not a stale handle"
         );
+    }
+
+    #[test]
+    fn v2_live_port_directory_composes_with_typed_resolution() {
+        // The live snapshot is machine-dependent, so the invariants under
+        // test are structural: enumeration never fails (an unavailable
+        // backend just contributes no ports), snapshots compose with the
+        // same pure resolution as injected inventories, and a port that
+        // cannot exist resolves to the typed not-found value.
+        let live = MidiPortDirectory::from_host();
+        let ghost = "\u{1F47B} no such vibelang port \u{1F47B}";
+        assert!(matches!(
+            resolve_midi_device_v2(ghost, MidiDeviceDirectionAuthoring::Input, &live),
+            Err(MidiDeviceUnavailability::NotFound {
+                direction: "input",
+                ..
+            })
+        ));
+        assert!(matches!(
+            resolve_midi_device_v2(ghost, MidiDeviceDirectionAuthoring::Output, &live),
+            Err(MidiDeviceUnavailability::NotFound {
+                direction: "output",
+                ..
+            })
+        ));
+
+        // Every port the live snapshot reports exactly once resolves, and
+        // re-verifying against an unplugged host is the typed
+        // disappearance — the live path shares the pure semantics.
+        for (port, direction) in live
+            .inputs
+            .iter()
+            .map(|port| (port, MidiDeviceDirectionAuthoring::Input))
+            .chain(
+                live.outputs
+                    .iter()
+                    .map(|port| (port, MidiDeviceDirectionAuthoring::Output)),
+            )
+        {
+            match resolve_midi_device_v2(port, direction, &live) {
+                Ok(resolved) => assert!(matches!(
+                    resolved.verify(&MidiPortDirectory::default()),
+                    Err(MidiDeviceUnavailability::Disappeared { .. })
+                )),
+                Err(MidiDeviceUnavailability::Ambiguous { count, .. }) => {
+                    assert!(count >= 2, "ambiguity reports the real duplicate count");
+                }
+                Err(error) => panic!("live port {port:?} must resolve or be ambiguous: {error}"),
+            }
+        }
     }
 
     #[test]
