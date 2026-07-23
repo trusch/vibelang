@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "ae3ccd3de214b3df8a9945a7118c5c6c5f837f4bfcbcd2ce64127fd857e68a5c",
+  "contract_digest": "f1bb6c139412556a12935bbd02a32e987fae3a129c72afe9cd766bfd5c9fcc5e",
   "totals": {
     "entries": 3626,
     "overloads": 8431,
@@ -11531,7 +11531,7 @@
       "id": "v1:source:386afa3506646116",
       "path": "crates/vibelang-core/src/mutation/wire.rs",
       "kind": "mechanical_declaration",
-      "node_count": 216,
+      "node_count": 219,
       "node_ids": [
         "v1:field:047892e40513846c",
         "v1:field:057ab7fa03db0ad7",
@@ -11632,6 +11632,7 @@
         "v1:field:a2c8d1278c0d7a5a",
         "v1:field:a48350e9960e8d30",
         "v1:field:a5c0700bdc7bda48",
+        "v1:field:a611b58112afa25e",
         "v1:field:a93cda48a93b5fbb",
         "v1:field:aa72264ebf1301a8",
         "v1:field:aacdb287d18b7b2c",
@@ -11656,6 +11657,7 @@
         "v1:field:c935f378aa22da4b",
         "v1:field:ca375f572497da98",
         "v1:field:cd531c0e66685f02",
+        "v1:field:ce6c87aacb5d6acf",
         "v1:field:cf1465fba1d0fb06",
         "v1:field:d2482d4a9a7ef6d0",
         "v1:field:d29d48716066a7cc",
@@ -11718,6 +11720,7 @@
         "v1:type:6a6d68cce2f6dc8c",
         "v1:type:6b27c2c44f175b61",
         "v1:type:6b9be08b1d755a40",
+        "v1:type:6e969465cb81c53b",
         "v1:type:71188716c9d965e5",
         "v1:type:72d081cf7b82d591",
         "v1:type:7b9f81c69c0e9a93",
@@ -11750,7 +11753,7 @@
         "v1:type:e6937d2924671d09",
         "v1:type:f2c79f68837e3445"
       ],
-      "node_ids_sha256": "6964a61c51cea6124d9e55873a6999db5d674d416b48406b59382fa93728f685"
+      "node_ids_sha256": "118502af581007cfbcd165d562be25057abfa4d36185b09d3359badc115b5b63"
     },
     {
       "id": "v1:source:38e152893cc4dba4",
@@ -29713,8 +29716,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13369,
-      "eligible_count": 13369,
+      "included_count": 13376,
+      "eligible_count": 13376,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29860,7 +29863,7 @@
       "path": "api/contract/runtime.toml",
       "domain": "runtime",
       "record_count": 2,
-      "sha256": "fdb317bbb992525308618e7321455e5cc0d846b65d13aeb6127f9081d6c84925"
+      "sha256": "1d73b0e149abfec552bc0f12bc27dd281ba1770ae76c651bdf70c07eac0a7dc1"
     },
     {
       "path": "api/contract/http.toml",
