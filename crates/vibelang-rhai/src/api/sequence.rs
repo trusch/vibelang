@@ -1698,6 +1698,54 @@ fn define_fx_v2(name: String) -> Result<EffectDefBuilder, Box<EvalAltResult>> {
     define_effect_v2(name)
 }
 
+fn dsp_closure_migration_error(function: &str) -> Box<EvalAltResult> {
+    sequence_v2_error(
+        CandidateError::InvalidDspDefinition(format!(
+            "{function}(name, |builder| ...) evaluates detached under vibe-api 2: the closure \
+             must return its builder chain ending in body/body_map; migrate to the canonical \
+             form {function}(name).param(...).body(...)"
+        ))
+        .into(),
+        Position::NONE,
+    )
+}
+
+// Legacy 2-arg closure overloads, re-bound under v2 so they shadow the eager
+// v1 registrations from `register_dsp_api` (which mutate the process-global
+// DSP registry and deploy at evaluation time). The closure receives the v2
+// detached builder — its method surface is a spelling-compatible superset of
+// the legacy handle — and the returned chain is committed via the same
+// `.apply()` path as the canonical form, so no global state is touched.
+fn define_synthdef_closure_v2(
+    ctx: NativeCallContext,
+    name: String,
+    closure: rhai::FnPtr,
+) -> Result<SynthDefRef, Box<EvalAltResult>> {
+    let builder = define_synthdef_v2(name)?;
+    let configured = closure.call_within_context::<Dynamic>(&ctx, (builder,))?;
+    let configured = configured
+        .try_cast::<SynthDefBuilder>()
+        .ok_or_else(|| dsp_closure_migration_error("define_synthdef"))?;
+    configured
+        .apply()
+        .map_err(|error| sequence_v2_error(error, Position::NONE))
+}
+
+fn define_fx_closure_v2(
+    ctx: NativeCallContext,
+    name: String,
+    closure: rhai::FnPtr,
+) -> Result<EffectDefRef, Box<EvalAltResult>> {
+    let builder = define_fx_v2(name)?;
+    let configured = closure.call_within_context::<Dynamic>(&ctx, (builder,))?;
+    let configured = configured
+        .try_cast::<EffectDefBuilder>()
+        .ok_or_else(|| dsp_closure_migration_error("define_fx"))?;
+    configured
+        .apply()
+        .map_err(|error| sequence_v2_error(error, Position::NONE))
+}
+
 fn effectdef_ref_v2(name: String) -> Result<EffectDefRef, Box<EvalAltResult>> {
     EffectDefRef::new(
         foundation::authoring_ref::<EffectDefKind>(&name, GroupScope::root())
@@ -2225,9 +2273,11 @@ pub(crate) fn install_v2(engine: &mut Engine) {
         .register_fn("fx", fx_builder_v2)
         .register_fn("effect_ref", effect_ref_v2)
         .register_fn("define_synthdef", define_synthdef_v2)
+        .register_fn("define_synthdef", define_synthdef_closure_v2)
         .register_fn("synthdef_ref", synthdef_ref_v2)
         .register_fn("define_effect", define_effect_v2)
         .register_fn("define_fx", define_fx_v2)
+        .register_fn("define_fx", define_fx_closure_v2)
         .register_fn("effectdef_ref", effectdef_ref_v2)
         .register_fn("on_group", |builder: FadeBuilder, target: GroupRef| {
             builder
