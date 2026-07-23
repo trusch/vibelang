@@ -41,6 +41,11 @@ thiserror = "1"
 [dev-dependencies]
 async-trait = "0.1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+# The M09 capability-rejection proofs manufacture deterministic unavailable
+# snapshots; the feature exists only for proofs and never ships.
+vibelang-core = { version = "0.4.0", default-features = false, features = [
+    "capability-fixtures",
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 midir = { version = "0.10", optional = true }

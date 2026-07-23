@@ -2729,3 +2729,83 @@ impl MiUgensProbeCache {
         }
     }
 }
+
+/// Deterministic capability-snapshot manufacture for integration proofs.
+///
+/// Gate insertion stays crate-private in default builds so public callers
+/// cannot manufacture snapshot truth; the `capability-fixtures` feature
+/// compiles this module for integration suites that must declare an
+/// unavailable context (non-native target, absent build feature, missing
+/// plugin) against the accepted catalog and prove the resulting rejection
+/// receipts.
+#[cfg(feature = "capability-fixtures")]
+pub mod fixtures {
+    use super::*;
+    use crate::mutation::RuntimeMutationStatus;
+
+    /// Parse accepted conventions metadata JSON
+    /// (`api/effective-metadata-v1.json`) into a validated catalog.
+    pub fn catalog_from_conventions_json(
+        source: &str,
+    ) -> Result<CapabilityCatalog, CapabilityError> {
+        let metadata: ConventionsMetadata = serde_json::from_str(source)
+            .map_err(|error| CapabilityError::InvalidMetadata(error.to_string()))?;
+        CapabilityCatalog::from_conventions(&metadata)
+    }
+
+    /// Assemble a deterministic snapshot whose gates all carry available
+    /// evidence except the declared `(capability, gate, reason)`
+    /// withholdings, each validated against the catalog.
+    pub fn declared_snapshot(
+        catalog: &CapabilityCatalog,
+        subject: CapabilitySubject,
+        mutation_status: &RuntimeMutationStatus,
+        withheld: &[(&str, AvailabilityGate, &str)],
+        observed_at: Timestamp,
+    ) -> Result<CapabilitySnapshot, CapabilityError> {
+        let mut matrix = CapabilityMatrix::new(catalog, "scope.runtime")?;
+        let gates = catalog
+            .definitions()
+            .flat_map(|definition| {
+                definition
+                    .required_gates
+                    .iter()
+                    .copied()
+                    .map(move |gate| (definition.capability_id.clone(), gate))
+            })
+            .collect::<Vec<_>>();
+        for (capability_id, gate) in gates {
+            let withholding = withheld
+                .iter()
+                .find(|(id, withheld_gate, _)| *id == capability_id && *withheld_gate == gate);
+            let evidence = match withholding {
+                Some((_, _, reason_id)) => {
+                    GateEvidence::unavailable(*reason_id, declared_source(gate))
+                }
+                None => GateEvidence::available(declared_source(gate)),
+            };
+            matrix.set_gate(catalog, &capability_id, gate, evidence)?;
+        }
+        let facts = CapabilitySnapshotFacts::new(
+            format!("sha256:{}", "0".repeat(64)),
+            subject,
+            mutation_status,
+            &matrix,
+            "security.http.loopback_local",
+            false,
+        )?;
+        CapabilitySnapshotAssembler::new().assemble(catalog, facts, observed_at)
+    }
+
+    const fn declared_source(gate: AvailabilityGate) -> CapabilityEvidenceSource {
+        match gate {
+            AvailabilityGate::Declaration => CapabilityEvidenceSource::ContractCatalog,
+            AvailabilityGate::Target => CapabilityEvidenceSource::BuildTarget,
+            AvailabilityGate::BuildFeature => CapabilityEvidenceSource::BuildFeature,
+            AvailabilityGate::OperatorPolicy => CapabilityEvidenceSource::OperatorPolicy,
+            AvailabilityGate::RuntimeProbe => CapabilityEvidenceSource::RuntimeProbe,
+            AvailabilityGate::BackendSemantic => CapabilityEvidenceSource::BackendProbe,
+            AvailabilityGate::ConsumerProjection => CapabilityEvidenceSource::ConsumerProjection,
+        }
+    }
+}

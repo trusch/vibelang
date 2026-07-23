@@ -11,6 +11,10 @@ default = ["native", "midi"]
 native = ["rosc"]
 midi = ["dep:midir", "pipewire-midi2"]
 pipewire-midi2 = ["dep:libspa", "dep:pipewire"]
+# Deterministic capability-snapshot manufacture for integration proofs.
+# Never enabled by shipping binaries: default builds keep gate insertion
+# crate-private so public callers cannot manufacture snapshot truth.
+capability-fixtures = []
 
 [dependencies]
 async-trait = "0.1"
