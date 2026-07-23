@@ -3384,4 +3384,176 @@ mod tests {
         assert!(candidate.declarations().is_empty());
         assert_eq!(candidate.dsp_definitions().definitions().count(), 0);
     }
+
+    #[test]
+    fn v2_legacy_closure_overloads_leave_no_residue_when_evaluation_is_rejected() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const PREFIX: &str = "b1_purity";
+
+        foundation::abort_evaluation();
+
+        // Census restricted to this test's unique name prefix so concurrent
+        // tests that legitimately use the process-global DSP registries and
+        // deploy callback cannot perturb the counts.
+        let registry_census = || {
+            vibelang_dsp::get_all_synthdefs_encoded()
+                .into_iter()
+                .filter(|(name, _)| name.contains(PREFIX))
+                .count()
+                + vibelang_dsp::get_all_effect_names()
+                    .into_iter()
+                    .filter(|name| name.contains(PREFIX))
+                    .count()
+        };
+        // Backend call census: encoded synthdef bytes embed the def name.
+        let deploys = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&deploys);
+        vibelang_dsp::set_deploy_callback(move |bytes| {
+            if bytes
+                .windows(PREFIX.len())
+                .any(|window| window == PREFIX.as_bytes())
+            {
+                counted.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(())
+        });
+
+        let registry_before = registry_census();
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+        engine
+            .eval::<Dynamic>(&format!(
+                r#"
+                define_synthdef("{PREFIX}_synth", |b| b.param("freq", 440.0).body(|freq| dc_ar(0.0)));
+                define_fx("{PREFIX}_fx", |b| b.param("mix", 0.5).body(|input, mix| input));
+                this_function_does_not_exist();
+                "#
+            ))
+            .expect_err("evaluation must fail after the legacy overloads ran");
+        foundation::abort_evaluation();
+
+        assert_eq!(
+            deploys.load(Ordering::SeqCst),
+            0,
+            "rejected evaluation must make zero backend deploy calls"
+        );
+        assert_eq!(
+            registry_before,
+            registry_census(),
+            "rejected evaluation must leave the DSP registry census unchanged"
+        );
+        for name in [
+            format!("{PREFIX}_synth"),
+            format!("vibelang::main::{PREFIX}_synth"),
+        ] {
+            assert!(!vibelang_dsp::synthdef_exists(&name));
+            assert_eq!(vibelang_dsp::get_synthdef_hash(&name), None);
+        }
+        for name in [
+            format!("{PREFIX}_fx"),
+            format!("vibelang::main::{PREFIX}_fx"),
+        ] {
+            assert!(!vibelang_dsp::effect_exists(&name));
+            assert_eq!(vibelang_dsp::get_synthdef_hash(&name), None);
+        }
+    }
+
+    #[test]
+    fn v2_legacy_closure_overloads_match_canonical_candidate_payload() {
+        foundation::abort_evaluation();
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        engine
+            .eval::<Dynamic>(
+                r#"
+                define_synthdef("b1_eq_synth", |b| b.param("freq", 440.0).body(|freq| dc_ar(0.0)));
+                define_fx("b1_eq_fx", |b| b.param("mix", 0.5).body(|input, mix| input));
+                "#,
+            )
+            .unwrap();
+        let closure_candidate = foundation::finish_evaluation().unwrap();
+
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        engine
+            .eval::<Dynamic>(
+                r#"
+                define_synthdef("b1_eq_synth").param("freq", 440.0).body(|freq| dc_ar(0.0)).apply();
+                define_fx("b1_eq_fx").param("mix", 0.5).body(|input, mix| input).apply();
+                "#,
+            )
+            .unwrap();
+        let canonical_candidate = foundation::finish_evaluation().unwrap();
+
+        let mut closure_definitions: Vec<_> =
+            closure_candidate.dsp_definitions().definitions().collect();
+        closure_definitions.sort_by_key(|definition| definition.name().to_string());
+        let mut canonical_definitions: Vec<_> = canonical_candidate
+            .dsp_definitions()
+            .definitions()
+            .collect();
+        canonical_definitions.sort_by_key(|definition| definition.name().to_string());
+        assert_eq!(closure_definitions.len(), 2);
+        assert_eq!(closure_definitions, canonical_definitions);
+
+        let mut closure_addresses: Vec<String> = closure_candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().to_string())
+            .collect();
+        closure_addresses.sort();
+        let mut canonical_addresses: Vec<String> = canonical_candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().to_string())
+            .collect();
+        canonical_addresses.sort();
+        assert_eq!(closure_addresses, canonical_addresses);
+        assert!(!vibelang_dsp::synthdef_exists(
+            "vibelang::main::b1_eq_synth"
+        ));
+        assert!(!vibelang_dsp::effect_exists("vibelang::main::b1_eq_fx"));
+    }
+
+    #[test]
+    fn v2_legacy_closure_overload_discarding_builder_is_structural_migration_error() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+        let error = engine
+            .eval::<Dynamic>(
+                r#"define_synthdef("b1_migrate_synth", |b| { let ignored = b.param("freq", 440.0).body(|freq| dc_ar(0.0)); })"#,
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("migrate to the canonical form"),
+            "{error}"
+        );
+        let error = engine
+            .eval::<Dynamic>(
+                r#"define_fx("b1_migrate_fx", |b| { let ignored = b.param("mix", 0.5).body(|input, mix| input); })"#,
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("migrate to the canonical form"),
+            "{error}"
+        );
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+        assert_eq!(candidate.dsp_definitions().definitions().count(), 0);
+        assert!(!vibelang_dsp::synthdef_exists("b1_migrate_synth"));
+        assert!(!vibelang_dsp::synthdef_exists(
+            "vibelang::main::b1_migrate_synth"
+        ));
+        assert!(!vibelang_dsp::effect_exists("b1_migrate_fx"));
+        assert!(!vibelang_dsp::effect_exists(
+            "vibelang::main::b1_migrate_fx"
+        ));
+    }
 }

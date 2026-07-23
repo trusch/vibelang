@@ -1273,4 +1273,45 @@ mod tests {
         assert!(err.contains("body_map"), "err = {}", err);
         assert!(err.contains("p.inputs"), "err = {}", err);
     }
+
+    // v1 golden for the M09 B1 purity fix: the legacy 2-arg closure overloads
+    // must keep their eager register-and-deploy semantics on a v1 engine (this
+    // registration root); only the v2 engine re-binds them to the detached
+    // candidate path.
+    #[test]
+    fn legacy_closure_overloads_still_register_and_deploy_eagerly_on_v1() {
+        const PREFIX: &str = "v1_closure_golden";
+
+        let _guard = reset_registries();
+        let deploys = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&deploys);
+        set_deploy_callback(move |bytes| {
+            if bytes
+                .windows(PREFIX.len())
+                .any(|window| window == PREFIX.as_bytes())
+            {
+                counted.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(())
+        });
+
+        test_engine()
+            .eval::<Dynamic>(&format!(
+                r#"
+                define_synthdef("{PREFIX}_synth", |b| b.param("freq", 440.0).body(|freq| dc_ar(0.0)));
+                define_fx("{PREFIX}_fx", |b| b.param("mix", 0.5).body(|input, mix| input));
+                "#
+            ))
+            .unwrap();
+
+        assert!(synthdef_exists(&format!("{PREFIX}_synth")));
+        assert!(effect_exists(&format!("{PREFIX}_fx")));
+        assert!(get_synthdef_hash(&format!("{PREFIX}_synth")).is_some());
+        assert!(get_synthdef_hash(&format!("{PREFIX}_fx")).is_some());
+        assert_eq!(
+            deploys.load(Ordering::SeqCst),
+            2,
+            "legacy closure overloads must deploy eagerly during v1 evaluation"
+        );
+    }
 }
