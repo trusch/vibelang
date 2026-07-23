@@ -1456,7 +1456,7 @@ record("take1")
     .to_file("takes/one.wav")
     .channels(2)
     .apply();
-output(lead, "out").to(group_ref("band")).apply();
+output(lead, "out").to_groups([group_ref("band")]);
 output(wob, "cv").scale(0.5).set(lead, "cutoff");
 let mpk = midi_device("mpk").port("MPK Mini").input().apply();
 keyboard_route(mpk).channel(2).to(lead);
