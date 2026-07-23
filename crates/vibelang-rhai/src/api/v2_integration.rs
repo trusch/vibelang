@@ -99,9 +99,9 @@ fn v2_integration_route_matrix_authors_exact_fan_metadata() {
     let script = format!(
         "{ROUTE_PRELUDE}{}",
         r#"
-output(lead, "out").add(group_ref("leads")).add(group_ref("evens")).apply();
-output(lead, "dry").to_main().apply();
-output(lead, "spill").mute().apply();
+output(lead, "out").to_groups([group_ref("leads"), group_ref("evens")]);
+output(lead, "dry").replace_with_main();
+output(lead, "spill").replace_with_silence();
 output(lfo, "cv").scale(0.5).offset(0.1).set(lead, "cutoff");
 output(lfo, "cv2").set_from_audio(lead, "amp");
 output(env, "trig").trigger(lead, "gate");
@@ -174,6 +174,95 @@ param(lead, "resonance").bend_from(env, "cv4");
         aux.source.is_none(),
         "an explicit disconnect is a real route, not a missing one"
     );
+}
+
+#[test]
+fn v2_integration_route_verbs_are_all_effectful_terminals() {
+    // B2 sweep: every route-verb spelling on the production root either
+    // declares a route in the evaluated candidate or rejects with a typed
+    // error — no silent non-terminal configuration path and no
+    // trailing-apply requirement anywhere on the route surface.
+    let verbs = [
+        (
+            "to_groups",
+            r#"output(lead, "out").to_groups([group_ref("leads"), group_ref("evens")]);"#,
+        ),
+        ("to", r#"output(lead, "out").to(group_ref("leads"));"#),
+        (
+            "replace_with_main",
+            r#"output(lead, "dry").replace_with_main();"#,
+        ),
+        ("to_main", r#"output(lead, "dry").to_main();"#),
+        (
+            "replace_with_silence",
+            r#"output(lead, "spill").replace_with_silence();"#,
+        ),
+        ("mute", r#"output(lead, "spill").mute();"#),
+        ("set", r#"output(lfo, "cv").set(lead, "cutoff");"#),
+        (
+            "set_from_audio",
+            r#"output(lfo, "cv2").set_from_audio(lead, "amp");"#,
+        ),
+        ("trigger", r#"output(env, "trig").trigger(lead, "gate");"#),
+        ("to_param", r#"output(lfo, "cv").to_param(lead, "cutoff");"#),
+        (
+            "to_param_audio",
+            r#"output(lfo, "cv2").to_param_audio(lead, "amp");"#,
+        ),
+        (
+            "to_trigger",
+            r#"output(env, "trig").to_trigger(lead, "gate");"#,
+        ),
+        ("to_input", r#"output(env, "cv").to_input(lead, "fm");"#),
+        (
+            "input from voice port",
+            r#"input(lead, "sidechain").from(env, "out");"#,
+        ),
+        (
+            "input from voice default",
+            r#"input(lead, "sidechain").from(env);"#,
+        ),
+        (
+            "input from group",
+            r#"input(lead, "sidechain").from(group_ref("leads"));"#,
+        ),
+        ("input disconnect", r#"input(lead, "aux").disconnect();"#),
+        (
+            "bend_from",
+            r#"param(lead, "resonance").bend_from(lfo, "cv3");"#,
+        ),
+        (
+            "modulate_by",
+            r#"param(lead, "resonance").modulate_by(lfo, "cv3");"#,
+        ),
+    ];
+    for (verb, statement) in verbs {
+        let mut engine = production_engine(52);
+        let candidate = evaluate(&mut engine, &format!("{ROUTE_PRELUDE}{statement}\n"));
+        let routes = candidate
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.address().kind() == EntityKind::Route)
+            .count();
+        assert_eq!(
+            routes, 1,
+            "route verb {verb} declares exactly one route with no trailing apply"
+        );
+    }
+
+    // The demoted configuration surface is gone from the production root:
+    // the route builder keeps no add/apply spelling to configure with.
+    for statement in [
+        r#"output(lead, "out").add(group_ref("leads"));"#,
+        r#"output(lead, "out").apply();"#,
+    ] {
+        let mut engine = production_engine(53);
+        let error = evaluate_err(&mut engine, &format!("{ROUTE_PRELUDE}{statement}\n"));
+        assert!(
+            error.contains("Function not found"),
+            "non-terminal route spelling must not exist: {statement} -> {error}"
+        );
+    }
 }
 
 #[test]
@@ -669,6 +758,24 @@ fn v2_integration_compatibility_aliases_are_effective_forwardings() {
             "let v = voice(\"v\").synth(\"sine\").apply();\nmidi_device(\"m\").port(\"P\").input().apply();\nkeyboard_route(midi_device_ref(\"m\")).channel(2).to(v);",
             "let v = voice(\"v\").synth(\"sine\").apply();\nmidi_device(\"m\").port(\"P\").input().apply();\nkeyboard_route(midi_device_ref(\"m\")).channel(2).route_to(v);",
         ),
+        (
+            "route to_groups/to",
+            "audio.lead.out",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\ndefine_group(\"leads\", || {});\noutput(lead, \"out\").to_groups([group_ref(\"leads\")]);",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\ndefine_group(\"leads\", || {});\noutput(lead, \"out\").to(group_ref(\"leads\"));",
+        ),
+        (
+            "route replace_with_main/to_main",
+            "audio.lead.dry",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\noutput(lead, \"dry\").replace_with_main();",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\noutput(lead, \"dry\").to_main();",
+        ),
+        (
+            "route replace_with_silence/mute",
+            "audio.lead.spill",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\noutput(lead, \"spill\").replace_with_silence();",
+            "let lead = voice(\"lead\").synth(\"sine\").apply();\noutput(lead, \"spill\").mute();",
+        ),
     ];
     for (case, key, canonical, alias) in pairs {
         let mut engine = production_engine(48);
@@ -786,7 +893,7 @@ sample("snare", "samples/snare.wav").apply();
 buffer("scratch").frames(64).channels(2).clear().apply();
 sfz("piano", "instruments/piano.sfz").apply();
 record("take").from(group_ref("band")).beats(8.0).apply();
-output(lead, "out").to(group_ref("band")).apply();
+output(lead, "out").to_groups([group_ref("band")]);
 let mpk = midi_device("mpk").port("MPK Mini").input().apply();
 keyboard_route(mpk).channel(2).to(lead);
 "#,
