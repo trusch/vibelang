@@ -1384,30 +1384,48 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
 
     for (index, family) in families.iter().enumerate() {
         let mut engine = production_engine(70 + u8::try_from(index).unwrap());
-        let script = |terminal: &str, chain: &str| {
-            format!("// vibe-api: 2\n{}{}.{terminal};\n", family.prelude, chain)
+        let script = |action: &str, chain: &str| {
+            format!(
+                "// vibe-api: 2\n{}let subject = {}.apply();\n{action}(subject);\n",
+                family.prelude, chain
+            )
         };
 
-        // 1. Author, apply + start: the builder start terminal registers the
-        //    declaration and records the exact Start lifecycle receipt.
-        let started = evaluate(&mut engine, &script("start()", family.chain));
+        // 1. Register the declaration and start it through the typed Ref. The
+        //    declaration remains dormant authoring content; playback intent
+        //    is exactly one separately keyed lifecycle operation.
+        let started = evaluate(&mut engine, &script("start", family.chain));
         let (address, effect, bytes) = declared(&started, family.key);
         assert_eq!(
             effect,
-            TerminalEffect::Start,
-            "{}: the start receipt is exact",
+            TerminalEffect::Register,
+            "{}: authoring is registered independently of playback intent",
             family.label
         );
+        assert_eq!(
+            started.operations().len(),
+            1,
+            "{}: exactly one start operation",
+            family.label
+        );
+        let start = &started.operations()[0];
         assert!(
-            started.operations().is_empty(),
-            "{}: a builder start is one declaration, not a detached operation",
+            matches!(start.action(), LifecycleAction::Start(_)),
+            "{}: the operation is exactly Start",
+            family.label
+        );
+        assert_eq!(start.target().address().to_string(), address, "{}", family.label);
+        assert_eq!(
+            start.lifecycle().terminal_effect,
+            TerminalEffect::Start,
+            "{}: the start receipt is exact",
             family.label
         );
 
         // 2. Re-evaluating the byte-identical config keeps the logical
         //    identity and the canonical content: a reload has nothing to
         //    swap and no identity churn.
-        let unchanged = evaluate(&mut engine, &script("start()", family.chain));
+        let unchanged = evaluate(&mut engine, &script("start", family.chain));
         let (address_again, effect_again, bytes_again) = declared(&unchanged, family.key);
         assert_eq!(
             address_again, address,
@@ -1419,11 +1437,22 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
             "{}: unchanged config authors byte-identical canonical content",
             family.label
         );
-        assert_eq!(effect_again, TerminalEffect::Start, "{}", family.label);
+        assert_eq!(
+            effect_again,
+            TerminalEffect::Register,
+            "{}",
+            family.label
+        );
         assert_eq!(
             keys_of(&unchanged),
             keys_of(&started),
             "{}: the declaration set is churn-free",
+            family.label
+        );
+        assert_eq!(
+            unchanged.operations(),
+            started.operations(),
+            "{}: the unchanged reload preserves the exact start operation",
             family.label
         );
 
@@ -1431,7 +1460,7 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
         //    with byte-identical canonical content (nothing to swap) and the
         //    stop is exactly one typed lifecycle operation on the same
         //    logical identity.
-        let stopped = evaluate(&mut engine, &script("apply().stop()", family.chain));
+        let stopped = evaluate(&mut engine, &script("stop", family.chain));
         let (address_stop, effect_stop, bytes_stop) = declared(&stopped, family.key);
         assert_eq!(address_stop, address, "{}", family.label);
         assert_eq!(
@@ -1474,7 +1503,7 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
 
         // 4. Negative control: a changed config authors different canonical
         //    content under the same identity — exactly the swap trigger.
-        let changed = evaluate(&mut engine, &script("start()", family.changed_chain));
+        let changed = evaluate(&mut engine, &script("start", family.changed_chain));
         let (address_changed, _, bytes_changed) = declared(&changed, family.key);
         assert_eq!(
             address_changed, address,
