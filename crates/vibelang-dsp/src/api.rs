@@ -447,6 +447,13 @@ impl SynthDefBuilderHandle {
         }
     }
 
+    pub fn new_v2(name: String) -> Self {
+        Self {
+            synthdef: SynthDef::new(name)
+                .with_ugen_profile(crate::helpers::UgenAdapterProfile::V2Strict),
+        }
+    }
+
     pub fn param(mut self, name: ImmutableString, default: f64) -> Self {
         self.synthdef.arg_f(name.into_owned(), default);
         self
@@ -654,6 +661,14 @@ impl FxBuilderHandle {
     pub fn new(name: String) -> Self {
         Self {
             synthdef: SynthDef::new(name),
+            num_channels: 2,
+        }
+    }
+
+    pub fn new_v2(name: String) -> Self {
+        Self {
+            synthdef: SynthDef::new(name)
+                .with_ugen_profile(crate::helpers::UgenAdapterProfile::V2Strict),
             num_channels: 2,
         }
     }
@@ -1124,6 +1139,31 @@ mod tests {
         assert!(!synthdef_exists("broken_candidate"));
         assert_eq!(get_synthdef_hash("broken_candidate"), None);
         assert_eq!(deploys.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn detached_v2_builder_uses_strict_generated_ugen_adapters() {
+        let _guard = reset_registries();
+        let mut engine = detached_test_engine();
+        engine.register_fn("define_synthdef_v2_fixture", |name: String| {
+            SynthDefBuilderHandle::new_v2(name)
+        });
+
+        let error = engine
+            .eval::<DspDefinitionIr>(
+                r#"
+                define_synthdef_v2_fixture("strict_candidate")
+                    .body_ir(|| sin_osc_ar(440.0))
+                "#,
+            )
+            .expect_err("v2 must reject an omitted generated UGen input");
+
+        assert!(
+            error.to_string().contains("dsp.ugen.argument.omitted"),
+            "error = {error}"
+        );
+        assert!(clear_active_builder().is_none());
+        assert!(!synthdef_exists("strict_candidate"));
     }
 
     #[test]

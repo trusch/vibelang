@@ -3,9 +3,32 @@
 use serde::Deserialize;
 
 pub const MAX_POSITIONAL_ARITY: usize = 20;
+pub const MAX_DYNAMIC_PARAMETERS: usize = 16;
 #[allow(dead_code)]
 pub const DEMAND_QUARANTINE_REASON: &str =
     "demand-rate graph encoding and UGen-specific input lowering are not implemented";
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum UGenNumericRange {
+    FiniteUnbounded,
+    FiniteNonnegative,
+    FinitePositive,
+    IntegerUnbounded,
+    IntegerNonnegative,
+}
+
+impl UGenNumericRange {
+    #[allow(dead_code)]
+    pub const fn rust_variant(self) -> &'static str {
+        match self {
+            Self::FiniteUnbounded => "FiniteUnbounded",
+            Self::FiniteNonnegative => "FiniteNonnegative",
+            Self::FinitePositive => "FinitePositive",
+            Self::IntegerUnbounded => "IntegerUnbounded",
+            Self::IntegerNonnegative => "IntegerNonnegative",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UGenManifest {
@@ -55,6 +78,140 @@ pub fn positional_arity_max(input_count: usize) -> usize {
 
 pub fn has_array_overload(input_count: usize) -> bool {
     input_count > MAX_POSITIONAL_ARITY
+}
+
+pub fn ugen_numeric_range(registered_name: &str, input: &UGenInput) -> Option<UGenNumericRange> {
+    if input.ty == "method" {
+        return None;
+    }
+
+    let name = input.name.to_ascii_lowercase();
+    if matches!(
+        name.as_str(),
+        "bwfreq"
+            | "carfreq"
+            | "centrefrequency"
+            | "cutfreqs"
+            | "cutoff"
+            | "envfreq"
+            | "execfreq"
+            | "ffreq"
+            | "formfreq"
+            | "freq"
+            | "freq1"
+            | "freq2"
+            | "freq3"
+            | "freqhi"
+            | "freqlo"
+            | "fundfreq"
+            | "hifreq"
+            | "infreq"
+            | "initfreq"
+            | "lowfreq"
+            | "lpfreq"
+            | "maxfreq"
+            | "mfreq"
+            | "minfreq"
+            | "modfreq"
+            | "outfreq"
+            | "resfreq"
+            | "sawfreq"
+            | "syncfreq"
+            | "vibfreq"
+            | "vibratofreq"
+            | "vibratofrequency"
+    ) {
+        Some(UGenNumericRange::FinitePositive)
+    } else if matches!(
+        name.as_str(),
+        "attack"
+            | "attacktime"
+            | "clamptime"
+            | "decay"
+            | "decaytime"
+            | "deltime"
+            | "delay"
+            | "delay1"
+            | "delay2"
+            | "delay3"
+            | "delaylengtharray"
+            | "delaytime"
+            | "dur"
+            | "duration"
+            | "durdist"
+            | "graindur"
+            | "jetdelay"
+            | "keydecay"
+            | "lag"
+            | "lagtime"
+            | "lagtimed"
+            | "lagtimeu"
+            | "loopdur"
+            | "maxdelay"
+            | "maxdelay1"
+            | "maxdelay2"
+            | "maxdelay3"
+            | "maxdelaytime"
+            | "memorytime"
+            | "mindur"
+            | "peaklag"
+            | "relaxtime"
+            | "release"
+            | "releasetime"
+            | "revtime"
+            | "seekdur"
+            | "seektime"
+            | "time"
+            | "timedispersion"
+            | "traindur"
+            | "waittime"
+    ) || matches!(name.as_str(), "amp" | "ampthreshold" | "gain")
+    {
+        Some(UGenNumericRange::FiniteNonnegative)
+    } else if name == "bus" {
+        Some(UGenNumericRange::IntegerNonnegative)
+    } else if reviewed_ugen_count_name(&name)
+        || matches!(
+            (registered_name, name.as_str()),
+            ("audio_msg_ar", "index") | ("dswitch1_demand", "index") | ("dswitch_demand", "index")
+        )
+        || input.ty == "int"
+    {
+        Some(UGenNumericRange::IntegerUnbounded)
+    } else {
+        Some(UGenNumericRange::FiniteUnbounded)
+    }
+}
+
+fn reviewed_ugen_count_name(name: &str) -> bool {
+    matches!(
+        name,
+        "num"
+            | "numbands"
+            | "numbeats"
+            | "numbins"
+            | "numbits"
+            | "numbufs"
+            | "numchannels"
+            | "numchans"
+            | "numchansx"
+            | "numchansy"
+            | "numframes"
+            | "numpartials"
+            | "numsamp"
+            | "numsamps"
+            | "numteeth"
+            | "numblocks"
+            | "numcoeff"
+            | "numdatapoints"
+            | "numdims"
+            | "numfeatures"
+            | "numharm"
+            | "nummeans"
+            | "numpreviousbeats"
+            | "numslopesaveraged"
+            | "repeats"
+    )
 }
 
 #[allow(dead_code)]
@@ -130,5 +287,40 @@ mod tests {
         assert_eq!(positional_arity_max(24), 20);
         assert!(has_array_overload(24));
         assert!(!has_array_overload(20));
+    }
+
+    #[test]
+    fn numeric_range_policy_matches_reviewed_ugen_categories() {
+        let input = |name: &str, ty: &str| UGenInput {
+            name: name.into(),
+            ty: ty.into(),
+            default: None,
+            description: "fixture".into(),
+        };
+
+        assert_eq!(
+            ugen_numeric_range("sin_osc_ar", &input("freq", "float")),
+            Some(UGenNumericRange::FinitePositive)
+        );
+        assert_eq!(
+            ugen_numeric_range("line_ar", &input("dur", "float")),
+            Some(UGenNumericRange::FiniteNonnegative)
+        );
+        assert_eq!(
+            ugen_numeric_range("out_ar", &input("bus", "float")),
+            Some(UGenNumericRange::IntegerNonnegative)
+        );
+        assert_eq!(
+            ugen_numeric_range("mfcc_kr", &input("numcoeff", "int")),
+            Some(UGenNumericRange::IntegerUnbounded)
+        );
+        assert_eq!(
+            ugen_numeric_range("sin_osc_ar", &input("phase", "float")),
+            Some(UGenNumericRange::FiniteUnbounded)
+        );
+        assert_eq!(
+            ugen_numeric_range("envelope", &input(".build()", "method")),
+            None
+        );
     }
 }

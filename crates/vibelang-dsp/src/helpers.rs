@@ -8,6 +8,242 @@ use super::graph::*;
 use super::rhainodes::NodeRef;
 use rhai::{Array, Dynamic};
 
+pub(crate) const V1_UGEN_COMPAT_DIAGNOSTIC_ID: &str = "diagnostic.compat.dsp_ugen_recovery";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenAdapterProfile {
+    V1Compatibility,
+    V2Strict,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenNumericRange {
+    FiniteUnbounded,
+    FiniteNonnegative,
+    FinitePositive,
+    IntegerUnbounded,
+    IntegerNonnegative,
+}
+
+pub(crate) struct UgenInputSpec<'a> {
+    name: &'static str,
+    range: UgenNumericRange,
+    value: &'a Dynamic,
+}
+
+impl<'a> UgenInputSpec<'a> {
+    pub(crate) const fn new(
+        name: &'static str,
+        range: UgenNumericRange,
+        value: &'a Dynamic,
+    ) -> Self {
+        Self { name, range, value }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenDefaultSource {
+    Manifest,
+    #[allow(dead_code)]
+    LegacyZero,
+}
+
+pub(crate) struct UgenOmittedInput {
+    name: &'static str,
+    default: f64,
+    source: UgenDefaultSource,
+}
+
+impl UgenOmittedInput {
+    pub(crate) const fn new(name: &'static str, default: f64, source: UgenDefaultSource) -> Self {
+        Self {
+            name,
+            default,
+            source,
+        }
+    }
+}
+
+pub(crate) struct AdaptedUgenCall {
+    recovered: Vec<Dynamic>,
+}
+
+impl AdaptedUgenCall {
+    pub(crate) fn recovered(&self, index: usize) -> Result<&Dynamic> {
+        self.recovered.get(index).ok_or_else(|| {
+            SynthDefError::ValidationError(format!(
+                "dsp.ugen.adapter.internal: recovered input index {index} is unavailable"
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UgenCompatibilityDiagnostic {
+    function: &'static str,
+    arguments: Vec<String>,
+    reasons: Vec<&'static str>,
+}
+
+impl std::fmt::Display for UgenCompatibilityDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} profile=compat.vibelang.v1 function={} arguments={} reasons={} recovery=legacy_effective_values replacement=supply_explicit_finite_in_range_arguments",
+            V1_UGEN_COMPAT_DIAGNOSTIC_ID,
+            self.function,
+            self.arguments.join(","),
+            self.reasons.join(",")
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UgenNumericViolation {
+    argument: String,
+    diagnostic_id: &'static str,
+    expected: &'static str,
+}
+
+pub(crate) fn adapt_ugen_call(
+    profile: UgenAdapterProfile,
+    function: &'static str,
+    inputs: &[UgenInputSpec<'_>],
+    omitted: &[UgenOmittedInput],
+) -> Result<AdaptedUgenCall> {
+    let mut violations = Vec::new();
+    for input in inputs {
+        validate_ugen_numeric(input.name, input.range, input.value, &mut violations);
+    }
+
+    if profile == UgenAdapterProfile::V2Strict {
+        if let Some(violation) = violations.first() {
+            return Err(SynthDefError::InvalidUgenArgument {
+                diagnostic_id: violation.diagnostic_id,
+                ugen: function.into(),
+                arg: violation.argument.clone(),
+                expected: violation.expected,
+            });
+        }
+        if let Some(input) = omitted.first() {
+            return Err(SynthDefError::OmittedUgenArgument {
+                ugen: function.into(),
+                arg: input.name.into(),
+            });
+        }
+        return Ok(AdaptedUgenCall {
+            recovered: Vec::new(),
+        });
+    }
+
+    if !violations.is_empty() || !omitted.is_empty() {
+        let mut arguments = Vec::new();
+        let mut reasons = Vec::new();
+        for violation in &violations {
+            if !arguments.contains(&violation.argument) {
+                arguments.push(violation.argument.clone());
+            }
+            if !reasons.contains(&violation.diagnostic_id) {
+                reasons.push(violation.diagnostic_id);
+            }
+        }
+        for input in omitted {
+            if !arguments.iter().any(|argument| argument == input.name) {
+                arguments.push(input.name.into());
+            }
+            let reason = match input.source {
+                UgenDefaultSource::Manifest => "dsp.ugen.argument.omitted_manifest_default",
+                UgenDefaultSource::LegacyZero => "dsp.ugen.argument.omitted_legacy_zero",
+            };
+            if !reasons.contains(&reason) {
+                reasons.push(reason);
+            }
+        }
+        log::warn!(
+            target: "vibelang::compat",
+            "{}",
+            UgenCompatibilityDiagnostic {
+                function,
+                arguments,
+                reasons,
+            }
+        );
+    }
+
+    Ok(AdaptedUgenCall {
+        recovered: omitted
+            .iter()
+            .map(|input| Dynamic::from(input.default))
+            .collect(),
+    })
+}
+
+fn validate_ugen_numeric(
+    argument: &str,
+    range: UgenNumericRange,
+    value: &Dynamic,
+    violations: &mut Vec<UgenNumericViolation>,
+) {
+    if let Some(array) = value.clone().try_cast::<Array>() {
+        for (index, value) in array.iter().enumerate() {
+            validate_ugen_numeric(&format!("{argument}[{index}]"), range, value, violations);
+        }
+    } else if let Some(value) = value.clone().try_cast::<f64>() {
+        validate_ugen_f64(argument, range, value, violations);
+    } else if let Some(value) = value.clone().try_cast::<i64>() {
+        validate_ugen_f64(argument, range, value as f64, violations);
+    } else if let Some(value) = value.clone().try_cast::<i32>() {
+        validate_ugen_f64(argument, range, value as f64, violations);
+    }
+}
+
+fn validate_ugen_f64(
+    argument: &str,
+    range: UgenNumericRange,
+    value: f64,
+    violations: &mut Vec<UgenNumericViolation>,
+) {
+    let violation = if !value.is_finite() {
+        Some(("dsp.ugen.numeric.non_finite", "must be finite"))
+    } else if value < f32::MIN as f64
+        || value > f32::MAX as f64
+        || (value != 0.0 && (value as f32) == 0.0)
+    {
+        Some((
+            "dsp.ugen.numeric.out_of_f32_range",
+            "must be representable as a finite non-underflowing f32",
+        ))
+    } else {
+        match range {
+            UgenNumericRange::FinitePositive if value <= 0.0 => {
+                Some(("dsp.ugen.numeric.below_range", "must be greater than zero"))
+            }
+            UgenNumericRange::FiniteNonnegative | UgenNumericRange::IntegerNonnegative
+                if value < 0.0 =>
+            {
+                Some((
+                    "dsp.ugen.numeric.below_range",
+                    "must be greater than or equal to zero",
+                ))
+            }
+            UgenNumericRange::IntegerUnbounded | UgenNumericRange::IntegerNonnegative
+                if value.fract() != 0.0 =>
+            {
+                Some(("dsp.ugen.numeric.not_integral", "must be an integer"))
+            }
+            _ => None,
+        }
+    };
+
+    if let Some((diagnostic_id, expected)) = violation {
+        violations.push(UgenNumericViolation {
+            argument: argument.into(),
+            diagnostic_id,
+            expected,
+        });
+    }
+}
+
 /// Convert a Rhai value to an Input (either parameter NodeRef or constant).
 pub fn dynamic_to_input(value: &Dynamic) -> Result<Input> {
     if let Some(node) = value.clone().try_cast::<NodeRef>() {
@@ -71,6 +307,30 @@ pub fn dynamic_to_shape_count(value: &Dynamic) -> Result<u32> {
         )));
     }
     Ok(count as u32)
+}
+
+fn validate_in_ar_call(
+    profile: UgenAdapterProfile,
+    bus: &Dynamic,
+    num_channels: &Dynamic,
+) -> Result<()> {
+    adapt_ugen_call(
+        profile,
+        "in_ar",
+        &[
+            UgenInputSpec::new("bus", UgenNumericRange::IntegerNonnegative, bus),
+            UgenInputSpec::new(
+                "numChannels",
+                UgenNumericRange::IntegerUnbounded,
+                num_channels,
+            ),
+        ],
+        &[],
+    )?;
+    if profile == UgenAdapterProfile::V2Strict {
+        dynamic_to_shape_count(num_channels)?;
+    }
+    Ok(())
 }
 
 fn add_constant_input(builder: &mut GraphBuilderInner, value: f32) -> Input {
@@ -1440,6 +1700,10 @@ pub fn replace_out_ar_n(bus: NodeRef, channels: Array) -> Result<NodeRef> {
 
 /// Register all helper functions with the Rhai engine.
 pub fn register_helpers(engine: &mut rhai::Engine) {
+    register_helpers_for_profile(engine, UgenAdapterProfile::V1Compatibility);
+}
+
+pub(crate) fn register_helpers_for_profile(engine: &mut rhai::Engine, profile: UgenAdapterProfile) {
     // Register Env type
     engine.register_type::<Env>().register_fn(
         "Env",
@@ -1469,23 +1733,43 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("env_triangle", |duration: f64| Env::triangle(duration));
 
     // Bus I/O
-    engine.register_fn("in_ar", |bus: f64, num_channels: f64| {
-        in_ar(bus, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: f64, num_channels: f64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: f64, num_channels: i64| {
-        in_ar(bus, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: f64, num_channels: i64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus, num_channels as f64).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: i64, num_channels: f64| {
-        in_ar(bus as f64, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: i64, num_channels: f64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus as f64, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: i64, num_channels: i64| {
-        in_ar(bus as f64, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: i64, num_channels: i64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus as f64, num_channels as f64).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: f64| {
-        in_ar_n(bus, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: NodeRef, num_channels: f64| {
+        validate_in_ar_call(
+            profile,
+            &Dynamic::from(bus.clone()),
+            &Dynamic::from(num_channels),
+        )
+        .map_err(synthdef_error_to_eval)?;
+        in_ar_n(bus, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: i64| {
-        in_ar_n(bus, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: NodeRef, num_channels: i64| {
+        validate_in_ar_call(
+            profile,
+            &Dynamic::from(bus.clone()),
+            &Dynamic::from(num_channels),
+        )
+        .map_err(synthdef_error_to_eval)?;
+        in_ar_n(bus, num_channels as f64).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("replace_out_ar", |bus: f64, channels: Array| {
         replace_out_ar(bus, channels).unwrap()
@@ -1653,21 +1937,36 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("max", |a: f64, b: f64| a.max(b));
     engine.register_fn("clamp", |val: f64, lo: f64, hi: f64| val.clamp(lo, hi));
 
-    // DC offset generator
-    engine.register_fn("dc_ar", |val: f64| {
-        with_builder(|builder| {
-            builder.add_constant(val as f32);
-            let inputs = vec![Input::Constant(val as f32)];
-            builder.add_node("DC".to_string(), Rate::Audio, inputs, 1, 0)
-        })
-        .unwrap()
-    });
-    engine.register_fn("dc_kr", |val: f64| {
-        with_builder(|builder| {
-            builder.add_constant(val as f32);
-            let inputs = vec![Input::Constant(val as f32)];
-            builder.add_node("DC".to_string(), Rate::Control, inputs, 1, 0)
-        })
-        .unwrap()
-    });
+    if profile == UgenAdapterProfile::V1Compatibility {
+        engine.register_fn("dc_ar", move |value: f64| {
+            let value = Dynamic::from(value);
+            adapt_ugen_call(
+                profile,
+                "dc_ar",
+                &[UgenInputSpec::new(
+                    "in",
+                    UgenNumericRange::FiniteUnbounded,
+                    &value,
+                )],
+                &[],
+            )
+            .map_err(synthdef_error_to_eval)?;
+            crate::ugens::dc_ar(&value).map_err(synthdef_error_to_eval)
+        });
+        engine.register_fn("dc_kr", move |value: f64| {
+            let value = Dynamic::from(value);
+            adapt_ugen_call(
+                profile,
+                "dc_kr",
+                &[UgenInputSpec::new(
+                    "in",
+                    UgenNumericRange::FiniteUnbounded,
+                    &value,
+                )],
+                &[],
+            )
+            .map_err(synthdef_error_to_eval)?;
+            crate::ugens::dc_kr(&value).map_err(synthdef_error_to_eval)
+        });
+    }
 }

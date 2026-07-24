@@ -25,6 +25,21 @@ pub enum SynthDefError {
         expected: String,
     },
 
+    /// A generated UGen adapter rejected a numeric argument before graph dispatch.
+    #[error("{diagnostic_id}: UGen {ugen} argument '{arg}' {expected}")]
+    InvalidUgenArgument {
+        diagnostic_id: &'static str,
+        ugen: String,
+        arg: String,
+        expected: &'static str,
+    },
+
+    /// A strict generated UGen overload omitted an input.
+    #[error(
+        "dsp.ugen.argument.omitted: UGen {ugen} argument '{arg}' must be supplied explicitly under vibe-api 2"
+    )]
+    OmittedUgenArgument { ugen: String, arg: String },
+
     /// Attempted to use graph builder functions without an active builder.
     #[error("No active graph builder in scope")]
     NoActiveBuilder,
@@ -56,3 +71,10 @@ pub enum SynthDefError {
 
 /// Result type alias using SynthDefError.
 pub type Result<T> = std::result::Result<T, SynthDefError>;
+
+pub(crate) fn ugen_error_to_eval(error: SynthDefError) -> Box<rhai::EvalAltResult> {
+    Box::new(rhai::EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        rhai::Position::NONE,
+    ))
+}

@@ -537,6 +537,7 @@ fn rhai_entries(
         } else {
             ("function", function.name.as_str())
         };
+        let ugen_family = ugens.generated.contains_key(registered_name);
         let ugen = ugens
             .generated
             .get(registered_name)
@@ -710,16 +711,21 @@ fn rhai_entries(
             }
             evidence.into_semantics("rust-callable-ast", "the registered Rust callable AST")
         };
-        let canonical = format!("{}|{}", entry.id, function.signature);
+        let (signature, return_type) = if ugen_family {
+            project_ugen_result_metadata(function)
+        } else {
+            (function.signature.clone(), function.return_type.clone())
+        };
+        let canonical = format!("{}|{signature}", entry.id);
         entry.overloads.push(Overload {
             id: stable_id("overload", &canonical),
-            signature: function.signature.clone(),
+            signature,
             aliases,
             parameters,
-            return_type: function.return_type.clone(),
+            return_type: return_type.clone(),
             returns_receiver: receiver
                 .as_ref()
-                .map(|receiver| return_type_is_receiver(&function.return_type, receiver)),
+                .map(|receiver| return_type_is_receiver(&return_type, receiver)),
             boundary,
             availability: overload_availability,
             source_anchors,
@@ -930,6 +936,50 @@ fn transparent_success_type(return_type: &Type) -> &Type {
         }
         _ => return_type,
     }
+}
+
+fn project_ugen_result_metadata(function: &RhaiFunction) -> (String, String) {
+    let Ok(return_type) = syn::parse_str::<Type>(&function.return_type) else {
+        return (function.signature.clone(), function.return_type.clone());
+    };
+    let Type::Path(path) = &return_type else {
+        return (function.signature.clone(), function.return_type.clone());
+    };
+    if path
+        .path
+        .segments
+        .last()
+        .is_none_or(|segment| segment.ident != "Result")
+    {
+        return (function.signature.clone(), function.return_type.clone());
+    }
+
+    let success = transparent_success_type(&return_type);
+    let return_type = match success {
+        Type::Path(path)
+            if path.path.segments.last().is_some_and(|segment| {
+                matches!(segment.ident.to_string().as_str(), "Array" | "Vec")
+            }) =>
+        {
+            "array".into()
+        }
+        Type::Path(path)
+            if path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "Dynamic") =>
+        {
+            "types::dynamic::Dynamic".into()
+        }
+        _ => success.to_token_stream().to_string().replace(' ', ""),
+    };
+    let signature = function
+        .signature
+        .rsplit_once(" -> ")
+        .map(|(parameters, _)| format!("{parameters} -> {return_type}"))
+        .unwrap_or_else(|| function.signature.clone());
+    (signature, return_type)
 }
 
 fn canonical_syn_type(value: &Type) -> String {
@@ -2656,11 +2706,14 @@ impl GeneratedUgen {
             BoundaryFacet::none("overload supplies every generated UGen input")
         };
         let structured_errors = if array_overload {
-            BoundaryFacet::present(["wrong array length returns a Rhai evaluation error"])
+            BoundaryFacet::present([
+                "wrong array length returns a Rhai evaluation error",
+                "generated UGen conversion and graph-build failures return Rhai evaluation errors",
+            ])
         } else {
-            BoundaryFacet::none(
-                "conversion/build errors are unwrapped by the registration closure instead of returned",
-            )
+            BoundaryFacet::present([
+                "generated UGen adapter, conversion, and graph-build failures return Rhai evaluation errors",
+            ])
         };
         let (coercions, casts) = if self.manifest.inputs.is_empty() {
             (
@@ -2684,9 +2737,9 @@ impl GeneratedUgen {
             ranges,
             fallbacks,
             structured_errors,
-            panic_exposure: BoundaryFacet::present([
-                "generated Rhai registration closure unwraps SynthDefError and can panic",
-            ]),
+            panic_exposure: BoundaryFacet::none(
+                "generated Rhai registration closure propagates errors without an unwind primitive",
+            ),
         }
     }
 
@@ -4030,7 +4083,8 @@ mod tests {
                     .unwrap();
                 assert!(generated_ugen.overloads.iter().all(|overload| {
                     overload.boundary.coercions.status == "present"
-                        && overload.boundary.panic_exposure.status == "present"
+                        && overload.boundary.structured_errors.status == "present"
+                        && overload.boundary.panic_exposure.status == "none"
                 }));
                 let stdlib_declarations = manifest
                     .entries
@@ -4136,6 +4190,50 @@ mod tests {
         };
 
         assert!(!metadata_matches_generated_ugen(2, &handwritten));
+    }
+
+    #[test]
+    fn ugen_result_metadata_projects_the_script_visible_success_type() {
+        let node = RhaiFunction {
+            name: "sin_osc_ar".into(),
+            this_type: None,
+            num_params: 1,
+            params: Vec::new(),
+            return_type: "core::result::Result<vibelang_dsp::rhainodes::NodeRef, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+            signature: "sin_osc_ar(_: Dynamic) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+        };
+        assert_eq!(
+            project_ugen_result_metadata(&node),
+            (
+                "sin_osc_ar(_: Dynamic) -> vibelang_dsp::rhainodes::NodeRef".into(),
+                "vibelang_dsp::rhainodes::NodeRef".into(),
+            )
+        );
+
+        let array = RhaiFunction {
+            name: "in_ar".into(),
+            return_type: "core::result::Result<alloc::vec::Vec<rhai::Dynamic>, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+            signature: "in_ar(_: f64, _: i64) -> core::result::Result<alloc::vec::Vec<rhai::Dynamic>, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+            ..node
+        };
+        assert_eq!(
+            project_ugen_result_metadata(&array),
+            ("in_ar(_: f64, _: i64) -> array".into(), "array".into(),)
+        );
+
+        let dynamic = RhaiFunction {
+            name: "mix_ar".into(),
+            return_type: "core::result::Result<rhai::types::dynamic::Dynamic, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+            signature: "mix_ar(_: Dynamic) -> core::result::Result<rhai::types::dynamic::Dynamic, alloc::boxed::Box<rhai::EvalAltResult>>".into(),
+            ..array
+        };
+        assert_eq!(
+            project_ugen_result_metadata(&dynamic),
+            (
+                "mix_ar(_: Dynamic) -> types::dynamic::Dynamic".into(),
+                "types::dynamic::Dynamic".into(),
+            )
+        );
     }
 
     #[test]

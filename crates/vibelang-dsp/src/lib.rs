@@ -60,14 +60,22 @@ pub use notes::{parse_note_name, parse_note_name_raw};
 pub use rhainodes::{register_node_ref, NodeRef};
 
 /// Re-export the generated UGen registration function.
-pub use ugens::register_generated_ugens;
+pub use ugens::{register_generated_ugens, register_generated_ugens_v2};
 
 /// Register all DSP types and functions with a Rhai engine.
 /// This includes UGens, NodeRef, helpers, and SynthDef builder API.
 pub fn register_dsp_api(engine: &mut rhai::Engine) {
     register_node_ref(engine);
-    helpers::register_helpers(engine);
+    helpers::register_helpers_for_profile(engine, helpers::UgenAdapterProfile::V1Compatibility);
     register_generated_ugens(engine);
+    register_synthdef_api(engine);
+}
+
+/// Register DSP types and functions with strict vibe-api 2 UGen adapters.
+pub fn register_dsp_api_v2(engine: &mut rhai::Engine) {
+    register_node_ref(engine);
+    helpers::register_helpers_for_profile(engine, helpers::UgenAdapterProfile::V2Strict);
+    register_generated_ugens_v2(engine);
     register_synthdef_api(engine);
 }
 
@@ -96,5 +104,57 @@ mod tests {
         let node_ref = NodeRef::new_with_output(5, 2);
         assert_eq!(node_ref.id(), 5);
         assert_eq!(node_ref.output_index(), 2);
+    }
+
+    #[test]
+    fn generated_runtime_adapter_source_has_no_unwind_or_silent_default_path() {
+        let source = include_str!(concat!(env!("OUT_DIR"), "/generated.rs"));
+        let helpers_source = include_str!("helpers.rs");
+        for forbidden in [
+            ".unwrap()",
+            ".expect(",
+            "panic!(",
+            ".unwrap_or(0.0)",
+            ".cast()",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "generated adapter source contains forbidden path {forbidden}"
+            );
+        }
+        let accepted_overloads = 5_962;
+        let profile_split_overloads = source
+            .matches("helpers::UgenAdapterProfile::V1Compatibility => {")
+            .count();
+        assert_eq!(profile_split_overloads, 12);
+        assert_eq!(
+            source
+                .matches("helpers::UgenAdapterProfile::V2Strict => {")
+                .count(),
+            profile_split_overloads
+        );
+        let generated_adapter_sites = source.matches("helpers::adapt_ugen_call(").count();
+        assert_eq!(
+            generated_adapter_sites,
+            accepted_overloads + profile_split_overloads,
+            "profile-split overloads must have exactly one adapter site per registration body"
+        );
+        assert_eq!(
+            generated_adapter_sites - profile_split_overloads,
+            accepted_overloads,
+            "each installed profile must retain one adapter per accepted overload"
+        );
+
+        let v1_typed_dc_helpers = helpers_source
+            .split_once("if profile == UgenAdapterProfile::V1Compatibility {")
+            .expect("v1 typed DC compatibility registrations")
+            .1;
+        assert_eq!(
+            v1_typed_dc_helpers.matches("adapt_ugen_call(").count(),
+            2,
+            "typed v1 DC compatibility callers are outside the generated overload inventory"
+        );
+        assert!(v1_typed_dc_helpers.contains("engine.register_fn(\"dc_ar\""));
+        assert!(v1_typed_dc_helpers.contains("engine.register_fn(\"dc_kr\""));
     }
 }

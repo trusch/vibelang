@@ -1138,7 +1138,9 @@ keyboard_route(midi_device_ref("pads")).channel(2).to(v);
         Context {
             label: "plugin-dependent synthdef without the plugin",
             script: r#"// vibe-api: 2
-define_synthdef("plugin_voice").body(|| mi_plaits_ar()).apply();
+define_synthdef("plugin_voice").body(|| mi_plaits_ar(
+    60.0, 0, 0.5, 0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 0.5, 0.5, 1.0
+)).apply();
 "#,
             declared_keys: &["plugin_voice"],
             required: &["capability.plugin.mi_ugens"],

@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "f1bb6c139412556a12935bbd02a32e987fae3a129c72afe9cd766bfd5c9fcc5e",
+  "contract_digest": "d003118a99f006645dbbe193b7ff06a523047346c0fd1775596e7cba7ad8b97d",
   "totals": {
     "entries": 3626,
     "overloads": 8431,

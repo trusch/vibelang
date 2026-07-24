@@ -1411,7 +1411,7 @@ impl SynthDefBuilder {
         let qualified_name = base.address().to_string();
         Self {
             base,
-            builder: Some(vibelang_dsp::SynthDefBuilderHandle::new(qualified_name)),
+            builder: Some(vibelang_dsp::SynthDefBuilderHandle::new_v2(qualified_name)),
             definition: None,
         }
     }
@@ -1546,7 +1546,7 @@ impl EffectDefBuilder {
         let qualified_name = base.address().to_string();
         Self {
             base,
-            builder: Some(vibelang_dsp::FxBuilderHandle::new(qualified_name)),
+            builder: Some(vibelang_dsp::FxBuilderHandle::new_v2(qualified_name)),
             definition: None,
         }
     }
@@ -2257,7 +2257,7 @@ fn sequence_v2_error(error: FoundationError, position: Position) -> Box<EvalAltR
 }
 
 pub(crate) fn install_v2(engine: &mut Engine) {
-    vibelang_dsp::register_dsp_api(engine);
+    vibelang_dsp::register_dsp_api_v2(engine);
     engine
         .register_type_with_name::<FadeBuilder>("FadeBuilder")
         .register_type_with_name::<FadeRef>("FadeRef")
