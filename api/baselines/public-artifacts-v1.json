@@ -287,7 +287,7 @@
     },
     "packages": {
       "counts": {
-        "bytes": 320474,
+        "bytes": 320961,
         "cargo_packages": [
           "vibelang-api-manifest",
           "vibelang-cli",
@@ -333,9 +333,9 @@
           "sha256": "08af2843a2ea00d7656610dc0f7b0ac83ce2b690a00db689758a94116490d9e1"
         },
         {
-          "bytes": 1958,
+          "bytes": 2197,
           "path": "crates/vibelang-core/Cargo.toml",
-          "sha256": "54136e9bad4670fc59ff27737baf3308e76d187cc2df6febb22b4ee825d17b2c"
+          "sha256": "b3f552bfa945f4aa39a38eb1e579d99343c1cc6cabdd9d65985d8a1e20adb188"
         },
         {
           "bytes": 856,
@@ -358,9 +358,9 @@
           "sha256": "d8c1c74d61484ae5d5d89ca32362e12398bb33f10446ebc3dbb27d5b9bca6c1d"
         },
         {
-          "bytes": 1630,
+          "bytes": 1878,
           "path": "crates/vibelang-rhai/Cargo.toml",
-          "sha256": "5d401f4243e5836fb667c0b0ea5050c4a7a29878e69a46ba3e98032fc5a74a9b"
+          "sha256": "7fd49090b7c0f160201435c75c4e8ecd26475ce80db20edbcffb6631e55ea240"
         },
         {
           "bytes": 567,
@@ -418,7 +418,7 @@
           "sha256": "e3bb9a2fd50352745bd594e03e9423827e7784bc297bcf05e3144ebe6071e212"
         }
       ],
-      "tree_sha256": "8165a3ebaa0003c9c233966cae794f4df9b604209a7449eeb64a574c04b08692"
+      "tree_sha256": "c964538e08cf88e7d2ad90d464804b6623f55122773cb5ca03d48d10d330607d"
     },
     "rhai_editor": {
       "counts": {
