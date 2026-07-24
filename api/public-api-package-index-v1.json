@@ -30,8 +30,8 @@
     {
       "path": "crates/vibelang-core/Cargo.toml",
       "kind": "cargo_manifest",
-      "bytes": 1958,
-      "sha256": "54136e9bad4670fc59ff27737baf3308e76d187cc2df6febb22b4ee825d17b2c"
+      "bytes": 2197,
+      "sha256": "b3f552bfa945f4aa39a38eb1e579d99343c1cc6cabdd9d65985d8a1e20adb188"
     },
     {
       "path": "crates/vibelang-dsp/Cargo.toml",
@@ -60,8 +60,8 @@
     {
       "path": "crates/vibelang-rhai/Cargo.toml",
       "kind": "cargo_manifest",
-      "bytes": 1630,
-      "sha256": "5d401f4243e5836fb667c0b0ea5050c4a7a29878e69a46ba3e98032fc5a74a9b"
+      "bytes": 1878,
+      "sha256": "7fd49090b7c0f160201435c75c4e8ecd26475ce80db20edbcffb6631e55ea240"
     },
     {
       "path": "crates/vibelang-sfz/Cargo.toml",
