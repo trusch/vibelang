@@ -18,8 +18,9 @@ use std::time::SystemTime;
 use crate::engine::{ScriptEngine, ScriptEvaluation, V2EngineConfig};
 use crate::foundation;
 use vibelang_core::candidate::{
-    AuthoringDeclaration, Candidate, ContractDigest, DeclarationPayload, EngineInstanceId,
-    EntityKind, EvaluationIdentity, LanguageContract, LifecycleAction, RouteVerb, TerminalEffect,
+    AuthoringDeclaration, Cancellation, Candidate, ContractDigest, DeclarationPayload,
+    EngineInstanceId, EntityKind, EvaluationIdentity, LanguageContract, LifecycleAction,
+    LifecycleMetadata, LogicalAddress, RouteVerb, TerminalEffect,
 };
 use vibelang_core::capabilities::{
     fixtures as capability_fixtures, AvailabilityGate, CapabilityCatalog, CapabilitySnapshot,
@@ -50,6 +51,15 @@ fn v2_config(seed: u8) -> V2EngineConfig {
 fn production_engine(seed: u8) -> ScriptEngine {
     foundation::abort_evaluation();
     ScriptEngine::with_v2(v2_config(seed)).expect("v2 engine construction")
+}
+
+fn production_engine_at(seed: u8, runtime_epoch: RuntimeEpoch) -> ScriptEngine {
+    foundation::abort_evaluation();
+    ScriptEngine::with_v2(V2EngineConfig::new(
+        ContractDigest::from_bytes(&[seed]),
+        runtime_epoch,
+    ))
+    .expect("v2 engine construction")
 }
 
 fn evaluate(engine: &mut ScriptEngine, script: &str) -> Candidate {
@@ -1061,34 +1071,44 @@ fn v2_integration_capability_rejection_yields_exact_receipts_before_staging() {
         declared_keys: &'static [&'static str],
         required: &'static [&'static str],
         withheld: &'static [(&'static str, AvailabilityGate, &'static str)],
+        binding_targets: &'static [&'static str],
+        expected_dsp_ugen: Option<&'static str>,
         target_id: &'static str,
         code: &'static str,
     }
     let contexts = [
         Context {
-            label: "native-only sfz+record on a non-native target",
+            label: "native-only sfz on a non-native target",
+            script: r#"// vibe-api: 2
+sfz("piano", "instruments/piano.sfz").apply();
+"#,
+            declared_keys: &["piano"],
+            required: &["capability.resource.sfz"],
+            withheld: &[(
+                "capability.resource.sfz",
+                AvailabilityGate::Target,
+                "reason.target_unsupported",
+            )],
+            binding_targets: &["v1:entry:26a908343e7f7c0d"],
+            expected_dsp_ugen: None,
+            target_id: "target.wasm32",
+            code: "reason.target_unsupported",
+        },
+        Context {
+            label: "native-only record on a non-native target",
             script: r#"// vibe-api: 2
 define_group("band", || {});
-sfz("piano", "instruments/piano.sfz").apply();
 record("take").from(group_ref("band")).beats(8.0).start();
 "#,
-            declared_keys: &["piano", "take"],
-            required: &[
-                "capability.backend.scsynth.native",
+            declared_keys: &["take"],
+            required: &["capability.recording.audio"],
+            withheld: &[(
                 "capability.recording.audio",
-            ],
-            withheld: &[
-                (
-                    "capability.backend.scsynth.native",
-                    AvailabilityGate::Target,
-                    "reason.target_unsupported",
-                ),
-                (
-                    "capability.recording.audio",
-                    AvailabilityGate::Target,
-                    "reason.target_unsupported",
-                ),
-            ],
+                AvailabilityGate::Target,
+                "reason.target_unsupported",
+            )],
+            binding_targets: &["v1:entry:29a64e7fe0025754", "v1:entry:66221fd87818d486"],
+            expected_dsp_ugen: None,
             target_id: "target.wasm32",
             code: "reason.target_unsupported",
         },
@@ -1100,46 +1120,82 @@ midi_device("pads").port("MPK Mini").input().apply();
 keyboard_route(midi_device_ref("pads")).channel(2).to(v);
 "#,
             declared_keys: &["pads"],
-            required: &["capability.midi.input", "capability.midi.output"],
-            withheld: &[
-                (
-                    "capability.midi.input",
-                    AvailabilityGate::BuildFeature,
-                    "reason.compile_feature_disabled",
-                ),
-                (
-                    "capability.midi.output",
-                    AvailabilityGate::BuildFeature,
-                    "reason.compile_feature_disabled",
-                ),
+            required: &["capability.midi.input"],
+            withheld: &[(
+                "capability.midi.input",
+                AvailabilityGate::BuildFeature,
+                "reason.compile_feature_disabled",
+            )],
+            binding_targets: &[
+                "v1:entry:5653421b5f2800d5",
+                "v1:entry:a95001902499186d",
+                "v1:entry:ba4729487f86533a",
             ],
+            expected_dsp_ugen: None,
             target_id: "target.native.linux",
             code: "reason.compile_feature_disabled",
         },
         Context {
             label: "plugin-dependent synthdef without the plugin",
             script: r#"// vibe-api: 2
-voice("braids").synth("mi_plaits").apply();
+define_synthdef("plugin_voice").body(|| mi_plaits_ar()).apply();
 "#,
-            declared_keys: &["braids"],
+            declared_keys: &["plugin_voice"],
             required: &["capability.plugin.mi_ugens"],
             withheld: &[(
                 "capability.plugin.mi_ugens",
                 AvailabilityGate::RuntimeProbe,
                 "reason.plugin_missing",
             )],
+            binding_targets: &["v1:entry:662c4e6757067734"],
+            expected_dsp_ugen: Some("MiPlaits"),
             target_id: "target.native.linux",
             code: "reason.plugin_missing",
         },
     ];
 
     for (index, context) in contexts.iter().enumerate() {
+        let ledger = MutationLedger::new(LedgerConfig::default()).unwrap();
+
         // The submission comes through the one production registration root.
-        let mut engine = production_engine(60 + u8::try_from(index).unwrap());
+        let mut engine =
+            production_engine_at(60 + u8::try_from(index).unwrap(), ledger.runtime_epoch());
         let candidate = evaluate(&mut engine, context.script);
+        assert_eq!(
+            candidate.identity().runtime_epoch(),
+            ledger.runtime_epoch(),
+            "{}: evaluation and admission share one runtime epoch",
+            context.label
+        );
         let keys = keys_of(&candidate);
         for key in context.declared_keys {
             assert!(keys.contains(*key), "{}: declares {key}", context.label);
+        }
+        if let Some(expected_ugen) = context.expected_dsp_ugen {
+            let declaration = candidate
+                .declarations()
+                .iter()
+                .find(|declaration| {
+                    declaration.address().key().as_str() == context.declared_keys[0]
+                })
+                .expect("plugin-dependent synthdef declaration");
+            let DeclarationPayload::Authoring {
+                declaration: AuthoringDeclaration::SynthDef(definition),
+                ..
+            } = declaration.payload()
+            else {
+                panic!("{}: declaration is a SynthDef", context.label)
+            };
+            assert!(
+                definition
+                    .definition
+                    .graph()
+                    .nodes
+                    .iter()
+                    .any(|node| node.name == expected_ugen),
+                "{}: candidate IR contains {expected_ugen}",
+                context.label
+            );
         }
 
         // M05 deterministic snapshot: every required capability is exactly
@@ -1174,33 +1230,37 @@ voice("braids").synth("mi_plaits").apply();
         // and the M05 availability evaluator reports them unavailable for the
         // same reason.
         let catalog = capability_catalog();
-        let binding = catalog
-            .availability_bindings()
-            .find(|binding| {
+        for target_id in context.binding_targets {
+            let binding = catalog
+                .availability_bindings()
+                .find(|binding| binding.target_id == *target_id)
+                .unwrap_or_else(|| panic!("{}: exact binding {target_id}", context.label));
+            assert!(
                 binding
                     .predicate_capability_ids
                     .iter()
-                    .any(|id| id == context.required[0])
-            })
-            .unwrap_or_else(|| panic!("{}: binding for {}", context.label, context.required[0]));
-        let predicate = catalog
-            .evaluate_availability_binding(&binding.target_id, snapshot.capabilities())
-            .expect("binding evaluates");
-        assert_eq!(
-            predicate.state_id, "availability.unavailable",
-            "{}: bound entry {}",
-            context.label, predicate.target_id
-        );
-        assert!(
-            predicate.reason_ids.contains(&context.code.to_string()),
-            "{}: predicate reasons carry {}",
-            context.label,
-            context.code
-        );
+                    .any(|id| context.required.contains(&id.as_str())),
+                "{}: {target_id} is bound to the rejected capability",
+                context.label
+            );
+            let predicate = catalog
+                .evaluate_availability_binding(target_id, snapshot.capabilities())
+                .expect("binding evaluates");
+            assert_eq!(
+                predicate.state_id, "availability.unavailable",
+                "{}: bound entry {}",
+                context.label, predicate.target_id
+            );
+            assert_eq!(
+                predicate.reason_ids,
+                vec![context.code.to_string()],
+                "{}: {target_id} carries the exact reason",
+                context.label
+            );
+        }
 
         // Exact typed rejection receipt, minted at the pre-acceptance
         // capability check.
-        let ledger = MutationLedger::new(LedgerConfig::default()).unwrap();
         let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_790_000_000);
         let submission = Submission {
             kind: MutationKind::Candidate {
@@ -1216,9 +1276,17 @@ voice("braids").synth("mi_plaits").apply();
             expected_revision: None,
             atomicity: Atomicity::Required,
             supersession: SupersessionPolicy::Fifo,
-            material: RequestMaterial::new(&("candidate", context.label), Some(&())).unwrap(),
+            material: RequestMaterial::new(
+                &(context.label, keys.iter().cloned().collect::<Vec<String>>()),
+                Some(&()),
+            )
+            .unwrap(),
         };
-        let SubmissionResult::New(receipt) = ledger.submit(submission, now).unwrap() else {
+        let candidate_submission = CandidateSubmission::new(submission).unwrap();
+        let SubmissionResult::New(receipt) = ledger
+            .submit(candidate_submission.submission().clone(), now)
+            .unwrap()
+        else {
             panic!("{}: fresh submission", context.label);
         };
         assert_eq!(
@@ -1321,6 +1389,17 @@ voice("braids").synth("mi_plaits").apply();
                 context.label
             );
         }
+
+        let fresh = evaluate(
+            &mut engine,
+            "// vibe-api: 2\ndefine_group(\"fresh\", || {});",
+        );
+        assert_eq!(
+            keys_of(&fresh),
+            BTreeSet::from(["fresh".to_owned()]),
+            "{}: a rejected candidate leaves no next-evaluation residue",
+            context.label
+        );
     }
 }
 
@@ -1332,7 +1411,7 @@ voice("braids").synth("mi_plaits").apply();
 
 #[test]
 fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
-    fn declared(candidate: &Candidate, key: &str) -> (String, TerminalEffect, Vec<u8>) {
+    fn declared(candidate: &Candidate, key: &str) -> (LogicalAddress, TerminalEffect, Vec<u8>) {
         let declaration = candidate
             .declarations()
             .iter()
@@ -1345,7 +1424,7 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
             _ => panic!("{key}: authoring payload"),
         };
         (
-            declaration.address().to_string(),
+            declaration.address().clone(),
             declaration.lifecycle().terminal_effect,
             bytes,
         )
@@ -1414,10 +1493,15 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
             "{}: the operation is exactly Start",
             family.label
         );
-        assert_eq!(start.target().address().to_string(), address, "{}", family.label);
         assert_eq!(
-            start.lifecycle().terminal_effect,
-            TerminalEffect::Start,
+            start.target().address(),
+            &address,
+            "{}: start targets the registered identity",
+            family.label
+        );
+        assert_eq!(
+            start.lifecycle(),
+            &LifecycleMetadata::reference(TerminalEffect::Start, Cancellation::BeforePlanning),
             "{}: the start receipt is exact",
             family.label
         );
@@ -1426,6 +1510,12 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
         //    identity and the canonical content: a reload has nothing to
         //    swap and no identity churn.
         let unchanged = evaluate(&mut engine, &script("start", family.chain));
+        assert_eq!(
+            unchanged.identity(),
+            started.identity(),
+            "{}: stable typed evaluation identity across reload",
+            family.label
+        );
         let (address_again, effect_again, bytes_again) = declared(&unchanged, family.key);
         assert_eq!(
             address_again, address,
@@ -1437,12 +1527,7 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
             "{}: unchanged config authors byte-identical canonical content",
             family.label
         );
-        assert_eq!(
-            effect_again,
-            TerminalEffect::Register,
-            "{}",
-            family.label
-        );
+        assert_eq!(effect_again, TerminalEffect::Register, "{}", family.label);
         assert_eq!(
             keys_of(&unchanged),
             keys_of(&started),
@@ -1461,6 +1546,12 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
         //    stop is exactly one typed lifecycle operation on the same
         //    logical identity.
         let stopped = evaluate(&mut engine, &script("stop", family.chain));
+        assert_eq!(
+            stopped.identity(),
+            started.identity(),
+            "{}: stop stays in the same typed evaluation identity",
+            family.label
+        );
         let (address_stop, effect_stop, bytes_stop) = declared(&stopped, family.key);
         assert_eq!(address_stop, address, "{}", family.label);
         assert_eq!(
@@ -1489,14 +1580,14 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
             family.label
         );
         assert_eq!(
-            stop.target().address().to_string(),
-            address,
+            stop.target().address(),
+            &address,
             "{}: the stop targets the unchanged identity",
             family.label
         );
         assert_eq!(
-            stop.lifecycle().terminal_effect,
-            TerminalEffect::Stop,
+            stop.lifecycle(),
+            &LifecycleMetadata::reference(TerminalEffect::Stop, Cancellation::NotCancellable),
             "{}: the stop receipt is exact",
             family.label
         );
@@ -1504,6 +1595,12 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
         // 4. Negative control: a changed config authors different canonical
         //    content under the same identity — exactly the swap trigger.
         let changed = evaluate(&mut engine, &script("start", family.changed_chain));
+        assert_eq!(
+            changed.identity(),
+            started.identity(),
+            "{}: changed content does not churn typed identity",
+            family.label
+        );
         let (address_changed, _, bytes_changed) = declared(&changed, family.key);
         assert_eq!(
             address_changed, address,
@@ -1513,6 +1610,12 @@ fn v2_integration_unchanged_config_stop_preserves_identity_and_content() {
         assert_ne!(
             bytes_changed, bytes,
             "{}: changed config DOES author swapped content",
+            family.label
+        );
+        assert_eq!(
+            changed.operations(),
+            started.operations(),
+            "{}: the changed-config control differs only in declaration content",
             family.label
         );
     }
