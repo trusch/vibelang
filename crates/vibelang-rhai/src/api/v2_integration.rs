@@ -10,7 +10,7 @@
 //! allocation, effective compatibility aliases, and the closing sweep that
 //! no sentinel handle, physical ID, or log-only terminal remains in v2.
 
-use rhai::{Engine, EvalAltResult};
+use rhai::{Dynamic, Engine, EvalAltResult};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -93,6 +93,24 @@ fn shared_root_engine() -> Engine {
     foundation::register(&mut engine);
     super::install_v2_api(&mut engine);
     engine
+}
+
+#[test]
+fn v2_shared_root_preserves_strict_clamp_and_zip_boundaries_after_dsp_install() {
+    let engine = shared_root_engine();
+    for (script, diagnostic) in [
+        ("clamp(0.5, 1.0, 0.0)", "dsp.helper.clamp.range_order"),
+        ("clamp(0.0 / 0.0, 0.0, 1.0)", "dsp.helper.clamp.non_finite"),
+        ("zip([1, 2], [3])", "dsp.helper.zip.length"),
+    ] {
+        let error = engine.eval::<Dynamic>(script).unwrap_err().to_string();
+        assert!(error.contains(diagnostic), "{script}: {error}");
+    }
+
+    let pairs = engine
+        .eval::<rhai::Array>("zip([1, 2], [3, 4])")
+        .expect("equal-length zip remains available");
+    assert_eq!(pairs.len(), 2);
 }
 
 fn stdlib_v2_engine(seed: u8) -> ScriptEngine {

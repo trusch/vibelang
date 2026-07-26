@@ -3,15 +3,15 @@
   "schema_version": 1,
   "base": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "f0c8b73e4b1f07a1d3e771b068ffae5fbf30fa8353dfe0eeec5b838baef6a833",
-    "bytes": 33300410
+    "sha256": "24e973fa95143f996823a38e2a359a5c72443d16b9391f3a9cc2ae76c5f1d184",
+    "bytes": 33302560
   },
   "candidate_v1_projection": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "f0c8b73e4b1f07a1d3e771b068ffae5fbf30fa8353dfe0eeec5b838baef6a833",
-    "bytes": 33300410
+    "sha256": "24e973fa95143f996823a38e2a359a5c72443d16b9391f3a9cc2ae76c5f1d184",
+    "bytes": 33302560
   },
-  "candidate_v2_digest": "0dd838ba3bd973b400297d14429f13a0d2034ea93244e86802456afbc31e3131",
+  "candidate_v2_digest": "e74c30529bc12b491eac6e41e1bfe8553dc3e76ed31ca34337b6b102bfcf4c20",
   "unchanged_entry_ids": 3626,
   "unchanged_overload_ids": 8433,
   "unclassified_count": 0,

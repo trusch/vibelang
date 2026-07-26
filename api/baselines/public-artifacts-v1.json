@@ -278,7 +278,7 @@
     },
     "manifest": {
       "counts": {
-        "bytes": 33300410,
+        "bytes": 33302560,
         "entries": 3626,
         "files": 1,
         "named_terminals": 26,
@@ -288,12 +288,12 @@
       },
       "files": [
         {
-          "bytes": 33300410,
+          "bytes": 33302560,
           "path": "api/public-api-manifest-v1.json",
-          "sha256": "f0c8b73e4b1f07a1d3e771b068ffae5fbf30fa8353dfe0eeec5b838baef6a833"
+          "sha256": "24e973fa95143f996823a38e2a359a5c72443d16b9391f3a9cc2ae76c5f1d184"
         }
       ],
-      "tree_sha256": "498dca42af0038bf6233a7c5e739a50e8e8ab61cc5ebc957ebca8cd0400bb49f"
+      "tree_sha256": "77cd52b3ab0d05f3fb267c2e061c372d3827a2109e4319fc1226c1998dfba3e8"
     },
     "packages": {
       "counts": {

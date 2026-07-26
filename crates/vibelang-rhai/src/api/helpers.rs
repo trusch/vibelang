@@ -215,6 +215,16 @@ pub(crate) fn install_v2(engine: &mut Engine) {
     register(engine);
 
     engine
+        .register_fn("zip", |arr1: Array, arr2: Array| {
+            if arr1.len() != arr2.len() {
+                return Err(runtime_error(format!(
+                    "rhai.array.zip_length span=0..0 expected=equal_array_lengths token={}..{}",
+                    arr1.len(),
+                    arr2.len()
+                )));
+            }
+            Ok(array_zip(arr1, arr2))
+        })
         .register_fn("db", |decibels: f64| {
             let decibels = strict_finite("db", "decibels", decibels)?;
             strict_finite("db", "result", db(decibels))

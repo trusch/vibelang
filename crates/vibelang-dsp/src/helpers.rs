@@ -861,6 +861,33 @@ pub fn array_zip(arr1: Array, arr2: Array) -> Array {
         .collect()
 }
 
+fn array_zip_strict(arr1: Array, arr2: Array) -> Result<Array> {
+    if arr1.len() != arr2.len() {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.zip.length: expected equal array lengths, got {} and {}",
+            arr1.len(),
+            arr2.len()
+        )));
+    }
+    Ok(array_zip(arr1, arr2))
+}
+
+fn clamp_strict(value: f64, min: f64, max: f64) -> Result<f64> {
+    for (field, input) in [("value", value), ("min", min), ("max", max)] {
+        if !input.is_finite() {
+            return Err(SynthDefError::ValidationError(format!(
+                "dsp.helper.clamp.non_finite: {field} must be finite, got {input}"
+            )));
+        }
+    }
+    if min > max {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.clamp.range_order: expected min <= max, got {min}..{max}"
+        )));
+    }
+    Ok(value.clamp(min, max))
+}
+
 /// Envelope specification (like SuperCollider's Env class).
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -1931,7 +1958,16 @@ pub(crate) fn register_helpers_for_profile(engine: &mut rhai::Engine, profile: U
     });
 
     // Array utilities
-    engine.register_fn("zip", array_zip);
+    match profile {
+        UgenAdapterProfile::V1Compatibility => {
+            engine.register_fn("zip", array_zip);
+        }
+        UgenAdapterProfile::V2Strict => {
+            engine.register_fn("zip", |arr1: Array, arr2: Array| {
+                array_zip_strict(arr1, arr2).map_err(synthdef_error_to_eval)
+            });
+        }
+    }
 
     // Envelopes
     engine.register_fn("env_gen", |gate: NodeRef, done: i64| {
@@ -2042,7 +2078,18 @@ pub(crate) fn register_helpers_for_profile(engine: &mut rhai::Engine, profile: U
     engine.register_fn("round", |val: f64| val.round());
     engine.register_fn("min", |a: f64, b: f64| a.min(b));
     engine.register_fn("max", |a: f64, b: f64| a.max(b));
-    engine.register_fn("clamp", |val: f64, lo: f64, hi: f64| val.clamp(lo, hi));
+    match profile {
+        UgenAdapterProfile::V1Compatibility => {
+            engine.register_fn("clamp", |value: f64, min: f64, max: f64| {
+                value.clamp(min, max)
+            });
+        }
+        UgenAdapterProfile::V2Strict => {
+            engine.register_fn("clamp", |value: f64, min: f64, max: f64| {
+                clamp_strict(value, min, max).map_err(synthdef_error_to_eval)
+            });
+        }
+    }
 
     if profile == UgenAdapterProfile::V1Compatibility {
         engine.register_fn("dc_ar", move |value: f64| {
