@@ -3262,6 +3262,7 @@ dependencies = [
  "log",
  "midir 0.10.3",
  "rhai",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

@@ -244,11 +244,20 @@ impl StagedDspRegistry {
         let key = (definition.kind, definition.name.clone());
         if let Some(existing) = self.definitions.get(&key) {
             if existing == &definition {
+                log::info!(
+                    "diagnostic.registry.already_present kind={:?} name={:?} content_hash={:016x}",
+                    definition.kind,
+                    definition.name,
+                    definition.content_hash
+                );
                 return Ok(false);
             }
             return Err(SynthDefError::ValidationError(format!(
-                "conflicting staged {:?} definition '{}'",
-                definition.kind, definition.name
+                "diagnostic.registry.duplicate_definition kind={:?} name={:?} expected=identical_content_hash existing_hash={:016x} offending_hash={:016x}",
+                definition.kind,
+                definition.name,
+                existing.content_hash,
+                definition.content_hash
             )));
         }
         self.definitions.insert(key, definition);
@@ -1107,7 +1116,11 @@ mod tests {
         cloned.stage(effect).unwrap();
         assert_eq!(original.definitions().count(), 1);
         assert_eq!(cloned.definitions().count(), 2);
-        assert!(cloned.stage(conflicting).is_err());
+        let error = cloned.stage(conflicting).unwrap_err().to_string();
+        assert!(
+            error.contains("diagnostic.registry.duplicate_definition"),
+            "{error}"
+        );
         assert_eq!(cloned.definitions().count(), 2);
         assert!(!synthdef_or_effect_exists("candidate_synth"));
         assert!(!synthdef_or_effect_exists("candidate_fx"));

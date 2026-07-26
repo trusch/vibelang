@@ -12,6 +12,7 @@
 
 use rhai::{Engine, EvalAltResult};
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -92,6 +93,63 @@ fn shared_root_engine() -> Engine {
     foundation::register(&mut engine);
     super::install_v2_api(&mut engine);
     engine
+}
+
+fn stdlib_v2_engine(seed: u8) -> ScriptEngine {
+    let mut engine = production_engine(seed);
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    engine.add_import_path(&root);
+    engine.add_import_path(root.join("crates/vibelang-std"));
+    engine.add_import_path(root.join("crates/vibelang-std/stdlib"));
+    engine.setup_module_resolver(root);
+    engine
+}
+
+#[test]
+fn v2_stdlib_theory_boundaries_use_strict_native_parsers_and_coercions() {
+    let prelude = r#"// vibe-api: 2
+import "stdlib/theory/core.vibe" as core;
+"#;
+    let mut engine = stdlib_v2_engine(39);
+    evaluate(
+        &mut engine,
+        &format!(
+            r#"{prelude}
+if core::parse_int(" 42 ") != 42 {{ throw "strict integer success drift"; }}
+if core::note_to_midi("C4") != 60 {{ throw "strict note success drift"; }}
+if core::enharmonic("C#4") != "Db4" {{ throw "enharmonic dispatch drift"; }}
+let frequency = core::midi_to_freq_ex(69, 442.0);
+if frequency != 442.0 {{ throw "tuned MIDI frequency drift"; }}
+"#
+        ),
+    );
+
+    for (index, (body, diagnostic)) in [
+        (r#"core::note_to_midi("C4x");"#, "dsp.note.trailing"),
+        (r#"core::note_to_midi("Cx");"#, "dsp.note.trailing"),
+        (r#"core::note_to_midi("C300");"#, "dsp.note.octave_range"),
+        (r#"core::note_to_midi("CB4");"#, "dsp.note.trailing"),
+        (r#"core::parse_int("12x");"#, "rhai.integer.invalid"),
+        (
+            r#"core::note_to_pitch_class(1.5);"#,
+            "rhai.numeric.integrality",
+        ),
+        (
+            r#"core::midi_to_freq_ex(69, 0.0 / 0.0);"#,
+            "rhai.numeric.non_finite",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut engine = stdlib_v2_engine(40 + u8::try_from(index).unwrap());
+        let error = evaluate_err(&mut engine, &format!("{prelude}{body}"));
+        assert!(error.contains(diagnostic), "{body}: {error}");
+    }
 }
 
 fn keys_of(candidate: &Candidate) -> BTreeSet<String> {

@@ -538,6 +538,8 @@ fn v2_engine(identity: EvaluationIdentity) -> V2Engine {
 pub struct ScriptEngine {
     engine: Engine,
     v2: Option<V2Engine>,
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    extension_config: Option<crate::extensions::ExtensionConfig>,
     #[cfg(not(target_arch = "wasm32"))]
     import_paths: Vec<PathBuf>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -550,6 +552,8 @@ impl ScriptEngine {
         Self {
             engine: v1_engine(),
             v2: None,
+            #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+            extension_config: None,
             #[cfg(not(target_arch = "wasm32"))]
             import_paths: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -575,6 +579,12 @@ impl ScriptEngine {
             config.runtime_epoch,
         );
         self.v2 = Some(v2_engine(identity));
+        #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+        if let (Some(v2), Some(extension_config)) =
+            (self.v2.as_mut(), self.extension_config.as_ref())
+        {
+            crate::extensions::register_extensions_v2(&mut v2.engine, extension_config);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(base_path) = self.module_base_path.clone() {
             self.setup_module_resolver(base_path);
@@ -1155,6 +1165,10 @@ impl ScriptEngine {
     #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
     pub fn register_extensions(&mut self, config: &crate::extensions::ExtensionConfig) {
         crate::extensions::register_extensions(&mut self.engine, config);
+        if let Some(v2) = self.v2.as_mut() {
+            crate::extensions::register_extensions_v2(&mut v2.engine, config);
+        }
+        self.extension_config = Some(config.clone());
     }
 
     /// Register all available extensions.
@@ -1165,6 +1179,10 @@ impl ScriptEngine {
     pub fn register_all_extensions(&mut self) {
         let config = crate::extensions::ExtensionConfig::enable_all();
         crate::extensions::register_extensions(&mut self.engine, &config);
+        if let Some(v2) = self.v2.as_mut() {
+            crate::extensions::register_extensions_v2(&mut v2.engine, &config);
+        }
+        self.extension_config = Some(config);
     }
 }
 

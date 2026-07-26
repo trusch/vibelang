@@ -622,7 +622,7 @@
   {
     "name": "channel",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "channel(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "channel(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -642,7 +642,7 @@
   {
     "name": "channels",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "channels(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> array",
+    "signature": "channels(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -922,7 +922,7 @@
   {
     "name": "detune_spread",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "detune_spread(_: i64, _: f64) -> array",
+    "signature": "detune_spread(_: i64, _: f64) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -1002,7 +1002,7 @@
   {
     "name": "dup",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "dup(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> array",
+    "signature": "dup(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -1062,7 +1062,7 @@
   {
     "name": "env_gen",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "env_gen(_: vibelang_dsp::helpers::Env, _: vibelang_dsp::rhainodes::NodeRef, _: f64, _: f64, _: f64, _: f64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "env_gen(_: vibelang_dsp::helpers::Env, _: vibelang_dsp::rhainodes::NodeRef, _: f64, _: f64, _: f64, _: f64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -1082,7 +1082,7 @@
   {
     "name": "env_gen",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "env_gen(_: vibelang_dsp::helpers::Env, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "env_gen(_: vibelang_dsp::helpers::Env, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef, _: vibelang_dsp::rhainodes::NodeRef) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -1102,7 +1102,7 @@
   {
     "name": "env_gen",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "env_gen(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "env_gen(_: vibelang_dsp::rhainodes::NodeRef, _: i64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -1822,7 +1822,7 @@
   {
     "name": "mix",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "mix(_: array) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "mix(_: array) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2382,7 +2382,7 @@
   {
     "name": "sound_in",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in(_: f64) -> array",
+    "signature": "sound_in(_: f64) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2402,7 +2402,7 @@
   {
     "name": "sound_in",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in(_: i64) -> array",
+    "signature": "sound_in(_: i64) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2422,7 +2422,7 @@
   {
     "name": "sound_in_ar",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_ar() -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_ar() -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2442,7 +2442,7 @@
   {
     "name": "sound_in_ar",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_ar(_: f64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_ar(_: f64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2462,7 +2462,7 @@
   {
     "name": "sound_in_ar",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_ar(_: i64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_ar(_: i64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2482,7 +2482,7 @@
   {
     "name": "sound_in_ar",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_ar(_: vibelang_dsp::rhainodes::NodeRef) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_ar(_: vibelang_dsp::rhainodes::NodeRef) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2502,7 +2502,7 @@
   {
     "name": "sound_in_channel",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_channel(_: f64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_channel(_: f64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2522,7 +2522,7 @@
   {
     "name": "sound_in_channel",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_channel(_: i64) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_channel(_: i64) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2542,7 +2542,7 @@
   {
     "name": "sound_in_channel",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sound_in_channel(_: vibelang_dsp::rhainodes::NodeRef) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sound_in_channel(_: vibelang_dsp::rhainodes::NodeRef) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -2622,7 +2622,7 @@
   {
     "name": "sum",
     "description": "Source-backed dsp_rhai registration; availability: available.",
-    "signature": "sum(_: array) -> vibelang_dsp::rhainodes::NodeRef",
+    "signature": "sum(_: array) -> core::result::Result<vibelang_dsp::rhainodes::NodeRef,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": null,
     "lifecycle": {
@@ -6980,6 +6980,26 @@
     }
   },
   {
+    "name": "mtof",
+    "description": "Source-backed rhai registration; availability: available.",
+    "signature": "mtof(_: i64, _: f64) -> f64",
+    "example": "",
+    "receiver": null,
+    "lifecycle": {
+      "phase": "call",
+      "terminal": "call_result",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "available",
+      "cfg": [],
+      "targets": [],
+      "features": [],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
     "name": "mute",
     "description": "Source-backed rhai method on GroupHandle registration; availability: available.",
     "signature": "mute(_: GroupHandle) -> GroupHandle",
@@ -11031,6 +11051,26 @@
     "name": "to_int",
     "description": "Source-backed rhai registration; availability: available.",
     "signature": "to_int(_: f64) -> i64",
+    "example": "",
+    "receiver": null,
+    "lifecycle": {
+      "phase": "call",
+      "terminal": "call_result",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "available",
+      "cfg": [],
+      "targets": [],
+      "features": [],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
+    "name": "to_int",
+    "description": "Source-backed rhai registration; availability: available.",
+    "signature": "to_int(_: string) -> types::dynamic::Dynamic",
     "example": "",
     "receiver": null,
     "lifecycle": {

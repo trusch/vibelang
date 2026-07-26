@@ -97,6 +97,7 @@ pub fn register_api(engine: &mut Engine) {
 /// only; MIDI follows the crate's `midi` feature exactly like the v1
 /// registration root.
 pub(crate) fn install_v2_api(engine: &mut Engine) {
+    helpers::install_v2(engine);
     group::install_v2(engine);
     voice::install_v2(engine);
     pattern::install_v2(engine);

@@ -10202,26 +10202,6 @@
       }
     },
     {
-      "name": "lfo_random",
-      "type": "instrument",
-      "description": "LFO (Low Frequency Oscillator) Sources",
-      "category": "utility",
-      "subcategory": null,
-      "importPath": "stdlib/utility/lfo.vibe",
-      "sourcePath": "utility/lfo.vibe",
-      "params": [],
-      "availability": {
-        "status": "importable",
-        "cfg": [],
-        "targets": [],
-        "features": [],
-        "plugins": [],
-        "runtime_conditions": [
-          "defining stdlib module imported"
-        ]
-      }
-    },
-    {
       "name": "lfo_random_exp",
       "type": "instrument",
       "description": "Random step LFO synthdef (sample and hold)",
@@ -10282,26 +10262,6 @@
       }
     },
     {
-      "name": "lfo_saw",
-      "type": "instrument",
-      "description": "LFO (Low Frequency Oscillator) Sources",
-      "category": "utility",
-      "subcategory": null,
-      "importPath": "stdlib/utility/lfo.vibe",
-      "sourcePath": "utility/lfo.vibe",
-      "params": [],
-      "availability": {
-        "status": "importable",
-        "cfg": [],
-        "targets": [],
-        "features": [],
-        "plugins": [],
-        "runtime_conditions": [
-          "defining stdlib module imported"
-        ]
-      }
-    },
-    {
       "name": "lfo_saw_down",
       "type": "instrument",
       "description": "Sawtooth wave LFO synthdef",
@@ -10329,26 +10289,6 @@
       "subcategory": "lfo",
       "importPath": "stdlib/cv/lfo/lfo_sine.vibe",
       "sourcePath": "cv/lfo/lfo_sine.vibe",
-      "params": [],
-      "availability": {
-        "status": "importable",
-        "cfg": [],
-        "targets": [],
-        "features": [],
-        "plugins": [],
-        "runtime_conditions": [
-          "defining stdlib module imported"
-        ]
-      }
-    },
-    {
-      "name": "lfo_sine",
-      "type": "instrument",
-      "description": "LFO (Low Frequency Oscillator) Sources",
-      "category": "utility",
-      "subcategory": null,
-      "importPath": "stdlib/utility/lfo.vibe",
-      "sourcePath": "utility/lfo.vibe",
       "params": [],
       "availability": {
         "status": "importable",

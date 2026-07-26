@@ -191,6 +191,12 @@ fn strict_v2_rejects_numeric_invalid_values_before_graph_dispatch() {
     strict_error("sin_osc_ar(0.0, 0.0)", "dsp.ugen.numeric.below_range");
     strict_error("out_ar(-1.0, 1.0)", "dsp.ugen.numeric.below_range");
     strict_error("in_ar(-1.0, 1.0)", "dsp.ugen.numeric.below_range");
+    strict_error("in_ar(16777217.0, 1.0)", "dsp.helper.in_ar.bus");
+    strict_error(
+        "sound_in_channel(16777216.5)",
+        "dsp.helper.sound_in.channel",
+    );
+    strict_error("sound_in_channel(16777217)", "dsp.helper.sound_in.channel");
     strict_error(
         "in_ar(0.0, 32768.0)",
         "Expected channel count integer in 1..=32767",

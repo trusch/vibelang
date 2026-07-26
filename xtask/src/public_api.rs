@@ -438,13 +438,13 @@ fn classify_lifecycles(entries: &mut [ApiEntry]) {
 
 fn validate_baseline(stats: &BTreeMap<String, u64>) -> Result<(), String> {
     let expected = [
-        ("registration_declarations", 638),
+        ("registration_declarations", 683),
         ("registered_type_declarations", 34),
         ("effective_generated_property_overloads", 239),
         ("effective_fallible_generated_property_setters", 30),
         ("manifest_ugen_callable_entries", 1_174),
         ("manifest_ugen_callable_overloads", 5_962),
-        ("stdlib_definition_occurrences", 890),
+        ("stdlib_definition_occurrences", 887),
         ("stdlib_definition_names", 887),
         ("stdlib_files", 829),
         ("stdlib_function_declarations", 707),

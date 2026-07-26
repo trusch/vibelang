@@ -18,7 +18,7 @@ use vibelang_api_manifest::{
 const METADATA_PATH: &str = "api/effective-metadata-v1.json";
 const CONVENTIONS_SOURCE: &str =
     "docs/architecture/api-unification/conventions-and-capabilities.md";
-const PARAMETER_COUNT: usize = 18_786;
+const PARAMETER_COUNT: usize = 18_789;
 const UGEN_INPUT_COUNT: usize = 5_089;
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
@@ -2737,7 +2737,31 @@ mod tests {
             let manifest = public_api::build_manifest(&root()).unwrap();
             let metadata = build(&manifest).unwrap();
             assert!(!metadata.parser_bindings.is_empty());
-            assert_eq!(metadata.collision_bindings.len(), 4);
+            assert_eq!(metadata.collision_bindings.len(), 1);
+            let collision = &metadata.collision_bindings[0];
+            assert_eq!(
+                collision.canonical_policy_id,
+                "collision.import.require_qualification"
+            );
+            assert_eq!(
+                collision.legacy_policy_id,
+                "collision.legacy.module_resolution"
+            );
+            assert_eq!(
+                collision.candidates,
+                [
+                    "stdlib/theory/arpeggios.vibe",
+                    "stdlib/theory/bass_patterns.vibe"
+                ]
+            );
+            assert!(collision
+                .source_anchors
+                .iter()
+                .any(|anchor| anchor.contains("arpeggio_up_down(chord)")));
+            assert!(collision
+                .source_anchors
+                .iter()
+                .any(|anchor| anchor.contains("arpeggio_up_down(progression)")));
             assert_eq!(metadata.availability_bindings.len(), manifest.entries.len());
             assert_eq!(metadata.security_bindings.len(), 1);
             assert!(metadata

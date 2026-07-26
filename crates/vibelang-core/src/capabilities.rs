@@ -33,7 +33,7 @@ pub const CAPABILITY_SNAPSHOT_SCHEMA_ID: &str = "schema.vibelang.capability_snap
 pub const MI_UGENS_PROBE_CACHE_TTL: Duration = Duration::from_secs(1);
 pub const MI_UGENS_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 pub const CAPABILITY_CATALOG_SHA256: &str =
-    "552a1ce1e6ad3535b7c1eddf574e57b9f342df28e34c056bcf91cd15b93ade88";
+    "63ea1c61ee206eec55921a80a36af5a5bd799f5504f6f63fd168abff3aa08b2c";
 
 const AVAILABLE_STATE_ID: &str = "availability.available";
 const DEGRADED_STATE_ID: &str = "availability.degraded";

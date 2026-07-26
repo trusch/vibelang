@@ -4,7 +4,7 @@
 
 use rhai::{Array, Dynamic, Engine, EvalAltResult, Position};
 use std::sync::atomic::{AtomicU64, Ordering};
-use vibelang_dsp::notes::parse_note_name;
+use vibelang_dsp::notes::{parse_note_name, parse_note_name_strict, NoteParseError};
 
 use crate::context;
 
@@ -57,14 +57,15 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("random_seed", random_seed);
 
     // Math utilities
-    engine.register_fn("clamp", clamp_fff);
-    engine.register_fn("clamp", clamp_iii);
+    engine.register_fn("clamp", clamp_fff_compat);
+    engine.register_fn("clamp", clamp_iii_compat);
     engine.register_fn("lerp", lerp);
     engine.register_fn("map_range", map_range);
     engine.register_fn("smoothstep", smoothstep);
     engine.register_fn("wrap", wrap);
     engine.register_fn("quantize", quantize);
-    engine.register_fn("mtof", midi_to_freq);
+    engine.register_fn("mtof", midi_to_freq_compat);
+    engine.register_fn("mtof", midi_to_freq_with_tuning_compat);
     engine.register_fn("ftom", freq_to_midi);
 
     // Time utilities (native only)
@@ -75,10 +76,417 @@ pub fn register(engine: &mut Engine) {
     }
 
     // Type conversion utilities
-    engine.register_fn("to_int", to_int);
-    engine.register_fn("to_float", to_float_from_int);
+    engine.register_fn("to_int", to_int_compat);
+    engine.register_fn("to_int", to_int_from_string_compat);
+    engine.register_fn("to_float", to_float_from_int_compat);
     engine.register_fn("to_string", to_string_int);
     engine.register_fn("to_string", to_string_float);
+}
+
+const V1_PARSER_COMPAT_DIAGNOSTIC_ID: &str = "diagnostic.compat.parser_forgiving";
+const V1_FALLBACK_COMPAT_DIAGNOSTIC_ID: &str = "diagnostic.compat.fallback_applied";
+const V1_CLAMP_COMPAT_DIAGNOSTIC_ID: &str = "diagnostic.compat.value_clamped";
+
+fn compatibility_warning(
+    diagnostic_id: &str,
+    function: &str,
+    argument: &str,
+    input: impl std::fmt::Display,
+    recovery: &str,
+    effective_value: impl std::fmt::Display,
+    replacement: &str,
+) {
+    log::warn!(
+        "{diagnostic_id} profile=compat.vibelang.v1 function={function} argument={argument} input={input} recovery={recovery} effective_value={effective_value} replacement={replacement}"
+    );
+}
+
+fn runtime_error(message: impl Into<String>) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        message.into().into(),
+        Position::NONE,
+    ))
+}
+
+fn note_error(error: NoteParseError) -> Box<EvalAltResult> {
+    runtime_error(format!(
+        "{} span={}..{} expected={} token={:?}",
+        error.code, error.span.start, error.span.end, error.expected, error.token
+    ))
+}
+
+fn strict_finite(function: &str, argument: &str, value: f64) -> Result<f64, Box<EvalAltResult>> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(runtime_error(format!(
+            "rhai.numeric.non_finite function={function} argument={argument} span=0..{} expected=finite token={value:?}",
+            value.to_string().len()
+        )))
+    }
+}
+
+fn strict_integral(function: &str, argument: &str, value: f64) -> Result<i64, Box<EvalAltResult>> {
+    strict_finite(function, argument, value)?;
+    if value.fract() != 0.0 {
+        return Err(runtime_error(format!(
+            "rhai.numeric.integrality function={function} argument={argument} span=0..{} expected=i64 token={value:?}",
+            value.to_string().len()
+        )));
+    }
+    let exclusive_max = -(i64::MIN as f64);
+    if value < i64::MIN as f64 || value >= exclusive_max {
+        return Err(runtime_error(format!(
+            "rhai.numeric.range function={function} argument={argument} span=0..{} expected=i64_range token={value:?}",
+            value.to_string().len()
+        )));
+    }
+    Ok(value as i64)
+}
+
+fn strict_midi_note(function: &str, value: f64) -> Result<i64, Box<EvalAltResult>> {
+    let note = strict_integral(function, "note", value)?;
+    if !(0..=127).contains(&note) {
+        return Err(runtime_error(format!(
+            "rhai.midi.note_range function={function} span=0..{} expected=integer_0..=127 token={value:?}",
+            value.to_string().len()
+        )));
+    }
+    Ok(note)
+}
+
+fn strict_i64_to_f64(function: &str, value: i64) -> Result<f64, Box<EvalAltResult>> {
+    const MAX_EXACT_I64_IN_F64: u64 = 1_u64 << 53;
+    if value.unsigned_abs() > MAX_EXACT_I64_IN_F64 {
+        return Err(runtime_error(format!(
+            "rhai.numeric.precision function={function} argument=value span=0..{} expected=lossless_f64_integer token={value:?}",
+            value.to_string().len()
+        )));
+    }
+    Ok(value as f64)
+}
+
+fn parse_i64_strict(value: &str) -> Result<i64, Box<EvalAltResult>> {
+    let trimmed = value.trim();
+    let start = value.len() - value.trim_start().len();
+    if trimmed.is_empty() {
+        return Err(runtime_error(format!(
+            "rhai.integer.empty span={start}..{start} expected=signed_i64 token=\"\""
+        )));
+    }
+    trimmed.parse::<i64>().map_err(|_| {
+        runtime_error(format!(
+            "rhai.integer.invalid span={start}..{} expected=complete_signed_i64 token={trimmed:?}",
+            start + trimmed.len()
+        ))
+    })
+}
+
+fn strict_non_negative(
+    function: &str,
+    argument: &str,
+    value: f64,
+) -> Result<f64, Box<EvalAltResult>> {
+    let value = strict_finite(function, argument, value)?;
+    if value < 0.0 {
+        Err(runtime_error(format!(
+            "rhai.numeric.range function={function} argument={argument} span=0..{} expected=non_negative token={value:?}",
+            value.to_string().len()
+        )))
+    } else {
+        Ok(value)
+    }
+}
+
+fn strict_range(function: &str, value: f64, min: f64, max: f64) -> Result<f64, Box<EvalAltResult>> {
+    strict_finite(function, "value", value)?;
+    strict_finite(function, "min", min)?;
+    strict_finite(function, "max", max)?;
+    if min > max {
+        return Err(runtime_error(format!(
+            "rhai.numeric.range_order function={function} span=0..0 expected=min_lte_max token={min:?}..{max:?}"
+        )));
+    }
+    Ok(value.clamp(min, max))
+}
+
+/// Install the complete helper inventory with strict vibe-api 2 boundaries.
+pub(crate) fn install_v2(engine: &mut Engine) {
+    register(engine);
+
+    engine
+        .register_fn("db", |decibels: f64| {
+            let decibels = strict_finite("db", "decibels", decibels)?;
+            strict_finite("db", "result", db(decibels))
+        })
+        .register_fn("db", |decibels: i64| {
+            let decibels = strict_i64_to_f64("db", decibels)?;
+            strict_finite("db", "result", db(decibels))
+        })
+        .register_fn("note", |name: &str| {
+            parse_note_name_strict(name)
+                .map(i64::from)
+                .map_err(note_error)
+        })
+        .register_fn("chord", chord_strict)
+        .register_fn("chord", chord_with_octave_strict)
+        .register_fn("scale", scale_strict)
+        .register_fn("scale", scale_with_octave_strict)
+        .register_fn("scale_degree", scale_degree_strict)
+        .register_fn("bars", |value: f64| {
+            let result = strict_non_negative("bars", "bars", value)? * context::beats_per_bar();
+            strict_finite("bars", "result", result)
+        })
+        .register_fn("bars", |value: i64| {
+            if value < 0 {
+                return Err(runtime_error(format!(
+                    "rhai.numeric.range function=bars argument=bars span=0..{} expected=non_negative token={value:?}",
+                    value.to_string().len()
+                )));
+            }
+            let value = strict_i64_to_f64("bars", value)?;
+            strict_finite("bars", "result", value * context::beats_per_bar())
+        })
+        .register_fn("..", |start: i64, end: f64| {
+            Ok::<_, Box<EvalAltResult>>(start..strict_integral("range", "end", end)?)
+        })
+        .register_fn("..", |start: f64, end: f64| {
+            Ok::<_, Box<EvalAltResult>>(
+                strict_integral("range", "start", start)?
+                    ..strict_integral("range", "end", end)?,
+            )
+        })
+        .register_fn("..", |start: f64, end: i64| {
+            Ok::<_, Box<EvalAltResult>>(strict_integral("range", "start", start)?..end)
+        })
+        .register_fn("repeat", |arr: Array, count: i64| {
+            if count < 0 {
+                return Err(runtime_error(format!(
+                    "rhai.array.repeat_count span=0..{} expected=non_negative token={count:?}",
+                    count.to_string().len()
+                )));
+            }
+            let count = usize::try_from(count).map_err(|_| {
+                runtime_error(format!(
+                    "rhai.array.repeat_count span=0..{} expected=usize token={count:?}",
+                    count.to_string().len()
+                ))
+            })?;
+            let total = arr.len().checked_mul(count).ok_or_else(|| {
+                runtime_error(format!(
+                    "rhai.array.repeat_size span=0..{} expected=representable_array_length token={count:?}",
+                    count.to_string().len()
+                ))
+            })?;
+            let mut result = Array::new();
+            result.try_reserve(total).map_err(|error| {
+                runtime_error(format!(
+                    "rhai.array.repeat_allocation span=0..{} expected=allocatable_array_length token={count:?} error={error}",
+                    count.to_string().len()
+                ))
+            })?;
+            for _ in 0..count {
+                result.extend(arr.iter().cloned());
+            }
+            Ok(result)
+        })
+        .register_fn("take", |arr: Array, count: i64| {
+            if count < 0 {
+                return Err(runtime_error(format!(
+                    "rhai.array.take_count span=0..{} expected=non_negative token={count:?}",
+                    count.to_string().len()
+                )));
+            }
+            let count = usize::try_from(count).map_err(|_| {
+                runtime_error(format!(
+                    "rhai.array.take_count span=0..{} expected=usize token={count:?}",
+                    count.to_string().len()
+                ))
+            })?;
+            Ok(arr.into_iter().take(count).collect::<Array>())
+        })
+        .register_fn("skip", |arr: Array, count: i64| {
+            if count < 0 {
+                return Err(runtime_error(format!(
+                    "rhai.array.skip_count span=0..{} expected=non_negative token={count:?}",
+                    count.to_string().len()
+                )));
+            }
+            let count = usize::try_from(count).map_err(|_| {
+                runtime_error(format!(
+                    "rhai.array.skip_count span=0..{} expected=usize token={count:?}",
+                    count.to_string().len()
+                ))
+            })?;
+            Ok(arr.into_iter().skip(count).collect::<Array>())
+        })
+        .register_fn("random_range", |min: f64, max: f64| {
+            strict_finite("random_range", "min", min)?;
+            strict_finite("random_range", "max", max)?;
+            if min >= max {
+                return Err(runtime_error(format!(
+                    "rhai.random.range_order span=0..0 expected=min_lt_max token={min:?}..{max:?}"
+                )));
+            }
+            let width = strict_finite("random_range", "width", max - min)?;
+            strict_finite("random_range", "result", min + random_unit_strict() * width)
+        })
+        .register_fn("random_range", |min: i64, max: i64| {
+            if min >= max {
+                return Err(runtime_error(format!(
+                    "rhai.random.range_order span=0..0 expected=min_lt_max token={min:?}..{max:?}"
+                )));
+            }
+            let width = (i128::from(max) - i128::from(min) + 1) as u128;
+            let offset = u128::from(next_random()) % width;
+            Ok((i128::from(min) + offset as i128) as i64)
+        })
+        .register_fn("random_int", |max: i64| {
+            if max <= 0 {
+                return Err(runtime_error(format!(
+                    "rhai.random.max_range span=0..{} expected=positive token={max:?}",
+                    max.to_string().len()
+                )));
+            }
+            Ok((next_random() % max as u64) as i64)
+        })
+        .register_fn("random_choice", |arr: Array| {
+            if arr.is_empty() {
+                return Err(runtime_error(
+                    "rhai.random.empty_choice span=0..0 expected=non_empty_array token=[]",
+                ));
+            }
+            let index = (next_random() as usize) % arr.len();
+            arr.get(index).cloned().ok_or_else(|| {
+                runtime_error(format!(
+                    "rhai.random.choice_index span=0..0 expected=index_within_array token={index:?}"
+                ))
+            })
+        })
+        .register_fn("clamp", |value: f64, min: f64, max: f64| {
+            strict_range("clamp", value, min, max)
+        })
+        .register_fn("clamp", |value: i64, min: i64, max: i64| {
+            if min > max {
+                return Err(runtime_error(format!(
+                    "rhai.numeric.range_order function=clamp span=0..0 expected=min_lte_max token={min:?}..{max:?}"
+                )));
+            }
+            Ok(value.clamp(min, max))
+        })
+        .register_fn("lerp", |a: f64, b: f64, t: f64| {
+            strict_finite("lerp", "a", a)?;
+            strict_finite("lerp", "b", b)?;
+            strict_finite("lerp", "t", t)?;
+            strict_finite("lerp", "result", lerp(a, b, t))
+        })
+        .register_fn(
+            "map_range",
+            |value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64| {
+                for (argument, input) in [
+                    ("value", value),
+                    ("in_min", in_min),
+                    ("in_max", in_max),
+                    ("out_min", out_min),
+                    ("out_max", out_max),
+                ] {
+                    strict_finite("map_range", argument, input)?;
+                }
+                if in_min == in_max {
+                    return Err(runtime_error(
+                        "rhai.numeric.zero_width_range function=map_range span=0..0 expected=in_min_ne_in_max",
+                    ));
+                }
+                strict_finite(
+                    "map_range",
+                    "result",
+                    map_range(value, in_min, in_max, out_min, out_max),
+                )
+            },
+        )
+        .register_fn("smoothstep", |edge0: f64, edge1: f64, value: f64| {
+            strict_finite("smoothstep", "edge0", edge0)?;
+            strict_finite("smoothstep", "edge1", edge1)?;
+            strict_finite("smoothstep", "value", value)?;
+            if edge0 >= edge1 {
+                return Err(runtime_error(
+                    "rhai.numeric.range_order function=smoothstep span=0..0 expected=edge0_lt_edge1",
+                ));
+            }
+            strict_finite("smoothstep", "edge_width", edge1 - edge0)?;
+            strict_finite("smoothstep", "result", smoothstep(edge0, edge1, value))
+        })
+        .register_fn("wrap", |value: f64, max: f64| {
+            strict_finite("wrap", "value", value)?;
+            strict_finite("wrap", "max", max)?;
+            if max <= 0.0 {
+                return Err(runtime_error(format!(
+                    "rhai.numeric.range function=wrap argument=max span=0..{} expected=positive token={max:?}",
+                    max.to_string().len()
+                )));
+            }
+            Ok(((value % max) + max) % max)
+        })
+        .register_fn("quantize", |value: f64, step: f64| {
+            strict_finite("quantize", "value", value)?;
+            strict_finite("quantize", "step", step)?;
+            if step <= 0.0 {
+                return Err(runtime_error(format!(
+                    "rhai.numeric.range function=quantize argument=step span=0..{} expected=positive token={step:?}",
+                    step.to_string().len()
+                )));
+            }
+            strict_finite("quantize", "result", (value / step).round() * step)
+        })
+        .register_fn("mtof", |note: f64| {
+            let note = strict_midi_note("mtof", note)?;
+            strict_finite("mtof", "result", midi_to_freq(note as f64))
+        })
+        .register_fn("mtof", |note: i64| {
+            let note = strict_midi_note("mtof", note as f64)?;
+            strict_finite("mtof", "result", midi_to_freq(note as f64))
+        })
+        .register_fn("mtof", |note: i64, a4_frequency: f64| {
+            let note = strict_midi_note("mtof", note as f64)?;
+            let a4_frequency = strict_finite("mtof", "a4_frequency", a4_frequency)?;
+            if a4_frequency <= 0.0 {
+                return Err(runtime_error(format!(
+                    "rhai.frequency.range function=mtof argument=a4_frequency span=0..{} expected=positive token={a4_frequency:?}",
+                    a4_frequency.to_string().len()
+                )));
+            }
+            strict_finite(
+                "mtof",
+                "result",
+                a4_frequency * 2.0_f64.powf((note as f64 - 69.0) / 12.0),
+            )
+        })
+        .register_fn("ftom", |frequency: f64| {
+            let frequency = strict_finite("ftom", "frequency", frequency)?;
+            if frequency <= 0.0 {
+                return Err(runtime_error(format!(
+                    "rhai.frequency.range span=0..{} expected=positive token={frequency:?}",
+                    frequency.to_string().len()
+                )));
+            }
+            strict_finite(
+                "ftom",
+                "result",
+                69.0 + 12.0 * (frequency / 440.0).log2(),
+            )
+        })
+        .register_fn("to_int", |value: f64| {
+            strict_integral("to_int", "value", value)
+        })
+        .register_fn("to_int", parse_i64_strict)
+        .register_fn("to_float", |value: i64| {
+            strict_i64_to_f64("to_float", value)
+        });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    engine
+        .register_fn("timestamp", timestamp_strict)
+        .register_fn("timestamp_ms", timestamp_ms_strict);
 }
 
 /// Convert decibels to linear amplitude.
@@ -93,7 +501,15 @@ pub fn db_int(decibels: i64) -> f64 {
 
 /// Parse a note name to MIDI note number.
 pub fn note(name: &str) -> Result<i64, Box<EvalAltResult>> {
-    parse_note_name(name).map(|n| n as i64).ok_or_else(|| {
+    if let Ok(note) = parse_note_name_strict(name) {
+        return Ok(i64::from(note));
+    }
+    parse_note_name(name).map(|note| {
+        log::warn!(
+            "{V1_PARSER_COMPAT_DIAGNOSTIC_ID} profile=compat.vibelang.v1 parser=note input={name:?} recovery=legacy_octave_default effective_value={note} replacement=use_full_note_grammar"
+        );
+        i64::from(note)
+    }).ok_or_else(|| {
         Box::new(EvalAltResult::ErrorRuntime(
             format!(
                 "Note parse error: invalid note name '{}' \
@@ -123,10 +539,35 @@ pub fn chord(name: &str) -> Result<Array, Box<EvalAltResult>> {
 
 /// Parse a chord name to an array of MIDI note numbers with specified octave.
 pub fn chord_with_octave(name: &str, octave: i64) -> Result<Array, Box<EvalAltResult>> {
-    Ok(parse_chord(name, octave as i8)?
+    let effective_octave = octave as i8;
+    if i64::from(effective_octave) != octave {
+        log::warn!(
+            "diagnostic.compat.fallback_applied profile=compat.vibelang.v1 function=chord argument=octave input={octave} recovery=legacy_i8_cast effective_value={effective_octave} replacement=use_i8_octave"
+        );
+    }
+    Ok(parse_chord(name, effective_octave)?
         .into_iter()
         .map(|n| Dynamic::from(n as i64))
         .collect())
+}
+
+fn chord_strict(name: &str) -> Result<Array, Box<EvalAltResult>> {
+    chord_with_octave_strict(name, 4)
+}
+
+fn chord_with_octave_strict(name: &str, octave: i64) -> Result<Array, Box<EvalAltResult>> {
+    let octave = i8::try_from(octave).map_err(|_| {
+        runtime_error(format!(
+            "rhai.chord.octave_range span=0..{} expected=i8 token={octave:?}",
+            octave.to_string().len()
+        ))
+    })?;
+    parse_chord_strict(name, octave).map(|notes| {
+        notes
+            .into_iter()
+            .map(|note| Dynamic::from(i64::from(note)))
+            .collect()
+    })
 }
 
 /// Chord qualities accepted by `chord()` / `parse_chord()`.
@@ -146,14 +587,55 @@ fn unknown_chord_quality_error(name: &str, quality: &str) -> Box<EvalAltResult> 
         .map(|q| format!("'{}'", q))
         .collect::<Vec<_>>()
         .join(", ");
+    let start = name.len().saturating_sub(quality.len());
     chord_error(format!(
-        "chord(): unknown chord quality '{}' in '{}' (available: {})",
-        quality, name, available
+        "rhai.chord.quality span={start}..{} expected=known_chord_quality token={quality:?}; chord(): unknown chord quality '{quality}' in '{name}' (available: {available})",
+        name.len()
     ))
 }
 
 /// Parse chord name to MIDI notes.
 pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAltResult>> {
+    let name = name.trim();
+    let computed = parse_chord_values(name, default_octave)?;
+    if computed.iter().any(|note| !(0..=127).contains(note)) {
+        log::warn!(
+            "diagnostic.compat.value_clamped profile=compat.vibelang.v1 function=chord input={name:?} recovery=member_clamp effective_value=MIDI_0..=127 replacement=use_in_range_octave"
+        );
+    }
+    Ok(computed
+        .into_iter()
+        .map(|note| note.clamp(0, 127) as u8)
+        .collect())
+}
+
+fn parse_chord_strict(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAltResult>> {
+    let name = name.trim();
+    let computed = parse_chord_values(name, default_octave)?;
+    if let Some(note) = computed
+        .iter()
+        .copied()
+        .find(|note| !(0..=127).contains(note))
+    {
+        return Err(runtime_error(format!(
+            "rhai.chord.note_range span=0..{} expected=MIDI_0..=127 token={name:?} computed={note}",
+            name.len()
+        )));
+    }
+    computed
+        .into_iter()
+        .map(|note| {
+            u8::try_from(note).map_err(|_| {
+                runtime_error(format!(
+                    "rhai.chord.note_range span=0..{} expected=MIDI_0..=127 token={name:?} computed={note}",
+                    name.len()
+                ))
+            })
+        })
+        .collect()
+}
+
+fn parse_chord_values(name: &str, default_octave: i8) -> Result<Vec<i16>, Box<EvalAltResult>> {
     let name = name.trim();
     if name.is_empty() {
         return Err(chord_error(
@@ -167,7 +649,11 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAl
     let mut chars = name.chars().peekable();
     let root_letter = match chars.next() {
         Some(c) => c.to_ascii_uppercase(),
-        None => unreachable!("non-empty string has a first char"),
+        None => {
+            return Err(chord_error(
+                "rhai.chord.empty span=0..0 expected=chord_root token=\"\"".to_string(),
+            ))
+        }
     };
 
     let root_base = match root_letter {
@@ -188,15 +674,25 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAl
     };
 
     // Parse accidental
-    let mut accidental = 0i8;
+    let mut accidental = 0i32;
     while let Some(&c) = chars.peek() {
         match c {
             '#' | '♯' => {
-                accidental += 1;
+                accidental = accidental.checked_add(1).ok_or_else(|| {
+                    chord_error(format!(
+                        "rhai.chord.accidental_range span=0..{} expected=representable_accidental token={name:?}",
+                        name.len()
+                    ))
+                })?;
                 chars.next();
             }
             'b' | '♭' => {
-                accidental -= 1;
+                accidental = accidental.checked_sub(1).ok_or_else(|| {
+                    chord_error(format!(
+                        "rhai.chord.accidental_range span=0..{} expected=representable_accidental token={name:?}",
+                        name.len()
+                    ))
+                })?;
                 chars.next();
             }
             _ => break,
@@ -204,7 +700,7 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAl
     }
 
     // Root MIDI note
-    let root = (default_octave + 1) as i16 * 12 + root_base as i16 + accidental as i16;
+    let root = (i32::from(default_octave) + 1) * 12 + root_base + accidental;
     if !(0..=127).contains(&root) {
         return Err(chord_error(format!(
             "chord(): root of '{}' at octave {} is outside the MIDI range 0-127",
@@ -269,13 +765,9 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Result<Vec<u8>, Box<EvalAl
         _ => return Err(unknown_chord_quality_error(name, &quality)),
     };
 
-    // Build chord notes
     Ok(intervals
         .into_iter()
-        .map(|i| {
-            let note = root as i16 + i;
-            note.clamp(0, 127) as u8
-        })
+        .map(|interval| i16::from(root) + interval)
         .collect())
 }
 
@@ -294,15 +786,46 @@ pub fn scale_with_octave(
     scale_type: &str,
     octave: i64,
 ) -> Result<Array, Box<EvalAltResult>> {
-    let root_note = parse_note_name(&format!("{}{}", root, octave))
-        .ok_or_else(|| invalid_scale_root_error("scale()", root))?;
+    let note_text = format!("{root}{octave}");
+    let root_note = match parse_note_name_strict(&note_text) {
+        Ok(note) => note,
+        Err(_) => parse_note_name(&note_text)
+            .map(|note| {
+                compatibility_warning(
+                    V1_PARSER_COMPAT_DIAGNOSTIC_ID,
+                    "scale",
+                    "root",
+                    format_args!("{root:?}"),
+                    "legacy_note_parser",
+                    note,
+                    "use_complete_note_root_and_octave",
+                );
+                note
+            })
+            .ok_or_else(|| invalid_scale_root_error("scale()", root))?,
+    };
 
     let intervals = get_scale_intervals(scale_type)
         .ok_or_else(|| unknown_scale_error("scale()", scale_type))?;
 
-    Ok(intervals
+    let computed = intervals
         .into_iter()
-        .map(|i| Dynamic::from((root_note + i) as i64))
+        .map(|interval| i16::from(root_note) + i16::from(interval))
+        .collect::<Vec<_>>();
+    if computed.iter().any(|note| *note > 127) {
+        compatibility_warning(
+            V1_CLAMP_COMPAT_DIAGNOSTIC_ID,
+            "scale",
+            "root",
+            root,
+            "legacy_member_clamp",
+            "MIDI_0..=127",
+            "use_in_range_octave",
+        );
+    }
+    Ok(computed
+        .into_iter()
+        .map(|note| Dynamic::from(i64::from(note.clamp(0, 127))))
         .collect())
 }
 
@@ -318,14 +841,152 @@ pub fn scale_degree(root: &str, scale_type: &str, degree: i64) -> Result<i64, Bo
     if intervals.is_empty() {
         return Ok(root_note as i64);
     }
+    if degree < 1 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "scale_degree",
+            "degree",
+            degree,
+            "legacy_root_fallback",
+            root_note,
+            "use_degree_at_least_one",
+        );
+        return Ok(i64::from(root_note));
+    }
 
     // Handle degrees outside the base octave
     let degree = degree - 1; // Convert to 0-indexed
     let octave_offset = degree / intervals.len() as i64;
-    let index = (degree % intervals.len() as i64) as usize;
+    let index = degree as usize % intervals.len();
+    let interval = intervals[index];
+    let computed = i64::from(root_note)
+        .saturating_add(i64::from(interval))
+        .saturating_add(octave_offset.saturating_mul(12));
+    let effective = computed.clamp(0, 127);
+    if effective != computed {
+        log::warn!(
+            "diagnostic.compat.value_clamped profile=compat.vibelang.v1 function=scale_degree argument=degree input={} recovery=value_clamped effective_value={} replacement=use_midi_range_degree",
+            degree + 1,
+            effective
+        );
+    }
+    Ok(effective)
+}
 
-    let interval = intervals.get(index).copied().unwrap_or(0);
-    Ok((root_note as i64 + interval as i64 + octave_offset * 12).clamp(0, 127))
+fn strict_scale_root(root: &str, octave: i64) -> Result<u8, Box<EvalAltResult>> {
+    let mut chars = root.char_indices();
+    let Some((_, letter)) = chars.next() else {
+        return Err(runtime_error(
+            "rhai.scale.root_empty span=0..0 expected=note_letter_A-G token=\"\"",
+        ));
+    };
+    if !matches!(letter, 'A'..='G' | 'a'..='g') {
+        return Err(runtime_error(format!(
+            "rhai.scale.root_letter span=0..{} expected=note_letter_A-G token={letter:?}",
+            letter.len_utf8()
+        )));
+    }
+    for (index, accidental) in chars {
+        if !matches!(accidental, '#' | 'b' | '♯' | '♭') {
+            return Err(runtime_error(format!(
+                "rhai.scale.root_trailing span={index}..{} expected=accidental_or_end token={:?}",
+                root.len(),
+                &root[index..]
+            )));
+        }
+    }
+    let octave = i8::try_from(octave).map_err(|_| {
+        runtime_error(format!(
+            "rhai.scale.octave_range span=0..{} expected=i8 token={octave:?}",
+            octave.to_string().len()
+        ))
+    })?;
+    parse_note_name_strict(&format!("{root}{octave}")).map_err(note_error)
+}
+
+fn scale_strict(root: &str, scale_type: &str) -> Result<Array, Box<EvalAltResult>> {
+    scale_with_octave_strict(root, scale_type, 4)
+}
+
+fn scale_with_octave_strict(
+    root: &str,
+    scale_type: &str,
+    octave: i64,
+) -> Result<Array, Box<EvalAltResult>> {
+    let root_note = strict_scale_root(root, octave)?;
+    let intervals = get_scale_intervals(scale_type)
+        .ok_or_else(|| unknown_scale_error("scale()", scale_type))?;
+    intervals
+        .into_iter()
+        .map(|interval| {
+            let note = i16::from(root_note) + i16::from(interval);
+            if !(0..=127).contains(&note) {
+                return Err(runtime_error(format!(
+                    "rhai.scale.note_range span=0..{} expected=MIDI_0..=127 token={root:?} computed={note}",
+                    root.len()
+                )));
+            }
+            Ok(Dynamic::from(i64::from(note)))
+        })
+        .collect()
+}
+
+fn scale_degree_strict(
+    root: &str,
+    scale_type: &str,
+    degree: i64,
+) -> Result<i64, Box<EvalAltResult>> {
+    if degree < 1 {
+        return Err(runtime_error(format!(
+            "rhai.scale.degree_range span=0..{} expected=integer_at_least_1 token={degree:?}",
+            degree.to_string().len()
+        )));
+    }
+    let root_note = i64::from(strict_scale_root(root, 4)?);
+    let intervals = get_scale_intervals(scale_type)
+        .ok_or_else(|| unknown_scale_error("scale_degree()", scale_type))?;
+    let zero_based = degree - 1;
+    let interval_count = i64::try_from(intervals.len()).map_err(|_| {
+        runtime_error(
+            "rhai.scale.interval_count span=0..0 expected=i64_length token=scale_intervals",
+        )
+    })?;
+    if interval_count == 0 {
+        return Err(runtime_error(
+            "rhai.scale.interval_count span=0..0 expected=non_empty_scale_intervals token=[]",
+        ));
+    }
+    let octave_offset = zero_based / interval_count;
+    let interval_index = usize::try_from(zero_based % interval_count).map_err(|_| {
+        runtime_error(format!(
+            "rhai.scale.degree_range span=0..{} expected=representable_index token={degree:?}",
+            degree.to_string().len()
+        ))
+    })?;
+    let interval = intervals.get(interval_index).copied().ok_or_else(|| {
+        runtime_error(format!(
+            "rhai.scale.interval_index span=0..{} expected=index_within_scale token={interval_index:?}",
+            degree.to_string().len()
+        ))
+    })?;
+    let interval = i64::from(interval);
+    let note = octave_offset
+        .checked_mul(12)
+        .and_then(|offset| root_note.checked_add(offset))
+        .and_then(|note| note.checked_add(interval))
+        .ok_or_else(|| {
+            runtime_error(format!(
+                "rhai.scale.degree_overflow span=0..{} expected=representable_MIDI_computation token={degree:?}",
+                degree.to_string().len()
+            ))
+        })?;
+    if !(0..=127).contains(&note) {
+        return Err(runtime_error(format!(
+            "rhai.scale.degree_note_range span=0..{} expected=MIDI_0..=127 token={degree:?} computed={note}",
+            degree.to_string().len()
+        )));
+    }
+    Ok(note)
 }
 
 /// Scale names known to the built-in Rust-side scale table.
@@ -363,8 +1024,8 @@ pub(crate) fn unknown_scale_error(verb: &str, scale_type: &str) -> Box<EvalAltRe
         .join(", ");
     Box::new(EvalAltResult::ErrorRuntime(
         format!(
-            "{}: unknown scale '{}' (available: {})",
-            verb, scale_type, available
+            "rhai.scale.quality function={verb} span=0..{} expected=known_scale token={scale_type:?}; {verb}: unknown scale '{scale_type}' (available: {available})",
+            scale_type.len()
         )
         .into(),
         Position::NONE,
@@ -485,6 +1146,17 @@ pub fn array_flatten(arr: Array) -> Array {
 
 /// Repeat an array n times.
 pub fn array_repeat(arr: Array, n: i64) -> Array {
+    if n < 0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "repeat",
+            "count",
+            n,
+            "legacy_empty_array",
+            "[]",
+            "use_non_negative_count",
+        );
+    }
     let mut result = Array::new();
     for _ in 0..n.max(0) {
         result.extend(arr.clone());
@@ -494,11 +1166,33 @@ pub fn array_repeat(arr: Array, n: i64) -> Array {
 
 /// Take first n elements from array.
 pub fn array_take(arr: Array, n: i64) -> Array {
+    if n < 0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "take",
+            "count",
+            n,
+            "legacy_empty_array",
+            "[]",
+            "use_non_negative_count",
+        );
+    }
     arr.into_iter().take(n.max(0) as usize).collect()
 }
 
 /// Skip first n elements from array.
 pub fn array_skip(arr: Array, n: i64) -> Array {
+    if n < 0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "skip",
+            "count",
+            n,
+            "legacy_zero_skip",
+            0,
+            "use_non_negative_count",
+        );
+    }
     arr.into_iter().skip(n.max(0) as usize).collect()
 }
 
@@ -541,6 +1235,11 @@ pub fn random() -> f64 {
     (next_random() as f64) / (u64::MAX as f64)
 }
 
+fn random_unit_strict() -> f64 {
+    const UNIT_SCALE: f64 = 1.0 / ((1_u64 << 53) as f64);
+    ((next_random() >> 11) as f64) * UNIT_SCALE
+}
+
 /// Generate a random float in range [min, max).
 pub fn random_range_ff(min: f64, max: f64) -> f64 {
     min + random() * (max - min)
@@ -549,22 +1248,51 @@ pub fn random_range_ff(min: f64, max: f64) -> f64 {
 /// Generate a random integer in range [min, max].
 pub fn random_range_ii(min: i64, max: i64) -> i64 {
     if min >= max {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "random_range",
+            "range",
+            format_args!("{min}..{max}"),
+            "legacy_min_fallback",
+            min,
+            "use_min_less_than_max",
+        );
         return min;
     }
-    min + ((next_random() as i64).abs() % (max - min + 1))
+    let width = (i128::from(max) - i128::from(min) + 1) as u128;
+    let offset = u128::from(next_random()) % width;
+    (i128::from(min) + offset as i128) as i64
 }
 
 /// Generate a random integer in range [0, max).
 pub fn random_int(max: i64) -> i64 {
     if max <= 0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "random_int",
+            "max",
+            max,
+            "legacy_zero_fallback",
+            0,
+            "use_positive_max",
+        );
         return 0;
     }
-    (next_random() as i64).abs() % max
+    (next_random() % max as u64) as i64
 }
 
 /// Choose a random element from an array.
 pub fn random_choice(arr: Array) -> Dynamic {
     if arr.is_empty() {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "random_choice",
+            "array",
+            "[]",
+            "legacy_unit_fallback",
+            "()",
+            "use_non_empty_array",
+        );
         return Dynamic::UNIT;
     }
     let idx = (next_random() as usize) % arr.len();
@@ -585,9 +1313,41 @@ pub fn clamp_fff(value: f64, min: f64, max: f64) -> f64 {
     value.clamp(min, max)
 }
 
+fn clamp_fff_compat(value: f64, min: f64, max: f64) -> f64 {
+    if !value.is_finite() || !min.is_finite() || !max.is_finite() || min > max {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "clamp",
+            "value,min,max",
+            format_args!("{value:?},{min:?},{max:?}"),
+            "legacy_invalid_range_identity",
+            format_args!("{value:?}"),
+            "use_finite_values_and_min_lte_max",
+        );
+        return value;
+    }
+    clamp_fff(value, min, max)
+}
+
 /// Clamp an integer value between min and max.
 pub fn clamp_iii(value: i64, min: i64, max: i64) -> i64 {
     value.clamp(min, max)
+}
+
+fn clamp_iii_compat(value: i64, min: i64, max: i64) -> i64 {
+    if min > max {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "clamp",
+            "value,min,max",
+            format_args!("{value},{min},{max}"),
+            "legacy_invalid_range_identity",
+            value,
+            "use_min_lte_max",
+        );
+        return value;
+    }
+    clamp_iii(value, min, max)
 }
 
 /// Linear interpolation between a and b.
@@ -610,6 +1370,15 @@ pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
 /// Wrap a value within a range [0, max).
 pub fn wrap(value: f64, max: f64) -> f64 {
     if max <= 0.0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "wrap",
+            "max",
+            format_args!("{max:?}"),
+            "legacy_zero_fallback",
+            0.0,
+            "use_positive_finite_max",
+        );
         return 0.0;
     }
     ((value % max) + max) % max
@@ -618,6 +1387,15 @@ pub fn wrap(value: f64, max: f64) -> f64 {
 /// Quantize a value to the nearest multiple of step.
 pub fn quantize(value: f64, step: f64) -> f64 {
     if step <= 0.0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "quantize",
+            "step",
+            format_args!("{step:?}"),
+            "legacy_identity_fallback",
+            format_args!("{value:?}"),
+            "use_positive_finite_step",
+        );
         return value;
     }
     (value / step).round() * step
@@ -628,9 +1406,54 @@ pub fn midi_to_freq(note: f64) -> f64 {
     440.0 * 2.0_f64.powf((note - 69.0) / 12.0)
 }
 
+fn midi_to_freq_compat(note: f64) -> f64 {
+    let result = midi_to_freq(note);
+    if !note.is_finite() || note.fract() != 0.0 || !(0.0..=127.0).contains(&note) {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "mtof",
+            "note",
+            format_args!("{note:?}"),
+            "legacy_unvalidated_note",
+            format_args!("{result:?}"),
+            "use_integral_MIDI_note_0..=127",
+        );
+    }
+    result
+}
+
+fn midi_to_freq_with_tuning(note: i64, a4_frequency: f64) -> f64 {
+    a4_frequency * 2.0_f64.powf((note as f64 - 69.0) / 12.0)
+}
+
+fn midi_to_freq_with_tuning_compat(note: i64, a4_frequency: f64) -> f64 {
+    let result = midi_to_freq_with_tuning(note, a4_frequency);
+    if !(0..=127).contains(&note) || !a4_frequency.is_finite() || a4_frequency <= 0.0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "mtof",
+            "note,a4_frequency",
+            format_args!("{note},{a4_frequency:?}"),
+            "legacy_unvalidated_tuning",
+            format_args!("{result:?}"),
+            "use_MIDI_note_0..=127_and_positive_finite_tuning",
+        );
+    }
+    result
+}
+
 /// Convert frequency in Hz to MIDI note number.
 pub fn freq_to_midi(freq: f64) -> f64 {
     if freq <= 0.0 {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "ftom",
+            "frequency",
+            format_args!("{freq:?}"),
+            "legacy_zero_fallback",
+            0.0,
+            "use_positive_finite_frequency",
+        );
         return 0.0;
     }
     69.0 + 12.0 * (freq / 440.0).log2()
@@ -658,6 +1481,36 @@ pub fn timestamp_ms() -> i64 {
         .unwrap_or(0)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn timestamp_strict() -> Result<f64, Box<EvalAltResult>> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .map_err(|error| {
+            runtime_error(format!(
+                "rhai.time.system_clock span=0..0 expected=unix_epoch_or_later token={error:?}"
+            ))
+        })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn timestamp_ms_strict() -> Result<i64, Box<EvalAltResult>> {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| {
+            runtime_error(format!(
+                "rhai.time.system_clock span=0..0 expected=unix_epoch_or_later token={error:?}"
+            ))
+        })?
+        .as_millis();
+    i64::try_from(millis).map_err(|_| {
+        runtime_error(format!(
+            "rhai.time.timestamp_range span=0..{} expected=i64_milliseconds token={millis:?}",
+            millis.to_string().len()
+        ))
+    })
+}
+
 // ============================================================================
 // Type Conversion Utilities
 // ============================================================================
@@ -667,9 +1520,59 @@ pub fn to_int(value: f64) -> i64 {
     value as i64
 }
 
+fn to_int_compat(value: f64) -> i64 {
+    let converted = to_int(value);
+    if !value.is_finite() || value.fract() != 0.0 || converted as f64 != value {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "to_int",
+            "value",
+            format_args!("{value:?}"),
+            "legacy_lossy_float_cast",
+            converted,
+            "use_integral_i64_range_value",
+        );
+    }
+    converted
+}
+
+fn to_int_from_string_compat(value: &str) -> Dynamic {
+    match value.trim().parse::<i64>() {
+        Ok(value) => Dynamic::from(value),
+        Err(_) => {
+            compatibility_warning(
+                V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+                "to_int",
+                "value",
+                format_args!("{value:?}"),
+                "legacy_unit_fallback",
+                "()",
+                "use_complete_signed_i64",
+            );
+            Dynamic::UNIT
+        }
+    }
+}
+
 /// Convert integer to float.
 pub fn to_float_from_int(value: i64) -> f64 {
     value as f64
+}
+
+fn to_float_from_int_compat(value: i64) -> f64 {
+    let converted = to_float_from_int(value);
+    if converted as i64 != value {
+        compatibility_warning(
+            V1_FALLBACK_COMPAT_DIAGNOSTIC_ID,
+            "to_float",
+            "value",
+            value,
+            "legacy_precision_loss",
+            format_args!("{converted:?}"),
+            "use_exact_i64_with_absolute_value_at_most_2^53",
+        );
+    }
+    converted
 }
 
 /// Convert integer to string.
@@ -743,6 +1646,84 @@ pub fn parse_time_spec(spec: &str, tempo: f64) -> Result<f64, Box<EvalAltResult>
         .into(),
         Position::NONE,
     )))
+}
+
+/// Strictly parse a time specification with explicit meter.
+pub fn parse_time_spec_strict(
+    spec: &str,
+    tempo: f64,
+    beats_per_bar: f64,
+) -> Result<f64, Box<EvalAltResult>> {
+    let trimmed = spec.trim();
+    let start = spec.len() - spec.trim_start().len();
+    if trimmed.is_empty() {
+        return Err(runtime_error(format!(
+            "rhai.time.empty span={start}..{start} expected=time_spec token=\"\""
+        )));
+    }
+    strict_finite("parse_time", "tempo", tempo)?;
+    if tempo <= 0.0 {
+        return Err(runtime_error(format!(
+            "rhai.time.tempo_range span=0..{} expected=positive token={tempo:?}",
+            tempo.to_string().len()
+        )));
+    }
+    strict_finite("parse_time", "beats_per_bar", beats_per_bar)?;
+    if beats_per_bar <= 0.0 {
+        return Err(runtime_error(format!(
+            "rhai.time.meter_range span=0..{} expected=positive token={beats_per_bar:?}",
+            beats_per_bar.to_string().len()
+        )));
+    }
+
+    fn number(token: &str, span_start: usize, expected: &str) -> Result<f64, Box<EvalAltResult>> {
+        let value = token.parse::<f64>().map_err(|_| {
+            runtime_error(format!(
+                "rhai.time.number span={span_start}..{} expected={expected} token={token:?}",
+                span_start + token.len()
+            ))
+        })?;
+        strict_non_negative("parse_time", "value", value)
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    let value = if let Some(token) = lower.strip_suffix("bars") {
+        number(token.trim_end(), start, "non_negative_bar_count")? * beats_per_bar
+    } else if let Some(token) = lower.strip_suffix("bar") {
+        number(token.trim_end(), start, "non_negative_bar_count")? * beats_per_bar
+    } else if let Some(token) = lower.strip_suffix("ms") {
+        number(token, start, "non_negative_milliseconds")? / 1000.0 * (tempo / 60.0)
+    } else if let Some(token) = lower.strip_suffix('s') {
+        number(token, start, "non_negative_seconds")? * (tempo / 60.0)
+    } else if let Some(token) = lower.strip_suffix('b') {
+        number(token, start, "non_negative_beats")?
+    } else if let Some((numerator, denominator)) = lower.split_once('/') {
+        if denominator.contains('/') {
+            return Err(runtime_error(format!(
+                "rhai.time.fraction span={start}..{} expected=single_fraction token={trimmed:?}",
+                start + trimmed.len()
+            )));
+        }
+        let numerator_token = numerator;
+        let numerator = number(numerator_token, start, "non_negative_fraction_numerator")?;
+        let denominator_start = start + numerator_token.len() + 1;
+        let denominator = number(
+            denominator,
+            denominator_start,
+            "positive_fraction_denominator",
+        )?;
+        if denominator == 0.0 {
+            return Err(runtime_error(format!(
+                "rhai.time.zero_denominator span={denominator_start}..{} expected=positive token={denominator:?}",
+                denominator_start + denominator.to_string().len()
+            )));
+        }
+        4.0 * numerator / denominator
+    } else {
+        number(&lower, start, "non_negative_beats")?
+    };
+
+    strict_finite("parse_time", "result", value)
 }
 
 #[cfg(test)]
@@ -1011,6 +1992,67 @@ mod tests {
         let chord = parse_chord("G", 9).unwrap();
         // G9 = 127, B9 would be 131 -> clamped to 127, D10 would be 134 -> clamped to 127
         assert!(chord.iter().all(|&n| n <= 127));
+    }
+
+    #[test]
+    fn v2_helpers_reject_partial_non_finite_and_non_integral_inputs() {
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+
+        for (script, diagnostic) in [
+            (r#"note("C4x")"#, "dsp.note.trailing"),
+            (r#"note("Cx")"#, "dsp.note.trailing"),
+            (r#"note("C300")"#, "dsp.note.octave_range"),
+            (r#"note("CB4")"#, "dsp.note.trailing"),
+            ("bars(0.0 / 0.0)", "rhai.numeric.non_finite"),
+            ("0.5..4", "rhai.numeric.integrality"),
+            ("random_choice([])", "rhai.random.empty_choice"),
+            ("to_int(1.5)", "rhai.numeric.integrality"),
+            (r#"to_int("12x")"#, "rhai.integer.invalid"),
+            ("to_float(9007199254740993)", "rhai.numeric.precision"),
+            ("bars(9007199254740993)", "rhai.numeric.precision"),
+            ("db(-9007199254740993)", "rhai.numeric.precision"),
+            ("mtof(69.5)", "rhai.numeric.integrality"),
+            ("mtof(128)", "rhai.midi.note_range"),
+            ("mtof(69, 0.0 / 0.0)", "rhai.numeric.non_finite"),
+            (
+                "smoothstep(-1.7e308, 1.7e308, 0.0)",
+                "rhai.numeric.non_finite",
+            ),
+            ("random_range(-1.7e308, 1.7e308)", "rhai.numeric.non_finite"),
+            (
+                r#"scale_degree("C", "major", 9223372036854775807)"#,
+                "rhai.scale.degree_overflow",
+            ),
+            (r#"chord("C", 127)"#, "chord(): root"),
+            (
+                "repeat([1], 9223372036854775807)",
+                "rhai.array.repeat_allocation",
+            ),
+        ] {
+            let error = engine.eval::<Dynamic>(script).unwrap_err().to_string();
+            assert!(error.contains(diagnostic), "{script}: {error}");
+        }
+
+        let _full_width_sample = random_range_ii(i64::MIN, i64::MAX);
+    }
+
+    #[test]
+    fn strict_time_parser_consumes_input_and_uses_explicit_meter() {
+        assert_eq!(parse_time_spec_strict("2bars", 120.0, 3.5).unwrap(), 7.0);
+        assert_eq!(parse_time_spec_strict("1/8", 120.0, 4.0).unwrap(), 0.5);
+
+        for (spec, diagnostic) in [
+            ("1/0", "rhai.time.zero_denominator"),
+            ("1/2/3", "rhai.time.fraction"),
+            ("NaNb", "rhai.numeric.non_finite"),
+            ("1bar trailing", "rhai.time.number"),
+        ] {
+            let error = parse_time_spec_strict(spec, 120.0, 4.0)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(diagnostic), "{spec}: {error}");
+        }
     }
 
     // ==================== Scale Tests ====================

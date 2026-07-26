@@ -12,59 +12,10 @@
 // Returns MIDI number (0-127) or throws error
 /// @vibelang-api export=public support=supported
 fn note_to_midi(note_name) {
-    // Extract components: note letter, accidental, octave
-    let len = note_name.len();
-    if len < 2 {
-        throw `Invalid note name: ${note_name}`;
+    if type_of(note_name) != "string" {
+        throw `stdlib.note.type span=0..0 expected=string token=${type_of(note_name)}`;
     }
-    
-    let note_letter = note_name[0].to_upper().to_string();
-    let octave_start = 1;
-    let accidental = "";
-    
-    // Check for accidental
-    if len > 2 {
-        let second_char = note_name[1].to_string();
-        if second_char == "#" || second_char == "b" {
-            accidental = second_char;
-            octave_start = 2;
-        }
-    }
-    
-    // Parse octave
-    let octave_str = note_name.sub_string(octave_start);
-    let octave = parse_int(octave_str);
-    if octave == () {
-        throw `Invalid octave in note: ${note_name}`;
-    }
-    
-    // Note letter to semitone (C=0)
-    let semitone = switch note_letter {
-        "C" => 0,
-        "D" => 2,
-        "E" => 4,
-        "F" => 5,
-        "G" => 7,
-        "A" => 9,
-        "B" => 11,
-        _ => throw `Invalid note letter: ${note_letter}`
-    };
-    
-    // Apply accidental
-    if accidental == "#" {
-        semitone += 1;
-    } else if accidental == "b" {
-        semitone -= 1;
-    }
-    
-    // Calculate MIDI number: C4 = 60
-    let midi = (octave + 1) * 12 + semitone;
-    
-    if midi < 0 || midi > 127 {
-        throw `MIDI number out of range (0-127): ${midi} for note ${note_name}`;
-    }
-    
-    return midi;
+    note(note_name)
 }
 
 // ============================================================================
@@ -79,8 +30,14 @@ fn midi_to_note(midi_num) {
 
 /// @vibelang-api export=public support=supported
 fn midi_to_note_ex(midi_num, use_flats) {
+    if type_of(midi_num) != "i64" {
+        throw `stdlib.midi.integrality span=0..0 expected=i64 token=${midi_num}`;
+    }
+    if type_of(use_flats) != "bool" {
+        throw `stdlib.midi.accidental_style span=0..0 expected=bool token=${type_of(use_flats)}`;
+    }
     if midi_num < 0 || midi_num > 127 {
-        throw `MIDI number out of range (0-127): ${midi_num}`;
+        throw `stdlib.midi.range span=0..0 expected=0..=127 token=${midi_num}`;
     }
 
     let octave = (midi_num / 12) - 1;
@@ -111,7 +68,18 @@ fn midi_to_freq(midi_num) {
 
 /// @vibelang-api export=public support=supported
 fn midi_to_freq_ex(midi_num, a4_freq) {
-    return a4_freq * pow(2.0, (midi_num - 69) / 12.0);
+    if type_of(midi_num) != "i64" {
+        throw `stdlib.midi.integrality span=0..0 expected=i64 token=${midi_num}`;
+    }
+    if midi_num < 0 || midi_num > 127 {
+        throw `stdlib.midi.range span=0..0 expected=0..=127 token=${midi_num}`;
+    }
+    let tuning_type = type_of(a4_freq);
+    if tuning_type != "i64" && tuning_type != "f64" {
+        throw `stdlib.frequency.type span=0..0 expected=i64_or_f64 token=${tuning_type}`;
+    }
+    let tuning = if tuning_type == "i64" { to_float(a4_freq) } else { a4_freq };
+    return mtof(midi_num, tuning);
 }
 
 // Convert note name to frequency
@@ -318,7 +286,7 @@ fn interval_to_semitones(name) {
 fn enharmonic(note_name) {
     let midi = note_to_midi(note_name);
     let use_flats = !note_name.contains("b");
-    return midi_to_note(midi, use_flats);
+    return midi_to_note_ex(midi, use_flats);
 }
 
 // ============================================================================
@@ -327,11 +295,7 @@ fn enharmonic(note_name) {
 
 /// @vibelang-api export=public support=supported
 fn parse_int(str) {
-    try {
-        return eval(`${str}`);
-    } catch {
-        return ();
-    }
+    return to_int(str);
 }
 
 // ============================================================================
@@ -361,7 +325,10 @@ fn note_to_pitch_class(note) {
         return pc;
     }
     // Integer (or float) MIDI number — pitch class is value mod 12.
-    let n = if t == "i64" { note } else { note.to_int() };
+    if t != "i64" && t != "f64" {
+        throw `stdlib.midi.type span=0..0 expected=i64_or_f64 token=${t}`;
+    }
+    let n = if t == "i64" { note } else { to_int(note) };
     let pc = n % 12;
     if pc < 0 { pc += 12; }
     return pc;
@@ -391,4 +358,3 @@ fn scale_mask_from_notes(notes) {
     }
     return mask;
 }
-

@@ -1,14 +1,14 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "d003118a99f006645dbbe193b7ff06a523047346c0fd1775596e7cba7ad8b97d",
+  "contract_digest": "0dd838ba3bd973b400297d14429f13a0d2034ea93244e86802456afbc31e3131",
   "totals": {
     "entries": 3626,
-    "overloads": 8431,
+    "overloads": 8433,
     "routes": 97,
     "http_types": 76,
     "http_fields": 307,
-    "source_nodes": 965,
+    "source_nodes": 967,
     "consumer_nodes": 8,
     "orphan_records": 0,
     "unclassified_records": 0
@@ -10190,12 +10190,12 @@
         "v1:entry:fcf8fcb528a1cd2e",
         "v1:entry:fd2e325ac3dd94a8",
         "v1:entry:ff336c09ffd8ede6",
-        "v1:overload:020a406045fd9544",
         "v1:overload:06a4adda4ff540a3",
         "v1:overload:06f22e102c11846b",
         "v1:overload:08cb0bc87f6ff638",
         "v1:overload:092d4b5710bf1a15",
         "v1:overload:097dcce2386fb263",
+        "v1:overload:0f4b961a93535ee1",
         "v1:overload:0f96a39817403ba6",
         "v1:overload:1033cb7bce7a7803",
         "v1:overload:108985424c548f90",
@@ -10203,21 +10203,24 @@
         "v1:overload:10fa3f0ed26dd940",
         "v1:overload:11282352ba514595",
         "v1:overload:113e452d9fa16219",
+        "v1:overload:12db1a499f51eaa1",
+        "v1:overload:1ba515568b615199",
         "v1:overload:1e05cb192fc40ade",
         "v1:overload:1e7ab607e13e34bf",
         "v1:overload:1f7d8f7f6e2255d1",
         "v1:overload:1faa1572fde82e49",
+        "v1:overload:23cdd4b5f120e5c3",
         "v1:overload:2651f603af1dec66",
         "v1:overload:26c780eb1b7c36ae",
         "v1:overload:2980e5f4a975d48b",
         "v1:overload:29d48af4e37039f3",
-        "v1:overload:2b3cc99db78aae2d",
-        "v1:overload:2c00dc02cc4f2947",
-        "v1:overload:31e55ec452bd7e5e",
+        "v1:overload:33faab6a49dbe2e4",
         "v1:overload:35e6a95a96ce534c",
         "v1:overload:375a693b5a767c1c",
         "v1:overload:3d0b727163def1c1",
         "v1:overload:411dcec2503cb26b",
+        "v1:overload:42010219ad9fc8d4",
+        "v1:overload:4250085f4f386380",
         "v1:overload:43bf3c35792ba389",
         "v1:overload:45a1e16d08b89093",
         "v1:overload:46bcd897a1315580",
@@ -10226,10 +10229,11 @@
         "v1:overload:4f1097d5bdf4e7d2",
         "v1:overload:51d6cc4817fa0dbe",
         "v1:overload:568e032b8898f150",
+        "v1:overload:577b4c6fbcef84d4",
         "v1:overload:59b1f8d88bb1d689",
         "v1:overload:5df33757f831f6c0",
-        "v1:overload:61e7028bf1060918",
-        "v1:overload:63c68b3001995e4c",
+        "v1:overload:644d341e5ad754fe",
+        "v1:overload:65c1d93b9392e347",
         "v1:overload:65e3632a27563149",
         "v1:overload:68c93cce959ea408",
         "v1:overload:694907974dd89f9b",
@@ -10237,48 +10241,44 @@
         "v1:overload:6d9991906a3f4d0f",
         "v1:overload:6f7dac59af852923",
         "v1:overload:7947f6270dd1a44e",
-        "v1:overload:7ab89a98b633b623",
-        "v1:overload:7c81ff47113925fe",
-        "v1:overload:81f505f67ae1cc1c",
-        "v1:overload:83a0348865f099ca",
+        "v1:overload:7a3106c7bc7e2327",
+        "v1:overload:81658d96e02de27f",
+        "v1:overload:8489bbfa10b46319",
         "v1:overload:891874e6009fe2cf",
         "v1:overload:8a71614dfb861391",
         "v1:overload:9378a0530e6c34ca",
         "v1:overload:960d8244d6a44f20",
         "v1:overload:978836e3f93b6f3e",
         "v1:overload:98b5805d1ec2827a",
+        "v1:overload:9b1413d5bceb3945",
         "v1:overload:9de3959a2647bb01",
         "v1:overload:a236d13d3b51c2ea",
-        "v1:overload:a66794235973cf53",
         "v1:overload:a68e0536f45cef6a",
         "v1:overload:aa01d875b47dbf4e",
         "v1:overload:ab8a6687d41c2e02",
         "v1:overload:abea51d10d7f9096",
         "v1:overload:ac6c073370b982cd",
-        "v1:overload:ace596d2d9fdc4e1",
-        "v1:overload:aeef0db5459d1d75",
-        "v1:overload:b1f8acbcfe6b357a",
-        "v1:overload:b5ed01e5dda1c40e",
+        "v1:overload:b73c5bd41f5b09e2",
         "v1:overload:c286f83dd8cb1015",
         "v1:overload:c628e984c4e6e51f",
-        "v1:overload:c80da25a71a241f5",
         "v1:overload:cd9e9cabcb0b782f",
         "v1:overload:cf0ad590b0520b24",
         "v1:overload:cfd6c3715ea17fdd",
         "v1:overload:d0e12f80df2d63ef",
         "v1:overload:d20f1adca0132911",
         "v1:overload:d64a0bd0b745b98e",
+        "v1:overload:d69f2a5a55b60e44",
         "v1:overload:d87b88dd46c29e93",
         "v1:overload:da1a932fdbf61881",
         "v1:overload:daf9e28486b1d21e",
         "v1:overload:db9676a34794f83d",
         "v1:overload:dbe7cd45a61aca39",
-        "v1:overload:e33dae8acab5100e",
+        "v1:overload:df578d23325ad26c",
         "v1:overload:e37c7e374c36e963",
         "v1:overload:ec13ff7c43fa3a6e",
-        "v1:overload:f18b374823949aed"
+        "v1:overload:ed51f6978a7471da"
       ],
-      "node_ids_sha256": "d1ecf1676d906db6600f780c29125221e5eeadbf1783602c38eec3691999555f"
+      "node_ids_sha256": "77ded5e1d709e6e4b1f01ed93cb5d2e110a329e786b40e01c6832629e1350712"
     },
     {
       "id": "v1:source:239ae39a2b760fb0",
@@ -11288,6 +11288,16 @@
         "v1:operation:c0a18c64f34a1d47"
       ],
       "node_ids_sha256": "77abfbacfd78867d6a20da0e346816d53798e30d35ea919b5168e30781ae8064"
+    },
+    {
+      "id": "v1:source:35451f6d1254095d",
+      "path": "tests/fixtures/api-unification/v1/golden/09_parser_compat.snapshot",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:1d2d1316361425d5"
+      ],
+      "node_ids_sha256": "424d365e7e438d1d864a1ac6488ecdf5b67e0243cbc1943a552fca0074ce8b8b"
     },
     {
       "id": "v1:source:356962f9bb17e440",
@@ -18252,7 +18262,7 @@
       "id": "v1:source:7ff444888fd9f48a",
       "path": "crates/vibelang-rhai/src/api/helpers.rs",
       "kind": "mechanical_declaration",
-      "node_count": 75,
+      "node_count": 77,
       "node_ids": [
         "v1:entry:05d7f85eb95b4430",
         "v1:entry:08795f4118b9b55c",
@@ -18322,15 +18332,17 @@
         "v1:overload:bc44e1116623aec1",
         "v1:overload:bd3b57c2ba3e69e8",
         "v1:overload:c03df974cda58817",
+        "v1:overload:c7bdbfb7ef563986",
         "v1:overload:c997613291b76cba",
         "v1:overload:d22eada029b206aa",
         "v1:overload:e7334a22b9f61b72",
         "v1:overload:eed9d764f5ed6892",
         "v1:overload:f2735256527be1d4",
         "v1:overload:fbcd5360455f10c2",
+        "v1:overload:fd355856a7afb1ed",
         "v1:overload:febf4fe15166898c"
       ],
-      "node_ids_sha256": "2a96c174ebc08cb3e519cf6a63d7e15b55c7e3f8b4f4c0c9aab3bf5dd5021352"
+      "node_ids_sha256": "b1b9ca75bdf4ee2102d4a2ebae2b7bc2259e6ff6c8e5183fa3a65cd2bae520ad"
     },
     {
       "id": "v1:source:8047cd82930ba7a5",
@@ -20475,18 +20487,12 @@
       "id": "v1:source:91630ef562740c52",
       "path": "crates/vibelang-std/stdlib/utility/lfo.vibe",
       "kind": "mechanical_declaration",
-      "node_count": 8,
+      "node_count": 2,
       "node_ids": [
         "v1:entry:3cfd3ce1d0f9831e",
-        "v1:entry:645a557da97fc9c1",
-        "v1:entry:69783d0b53414907",
-        "v1:entry:e0b524455f51fead",
-        "v1:overload:38bc49c336a589a1",
-        "v1:overload:39699fba5ee7d07e",
-        "v1:overload:d998cff769c802c8",
-        "v1:overload:e98c927f1642ff26"
+        "v1:overload:38bc49c336a589a1"
       ],
-      "node_ids_sha256": "3a7b9537854f979a9cebafc68fbc64d53e8d3ce2ef35255672e96dfe215aaa70"
+      "node_ids_sha256": "0ddd25a1b782d5f2ce8d977aa9c76b787b320ed7c68a1d8626efb9d519c6e14e"
     },
     {
       "id": "v1:source:919839998ccb577e",
@@ -23518,6 +23524,16 @@
         "v1:overload:4354503ac609f7f1"
       ],
       "node_ids_sha256": "5e6a4fe28cebdec51a37319b6f56bd97e8ffc297616adb83bb3fec345c8afe45"
+    },
+    {
+      "id": "v1:source:b14b60c4608c1da9",
+      "path": "tests/fixtures/api-unification/v1/golden/09_parser_compat.vibe",
+      "kind": "mechanical_declaration",
+      "node_count": 1,
+      "node_ids": [
+        "v1:type:f3158260837ea0b5"
+      ],
+      "node_ids_sha256": "b79456acdd4ae253aa1009bd8730ac748b1d70067c0d761f0f713b45c34c4815"
     },
     {
       "id": "v1:source:b1b9241337aae19e",
@@ -29677,6 +29693,8 @@
         "tests/fixtures/api-unification/v1/golden/07_midi.vibe",
         "tests/fixtures/api-unification/v1/golden/08_transport.snapshot",
         "tests/fixtures/api-unification/v1/golden/08_transport.vibe",
+        "tests/fixtures/api-unification/v1/golden/09_parser_compat.snapshot",
+        "tests/fixtures/api-unification/v1/golden/09_parser_compat.vibe",
         "tests/fixtures/api-unification/v1/negative/failure-seam-artifact-drift.json",
         "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
         "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
@@ -29688,8 +29706,8 @@
         "tests/fixtures/api-unification/v1/negative/stale-success.json",
         "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json"
       ],
-      "included_count": 29,
-      "eligible_count": 29,
+      "included_count": 31,
+      "eligible_count": 31,
       "accepted_denominator": 26,
       "denominator_baseline_owner": "vibelang-tests",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29716,8 +29734,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13376,
-      "eligible_count": 13376,
+      "included_count": 13380,
+      "eligible_count": 13380,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -29842,8 +29860,8 @@
         "vscode-extension/ugen_manifests/reverb.json",
         "vscode-extension/ugen_manifests/triggers.json"
       ],
-      "included_count": 2141,
-      "eligible_count": 3141,
+      "included_count": 2143,
+      "eligible_count": 3143,
       "accepted_denominator": 3141,
       "denominator_baseline_owner": "vibelang-tools",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",

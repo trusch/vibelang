@@ -18,6 +18,7 @@ const GOLDENS: &[&str] = &[
     "06_definitions_dsp",
     "07_midi",
     "08_transport",
+    "09_parser_compat",
 ];
 
 fn fixture_dir() -> PathBuf {
@@ -751,6 +752,43 @@ fn execute_golden(name: &str) -> (ScriptState, Vec<String>, String) {
 
 fn assert_mutant_rejected(label: &str, expected: &str, actual: String) {
     assert_ne!(actual, expected, "{label} mutant escaped the golden gate");
+}
+
+#[cfg(all(feature = "ext-exec", feature = "ext-fs", feature = "ext-net"))]
+#[test]
+fn v1_extension_recoveries_emit_one_stable_diagnostic_each() {
+    let mut engine = ScriptEngine::new();
+    engine.register_all_extensions();
+    let script = r#"
+        let missing = env_var("VIBELANG_TEST_ENVIRONMENT_VALUE_MUST_NOT_EXIST");
+        let empty_exec = exec("");
+        let missing_extension = path_extension("README");
+        let preserved_escape = url_decode("%G0");
+        if missing != "" || empty_exec != "" || missing_extension != "" || preserved_escape != "%G0" {
+            throw "v1 extension recovery drift";
+        }
+    "#;
+    let (state, diagnostics) = execute_with_diagnostics(&mut engine, script);
+    state.expect("v1 extension recoveries remain callable");
+    assert_eq!(diagnostics.len(), 4, "{diagnostics:?}");
+    for diagnostic in [
+        "function=env_var",
+        "function=exec",
+        "function=path_extension",
+        "parser=url_decode",
+    ] {
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|line| line.contains(diagnostic))
+                .count(),
+            1,
+            "{diagnostic}: {diagnostics:?}"
+        );
+    }
+    assert!(diagnostics
+        .iter()
+        .all(|line| line.contains("diagnostic.compat.")));
 }
 
 #[test]
