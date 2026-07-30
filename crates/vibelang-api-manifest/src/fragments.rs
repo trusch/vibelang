@@ -116,6 +116,8 @@ pub struct HttpRecord {
     pub target_id: String,
     pub owner: String,
     pub operation_id: Option<String>,
+    #[serde(default)]
+    pub operation_ids: Vec<String>,
     pub effectiveness: Option<Effectiveness>,
     pub consistency: Option<ConsistencyPoint>,
     pub failure: Option<FailureContract>,
@@ -668,6 +670,9 @@ impl SemanticRecord for HttpRecord {
     fn claims(&self) -> BTreeSet<SemanticFacet> {
         let mut claims = BTreeSet::new();
         claim_if_some!(claims, self.operation_id, SemanticFacet::OperationBinding);
+        if !self.operation_ids.is_empty() {
+            claims.insert(SemanticFacet::OperationBinding);
+        }
         claim_if_some!(claims, self.effectiveness, SemanticFacet::Effectiveness);
         claim_if_some!(claims, self.consistency, SemanticFacet::Consistency);
         claim_if_some!(claims, self.failure, SemanticFacet::Failure);
@@ -681,11 +686,30 @@ impl SemanticRecord for HttpRecord {
         self.operation_id
             .iter()
             .map(String::as_str)
+            .chain(self.operation_ids.iter().map(String::as_str))
             .chain(self.security_capability_ids.iter().map(String::as_str))
             .collect()
     }
 
     fn validate_semantics(&self) -> Result<(), ManifestError> {
+        if self.operation_id.is_some() && !self.operation_ids.is_empty() {
+            return Err(ManifestError::new(
+                ErrorCode::DuplicateId,
+                &self.target_id,
+                "a record may declare a single operation join or an applicability list, not both",
+            ));
+        }
+        let mut previous = None;
+        for operation_id in &self.operation_ids {
+            if previous.is_some_and(|value| value >= operation_id.as_str()) {
+                return Err(ManifestError::new(
+                    ErrorCode::NonDeterministicOrder,
+                    &self.target_id,
+                    "operation applicability lists must be strictly sorted and unique",
+                ));
+            }
+            previous = Some(operation_id.as_str());
+        }
         if let Some(effectiveness) = &self.effectiveness {
             crate::v2::validate_effectiveness(effectiveness, &self.target_id)?;
         }

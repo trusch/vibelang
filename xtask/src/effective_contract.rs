@@ -49,7 +49,7 @@ const API_VERSION: &str = "0.4.0";
 const ACCEPTED_V1_MANIFEST_SHA256: &str =
     "24e973fa95143f996823a38e2a359a5c72443d16b9391f3a9cc2ae76c5f1d184";
 const ACCEPTED_V1_HTTP_SHA256: &str =
-    "2de38dfb357dda17c22edf3d7e729dfdfa5a17c8ee2cb1c63ea0101c438fb25e";
+    "d93913c5d95d799c93a96e727d88e5ddd996a55a8a2ed4c014f0f35ce579a0cd";
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
     "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
@@ -57,9 +57,9 @@ const CORE_MANIFEST_PATH: &str = "crates/vibelang-core/Cargo.toml";
 const CORE_WIRE_TEST_PATH: &str = "crates/vibelang-core/tests/mutation_ledger.rs";
 const EXPECTED_ENTRIES: usize = 3_626;
 const EXPECTED_OVERLOADS: usize = 8_433;
-const EXPECTED_HTTP_ROUTES: usize = 97;
-const EXPECTED_HTTP_TYPES: usize = 76;
-const EXPECTED_HTTP_FIELDS: usize = 307;
+const EXPECTED_HTTP_ROUTES: usize = 102;
+const EXPECTED_HTTP_TYPES: usize = 108;
+const EXPECTED_HTTP_FIELDS: usize = 423;
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {
     let discovery = discover(root)?;
@@ -1805,6 +1805,9 @@ fn http_handler_contract(
         if outer_type_argument(&input.ty, "State").is_some() {
             continue;
         }
+        if type_last_ident(&input.ty).is_some_and(|name| name == "OriginalUri") {
+            continue;
+        }
         if let Some(ty) = outer_type_argument(&input.ty, "Path") {
             path_types.push(type_text(ty));
             continue;
@@ -2305,6 +2308,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
         &operations,
         &http_type_ids,
         &legacy_result_type_ids,
+        &discovery.fragments,
     )?;
 
     let mut events = websocket_events
@@ -3156,10 +3160,16 @@ fn connect_http_field_bindings(
     operations: &[Operation],
     http_type_ids: &BTreeMap<String, String>,
     legacy_result_type_ids: &BTreeMap<String, String>,
+    fragments: &FragmentSet,
 ) -> Result<(), String> {
     let raw_type_ids = http_type_ids.values().cloned().collect::<BTreeSet<_>>();
-    let operation_ids_by_type =
-        http_operation_ids_by_type(types, operations, &raw_type_ids, legacy_result_type_ids)?;
+    let operation_ids_by_type = http_operation_ids_by_type(
+        types,
+        operations,
+        &raw_type_ids,
+        legacy_result_type_ids,
+        fragments,
+    )?;
 
     for api_type in types
         .iter_mut()
@@ -3205,6 +3215,7 @@ fn http_operation_ids_by_type(
     operations: &[Operation],
     raw_type_ids: &BTreeSet<String>,
     legacy_result_type_ids: &BTreeMap<String, String>,
+    fragments: &FragmentSet,
 ) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
     let mut nested = BTreeMap::<String, BTreeSet<String>>::new();
     for api_type in types
@@ -3266,6 +3277,113 @@ fn http_operation_ids_by_type(
                 .entry(type_id)
                 .or_default()
                 .insert(operation.metadata.id.clone());
+        }
+    }
+
+    let http_operation_ids = operations
+        .iter()
+        .filter(|operation| {
+            operation
+                .bindings
+                .first()
+                .is_some_and(|binding| matches!(binding.details, BindingDetails::Http { .. }))
+        })
+        .map(|operation| operation.metadata.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let declared_by_field = fragments
+        .http
+        .records
+        .iter()
+        .filter(|record| !record.operation_ids.is_empty())
+        .map(|record| {
+            (
+                record.target_id.as_str(),
+                record
+                    .operation_ids
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut joined_fields = 0usize;
+    let mut declared_type_ids = BTreeSet::new();
+    for api_type in types
+        .iter()
+        .filter(|api_type| raw_type_ids.contains(&api_type.metadata.id))
+    {
+        let declared = api_type
+            .fields
+            .iter()
+            .filter_map(|field| {
+                declared_by_field
+                    .get(field.metadata.id.as_str())
+                    .map(|operation_ids| (field.metadata.name.clone(), operation_ids))
+            })
+            .collect::<Vec<_>>();
+        joined_fields += declared.len();
+        if declared.is_empty() {
+            continue;
+        }
+        if operation_ids_by_type.contains_key(&api_type.metadata.id) {
+            return Err(format!(
+                "HTTP type {} has source-derived operation applicability; fragment records may not restate it",
+                api_type.metadata.name
+            ));
+        }
+        if declared.len() != api_type.fields.len() {
+            return Err(format!(
+                "HTTP type {} has fragment-declared applicability on only {} of {} fields",
+                api_type.metadata.name,
+                declared.len(),
+                api_type.fields.len()
+            ));
+        }
+        let type_operation_ids = declared[0].1.clone();
+        for (field_name, operation_ids) in &declared {
+            if *operation_ids != &type_operation_ids {
+                return Err(format!(
+                    "HTTP field {field_name} declares operation applicability diverging from its type {}",
+                    api_type.metadata.name
+                ));
+            }
+        }
+        if let Some(unknown) = type_operation_ids
+            .iter()
+            .find(|id| !http_operation_ids.contains(id.as_str()))
+        {
+            return Err(format!(
+                "HTTP type {} declares applicability to {} which is not an HTTP operation",
+                api_type.metadata.name, unknown
+            ));
+        }
+        operation_ids_by_type.insert(api_type.metadata.id.clone(), type_operation_ids);
+        declared_type_ids.insert(api_type.metadata.id.clone());
+    }
+    if joined_fields != declared_by_field.len() {
+        return Err(format!(
+            "{} fragment applicability record(s) target no discovered HTTP field",
+            declared_by_field.len() - joined_fields
+        ));
+    }
+    for api_type in types
+        .iter()
+        .filter(|api_type| declared_type_ids.contains(&api_type.metadata.id))
+    {
+        let parent_operation_ids = &operation_ids_by_type[&api_type.metadata.id];
+        for field in &api_type.fields {
+            if !raw_type_ids.contains(&field.type_id) {
+                continue;
+            }
+            if !operation_ids_by_type
+                .get(&field.type_id)
+                .is_some_and(|child| parent_operation_ids.is_subset(child))
+            {
+                return Err(format!(
+                    "HTTP field {}.{} nests a DTO whose operation applicability does not cover the parent operations",
+                    api_type.metadata.name, field.metadata.name
+                ));
+            }
         }
     }
 
@@ -3645,6 +3763,7 @@ fn validate_http_graph(
         &manifest.operations,
         &raw_type_ids,
         &legacy_result_type_ids,
+        &discovery.fragments,
     )?;
     let event_payload_ids = manifest
         .events
@@ -3708,9 +3827,9 @@ fn validate_http_graph(
         .filter(|operation| operation.metadata.availability.status == AvailabilityStatus::Available)
         .count();
     let conditional = actual_operations.len() - available;
-    if available != 75 || conditional != 22 {
+    if available != 80 || conditional != 22 {
         return Err(format!(
-            "HTTP route conditions must be exactly 75 unconditional and 22 conditional, got {available}/{conditional}"
+            "HTTP route conditions must be exactly 80 unconditional and 22 conditional, got {available}/{conditional}"
         ));
     }
     Ok(())
@@ -4523,6 +4642,9 @@ fn semantic_fragment_records(fragments: &FragmentSet) -> Vec<SemanticFragmentRec
             &record.operation_id,
             SemanticFacet::OperationBinding,
         );
+        if !record.operation_ids.is_empty() {
+            facets.insert(SemanticFacet::OperationBinding);
+        }
         insert_optional_facet(
             &mut facets,
             &record.effectiveness,
@@ -4536,6 +4658,7 @@ fn semantic_fragment_records(fragments: &FragmentSet) -> Vec<SemanticFragmentRec
         let references = record
             .operation_id
             .iter()
+            .chain(&record.operation_ids)
             .chain(&record.security_capability_ids)
             .cloned()
             .collect();
@@ -4855,7 +4978,23 @@ fn apply_fragments(
             .find(|field| field.metadata.id == record.target_id)
             .ok_or_else(|| format!("HTTP target {} is not a field", record.target_id))?;
         field.metadata.ownership.implementation_owner = record.owner.clone();
-        if let (Some(operation_id), Some(effectiveness)) =
+        if !record.operation_ids.is_empty() {
+            if let Some(effectiveness) = &record.effectiveness {
+                for operation_id in &record.operation_ids {
+                    let binding = field
+                        .bindings
+                        .iter_mut()
+                        .find(|binding| binding.operation_id == *operation_id)
+                        .ok_or_else(|| {
+                            format!(
+                                "HTTP semantic record {} claims operation {} outside fragment-declared applicability",
+                                record.target_id, operation_id
+                            )
+                        })?;
+                    binding.effectiveness = effectiveness.clone();
+                }
+            }
+        } else if let (Some(operation_id), Some(effectiveness)) =
             (&record.operation_id, &record.effectiveness)
         {
             let binding = field
@@ -5305,6 +5444,9 @@ fn build_debt(
                 field
                     .bindings
                     .iter()
+                    .filter(|binding| {
+                        binding.effectiveness.status == EffectivenessStatus::CompatibilityDebt
+                    })
                     .map(|binding| Some(binding.operation_id.clone()))
                     .collect()
             };
@@ -5572,6 +5714,9 @@ fn validate_http_debt(debt: &DebtArtifact, manifest: &PublicApiManifestV2) -> Re
                     field
                         .bindings
                         .iter()
+                        .filter(|binding| {
+                            binding.effectiveness.status == EffectivenessStatus::CompatibilityDebt
+                        })
                         .map(|binding| {
                             (
                                 field.metadata.id.clone(),
@@ -6660,7 +6805,7 @@ mod tests {
                         .iter()
                         .filter(|operation| operation.request_type_id.is_some())
                         .count(),
-                    77
+                    79
                 );
                 assert!(http_operations.iter().all(|operation| {
                     !operation.response_type_ids.is_empty()
@@ -6680,7 +6825,7 @@ mod tests {
                         operation.metadata.availability.status == AvailabilityStatus::Available
                     })
                     .count();
-                assert_eq!((available, http_operations.len() - available), (75, 22));
+                assert_eq!((available, http_operations.len() - available), (80, 22));
 
                 let carrier_id = semantic_id(
                     "type",
@@ -7407,12 +7552,27 @@ export type ArbitraryUnion = string | number;
                 mutant.runtime.records[0].operation = None;
                 assert_missing(&mutant, "Operation");
 
+                let quantization_field_id = semantic_id(
+                    "field",
+                    "http|crates/vibelang-http/src/models.rs|TransportUpdate|quantization_beats",
+                );
+                fn quantization_record<'a>(
+                    fragments: &'a mut FragmentSet,
+                    target_id: &str,
+                ) -> &'a mut vibelang_api_manifest::fragments::HttpRecord {
+                    fragments
+                        .http
+                        .records
+                        .iter_mut()
+                        .find(|record| record.target_id == target_id)
+                        .unwrap()
+                }
                 let mut mutant = discovery.fragments.clone();
-                mutant.http.records[0].operation_id = None;
+                quantization_record(&mut mutant, &quantization_field_id).operation_id = None;
                 assert_missing(&mutant, "OperationBinding");
 
                 let mut mutant = discovery.fragments.clone();
-                mutant.http.records[0].effectiveness = None;
+                quantization_record(&mut mutant, &quantization_field_id).effectiveness = None;
                 assert_missing(&mutant, "Effectiveness");
 
                 let mut mutant = discovery.fragments.clone();
@@ -7577,7 +7737,7 @@ export type ArbitraryUnion = string | number;
                 let mut manifest = build_v2(&discovery).unwrap();
                 let composition =
                     validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
-                assert_eq!(composition.accounting.semantic_records, 9);
+                assert_eq!(composition.accounting.semantic_records, 123);
                 assert_eq!(composition.accounting.orphan_records, 0);
                 assert_eq!(composition.accounting.unclassified_records, 0);
                 assert!(composition.accounting.unclassified_targets.is_empty());

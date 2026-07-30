@@ -2,12 +2,14 @@
 
 > Generated from `api/http-api-snapshot-v1.json`; edit Axum routes or Serde DTOs and regenerate instead of editing this file.
 
-The source snapshot contains **97 method/path registrations** and **76 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
+The source snapshot contains **102 method/path registrations** and **108 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
 
 ## Routes
 
 | Method | Path | Handler | Availability |
 |---|---|---|---|
+| `GET` | `/capabilities` | `routes::v2::capabilities` | always |
+| `GET` | `/capabilities/details` | `routes::v2::capability_details` | always |
 | `GET` | `/effects` | `routes::effects::list_effects` | always |
 | `DELETE` | `/effects/{id}` | `routes::effects::delete_effect` | always |
 | `GET` | `/effects/{id}` | `routes::effects::get_effect` | always |
@@ -59,6 +61,7 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `POST` | `/midi/transport/continue` | `routes::midi::send_midi_continue` | `feature = "midi"` |
 | `POST` | `/midi/transport/start` | `routes::midi::send_midi_start` | `feature = "midi"` |
 | `POST` | `/midi/transport/stop` | `routes::midi::send_midi_stop` | `feature = "midi"` |
+| `GET` | `/mutation-status` | `routes::v2::mutation_status` | always |
 | `GET` | `/patterns` | `routes::patterns::list_patterns` | always |
 | `POST` | `/patterns` | `routes::patterns::create_pattern` | always |
 | `DELETE` | `/patterns/{id}` | `routes::patterns::delete_pattern` | always |
@@ -67,6 +70,8 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `PUT` | `/patterns/{id}/params/{param}` | `routes::patterns::set_pattern_param` | always |
 | `POST` | `/patterns/{id}/start` | `routes::patterns::start_pattern` | always |
 | `POST` | `/patterns/{id}/stop` | `routes::patterns::stop_pattern` | always |
+| `GET` | `/receipt-events` | `routes::v2::receipt_events` | always |
+| `DELETE` | `/receipts/{attempt_id}` | `routes::v2::cancel_receipt` | always |
 | `GET` | `/receipts/{attempt_id}` | `routes::eval::get_receipt` | always |
 | `GET` | `/recordings` | `routes::recordings::list_recordings` | `not(target_arch = "wasm32")` |
 | `GET` | `/recordings/{id}` | `routes::recordings::get_recording` | `not(target_arch = "wasm32")` |
@@ -123,6 +128,12 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `Group` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `GroupCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `GroupUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `HttpCapabilities` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `HttpCapabilityDetails` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `HttpErrorDetail` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `HttpErrorEnvelope` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `HttpSecurityCapabilities` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `HttpSecurityPolicyDetails` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `LiveState` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `LoopState` | `enum` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize + Serialize` |
 | `LoopStatus` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
@@ -140,6 +151,7 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `PatternUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `Recording` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `RecordingStatus` | `enum` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
+| `Revisioned` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `Sample` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `SampleLoad` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `SampleSlice` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
@@ -159,6 +171,30 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `TransportState` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `TransportUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `TriggerRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2EffectUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2FadeCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2GroupUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2LoopControlRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2MelodyCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2MelodyEvent` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize + Serialize` |
+| `V2MelodyUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2NoteOffRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2NoteOnRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2ParamSet` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2PatternCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2PatternEvent` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize + Serialize` |
+| `V2PatternUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2SampleLoad` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2SeekRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2SequenceClip` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize + Serialize` |
+| `V2SequenceCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2SequenceStartRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2SequenceUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2TimeSignature` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2TransportUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2TriggerRequest` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2VoiceCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
+| `V2VoiceUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `Voice` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Serialize` |
 | `VoiceCreate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
 | `VoiceUpdate` | `struct` | [`crates/vibelang-http/src/models.rs`](../../../crates/vibelang-http/src/models.rs) | `Deserialize` |
@@ -185,4 +221,5 @@ The source snapshot contains **97 method/path registrations** and **76 public se
 | `SendNoteRequest` | `struct` | [`crates/vibelang-http/src/routes/midi.rs`](../../../crates/vibelang-http/src/routes/midi.rs) | `Deserialize` |
 | `StartRecordingRequest` | `struct` | [`crates/vibelang-http/src/routes/midi.rs`](../../../crates/vibelang-http/src/routes/midi.rs) | `Deserialize` |
 | `StopRecordingRequest` | `struct` | [`crates/vibelang-http/src/routes/midi.rs`](../../../crates/vibelang-http/src/routes/midi.rs) | `Deserialize` |
+| `ReceiptEventsQuery` | `struct` | [`crates/vibelang-http/src/routes/v2.rs`](../../../crates/vibelang-http/src/routes/v2.rs) | `Deserialize` |
 | `WebSocketEvent` | `struct` | [`crates/vibelang-http/src/websocket.rs`](../../../crates/vibelang-http/src/websocket.rs) | `Serialize` |
