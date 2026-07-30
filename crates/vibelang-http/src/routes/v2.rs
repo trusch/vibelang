@@ -51,12 +51,17 @@ pub async fn cancel_receipt(
             } else {
                 StatusCode::CONFLICT
             };
+            let message = if state.security.mode.remote() {
+                crate::REDACTED_REJECTION_TEXT.into()
+            } else {
+                error.message
+            };
             let envelope = HttpErrorEnvelope {
                 schema_version: HTTP_V2_SCHEMA_VERSION,
                 operation: "receipt.cancel".into(),
                 error: HttpErrorDetail {
                     code: error.code,
-                    message: error.message,
+                    message,
                     field: Some("attempt_id".into()),
                     reason: None,
                     supported_values: Vec::new(),

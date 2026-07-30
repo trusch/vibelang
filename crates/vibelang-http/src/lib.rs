@@ -73,6 +73,8 @@ const PREFER_HEADER: &str = "prefer";
 const PREFERENCE_APPLIED_HEADER: &str = "preference-applied";
 const INSECURE_REMOTE_ACKNOWLEDGEMENT: &str =
     "I understand this exposes VibeLang without remote-user isolation";
+pub(crate) const REDACTED_REJECTION_TEXT: &str =
+    "mutation rejected; private diagnostic detail is redacted";
 
 #[derive(Clone)]
 pub struct HttpCredential {
@@ -337,8 +339,7 @@ fn sanitize_mutation_receipt(
     if let ReceiptState::Terminal(outcome) = &mut receipt.state {
         match outcome {
             TerminalOutcome::Rejected(rejected) => {
-                rejected.message =
-                    "mutation rejected; private diagnostic detail is redacted".into();
+                rejected.message = REDACTED_REJECTION_TEXT.into();
             }
             TerminalOutcome::Applied(applied) => {
                 for component in &mut applied.components {
@@ -378,12 +379,19 @@ pub(crate) fn publish_receipt_event(
     redact_private_detail: bool,
 ) {
     let publish = cursor.lock().is_ok_and(|mut cursor| {
-        if cursor.runtime_epoch == event.runtime_epoch
-            && cursor
+        if cursor.runtime_epoch == event.runtime_epoch {
+            if cursor
                 .event_sequence
                 .is_some_and(|sequence| event.event_sequence <= sequence)
-        {
-            return false;
+            {
+                return false;
+            }
+            // Publishing past a gap would advance the shared cursor over
+            // concurrently emitted lower-sequence events and skip them on the
+            // legacy stream forever; the ledger poller replays gaps in order.
+            if cursor.event_sequence != event.previous_event_sequence {
+                return false;
+            }
         }
         cursor.runtime_epoch = event.runtime_epoch;
         cursor.event_sequence = Some(event.event_sequence);
@@ -678,13 +686,21 @@ fn canonical_http_request_material(
     path: &str,
     body: Option<&Value>,
 ) -> RequestMaterial {
-    let semantic = body.cloned().unwrap_or(Value::Null);
-    let public = json!({
+    // The semantic value feeds the ledger request fingerprint. The method must
+    // be part of it: the mutation kind is derived from the path alone, so a
+    // body-only fingerprint would let one Idempotency-Key replay a receipt
+    // across different methods on the same resource.
+    let semantic = http_request_identity(method, path, body);
+    let public = semantic.clone();
+    RequestMaterial::from_values(semantic, Some(public))
+}
+
+fn http_request_identity(method: &str, path: &str, body: Option<&Value>) -> Value {
+    json!({
         "method": method,
         "path": path,
-        "body": &semantic,
-    });
-    RequestMaterial::from_values(semantic, Some(public))
+        "body": body.cloned().unwrap_or(Value::Null),
+    })
 }
 
 fn failure_phase_for_http_problem(problem: &HttpRequestProblem) -> FailurePhase {
@@ -1010,7 +1026,7 @@ fn problem_from_receipt_rejection(
 
 fn sanitize_http_problem(problem: &mut HttpRequestProblem, redact_private_detail: bool) {
     if redact_private_detail {
-        problem.message = "mutation rejected; private diagnostic detail is redacted".into();
+        problem.message = REDACTED_REJECTION_TEXT.into();
     }
 }
 
@@ -1045,6 +1061,20 @@ async fn project_http_mutation_response(
         );
         return response;
     }
+    if !v2 {
+        if let Some(problem) = v1_remote_policy_problem(&state.security.mode, &method, &path) {
+            return request_problem_response(
+                &state,
+                &authorized,
+                &method,
+                &path,
+                false,
+                request.headers(),
+                None,
+                problem,
+            );
+        }
+    }
     if v2
         && request.uri().query().is_some_and(|query| !query.is_empty())
         && path != "/v2/receipt-events"
@@ -1069,7 +1099,7 @@ async fn project_http_mutation_response(
     }
 
     let headers = request.headers().clone();
-    let (parts, body) = request.into_parts();
+    let (mut parts, body) = request.into_parts();
     let bytes = match to_bytes(body, state.security.max_body_bytes).await {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -1140,6 +1170,13 @@ async fn project_http_mutation_response(
         .as_ref()
         .and_then(|body| serde_json::to_vec(body).ok())
         .unwrap_or_else(|| bytes.to_vec());
+    if v2 && semantic_body.is_some() {
+        parts.headers.remove(header::CONTENT_LENGTH);
+        parts.headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+    }
     let request = Request::from_parts(parts, Body::from(request_bytes));
 
     let idempotency_key = match optional_header(&headers, IDEMPOTENCY_KEY_HEADER) {
@@ -1330,7 +1367,8 @@ async fn project_http_mutation_response(
             let mut response = if projection_context.v2 {
                 project_v2_response(response, &projection_context, &projection_state).await
             } else {
-                project_response(response, &projection_context, eval_response).await
+                let response = project_response(response, &projection_context, eval_response).await;
+                sanitize_v1_remote_response(response, &projection_context, &projection_state).await
             };
             apply_cors_headers(
                 response.headers_mut(),
@@ -1528,6 +1566,35 @@ fn authorize_http_request(
     method: &Method,
     path: &str,
 ) -> Result<AuthorizedHttpRequest, HttpRequestProblem> {
+    let result = authorize_http_request_unaudited(policy, headers, method, path);
+    if policy.audit_enabled {
+        match &result {
+            Ok(authorized) => tracing::info!(
+                target: "vibelang_http::audit",
+                method = %method,
+                path,
+                caller_namespace = %authorized.caller_namespace,
+                "HTTP request admitted"
+            ),
+            Err(problem) => tracing::warn!(
+                target: "vibelang_http::audit",
+                method = %method,
+                path,
+                code = %problem.code,
+                status = %problem.status,
+                "HTTP request rejected"
+            ),
+        }
+    }
+    result
+}
+
+fn authorize_http_request_unaudited(
+    policy: &HttpSecurityPolicy,
+    headers: &HeaderMap,
+    method: &Method,
+    path: &str,
+) -> Result<AuthorizedHttpRequest, HttpRequestProblem> {
     let origin = headers
         .get(header::ORIGIN)
         .map(|value| {
@@ -1648,15 +1715,6 @@ fn authorize_http_request(
         bucket.count += 1;
     }
 
-    if policy.audit_enabled {
-        tracing::info!(
-            target: "vibelang_http::audit",
-            method = %method,
-            path,
-            caller_namespace,
-            "HTTP request admitted"
-        );
-    }
     Ok(AuthorizedHttpRequest {
         caller_namespace,
         origin,
@@ -1747,7 +1805,11 @@ async fn project_v2_response(
 ) -> Response {
     let receipts = context.current_receipts();
     if let Some(receipt) = canonical_http_receipt(&receipts).cloned() {
-        return v2_receipt_response(receipt, context.wait_terminal.is_some());
+        let mut response = v2_receipt_response(receipt.clone(), context.wait_terminal.is_some());
+        if context.method == Method::DELETE && context.path.starts_with("/v2/receipts/") {
+            *response.status_mut() = cancel_receipt_http_status(&receipt);
+        }
+        return response;
     }
 
     let status = response.status();
@@ -1885,13 +1947,27 @@ fn v2_receipt_response(receipt: MutationReceipt, wait_terminal: bool) -> Respons
         header_value(&format!("/v2/receipts/{}", receipt.attempt_id)),
     );
     insert_freshness_headers(response.headers_mut(), &receipt);
-    if wait_terminal {
+    // `Preference-Applied` may only assert a preference that was honored: a
+    // bounded wait that timed out returns a non-terminal receipt and must not
+    // claim wait=terminal.
+    if wait_terminal && receipt.state.is_terminal() {
         response.headers_mut().insert(
             PREFERENCE_APPLIED_HEADER,
             HeaderValue::from_static("wait=terminal"),
         );
     }
     response
+}
+
+/// Cancel is its own operation: a successful cancellation leaves the target
+/// receipt Superseded (200), while any other terminal state means the cancel
+/// could not take effect (409).
+fn cancel_receipt_http_status(receipt: &MutationReceipt) -> StatusCode {
+    match &receipt.state {
+        ReceiptState::Terminal(TerminalOutcome::Superseded(_)) => StatusCode::OK,
+        ReceiptState::Terminal(_) => StatusCode::CONFLICT,
+        _ => StatusCode::ACCEPTED,
+    }
 }
 
 fn is_v2_error_envelope(value: &Value) -> bool {
@@ -1996,6 +2072,64 @@ fn http_problem_response(
         insert_freshness_headers(response.headers_mut(), &receipt);
     }
     response
+}
+
+/// Remote security modes forbid arbitrary server-filesystem access on the v1
+/// surface exactly as the v2 policy already does.
+fn v1_remote_policy_problem(
+    mode: &HttpSecurityMode,
+    method: &Method,
+    path: &str,
+) -> Option<HttpRequestProblem> {
+    if !mode.remote() {
+        return None;
+    }
+    (method == Method::POST && path == "/samples").then(|| HttpRequestProblem {
+        status: StatusCode::FORBIDDEN,
+        code: "capability_unavailable".into(),
+        message: "remote filesystem sample loading is disabled by HTTP policy".into(),
+        field: Some("path".into()),
+        reason: Some("capability.extension.filesystem".into()),
+        supported_values: Vec::new(),
+    })
+}
+
+fn v1_remote_read_redaction_applies(path: &str) -> bool {
+    path == "/samples"
+        || path.starts_with("/samples/")
+        || path == "/recordings"
+        || path.starts_with("/recordings/")
+}
+
+/// Remote privacy redaction for v1 reads: strip server filesystem paths from
+/// sample and recording projections, mirroring the v2 revisioned-read rule.
+async fn sanitize_v1_remote_response(
+    response: Response,
+    context: &HttpRequestContext,
+    state: &AppState,
+) -> Response {
+    if !state.security.mode.remote()
+        || context.method != Method::GET
+        || !response.status().is_success()
+        || !v1_remote_read_redaction_applies(&context.path)
+    {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let Ok(bytes) = to_bytes(body, usize::MAX).await else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let Ok(mut data) = serde_json::from_slice::<Value>(&bytes) else {
+        return Response::from_parts(parts, Body::from(bytes));
+    };
+    for_each_resource_object_mut(&mut data, |object| {
+        object.remove("path");
+    });
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(
+        parts,
+        Body::from(serde_json::to_vec(&data).unwrap_or_default()),
+    )
 }
 
 fn sanitize_v2_state(
@@ -2267,44 +2401,7 @@ async fn validate_and_normalize_v2_request(
             }
         }
         (&Method::POST, ["patterns"]) => {
-            let request: V2PatternCreate = decode_v2_body(body, operation_path)?;
-            if request.name.is_empty() {
-                return Err(invalid_value("name", "must not be empty"));
-            }
-            if request.voice_name.is_empty() {
-                return Err(invalid_value("voice_name", "must not be empty"));
-            }
-            if request.params.values().any(|value| !value.is_finite()) {
-                return Err(invalid_value("params", "values must be finite"));
-            }
-            validate_loop_length(request.loop_beats)?;
-            validate_swing(request.swing)?;
-            validate_pattern_events(&request.events, request.loop_beats)?;
-            if request.pattern_string.is_some() && !request.events.is_empty() {
-                return Err(representation_conflict("events", "pattern_string"));
-            }
-            if let Some(pattern) = request.pattern_string {
-                let events = parse_pattern_string(&pattern, request.swing)?;
-                let inferred_loop_beats = pattern_bar_count(&pattern) as f64 * 4.0;
-                let explicit_loop_beats = body
-                    .as_ref()
-                    .and_then(Value::as_object)
-                    .is_some_and(|object| object.contains_key("loop_beats"));
-                let normalized_loop_beats = if explicit_loop_beats {
-                    request.loop_beats
-                } else {
-                    inferred_loop_beats
-                };
-                validate_pattern_events(&events, normalized_loop_beats)?;
-                let value = body_object_mut(body)?;
-                value.insert(
-                    "events".into(),
-                    serde_json::to_value(events).unwrap_or_default(),
-                );
-                if !explicit_loop_beats {
-                    value.insert("loop_beats".into(), Value::from(inferred_loop_beats));
-                }
-            }
+            validate_v2_pattern_create(body, operation_path)?;
         }
         (&Method::PATCH, ["patterns", _]) => {
             let request: V2PatternUpdate = decode_v2_body(body, operation_path)?;
@@ -2680,17 +2777,16 @@ fn decode_v2_body<T: serde::de::DeserializeOwned>(
 }
 
 fn decode_optional_v2_body<T: serde::de::DeserializeOwned>(
-    body: &Option<Value>,
+    body: &mut Option<Value>,
     operation: &str,
 ) -> Result<T, HttpRequestProblem> {
-    let value = body.clone().unwrap_or_else(|| json!({}));
-    serde_json::from_value(value).map_err(|error| {
-        HttpRequestProblem::bad_request(
-            "invalid_request",
-            format!("{operation} request does not match its operation-scoped DTO: {error}"),
-            serde_field_from_error(&error.to_string()).as_deref(),
-        )
-    })
+    // Normalize an absent body to `{}` so the declared-optional body is also
+    // optional at the legacy handler boundary, whose Json extractor would
+    // otherwise reject the empty payload with an untyped envelope.
+    if body.is_none() {
+        *body = Some(json!({}));
+    }
+    decode_v2_body(body, operation)
 }
 
 fn required_body<'a>(
@@ -2788,6 +2884,69 @@ fn validate_loop_length(length: f64) -> Result<(), HttpRequestProblem> {
 fn validate_swing(swing: f32) -> Result<(), HttpRequestProblem> {
     if !swing.is_finite() || !(0.0..=1.0).contains(&swing) {
         return Err(invalid_value("swing", "must be in 0.0..=1.0"));
+    }
+    Ok(())
+}
+
+fn validate_v2_pattern_create(
+    body: &mut Option<Value>,
+    operation_path: &str,
+) -> Result<(), HttpRequestProblem> {
+    let request: V2PatternCreate = decode_v2_body(body, operation_path)?;
+    if request.name.is_empty() {
+        return Err(invalid_value("name", "must not be empty"));
+    }
+    if request.voice_name.is_empty() {
+        return Err(invalid_value("voice_name", "must not be empty"));
+    }
+    if request.params.values().any(|value| !value.is_finite()) {
+        return Err(invalid_value("params", "values must be finite"));
+    }
+    validate_loop_length(request.loop_beats)?;
+    validate_swing(request.swing)?;
+    // Swing is only consumed by the pattern_string grid, where it is baked
+    // into event beats below; the runtime scheduler never reads the stored
+    // swing value, so accepting it alongside explicit events would be an
+    // accepted-but-inert field.
+    let swing_supplied = body
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|object| object.contains_key("swing"));
+    if swing_supplied && request.pattern_string.is_none() {
+        return Err(HttpRequestProblem::unsupported(
+            "swing",
+            "swing is applied only when authoring through pattern_string; supply pre-swung event beats instead",
+            vec!["pattern_string".into()],
+        ));
+    }
+    validate_pattern_events(&request.events, request.loop_beats)?;
+    if request.pattern_string.is_some() && !request.events.is_empty() {
+        return Err(representation_conflict("events", "pattern_string"));
+    }
+    if let Some(pattern) = request.pattern_string {
+        let events = parse_pattern_string(&pattern, request.swing)?;
+        let inferred_loop_beats = pattern_bar_count(&pattern) as f64 * 4.0;
+        let explicit_loop_beats = body
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|object| object.contains_key("loop_beats"));
+        let normalized_loop_beats = if explicit_loop_beats {
+            request.loop_beats
+        } else {
+            inferred_loop_beats
+        };
+        validate_pattern_events(&events, normalized_loop_beats)?;
+        let value = body_object_mut(body)?;
+        value.insert(
+            "events".into(),
+            serde_json::to_value(events).unwrap_or_default(),
+        );
+        // The swing timing now lives in the baked beats; zero the stored
+        // field so the runtime state does not carry it a second time.
+        value.insert("swing".into(), Value::from(0.0));
+        if !explicit_loop_beats {
+            value.insert("loop_beats".into(), Value::from(inferred_loop_beats));
+        }
     }
     Ok(())
 }
@@ -3976,7 +4135,7 @@ mod receipt_projection_tests {
         MUTATION_SCHEMA_VERSION,
     };
 
-    fn receipt(state: ReceiptState, event_sequence: u64) -> MutationReceipt {
+    pub(super) fn receipt(state: ReceiptState, event_sequence: u64) -> MutationReceipt {
         let now = Timestamp::parse("2026-07-17T08:00:00Z").unwrap();
         MutationReceipt {
             schema_version: MUTATION_SCHEMA_VERSION,
@@ -4250,13 +4409,9 @@ mod receipt_projection_tests {
         );
         assert!(response.headers().contains_key(RUNTIME_EPOCH_HEADER));
         assert!(response.headers().contains_key(EVENT_SEQUENCE_HEADER));
-        assert_eq!(
-            response
-                .headers()
-                .get(PREFERENCE_APPLIED_HEADER)
-                .and_then(|value| value.to_str().ok()),
-            Some("wait=terminal")
-        );
+        // The bounded wait ended without a terminal receipt, so the
+        // wait=terminal preference was not honored and must not be asserted.
+        assert!(response.headers().get(PREFERENCE_APPLIED_HEADER).is_none());
     }
 
     #[tokio::test]
@@ -4727,5 +4882,653 @@ mod receipt_projection_tests {
             "error": "not_found",
             "message": "not found"
         })));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use async_trait::async_trait;
+    use std::path::Path as FsPath;
+    use vibelang_core::compat::Instant;
+    use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime};
+
+    #[derive(Debug)]
+    pub(crate) struct NoopBackendError;
+
+    impl std::fmt::Display for NoopBackendError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("noop backend error")
+        }
+    }
+
+    impl std::error::Error for NoopBackendError {}
+
+    pub(crate) struct NoopBackend;
+
+    #[async_trait]
+    impl Backend for NoopBackend {
+        type Error = NoopBackendError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &FsPath,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 1,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &FsPath,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    pub(crate) fn app_state(security: HttpSecurityMode) -> (Runtime<NoopBackend>, Arc<AppState>) {
+        let runtime = Runtime::new(NoopBackend);
+        let (ws_tx, _) = broadcast::channel(16);
+        let status = runtime.handle().mutation_status();
+        let state = Arc::new(AppState {
+            handle: runtime.handle(),
+            state: Arc::clone(runtime.state()),
+            ws_tx,
+            eval_tx: None,
+            receipt_broadcast_cursor: Arc::new(Mutex::new(ReceiptBroadcastCursor {
+                runtime_epoch: status.runtime_epoch,
+                event_sequence: status.event_sequence,
+            })),
+            security: Arc::new(
+                HttpSecurityPolicy::new(HttpServerOptions {
+                    security,
+                    ..HttpServerOptions::default()
+                })
+                .unwrap(),
+            ),
+        });
+        (runtime, state)
+    }
+
+    pub(crate) fn insecure_remote_mode() -> HttpSecurityMode {
+        HttpSecurityMode::insecure_remote(
+            INSECURE_REMOTE_ACKNOWLEDGEMENT,
+            vec!["https://studio.example".into()],
+        )
+        .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod gate_remediation_tests {
+    use super::receipt_projection_tests::receipt;
+    use super::test_support::{app_state, insecure_remote_mode};
+    use super::*;
+    use axum::response::IntoResponse;
+    use vibelang_core::mutation::{
+        Applied, AttemptId, Confirmation, EffectiveAt, EventSequence, FailurePhase, Superseded,
+        SupersessionReason, Timestamp,
+    };
+
+    fn accepted_receipt(sequence: u64) -> MutationReceipt {
+        receipt(
+            ReceiptState::Accepted {
+                queue_position: Some(1),
+            },
+            sequence,
+        )
+    }
+
+    fn applied_receipt(sequence: u64) -> MutationReceipt {
+        receipt(
+            ReceiptState::Terminal(TerminalOutcome::Applied(Applied {
+                effective_at: EffectiveAt {
+                    observed_at: Timestamp::parse("2026-07-17T08:00:01Z").unwrap(),
+                    musical_beat: None,
+                    backend_time_seconds: None,
+                },
+                confirmations: vec![Confirmation::RuntimeCommit],
+                components: Vec::new(),
+                audible_tail_until: None,
+            })),
+            sequence,
+        )
+    }
+
+    fn superseded_receipt(sequence: u64) -> MutationReceipt {
+        receipt(
+            ReceiptState::Terminal(TerminalOutcome::Superseded(Superseded {
+                reason: SupersessionReason::Cancelled,
+                by_revision: None,
+            })),
+            sequence,
+        )
+    }
+
+    // F1: the remote security modes must gate the v1 surface exactly like v2.
+    #[test]
+    fn v1_remote_policy_gates_filesystem_sample_load() {
+        let remote = insecure_remote_mode();
+        let problem = v1_remote_policy_problem(&remote, &Method::POST, "/samples")
+            .expect("remote v1 sample load must be rejected");
+        assert_eq!(problem.status, StatusCode::FORBIDDEN);
+        assert_eq!(problem.code, "capability_unavailable");
+        assert_eq!(problem.field.as_deref(), Some("path"));
+
+        let authenticated = HttpSecurityMode::AuthenticatedRemote {
+            credentials: vec![HttpCredential {
+                subject: "performer".into(),
+                bearer_token: "token".into(),
+                privileged_detail: false,
+            }],
+            allowed_origins: vec!["https://studio.example".into()],
+        };
+        assert!(v1_remote_policy_problem(&authenticated, &Method::POST, "/samples").is_some());
+
+        assert!(v1_remote_policy_problem(&remote, &Method::GET, "/samples").is_none());
+        assert!(v1_remote_policy_problem(&remote, &Method::POST, "/voices").is_none());
+        let local = HttpSecurityMode::loopback_local();
+        assert!(v1_remote_policy_problem(&local, &Method::POST, "/samples").is_none());
+    }
+
+    // F1: v1 sample and recording reads must not leak server filesystem paths
+    // in remote modes.
+    #[tokio::test]
+    async fn v1_remote_reads_redact_sample_and_recording_paths() {
+        let (_runtime, state) = app_state(insecure_remote_mode());
+
+        let context = HttpRequestContext::legacy(Method::GET, "/samples".into());
+        let response = Json(json!([{
+            "id": "1",
+            "path": "/home/user/project/kick.wav",
+            "buffer_id": 2
+        }]))
+        .into_response();
+        let response = sanitize_v1_remote_response(response, &context, &state).await;
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert!(body[0].get("path").is_none());
+        assert_eq!(body[0]["buffer_id"], 2);
+
+        let context = HttpRequestContext::legacy(Method::GET, "/recordings/1".into());
+        let response = Json(json!({
+            "id": "1",
+            "status": "completed",
+            "path": "/tmp/session/recording.wav"
+        }))
+        .into_response();
+        let response = sanitize_v1_remote_response(response, &context, &state).await;
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert!(body.get("path").is_none());
+        assert_eq!(body["status"], "completed");
+
+        // Routes without filesystem projections pass through untouched.
+        let context = HttpRequestContext::legacy(Method::GET, "/voices".into());
+        let response =
+            Json(json!([{ "name": "lead", "path": "not-a-file-field" }])).into_response();
+        let response = sanitize_v1_remote_response(response, &context, &state).await;
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body[0]["path"], "not-a-file-field");
+
+        // Loopback mode keeps the full projection.
+        let (_local_runtime, local_state) = app_state(HttpSecurityMode::loopback_local());
+        let context = HttpRequestContext::legacy(Method::GET, "/samples".into());
+        let response = Json(json!([{ "id": "1", "path": "/home/user/kick.wav" }])).into_response();
+        let response = sanitize_v1_remote_response(response, &context, &local_state).await;
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body[0]["path"], "/home/user/kick.wav");
+    }
+
+    // F2: the fingerprinted request identity must include the HTTP method.
+    #[test]
+    fn http_request_identity_distinguishes_methods() {
+        let body = json!({ "params": { "cutoff": 0.5 } });
+        let patch = http_request_identity("PATCH", "/v2/voices/1", Some(&body));
+        let delete = http_request_identity("DELETE", "/v2/voices/1", Some(&body));
+        assert_ne!(patch, delete);
+        assert_eq!(
+            patch,
+            http_request_identity("PATCH", "/v2/voices/1", Some(&body))
+        );
+        assert_eq!(patch["method"], "PATCH");
+        assert_eq!(patch["path"], "/v2/voices/1");
+    }
+
+    // F2: one Idempotency-Key must not replay a receipt across HTTP methods.
+    #[tokio::test]
+    async fn idempotency_keys_do_not_replay_receipts_across_methods() {
+        let (_runtime, state) = app_state(HttpSecurityMode::loopback_local());
+        let submission = |method: &str| Submission {
+            kind: mutation_kind_for_http_path("/v2/voices/1"),
+            source: MutationSource::Http {
+                method: method.into(),
+                path: "/v2/voices/1".into(),
+                request_id: uuid::Uuid::new_v4().to_string(),
+            },
+            caller_namespace: "http.test.local".into(),
+            idempotency_key: Some("shared-key".into()),
+            require_idempotency_key: false,
+            retry_epoch: Some(state.handle.mutation_status().runtime_epoch),
+            expected_revision: None,
+            atomicity: Atomicity::BestEffort,
+            supersession: SupersessionPolicy::Fifo,
+            material: canonical_http_request_material(method, "/v2/voices/1", None),
+        };
+
+        let (_, reply_sink, event_sink) = state.mutation_sinks();
+        let attempt = state
+            .handle
+            .begin_attempt(submission("DELETE"), reply_sink, event_sink)
+            .unwrap();
+        assert!(attempt.is_active());
+        let delete_receipt = state
+            .handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Validate,
+                "voice_not_found",
+                "no voice 1",
+            )
+            .unwrap();
+
+        // Same method and key: the canonical receipt replays.
+        let (_, reply_sink, event_sink) = state.mutation_sinks();
+        let replay = state
+            .handle
+            .begin_attempt(submission("DELETE"), reply_sink, event_sink)
+            .unwrap();
+        assert!(!replay.is_active());
+        assert_eq!(replay.receipt().attempt_id, delete_receipt.attempt_id);
+
+        // Different method, same key and body: never the DELETE receipt.
+        let (_, reply_sink, event_sink) = state.mutation_sinks();
+        match state
+            .handle
+            .begin_attempt(submission("PATCH"), reply_sink, event_sink)
+        {
+            Ok(attempt) => {
+                let receipt = attempt.receipt().clone();
+                assert_ne!(
+                    receipt.attempt_id, delete_receipt.attempt_id,
+                    "a PATCH must not replay the DELETE receipt"
+                );
+                if !attempt.is_active() {
+                    let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) =
+                        &receipt.state
+                    else {
+                        panic!("cross-method key reuse must reject, not replay");
+                    };
+                    assert_eq!(rejected.code, "idempotency_conflict");
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    // F3: swing must be effective or rejected on every accepted input shape.
+    #[test]
+    fn v2_pattern_swing_is_effective_or_rejected() {
+        let mut body = Some(json!({
+            "name": "kick",
+            "voice_name": "drums",
+            "swing": 0.3,
+            "events": [{ "beat": 0.0 }]
+        }));
+        let error = validate_v2_pattern_create(&mut body, "/patterns").unwrap_err();
+        assert_eq!(error.code, "unsupported_field");
+        assert_eq!(error.field.as_deref(), Some("swing"));
+
+        // The scheduler never reads the stored value, so even swing 0.0 is
+        // inert next to explicit events and stays rejected.
+        let mut body = Some(json!({
+            "name": "kick",
+            "voice_name": "drums",
+            "swing": 0.0,
+            "events": [{ "beat": 0.0 }]
+        }));
+        assert!(validate_v2_pattern_create(&mut body, "/patterns").is_err());
+
+        // Through pattern_string the swing is consumed: baked into beats and
+        // zeroed in the stored configuration.
+        let mut body = Some(json!({
+            "name": "kick",
+            "voice_name": "drums",
+            "swing": 0.5,
+            "pattern_string": "xx.."
+        }));
+        validate_v2_pattern_create(&mut body, "/patterns").unwrap();
+        let body = body.unwrap();
+        assert_eq!(body["swing"], 0.0);
+        let events = body["events"].as_array().unwrap();
+        assert_eq!(events[0]["beat"], 0.0);
+        assert_eq!(events[1]["beat"], 1.25);
+
+        // Explicit events without swing stay accepted.
+        let mut body = Some(json!({
+            "name": "kick",
+            "voice_name": "drums",
+            "events": [{ "beat": 0.0 }]
+        }));
+        validate_v2_pattern_create(&mut body, "/patterns").unwrap();
+    }
+
+    // F5: Preference-Applied asserts wait=terminal only when the receipt is
+    // actually terminal.
+    #[test]
+    fn wait_preference_is_applied_only_for_terminal_receipts() {
+        let response = v2_receipt_response(accepted_receipt(1), true);
+        assert!(response.headers().get(PREFERENCE_APPLIED_HEADER).is_none());
+
+        let response = v2_receipt_response(applied_receipt(2), true);
+        assert_eq!(
+            response
+                .headers()
+                .get(PREFERENCE_APPLIED_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some("wait=terminal")
+        );
+    }
+
+    // F6: DELETE /v2/receipts projects cancellation success as 200 and an
+    // uncancellable terminal receipt as 409.
+    #[test]
+    fn cancel_projection_reports_success_200_and_uncancellable_409() {
+        assert_eq!(
+            cancel_receipt_http_status(&superseded_receipt(2)),
+            StatusCode::OK
+        );
+        assert_eq!(
+            cancel_receipt_http_status(&applied_receipt(2)),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            cancel_receipt_http_status(&accepted_receipt(1)),
+            StatusCode::ACCEPTED
+        );
+    }
+
+    // F7: a concurrently published higher-sequence event must not advance the
+    // shared broadcast cursor past an unpublished lower-sequence event.
+    #[test]
+    fn out_of_order_receipt_publishes_defer_to_the_ledger_poller() {
+        let (tx, mut rx) = broadcast::channel(16);
+        let base = accepted_receipt(1);
+        let epoch = base.runtime_epoch;
+        let cursor = Mutex::new(ReceiptBroadcastCursor {
+            runtime_epoch: epoch,
+            event_sequence: Some(EventSequence::new(1).unwrap()),
+        });
+        let make_event = |sequence: u64, previous: u64| {
+            let mut receipt = base.clone();
+            receipt.event_sequence = EventSequence::new(sequence).unwrap();
+            ReceiptEvent {
+                schema_version: receipt.schema_version,
+                runtime_epoch: epoch,
+                event_sequence: receipt.event_sequence,
+                previous_event_sequence: Some(EventSequence::new(previous).unwrap()),
+                receipt,
+            }
+        };
+
+        // Gapped publish: deferred, cursor unchanged.
+        publish_receipt_event(&tx, &cursor, make_event(3, 2), false);
+        assert!(rx.try_recv().is_err());
+
+        // The poller replays the chain in order.
+        publish_receipt_event(&tx, &cursor, make_event(2, 1), false);
+        publish_receipt_event(&tx, &cursor, make_event(3, 2), false);
+        let first = rx.try_recv().unwrap();
+        let second = rx.try_recv().unwrap();
+        assert_eq!(first.event_sequence, Some(EventSequence::new(2).unwrap()));
+        assert_eq!(second.event_sequence, Some(EventSequence::new(3).unwrap()));
+
+        // Republishing below the cursor stays deduplicated.
+        publish_receipt_event(&tx, &cursor, make_event(3, 2), false);
+        assert!(rx.try_recv().is_err());
+    }
+
+    // F9: operations that declare their body optional accept the absent body.
+    #[test]
+    fn optional_v2_bodies_normalize_to_empty_object() {
+        let mut body = None;
+        let request: V2TriggerRequest =
+            decode_optional_v2_body(&mut body, "/voices/1/trigger").unwrap();
+        assert!(request.params.is_empty());
+        assert_eq!(body, Some(json!({})));
+
+        let mut body = None;
+        let _: V2LoopControlRequest =
+            decode_optional_v2_body(&mut body, "/patterns/1/start").unwrap();
+        assert_eq!(body, Some(json!({})));
+    }
+
+    // F11: cancel rejections must obey remote privacy redaction.
+    #[tokio::test]
+    async fn remote_cancel_rejections_redact_private_detail() {
+        let (_runtime, state) = app_state(insecure_remote_mode());
+        let response = routes::v2::cancel_receipt(
+            axum::extract::State(state),
+            axum::extract::Path(AttemptId::new().to_string()),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"]["code"], "receipt_not_found");
+        assert_eq!(body["error"]["message"], REDACTED_REJECTION_TEXT);
+
+        let (_local_runtime, local_state) = app_state(HttpSecurityMode::loopback_local());
+        let response = routes::v2::cancel_receipt(
+            axum::extract::State(local_state),
+            axum::extract::Path(AttemptId::new().to_string()),
+        )
+        .await;
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_ne!(body["error"]["message"], REDACTED_REJECTION_TEXT);
+    }
+
+    struct CapturedAuditEvent {
+        level: tracing::Level,
+        fields: BTreeMap<String, String>,
+    }
+
+    struct AuditFieldVisitor<'a>(&'a mut BTreeMap<String, String>);
+
+    impl tracing::field::Visit for AuditFieldVisitor<'_> {
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.insert(field.name().into(), value.into());
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.insert(field.name().into(), format!("{value:?}"));
+        }
+    }
+
+    struct AuditEventCapture {
+        events: Arc<Mutex<Vec<CapturedAuditEvent>>>,
+    }
+
+    impl tracing::Subscriber for AuditEventCapture {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            metadata.target() == "vibelang_http::audit"
+        }
+
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut fields = BTreeMap::new();
+            event.record(&mut AuditFieldVisitor(&mut fields));
+            if let Ok(mut events) = self.events.lock() {
+                events.push(CapturedAuditEvent {
+                    level: *event.metadata().level(),
+                    fields,
+                });
+            }
+        }
+
+        fn enter(&self, _span: &tracing::span::Id) {}
+
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    fn capture_audit_events(scope: impl FnOnce()) -> Vec<CapturedAuditEvent> {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let capture = AuditEventCapture {
+            events: Arc::clone(&events),
+        };
+        tracing::subscriber::with_default(capture, scope);
+        Arc::try_unwrap(events)
+            .ok()
+            .and_then(|events| events.into_inner().ok())
+            .unwrap_or_default()
+    }
+
+    // F8: the security audit must record rejected requests, not only admitted
+    // ones, or auth/origin/rate-limit probes leave no trail.
+    #[test]
+    fn audit_records_rejected_and_admitted_requests() {
+        let authenticated = HttpSecurityPolicy::new(HttpServerOptions {
+            security: HttpSecurityMode::AuthenticatedRemote {
+                credentials: vec![HttpCredential {
+                    subject: "performer".into(),
+                    bearer_token: "token".into(),
+                    privileged_detail: false,
+                }],
+                allowed_origins: vec!["https://studio.example".into()],
+            },
+            ..HttpServerOptions::default()
+        })
+        .unwrap();
+        let events = capture_audit_events(|| {
+            let result =
+                authorize_http_request(&authenticated, &HeaderMap::new(), &Method::POST, "/voices");
+            assert!(result.is_err());
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].level, tracing::Level::WARN);
+        assert_eq!(
+            events[0].fields.get("code").map(String::as_str),
+            Some("authentication_required")
+        );
+        assert_eq!(
+            events[0].fields.get("path").map(String::as_str),
+            Some("/voices")
+        );
+
+        let loopback = HttpSecurityPolicy::new(HttpServerOptions::default()).unwrap();
+        let events = capture_audit_events(|| {
+            let result =
+                authorize_http_request(&loopback, &HeaderMap::new(), &Method::POST, "/voices");
+            assert!(result.is_ok());
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].level, tracing::Level::INFO);
+        assert!(events[0].fields.contains_key("caller_namespace"));
+
+        let unaudited = HttpSecurityPolicy::new(HttpServerOptions {
+            audit_enabled: false,
+            ..HttpServerOptions::default()
+        })
+        .unwrap();
+        let events = capture_audit_events(|| {
+            let result =
+                authorize_http_request(&unaudited, &HeaderMap::new(), &Method::GET, "/voices");
+            assert!(result.is_ok());
+        });
+        assert!(events.is_empty());
     }
 }

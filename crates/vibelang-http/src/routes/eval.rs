@@ -84,6 +84,9 @@ pub async fn eval_code(
     State(state): State<Arc<AppState>>,
     Json(req): Json<EvalRequest>,
 ) -> (StatusCode, Json<EvalResponse>) {
+    // Remote security modes must not leak private diagnostic detail through
+    // the receipts and rejection text this legacy response embeds.
+    let redact = state.security.mode.remote();
     // Check if eval channel is available
     let eval_tx = match &state.eval_tx {
         Some(tx) => tx,
@@ -119,14 +122,14 @@ pub async fn eval_code(
                     success: false,
                     legacy_success_scope: "evaluation_only",
                     result: None,
-                    error: Some(error.to_string()),
+                    error: Some(redacted_error(redact, error.to_string())),
                     receipt: None,
                 }),
             );
         }
     };
     if !attempt.is_active() {
-        let receipt = attempt.receipt().clone();
+        let receipt = state.public_receipt(attempt.receipt().clone());
         return (
             eval_receipt_status(&receipt),
             Json(EvalResponse {
@@ -154,7 +157,8 @@ pub async fn eval_code(
                 "eval_dispatch_failed",
                 "the HTTP evaluation worker is unavailable",
             )
-            .ok();
+            .ok()
+            .map(|receipt| state.public_receipt(receipt));
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(EvalResponse {
@@ -171,7 +175,8 @@ pub async fn eval_code(
     match response_rx.await {
         Ok(result) => {
             let observed = latest_receipt.lock().ok().and_then(|latest| latest.clone());
-            let receipt = crate::canonical_latest_receipt(result.receipt, observed);
+            let receipt = crate::canonical_latest_receipt(result.receipt, observed)
+                .map(|receipt| state.public_receipt(receipt));
             let receipt_failed = receipt.as_ref().is_some_and(|receipt| {
                 matches!(
                     receipt.state,
@@ -198,7 +203,7 @@ pub async fn eval_code(
                     error: if receipt_failed && result.error.is_none() {
                         receipt.as_ref().and_then(receipt_error)
                     } else {
-                        result.error
+                        result.error.map(|error| redacted_error(redact, error))
                     },
                     receipt,
                 }),
@@ -211,9 +216,23 @@ pub async fn eval_code(
                 legacy_success_scope: "evaluation_only",
                 result: None,
                 error: Some("Eval request cancelled".to_string()),
-                receipt: latest_receipt.lock().ok().and_then(|latest| latest.clone()),
+                receipt: latest_receipt
+                    .lock()
+                    .ok()
+                    .and_then(|latest| latest.clone())
+                    .map(|receipt| state.public_receipt(receipt)),
             }),
         ),
+    }
+}
+
+/// Remote modes replace evaluation error text with the generic redaction
+/// message; local modes keep the full diagnostic.
+fn redacted_error(redact: bool, error: String) -> String {
+    if redact {
+        crate::REDACTED_REJECTION_TEXT.to_string()
+    } else {
+        error
     }
 }
 
@@ -383,6 +402,14 @@ mod tests {
         runtime: &Runtime<CarrierBackend>,
         eval_tx: mpsc::Sender<EvalJob>,
     ) -> Arc<AppState> {
+        app_state_with_security(runtime, eval_tx, crate::HttpSecurityMode::loopback_local())
+    }
+
+    fn app_state_with_security(
+        runtime: &Runtime<CarrierBackend>,
+        eval_tx: mpsc::Sender<EvalJob>,
+        security: crate::HttpSecurityMode,
+    ) -> Arc<AppState> {
         let (ws_tx, _) = broadcast::channel(16);
         let status = runtime.handle().mutation_status();
         Arc::new(AppState {
@@ -395,7 +422,11 @@ mod tests {
                 event_sequence: status.event_sequence,
             })),
             security: Arc::new(
-                crate::HttpSecurityPolicy::new(crate::HttpServerOptions::default()).unwrap(),
+                crate::HttpSecurityPolicy::new(crate::HttpServerOptions {
+                    security,
+                    ..crate::HttpServerOptions::default()
+                })
+                .unwrap(),
             ),
         })
     }
@@ -553,6 +584,62 @@ mod tests {
         assert_eq!(partial.phase, FailurePhase::Evaluate);
         assert_eq!(partial.code, "script_evaluation_failed");
         assert_eq!(partial.components[0].state, ComponentState::Uncertain);
+    }
+
+    // F4: remote security modes redact the receipts and rejection text this
+    // legacy response embeds.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn remote_eval_redacts_receipt_diagnostics_and_error_text() {
+        let runtime = Runtime::new(CarrierBackend);
+        let (sender, receiver) = mpsc::channel();
+        let state = app_state_with_security(
+            &runtime,
+            sender,
+            crate::test_support::insecure_remote_mode(),
+        );
+        let handle = state.handle.clone();
+        let request = tokio::spawn(eval_code(
+            State(state),
+            Json(EvalRequest {
+                code: "let = ;".into(),
+            }),
+        ));
+        let EvalJob {
+            attempt,
+            response_tx,
+            ..
+        } = recv_job(&receiver);
+        let private_detail = "failed parsing /home/user/private/song.vibe";
+        let receipt = handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Parse,
+                "script_parse_failed",
+                private_detail,
+            )
+            .unwrap();
+        assert!(response_tx
+            .send(EvalResult {
+                success: false,
+                result: None,
+                error: Some(private_detail.into()),
+                receipt: Some(receipt),
+            })
+            .is_ok());
+
+        let (status, Json(response)) = request.await.unwrap();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let receipt = response.receipt.expect("canonical receipt is preserved");
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = &receipt.state else {
+            panic!("parse failure must stay rejected");
+        };
+        assert_eq!(rejected.code, "script_parse_failed");
+        assert_eq!(rejected.message, crate::REDACTED_REJECTION_TEXT);
+        let error = response.error.expect("rejection keeps an error text");
+        assert!(
+            !error.contains("/home/user"),
+            "remote eval errors must not leak filesystem paths: {error}"
+        );
     }
 
     #[tokio::test]
