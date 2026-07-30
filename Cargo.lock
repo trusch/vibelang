@@ -3203,6 +3203,7 @@ dependencies = [
  "midir 0.9.1",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
  "tokio",
  "tower-http",
  "tracing",

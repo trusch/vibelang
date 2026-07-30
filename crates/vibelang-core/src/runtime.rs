@@ -5634,6 +5634,30 @@ impl RuntimeHandle {
         self.ledger.status(SystemTime::now())
     }
 
+    /// Request cancellation of a pending mutation attempt.
+    pub fn cancel_mutation(
+        &self,
+        attempt_id: crate::mutation::AttemptId,
+    ) -> crate::mutation::CancelResult {
+        self.ledger.cancel(attempt_id, SystemTime::now())
+    }
+
+    /// Describe mutation receipt, ordering, and confirmation capabilities.
+    #[must_use]
+    pub fn mutation_capabilities(&self) -> crate::mutation::MutationCapabilities {
+        self.ledger.capabilities()
+    }
+
+    /// Read retained receipt transitions after an event sequence.
+    #[must_use]
+    pub fn mutation_events_after(
+        &self,
+        epoch: crate::mutation::RuntimeEpoch,
+        after: Option<crate::mutation::EventSequence>,
+    ) -> crate::mutation::EventQueryResult {
+        self.ledger.events_after(epoch, after, SystemTime::now())
+    }
+
     /// Explicitly acknowledge the current fenced partial and permit continued
     /// v1 best-effort mutation. A later partial establishes a new fence.
     pub fn continue_best_effort(&self, partial_attempt: crate::mutation::AttemptId) -> Result<()> {

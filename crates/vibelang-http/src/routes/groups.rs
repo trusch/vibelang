@@ -6,7 +6,11 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::{GroupId, GroupMessage};
+use vibelang_core::{
+    traits::{FadeConfig, FadeTarget},
+    types::Duration,
+    FadeMessage, GroupId, GroupMessage, Message,
+};
 
 use crate::{
     models::{ErrorResponse, Group, GroupUpdate, ParamSet},
@@ -289,18 +293,25 @@ pub async fn set_group_param(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let group_id = resolve_group_id(&state, &id).await?;
 
-    // For now, just set the param directly (fades can be added later)
-    if let Err(e) = state
-        .send(
-            GroupMessage::SetParam {
-                id: group_id,
-                param,
-                value: req.value,
-            }
-            .into(),
-        )
-        .await
-    {
+    let message: Message = if let Some(fade_beats) = req.fade_beats {
+        FadeMessage::Start {
+            config: FadeConfig::new(
+                FadeTarget::Group(group_id),
+                &param,
+                req.value,
+                Duration::from_beats(fade_beats),
+            ),
+        }
+        .into()
+    } else {
+        GroupMessage::SetParam {
+            id: group_id,
+            param,
+            value: req.value,
+        }
+        .into()
+    };
+    if let Err(e) = state.send(message).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!(

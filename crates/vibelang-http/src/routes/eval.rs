@@ -69,6 +69,7 @@ pub async fn get_receipt(
     state
         .handle
         .mutation_receipt(attempt_id)
+        .map(|receipt| state.public_receipt(receipt))
         .map(Json)
         .map_err(|error| {
             (
@@ -383,11 +384,19 @@ mod tests {
         eval_tx: mpsc::Sender<EvalJob>,
     ) -> Arc<AppState> {
         let (ws_tx, _) = broadcast::channel(16);
+        let status = runtime.handle().mutation_status();
         Arc::new(AppState {
             handle: runtime.handle(),
             state: Arc::clone(runtime.state()),
             ws_tx,
             eval_tx: Some(eval_tx),
+            receipt_broadcast_cursor: Arc::new(Mutex::new(crate::ReceiptBroadcastCursor {
+                runtime_epoch: status.runtime_epoch,
+                event_sequence: status.event_sequence,
+            })),
+            security: Arc::new(
+                crate::HttpSecurityPolicy::new(crate::HttpServerOptions::default()).unwrap(),
+            ),
         })
     }
 

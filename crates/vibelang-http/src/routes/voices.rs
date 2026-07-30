@@ -6,7 +6,11 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::{GroupId, ParamMap, VoiceConfig, VoiceId, VoiceMessage};
+use vibelang_core::{
+    traits::{FadeConfig, FadeTarget},
+    types::Duration,
+    FadeMessage, GroupId, Message, ParamMap, VoiceConfig, VoiceId, VoiceMessage,
+};
 
 use crate::{
     models::{
@@ -287,17 +291,25 @@ pub async fn set_voice_param(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let voice_id = resolve_voice_id(&state, &id).await?;
 
-    if let Err(e) = state
-        .send(
-            VoiceMessage::SetParam {
-                id: voice_id,
-                param,
-                value: req.value,
-            }
-            .into(),
-        )
-        .await
-    {
+    let message: Message = if let Some(fade_beats) = req.fade_beats {
+        FadeMessage::Start {
+            config: FadeConfig::new(
+                FadeTarget::Voice(voice_id),
+                &param,
+                req.value,
+                Duration::from_beats(fade_beats),
+            ),
+        }
+        .into()
+    } else {
+        VoiceMessage::SetParam {
+            id: voice_id,
+            param,
+            value: req.value,
+        }
+        .into()
+    };
+    if let Err(e) = state.send(message).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!(

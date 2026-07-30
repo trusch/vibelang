@@ -61,10 +61,10 @@ pub async fn update_transport(
 ) -> Result<Json<TransportState>, (StatusCode, Json<ErrorResponse>)> {
     // Apply BPM change
     if let Some(bpm) = update.bpm {
-        if !(20.0..=999.0).contains(&bpm) {
+        if !(1.0..=999.0).contains(&bpm) {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request("BPM must be between 20 and 999")),
+                Json(ErrorResponse::bad_request("BPM must be between 1 and 999")),
             ));
         }
         if let Err(e) = state.send(TransportMessage::SetTempo { bpm }.into()).await {

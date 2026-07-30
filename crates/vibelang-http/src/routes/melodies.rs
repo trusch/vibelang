@@ -109,7 +109,7 @@ fn melody_to_api(
                 frequency: None,             // Could calculate from note if needed
                 duration: Some(n.duration.to_f64()),
                 velocity: Some(n.velocity),
-                params: None,
+                params: (!n.params.is_empty()).then(|| n.params.clone()),
             })
             .collect(),
         params: None,
@@ -305,11 +305,12 @@ pub async fn create_melody(
         .events
         .iter()
         .map(|e| {
-            NoteEvent::new(
+            NoteEvent::new_with_params(
                 e.beat,
                 parse_note(&e.note),
                 e.velocity.unwrap_or(0.8),
                 e.duration.unwrap_or(1.0),
+                e.params.clone().unwrap_or_default(),
             )
         })
         .collect();
