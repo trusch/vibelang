@@ -4,13 +4,13 @@ use super::output::{detect_midi2_capability, send_midi2_event_to_device};
 use super::types::convert_new_to_legacy_message;
 use super::MidiHandler;
 use crate::backend::Backend;
+#[cfg(feature = "pipewire-midi2")]
+use crate::midi::open_pipewire_midi2_input;
 use crate::midi::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs,
     parse_midi_bytes as new_parse_midi_bytes, MidiRecording, MidiRecordingInfo, QueuedMidiEvent,
     TimestampedMidiEvent,
 };
-#[cfg(feature = "pipewire-midi2")]
-use crate::midi::open_pipewire_midi2_input;
 use crate::traits::{Midi, MidiDeviceInfo, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::VoiceId;

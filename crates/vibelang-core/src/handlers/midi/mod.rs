@@ -55,13 +55,13 @@ pub use types::{map_to_range, Midi2ControllerType};
 
 use crate::backend::Backend;
 use crate::compat::RwLock;
+#[cfg(feature = "pipewire-midi2")]
+use crate::midi::PipeWireMidiInputConnection;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiClock, MidiEventQueue,
     MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService, MidiRecording,
     NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
 };
-#[cfg(feature = "pipewire-midi2")]
-use crate::midi::PipeWireMidiInputConnection;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
 
