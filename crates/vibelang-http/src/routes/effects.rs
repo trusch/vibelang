@@ -6,24 +6,42 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::{EffectId, EffectMessage};
+use vibelang_core::{hash_name_to_id, EffectId, EffectMessage};
 
 use crate::{
     models::{Effect, EffectUpdate, ErrorResponse, ParamSet},
     AppState,
 };
 
-/// Parse an effect ID from a string path parameter.
-fn parse_effect_id(id: &str) -> Result<EffectId, (StatusCode, Json<ErrorResponse>)> {
-    id.parse::<u32>().map(EffectId::new).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::bad_request(&format!(
-                "Invalid effect ID '{}': must be a number",
+/// Resolve an effect identifier (numeric ID or `fx("name")` script name).
+///
+/// Effect ids are the FNV-1a hash of the script name (`hash_name_to_id`),
+/// so a non-numeric identifier resolves by hashing it — the same derivation
+/// the scripting layer uses. Existence is checked against live state either
+/// way, mirroring `resolve_voice_id` in the voices routes.
+async fn resolve_effect_id(
+    state: &Arc<AppState>,
+    id: &str,
+) -> Result<EffectId, (StatusCode, Json<ErrorResponse>)> {
+    let candidate = match id.parse::<u32>() {
+        Ok(n) => EffectId::new(n),
+        Err(_) => EffectId::new(hash_name_to_id(id)),
+    };
+
+    let exists = state
+        .with_state(|s| s.effects.contains_key(&candidate))
+        .await;
+    if exists {
+        Ok(candidate)
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Effect '{}' not found",
                 id
             ))),
-        )
-    })
+        ))
+    }
 }
 
 /// Convert internal EffectState to API Effect model
@@ -61,7 +79,7 @@ pub async fn get_effect(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Effect>, (StatusCode, Json<ErrorResponse>)> {
-    let effect_id = parse_effect_id(&id)?;
+    let effect_id = resolve_effect_id(&state, &id).await?;
 
     let effect = state
         .with_state(|s| {
@@ -89,20 +107,7 @@ pub async fn update_effect(
     Path(id): Path<String>,
     Json(update): Json<EffectUpdate>,
 ) -> Result<Json<Effect>, (StatusCode, Json<ErrorResponse>)> {
-    let effect_id = parse_effect_id(&id)?;
-
-    let exists = state
-        .with_state(|s| s.effects.contains_key(&effect_id))
-        .await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Effect '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let effect_id = resolve_effect_id(&state, &id).await?;
 
     // Update params
     for (param_name, value) in update.params {
@@ -135,20 +140,7 @@ pub async fn delete_effect(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let effect_id = parse_effect_id(&id)?;
-
-    let exists = state
-        .with_state(|s| s.effects.contains_key(&effect_id))
-        .await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Effect '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let effect_id = resolve_effect_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(EffectMessage::Remove { id: effect_id }.into())
@@ -172,20 +164,7 @@ pub async fn set_effect_param(
     Path((id, param)): Path<(String, String)>,
     Json(req): Json<ParamSet>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let effect_id = parse_effect_id(&id)?;
-
-    let exists = state
-        .with_state(|s| s.effects.contains_key(&effect_id))
-        .await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Effect '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let effect_id = resolve_effect_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(
