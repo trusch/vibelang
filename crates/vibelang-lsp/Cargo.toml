@@ -10,10 +10,10 @@ categories = ["development-tools"]
 
 [dependencies]
 # Core runtime (for validation)
-vibelang-core = "0.4.0"
+vibelang-core = { version = "0.4.0", default-features = false, features = ["native"] }
 
 # Rhai scripting layer
-vibelang-rhai = "0.4.0"
+vibelang-rhai = { version = "0.4.0", default-features = false, features = ["native"] }
 
 # Rhai engine (for error types)
 rhai = { version = "1", features = ["sync"] }
