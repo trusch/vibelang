@@ -13,8 +13,11 @@ name = "vibe"
 path = "src/main.rs"
 
 [features]
-default = ["midi", "api", "lsp", "extensions"]
+default = ["midi", "pipewire-midi2", "api", "lsp", "extensions"]
+# MIDI I/O via midir (ALSA/CoreMIDI/WinMM). Buildable on embedded targets.
 midi = ["vibelang-core/midi", "vibelang-rhai/midi", "vibelang-http?/midi", "dep:midir"]
+# PipeWire-native MIDI 2.0 inputs — desktop Linux only (native libspa/pipewire).
+pipewire-midi2 = ["midi", "vibelang-core/pipewire-midi2"]
 api = ["dep:vibelang-http"]
 lsp = ["dep:vibelang-lsp"]
 

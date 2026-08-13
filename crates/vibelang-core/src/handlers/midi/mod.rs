@@ -58,8 +58,10 @@ use crate::compat::RwLock;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiClock, MidiEventQueue,
     MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService, MidiRecording,
-    NoteRouteBuilder, PipeWireMidiInputConnection, ScheduledMidiEvent, TimestampedMidiEvent,
+    NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
 };
+#[cfg(feature = "pipewire-midi2")]
+use crate::midi::PipeWireMidiInputConnection;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
 
@@ -187,6 +189,7 @@ pub struct MidiHandler<B: Backend> {
     outputs: Arc<Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>>,
 
     /// Open PipeWire raw UMP input connections.
+    #[cfg(feature = "pipewire-midi2")]
     pipewire_inputs: Arc<Mutex<HashMap<MidiDeviceId, PipeWireMidiInputConnection>>>,
 
     /// Incoming MIDI message channel (legacy).
@@ -301,6 +304,7 @@ impl<B: Backend> MidiHandler<B> {
             state,
             inputs: Arc::new(Mutex::new(HashMap::new())),
             outputs: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "pipewire-midi2")]
             pipewire_inputs: Arc::new(Mutex::new(HashMap::new())),
             rx: Arc::new(Mutex::new(rx)),
             tx,
