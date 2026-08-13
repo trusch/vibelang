@@ -4,8 +4,10 @@ use super::output::{detect_midi2_capability, send_midi2_event_to_device};
 use super::types::convert_new_to_legacy_message;
 use super::MidiHandler;
 use crate::backend::Backend;
+#[cfg(feature = "pipewire-midi2")]
+use crate::midi::open_pipewire_midi2_input;
 use crate::midi::{
-    is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
+    is_pipewire_midi_input_id, list_pipewire_midi2_inputs,
     parse_midi_bytes as new_parse_midi_bytes, MidiRecording, MidiRecordingInfo, QueuedMidiEvent,
     TimestampedMidiEvent,
 };
@@ -83,6 +85,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
         // yet (powered off / unplugged at request time).
         self.note_requested_input(id);
 
+        #[cfg(feature = "pipewire-midi2")]
         if is_pipewire_midi_input_id(id) {
             {
                 let inputs = self.pipewire_inputs.lock().map_err(|e| {
@@ -291,6 +294,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
     async fn close(&self, id: MidiDeviceId) -> Result<()> {
         let mut removed = false;
 
+        #[cfg(feature = "pipewire-midi2")]
         if self
             .pipewire_inputs
             .lock()

@@ -9,8 +9,12 @@ repository = "https://github.com/trusch/vibelang"
 [features]
 default = ["native", "midi"]
 native = ["rosc"]
-midi = ["dep:midir", "pipewire-midi2"]
-pipewire-midi2 = ["dep:libspa", "dep:pipewire"]
+# MIDI I/O via midir (ALSA on Linux, CoreMIDI on macOS, WinMM on Windows).
+midi = ["dep:midir"]
+# PipeWire-native MIDI 2.0 inputs. Additive on top of `midi`; separate because
+# libspa/pipewire are native deps that are unavailable on embedded targets
+# (and impossible to cross-compile without a target pkg-config sysroot).
+pipewire-midi2 = ["midi", "dep:libspa", "dep:pipewire"]
 # Deterministic capability-snapshot manufacture for integration proofs.
 # Never enabled by shipping binaries: default builds keep gate insertion
 # crate-private so public callers cannot manufacture snapshot truth.

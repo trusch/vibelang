@@ -52,6 +52,57 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets
 
+  features:
+    # Feature-combination gate.
+    #
+    # Every other job builds default features only, where Cargo's feature
+    # unification hides two regression classes that break embedded and
+    # cross-compiled builds while CI stays green:
+    #
+    #   1. A dependency edge that forgets `default-features = false` and
+    #      silently re-enables an upstream default (fixed for the cli/lsp
+    #      edges in #8).
+    #   2. An optional native dependency creeping back into a feature that
+    #      is supposed to be free of it — e.g. re-coupling PipeWire into
+    #      `midi`, which #10 split apart.
+    #
+    # This job deliberately does NOT install libpipewire-0.3-dev. These
+    # configurations must build on a machine with no PipeWire at all, so a
+    # regression that pulls libspa/pipewire back in fails here at build
+    # time instead of on someone's board. `cargo check` is enough: the
+    # question is what enters the dependency graph, not runtime behaviour.
+    name: features (${{ matrix.id }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # MIDI without PipeWire — the embedded/cross target profile.
+          - id: core-embedded
+            args: -p vibelang-core --no-default-features --features native,midi
+          # Core with no native dependencies at all.
+          - id: core-minimal
+            args: -p vibelang-core --no-default-features
+          # The full embedded CLI, as cross-built for aarch64 boards.
+          - id: cli-embedded
+            args: -p vibelang-cli --no-default-features --features midi,api,lsp,extensions
+          # No MIDI at all: neither ALSA nor PipeWire may be required.
+          - id: cli-no-midi
+            args: -p vibelang-cli --no-default-features --features api,lsp,extensions
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        # ALSA headers only (midir -> alsa-sys). PipeWire headers are
+        # omitted on purpose — see the job comment above.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: features-${{ matrix.id }}
+      - name: cargo check ${{ matrix.args }}
+        run: cargo check ${{ matrix.args }}
+
   test:
     name: test
     runs-on: ubuntu-latest
