@@ -75,14 +75,18 @@ use crate::reload::LooperConfig;
 use crate::state::{PatternOwner, State};
 #[cfg(feature = "midi")]
 use crate::traits::VoiceConfig;
-use crate::traits::{FadeTarget, Midi, MidiOutputCapability};
+#[cfg(feature = "pipewire-midi2")]
+use crate::traits::Midi;
+use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(feature = "pipewire-midi2")]
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -107,6 +111,7 @@ enum RuntimeTrySend {
 }
 
 /// An open/close decision produced by [`plan_input_reconcile`].
+#[cfg(any(feature = "pipewire-midi2", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputReconcileAction {
     /// A requested device is present but not open — connect it.
@@ -129,6 +134,7 @@ enum InputReconcileAction {
 ///                                            reaches `close_threshold`
 /// - open & !requested                      → Close (removed from script)
 /// - present resets a device's absent count
+#[cfg(any(feature = "pipewire-midi2", test))]
 fn plan_input_reconcile(
     requested: &HashSet<MidiDeviceId>,
     present: &HashSet<MidiDeviceId>,
@@ -359,13 +365,15 @@ pub struct MidiHandler<B: Backend> {
     /// close hysteresis — a device must be missing for two scans before we
     /// tear its connection down, so one transient empty enumeration can't
     /// glitch a live input.
+    #[cfg(feature = "pipewire-midi2")]
     input_absent_polls: Mutex<HashMap<MidiDeviceId, u8>>,
 
     /// Hot-plug watcher shutdown flag (thread stops when set true).
+    #[cfg(feature = "pipewire-midi2")]
     hotplug_stop: Arc<AtomicBool>,
 
     /// Hot-plug watcher thread handle, joined on `stop_input_hotplug_watcher`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
     hotplug_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
@@ -374,6 +382,7 @@ impl<B: Backend> Drop for MidiHandler<B> {
         // Signal the hot-plug watcher to stop so it doesn't outlive the
         // handler (its detached JoinHandle exits within one poll step). The
         // clock/realtime threads are torn down via their own explicit stops.
+        #[cfg(feature = "pipewire-midi2")]
         self.hotplug_stop.store(true, Ordering::Relaxed);
     }
 }
@@ -436,9 +445,11 @@ impl<B: Backend> MidiHandler<B> {
             last_script_routes: Mutex::new(MidiRouteSnapshot::default()),
 
             requested_inputs: Arc::new(Mutex::new(HashSet::new())),
+            #[cfg(feature = "pipewire-midi2")]
             input_absent_polls: Mutex::new(HashMap::new()),
+            #[cfg(feature = "pipewire-midi2")]
             hotplug_stop: Arc::new(AtomicBool::new(false)),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
             hotplug_handle: Mutex::new(None),
         }
     }
@@ -510,6 +521,7 @@ impl<B: Backend> MidiHandler<B> {
 
     /// How many consecutive reconciles a device must be absent before its
     /// connection is torn down (hysteresis against a transient empty scan).
+    #[cfg(feature = "pipewire-midi2")]
     const HOTPLUG_ABSENT_CLOSE_THRESHOLD: u8 = 2;
 
     /// Reconcile open PipeWire inputs against the devices currently present.
@@ -521,6 +533,7 @@ impl<B: Backend> MidiHandler<B> {
     /// hysteresis) so a replug reconnects cleanly, and closes open inputs the
     /// script no longer requests. All device open/close runs here on the
     /// runtime task, serialized with reload and tick.
+    #[cfg(feature = "pipewire-midi2")]
     pub async fn reconcile_pipewire_inputs(&self, present: HashSet<MidiDeviceId>) {
         // Snapshot desired + open sets; never hold these locks across the
         // open_input/close awaits below (those take the same locks).
@@ -566,6 +579,9 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
+    #[cfg(not(feature = "pipewire-midi2"))]
+    pub async fn reconcile_pipewire_inputs(&self, _present: HashSet<MidiDeviceId>) {}
+
     /// Start the background MIDI input hot-plug watcher thread.
     ///
     /// Every couple of seconds it enumerates the PipeWire MIDI devices present
@@ -573,7 +589,7 @@ impl<B: Backend> MidiHandler<B> {
     /// snapshot to the runtime as [`crate::message::MidiMessage::ReconcileInputs`],
     /// which reopens/closes devices via [`Self::reconcile_pipewire_inputs`].
     /// Idempotent: a second call while the watcher is running is a no-op.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
     pub fn start_input_hotplug_watcher(&self) {
         use std::time::Duration;
 
@@ -623,7 +639,7 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     /// Stop the MIDI input hot-plug watcher thread and join it.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
     pub fn stop_input_hotplug_watcher(&self) {
         self.hotplug_stop.store(true, Ordering::Relaxed);
         let handle = self.hotplug_handle.lock().ok().and_then(|mut h| h.take());
