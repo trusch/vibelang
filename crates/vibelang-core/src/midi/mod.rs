@@ -83,6 +83,8 @@ mod realtime;
 // =============================================================================
 // New infrastructure modules
 // =============================================================================
+#[cfg(target_os = "linux")]
+mod alsa_ump_input;
 mod clock;
 mod devices;
 mod encoder;
@@ -146,6 +148,35 @@ pub use pipewire_input::{
     parse_pipewire_midi_pod, pipewire_midi_input_id, PipeWireMidiInputConnection,
     PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
 };
+
+// ALSA raw UMP endpoints (Linux): full-resolution MIDI 2.0 without PipeWire.
+#[cfg(target_os = "linux")]
+pub use alsa_ump_input::{
+    alsa_ump_input_id, is_alsa_ump_input_id, list_alsa_ump_inputs, open_alsa_ump_input,
+    AlsaUmpInputConnection, AlsaUmpInputInfo, ALSA_UMP_INPUT_FLAG,
+};
+
+/// No ALSA UMP endpoints off Linux, so nothing can match one.
+#[cfg(not(target_os = "linux"))]
+#[inline]
+pub fn is_alsa_ump_input_id(_id: crate::types::ids::MidiDeviceId) -> bool {
+    false
+}
+
+/// Placeholder descriptor so the list has a return type off Linux.
+#[cfg(not(target_os = "linux"))]
+#[derive(Clone, Debug)]
+pub struct AlsaUmpInputInfo {
+    pub id: crate::types::ids::MidiDeviceId,
+    pub name: String,
+    pub node: String,
+}
+
+#[cfg(not(target_os = "linux"))]
+#[inline]
+pub fn list_alsa_ump_inputs() -> Vec<AlsaUmpInputInfo> {
+    Vec::new()
+}
 
 /// Without the `pipewire-midi2` feature there are no PipeWire device ids, so
 /// nothing can ever match one. Kept unconditional so call sites stay free of

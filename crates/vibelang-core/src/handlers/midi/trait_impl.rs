@@ -76,10 +76,47 @@ impl<B: Backend> Midi for MidiHandler<B> {
             });
         }
 
+        for input in crate::midi::list_alsa_ump_inputs() {
+            devices.push(MidiDeviceInfo {
+                id: input.id,
+                name: input.name,
+                has_input: true,
+                has_output: false,
+                midi2_capability: MidiOutputCapability::Midi2Native,
+            });
+        }
+
         devices
     }
 
     async fn open_input(&self, id: MidiDeviceId) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if crate::midi::is_alsa_ump_input_id(id) {
+            {
+                let inputs = self.alsa_ump_inputs.lock().map_err(|e| {
+                    Error::MidiError(format!("ALSA UMP inputs lock poisoned: {}", e))
+                })?;
+                if inputs.contains_key(&id) {
+                    tracing::trace!("ALSA UMP input {:?} already open", id);
+                    return Ok(());
+                }
+            }
+
+            let conn = crate::midi::open_alsa_ump_input(
+                id,
+                self.event_queue.sender(),
+                Arc::clone(&self.midi_clock),
+            )
+            .map_err(Error::MidiError)?;
+
+            self.alsa_ump_inputs
+                .lock()
+                .map_err(|e| Error::MidiError(format!("ALSA UMP inputs lock poisoned: {}", e)))?
+                .insert(id, conn);
+            tracing::info!("Opened ALSA UMP input {:?}", id);
+            return Ok(());
+        }
+
         #[cfg(feature = "pipewire-midi2")]
         if is_pipewire_midi_input_id(id) {
             {
@@ -288,6 +325,18 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn close(&self, id: MidiDeviceId) -> Result<()> {
         let mut removed = false;
+
+        #[cfg(target_os = "linux")]
+        if self
+            .alsa_ump_inputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("ALSA UMP inputs lock poisoned: {}", e)))?
+            .remove(&id)
+            .is_some()
+        {
+            tracing::info!("Closed ALSA UMP input: id={}", id.0);
+            removed = true;
+        }
 
         #[cfg(feature = "pipewire-midi2")]
         if self
