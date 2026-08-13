@@ -352,7 +352,7 @@ impl<B: Backend> Runtime<B> {
             self.clock_thread_started = true;
             // Watch for MIDI devices appearing/disappearing so inputs recover
             // from unplug/replug and power-on-after-start.
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
             self.midi.start_input_hotplug_watcher();
         }
 
@@ -382,7 +382,7 @@ impl<B: Backend> Runtime<B> {
                     #[cfg(feature = "midi")]
                     {
                         self.midi.stop_clock_thread();
-                        #[cfg(not(target_arch = "wasm32"))]
+                        #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
                         self.midi.stop_input_hotplug_watcher();
                     }
 
@@ -407,7 +407,7 @@ impl<B: Backend> Runtime<B> {
             // Same first-tick guard starts the input hot-plug watcher, so the
             // CLI (which drives the runtime via tick(), not run()) gets device
             // recovery too.
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
             self.midi.start_input_hotplug_watcher();
             self.clock_thread_started = true;
         }
