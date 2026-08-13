@@ -17,22 +17,28 @@ use crate::{
 ///
 /// Effect ids are the FNV-1a hash of the script name (`hash_name_to_id`),
 /// so a non-numeric identifier resolves by hashing it — the same derivation
-/// the scripting layer uses. Existence is checked against live state either
-/// way, mirroring `resolve_voice_id` in the voices routes.
+/// the scripting layer uses. A numeric identifier is tried as a raw id first
+/// and falls back to the name hash when no effect carries that id, so an
+/// effect declared as `fx("123")` stays reachable. Existence is checked
+/// against live state either way, mirroring `resolve_voice_id` in the voices
+/// routes.
 async fn resolve_effect_id(
     state: &Arc<AppState>,
     id: &str,
 ) -> Result<EffectId, (StatusCode, Json<ErrorResponse>)> {
-    let candidate = match id.parse::<u32>() {
-        Ok(n) => EffectId::new(n),
-        Err(_) => EffectId::new(hash_name_to_id(id)),
-    };
+    // A numeric identifier wins when it addresses a live effect...
+    if let Ok(num_id) = id.parse::<u32>() {
+        let numeric = EffectId::new(num_id);
+        if state.with_state(|s| s.effects.contains_key(&numeric)).await {
+            return Ok(numeric);
+        }
+        // ...otherwise fall through, so `fx("123")` stays addressable by name.
+    }
 
-    let exists = state
-        .with_state(|s| s.effects.contains_key(&candidate))
-        .await;
+    let hashed = EffectId::new(hash_name_to_id(id));
+    let exists = state.with_state(|s| s.effects.contains_key(&hashed)).await;
     if exists {
-        Ok(candidate)
+        Ok(hashed)
     } else {
         Err((
             StatusCode::NOT_FOUND,
