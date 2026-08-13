@@ -93,6 +93,7 @@ mod mpe;
 mod nrpn;
 mod parser;
 mod per_note_state;
+#[cfg(feature = "pipewire-midi2")]
 mod pipewire_input;
 mod queue;
 mod recording;
@@ -139,11 +140,38 @@ pub use clock::{MidiClock, MidiClockSync};
 // MIDI message parsing
 pub use parser::{parse_midi_bytes, MidiParser};
 
+#[cfg(feature = "pipewire-midi2")]
 pub use pipewire_input::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
     parse_pipewire_midi_pod, pipewire_midi_input_id, PipeWireMidiInputConnection,
     PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
 };
+
+/// Without the `pipewire-midi2` feature there are no PipeWire device ids, so
+/// nothing can ever match one. Kept unconditional so call sites stay free of
+/// `#[cfg]` noise.
+#[cfg(not(feature = "pipewire-midi2"))]
+#[inline]
+pub fn is_pipewire_midi_input_id(_id: crate::types::ids::MidiDeviceId) -> bool {
+    false
+}
+
+/// No PipeWire device ids exist without the feature.
+#[cfg(not(feature = "pipewire-midi2"))]
+#[inline]
+pub fn list_pipewire_midi2_inputs() -> Vec<PipeWireMidiInputInfo> {
+    Vec::new()
+}
+
+/// Placeholder device descriptor so `list_pipewire_midi2_inputs` has a return
+/// type without the feature. Field-compatible with the real one; never
+/// constructed, because the list is always empty.
+#[cfg(not(feature = "pipewire-midi2"))]
+pub struct PipeWireMidiInputInfo {
+    pub id: crate::types::ids::MidiDeviceId,
+    pub name: String,
+    pub target_object: String,
+}
 
 // MIDI message encoding
 pub use encoder::{
