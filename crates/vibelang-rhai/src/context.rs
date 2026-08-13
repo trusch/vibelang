@@ -25,27 +25,9 @@ use vibelang_core::types::{
     VoiceId,
 };
 
-/// Generate a stable u32 ID from a name using FNV-1a hash.
-///
-/// FNV-1a is a fast, non-cryptographic hash with good distribution.
-/// This ensures the same name always produces the same ID across script reloads.
-fn hash_name_to_id(name: &str) -> u32 {
-    const FNV_OFFSET_BASIS: u32 = 2166136261;
-    const FNV_PRIME: u32 = 16777619;
-
-    let mut hash = FNV_OFFSET_BASIS;
-    for byte in name.bytes() {
-        hash ^= byte as u32;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-
-    // Ensure we never return 0 (reserved for special cases like root node)
-    if hash == 0 {
-        1
-    } else {
-        hash
-    }
-}
+// The canonical name→id derivation lives in vibelang-core so that external
+// clients (e.g. the HTTP layer) can resolve names to ids identically.
+use vibelang_core::hash_name_to_id;
 
 /// Macro to generate get_or_create_*_id and get_*_id functions.
 ///

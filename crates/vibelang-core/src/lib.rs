@@ -166,8 +166,8 @@ pub use backends::{WebScsynthBackend, WebScsynthError};
 // Re-export types at crate root for convenience
 pub use types::{
     ids::{
-        BufferId, BusId, EffectId, GroupId, MelodyId, NodeId, PatternId, SampleId, SequenceId,
-        VoiceId,
+        hash_name_to_id, BufferId, BusId, EffectId, GroupId, MelodyId, NodeId, PatternId, SampleId,
+        SequenceId, VoiceId,
     },
     params::ParamMap,
     time::{Beat, Duration, TimeSignature},

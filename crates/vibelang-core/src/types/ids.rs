@@ -165,6 +165,32 @@ define_id!(
     MidiDeviceId
 );
 
+/// Derive the stable u32 id for a script-level name (FNV-1a).
+///
+/// This is the canonical name→id derivation used by the scripting layer for
+/// voices, groups, effects, patterns, and melodies: the same name always
+/// yields the same id across script reloads. Never returns 0 (reserved for
+/// special cases like the root node); a name hashing to 0 maps to 1.
+///
+/// External clients can use this to address entities whose HTTP surface only
+/// accepts numeric ids.
+pub fn hash_name_to_id(name: &str) -> u32 {
+    const FNV_OFFSET_BASIS: u32 = 2166136261;
+    const FNV_PRIME: u32 = 16777619;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in name.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    if hash == 0 {
+        1
+    } else {
+        hash
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +262,18 @@ mod tests {
         let original = EffectId::new(99);
         let cloned = original;
         assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_hash_name_to_id_known_vectors() {
+        // FNV-1a 32-bit: empty input is the offset basis.
+        assert_eq!(hash_name_to_id(""), 2166136261);
+        // Stable across releases — external clients depend on these.
+        assert_eq!(hash_name_to_id("pad_filter"), 2522885833);
+        assert_eq!(hash_name_to_id("Pads"), 3795830459);
+        // Same name, same id; different name, different id.
+        assert_eq!(hash_name_to_id("kick"), hash_name_to_id("kick"));
+        assert_ne!(hash_name_to_id("kick"), hash_name_to_id("kicK"));
     }
 
     #[test]
