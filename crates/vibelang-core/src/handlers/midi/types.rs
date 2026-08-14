@@ -214,21 +214,6 @@ pub enum Midi2ControllerType {
     Controller(u8),
 }
 
-/// MIDI 2.0 high-resolution CC route configuration.
-
-#[derive(Clone, Debug)]
-pub struct Midi2CcRoute {
-    pub device_id: MidiDeviceId,
-    pub group: Option<u8>,
-    pub channel: Option<u8>,
-    pub cc: u8,
-    pub voice_id: VoiceId,
-    pub param: String,
-    pub min_value: f32,
-    pub max_value: f32,
-    pub curve: String,
-}
-
 /// Internal routing state.
 #[derive(Default)]
 pub struct MidiRouting {
@@ -238,8 +223,8 @@ pub struct MidiRouting {
     pub advanced_keyboard_routes: Vec<KeyboardRouteBuilder>,
     /// Advanced note routes (for drums/pads).
     pub note_routes: Vec<NoteRouteBuilder>,
-    /// Advanced CC routes with curves.
-    pub advanced_cc_routes: Vec<CcRouteBuilder>,
+    /// Transport-transparent advanced CC routes with curves.
+    pub advanced_cc_routes: Vec<crate::reload::AdvancedMidiCcRoute>,
     /// Advanced pitch-bend routes with curves.
     pub advanced_bend_routes: Vec<CcRouteBuilder>,
     /// Choke group tracking: group name -> active node IDs.
@@ -249,8 +234,6 @@ pub struct MidiRouting {
     pub midi2_keyboard_routes: Vec<Midi2KeyboardRoute>,
 
     pub midi2_per_note_routes: Vec<Midi2PerNoteRoute>,
-
-    pub midi2_cc_routes: Vec<Midi2CcRoute>,
 }
 
 /// A MIDI event notification sent to registered callbacks.
@@ -280,16 +263,20 @@ pub fn map_to_range(
         0.5
     };
 
-    // Apply curve
-    let curved = match curve {
-        "logarithmic" => {
-            // Logarithmic curve (steeper at low values)
-            if normalized <= 0.0 {
-                0.0
-            } else {
-                (normalized.ln() + 5.0) / 5.0
-            }
+    if curve == "logarithmic" && out_min > 0.0 && out_max > 0.0 {
+        let t = normalized.clamp(0.0, 1.0);
+        if t == 0.0 {
+            return out_min;
         }
+        if t == 1.0 {
+            return out_max;
+        }
+        return (out_min.ln() + t * (out_max.ln() - out_min.ln())).exp();
+    }
+
+    // Apply curves in normalized space. Logarithmic ranges with a
+    // non-positive endpoint deliberately fall back to linear.
+    let curved = match curve {
         "exponential" => {
             // Exponential curve (steeper at high values)
             normalized * normalized
@@ -344,5 +331,61 @@ mod tests {
                 value: 127
             })
         ));
+    }
+
+    #[test]
+    fn cc_curve_tables_preserve_geometric_log_and_all_canonical_shapes() {
+        let inputs = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let cases: [(&str, [f32; 5]); 4] = [
+            ("linear", [200.0, 2150.0, 4100.0, 6050.0, 8000.0]),
+            ("exponential", [200.0, 687.5, 2150.0, 4587.5, 8000.0]),
+            ("s_curve", [200.0, 1418.75, 4100.0, 6781.25, 8000.0]),
+            ("logarithmic", [200.0, 502.973, 1264.911, 3181.083, 8000.0]),
+        ];
+
+        for (curve, expected) in cases {
+            for ((input, expected), index) in inputs.into_iter().zip(expected).zip(0..) {
+                let actual = map_to_range(input, 0.0, 1.0, 200.0, 8000.0, curve);
+                if index == 0 || index == 4 {
+                    assert_eq!(
+                        actual.to_bits(),
+                        expected.to_bits(),
+                        "{curve}[{index}] endpoint"
+                    );
+                }
+                assert!(
+                    (actual - expected).abs() < 0.02,
+                    "{curve}[{index}] expected {expected}, got {actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cc_curve_fallbacks_are_finite_linear_and_support_inverted_ranges() {
+        let inputs = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let unit_linear: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let inverted: [f32; 5] = [8000.0, 6050.0, 4100.0, 2150.0, 200.0];
+
+        for ((input, expected), index) in inputs.into_iter().zip(unit_linear).zip(0..) {
+            let invalid_log = map_to_range(input, 0.0, 1.0, 0.0, 1.0, "logarithmic");
+            let unknown = map_to_range(input, 0.0, 1.0, 0.0, 1.0, "unknown");
+            assert_eq!(
+                invalid_log.to_bits(),
+                expected.to_bits(),
+                "invalid log {index}"
+            );
+            assert_eq!(unknown.to_bits(), expected.to_bits(), "unknown {index}");
+            assert!(invalid_log.is_finite());
+        }
+
+        for ((input, expected), index) in inputs.into_iter().zip(inverted).zip(0..) {
+            let actual = map_to_range(input, 0.0, 1.0, 8000.0, 200.0, "linear");
+            assert_eq!(actual.to_bits(), expected.to_bits(), "inverted {index}");
+        }
+
+        let inverted_log = map_to_range(0.25, 0.0, 1.0, 8000.0, 200.0, "logarithmic");
+        assert!((inverted_log - 3181.083).abs() < 0.02);
+        assert!(inverted_log.is_finite());
     }
 }

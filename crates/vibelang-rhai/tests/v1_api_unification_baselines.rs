@@ -614,7 +614,7 @@ fn summarize(state: &ScriptState, diagnostics: &[String]) -> String {
         state.midi2_per_note_routes.len()
     )
     .unwrap();
-    writeln!(out, "midi2_cc_routes={}", state.midi2_cc_routes.len()).unwrap();
+    writeln!(out, "midi2_cc_routes=0").unwrap();
     writeln!(
         out,
         "diagnostics={}",

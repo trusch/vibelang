@@ -128,11 +128,14 @@ Deprecated: `note_route(note)` → `pad(note)`.
 
 | Method | Description |
 |--------|-------------|
+| `group(g)` | Optional UMP group filter 0–15. A filtered route never matches MIDI 1. |
 | `channel(ch)` | Optional 1–16 filter. |
-| `curve(name)` | `"linear"`, `"log"` / `"logarithmic"`, `"exp"` / `"exponential"`. |
+| `curve(name)` | `"linear"`, `"log"` / `"logarithmic"`, `"exp"` / `"exponential"`, or `"s_curve"` / `"scurve"` / `"s-curve"`; unknown warns and becomes linear. |
 | `to(target, param, min, max)` | `target` may be a `Voice`, [`GroupHandle`](../../group.rs), [`Fx`](../../sequence.rs), or **string** (resolved as voice name, then group name, else voice created). |
 
-Writes [`AdvancedMidiCcRoute`](https://docs.rs/vibelang-core/latest/vibelang_core/reload/struct.AdvancedMidiCcRoute.html).
+Writes [`AdvancedMidiCcRoute`](https://docs.rs/vibelang-core/latest/vibelang_core/reload/struct.AdvancedMidiCcRoute.html), the only CC registry used by both MIDI 1 and UMP. Without `group`, both transports and every UMP group match. UMP retains its native `ControlValue` until the `f32` parameter boundary; MIDI 1 widens with `ControlValue::from_7bit`, preserving exactly 128 uniform steps and exact endpoints. MIDI 1 14-bit pairing is not implemented.
+
+Logarithmic mapping is geometric in the output range. Non-positive logarithmic ranges warn and fall back to linear, avoiding NaN; inverted ranges remain valid. For duplicate identical Voice routes, the last script registration wins. Reload replaces the registry but leaves the current parameter unchanged until the next matching controller event.
 
 ### `cc_route(cc)` → `CcRoute` (deprecated)
 
@@ -259,9 +262,16 @@ mpk.on_cc(|cc, value| {
 | `per_note_controller(cc)` | `group`, `channel`, `curve` | same |
 | `per_note_pressure()` | `group`, `channel`, `curve` | same |
 
-### `cc32(cc)` → `Cc32Route`
+### `cc32(cc)` → `Cc32Route` (deprecated)
 
-High-resolution CC routing: `group`, `channel`, `curve`, `to` / `to_name`.
+Compatibility alias into the same `AdvancedMidiCcRoute` registry as `map_cc`:
+`group`, `channel`, `curve`, `to` / `to_name`. Prefer `map_cc`; transport
+resolution is automatic. The alias remains through v1 and is removed with the
+v2 surface bump.
+
+Migration is `cc32(n)` → `map_cc(n)` and `to_name(name, ...)` → `to(name, ...)`.
+Existing `cc32(...).curve("log")` and `.curve("exp")` scripts were silently
+linear; they now use the intended curve and can sound different.
 
 ---
 

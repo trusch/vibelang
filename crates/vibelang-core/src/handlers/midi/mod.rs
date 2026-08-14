@@ -58,9 +58,9 @@ use crate::compat::RwLock;
 #[cfg(feature = "pipewire-midi2")]
 use crate::midi::PipeWireMidiInputConnection;
 use crate::midi::{
-    CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiClock, MidiEventQueue,
-    MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService, MidiRecording,
-    NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
+    CallbackData, CallbackType, CcRouteBuilder, ControlValue, GroupChannel, KeyboardRouteBuilder,
+    MidiClock, MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
+    MidiRecording, NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
@@ -73,10 +73,10 @@ use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
 use crate::state::{PatternOwner, State};
-#[cfg(feature = "midi")]
-use crate::traits::VoiceConfig;
 #[cfg(feature = "pipewire-midi2")]
 use crate::traits::Midi;
+#[cfg(feature = "midi")]
+use crate::traits::VoiceConfig;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
@@ -216,7 +216,6 @@ pub(crate) struct MidiRouteSnapshot {
     advanced_bend_routes: Vec<crate::reload::AdvancedMidiBendRoute>,
     midi2_keyboard_routes: Vec<crate::reload::Midi2KeyboardRoute>,
     midi2_per_note_routes: Vec<crate::reload::Midi2PerNoteRoute>,
-    midi2_cc_routes: Vec<crate::reload::Midi2CcRoute>,
     loopers: Vec<LooperConfig>,
     midi_clock_outputs: Vec<crate::reload::MidiClockOutputRequest>,
 }
@@ -232,7 +231,6 @@ impl MidiRouteSnapshot {
             advanced_bend_routes: state.advanced_bend_routes.clone(),
             midi2_keyboard_routes: state.midi2_keyboard_routes.clone(),
             midi2_per_note_routes: state.midi2_per_note_routes.clone(),
-            midi2_cc_routes: state.midi2_cc_routes.clone(),
             loopers: state.loopers.clone(),
             midi_clock_outputs: state.midi_clock_outputs.clone(),
         }
@@ -958,10 +956,6 @@ impl<B: Backend> MidiHandler<B> {
             .await
     }
 
-    pub async fn apply_midi2_cc_routes(&self, routes: &[crate::reload::Midi2CcRoute]) {
-        self.routing_manager.apply_midi2_cc_routes(routes).await
-    }
-
     // ========================================================================
     // Output Channel Management (delegated)
     // ========================================================================
@@ -1295,14 +1289,21 @@ impl<B: Backend> MidiHandler<B> {
             if event.message.is_midi2() {
                 if let Some(msg) = types::convert_new_to_legacy_message(&event.message) {
                     let event_beat = self.event_arrival_beat(&event).await;
-                    self.handle_message_at_beat(event.device_id, msg, Some(event_beat))
-                        .await;
+                    let route_advanced_cc =
+                        !matches!(&event.message, NewMidiMessage::Midi2ControlChange { .. });
+                    self.handle_message_at_beat(
+                        event.device_id,
+                        msg,
+                        Some(event_beat),
+                        route_advanced_cc,
+                    )
+                    .await;
                 }
                 self.handle_midi2_message(event.device_id, &event.message)
                     .await;
             } else if let Some(msg) = types::convert_new_to_legacy_message(&event.message) {
                 let event_beat = self.event_arrival_beat(&event).await;
-                self.handle_message_at_beat(event.device_id, msg, Some(event_beat))
+                self.handle_message_at_beat(event.device_id, msg, Some(event_beat), true)
                     .await;
             }
         }
@@ -1327,7 +1328,8 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     async fn handle_message_inner(&self, device_id: MidiDeviceId, msg: MidiMessage) {
-        self.handle_message_at_beat(device_id, msg, None).await;
+        self.handle_message_at_beat(device_id, msg, None, true)
+            .await;
     }
 
     async fn handle_message_at_beat(
@@ -1335,6 +1337,7 @@ impl<B: Backend> MidiHandler<B> {
         device_id: MidiDeviceId,
         msg: MidiMessage,
         event_beat: Option<f64>,
+        route_advanced_cc: bool,
     ) {
         // First, invoke callbacks
         self.callback_manager
@@ -1378,21 +1381,19 @@ impl<B: Backend> MidiHandler<B> {
                     .cloned()
                     .collect();
 
-                let advanced_routes: Vec<_> = routing
-                    .advanced_cc_routes
-                    .iter()
-                    .filter(|r| {
-                        r.device_id == device_id
-                            && r.cc == *cc
-                            && (r.channel.is_none() || r.channel == Some(*channel))
-                    })
-                    .cloned()
-                    .collect();
-
                 drop(routing);
 
-                self.handle_cc(basic_routes, advanced_routes, *cc, *value)
+                self.handle_basic_cc(basic_routes, *value).await;
+                if route_advanced_cc {
+                    self.handle_advanced_cc(
+                        device_id,
+                        None,
+                        *channel,
+                        *cc,
+                        ControlValue::from_7bit(*value),
+                    )
                     .await;
+                }
             }
             MidiMessage::PitchBend { channel, value } => {
                 let basic_routes: Vec<_> = routing
@@ -1709,13 +1710,7 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    async fn handle_cc(
-        &self,
-        basic_routes: Vec<CcRoute>,
-        advanced_routes: Vec<CcRouteBuilder>,
-        _cc: u8,
-        value: u8,
-    ) {
+    async fn handle_basic_cc(&self, basic_routes: Vec<CcRoute>, value: u8) {
         // Process basic CC routes
         for route in basic_routes {
             let normalized = value as f32 / 127.0;
@@ -1737,22 +1732,55 @@ impl<B: Backend> MidiHandler<B> {
                 tracing::warn!("Failed to apply CC to {:?}: {}", route.target, e);
             }
         }
+    }
 
-        // Process advanced CC routes
-        for route in advanced_routes {
-            let param_value = route.cc_to_param(value);
+    async fn handle_advanced_cc(
+        &self,
+        device_id: MidiDeviceId,
+        group_channel: Option<GroupChannel>,
+        channel: u8,
+        cc: u8,
+        value: ControlValue,
+    ) {
+        let routes: Vec<_> = {
+            let routing_arc = self.routing_manager.routing();
+            let routing = routing_arc.read().await;
+            routing
+                .advanced_cc_routes
+                .iter()
+                .filter(|route| {
+                    let group_matches = match (route.group, group_channel) {
+                        (None, _) => true,
+                        (Some(expected), Some(actual)) => expected == actual.group(),
+                        (Some(_), None) => false,
+                    };
+                    route.device_id == device_id
+                        && route.cc == cc
+                        && route.channel.is_none_or(|expected| expected == channel)
+                        && group_matches
+                })
+                .cloned()
+                .collect()
+        };
 
-            if let (Some(target), Some(param)) = (route.target.as_ref(), &route.target_param) {
-                tracing::debug!(
-                    "MIDI advanced CC: target={:?}, param={}, value={}",
-                    target,
-                    param,
-                    param_value
-                );
+        let normalized = value.as_f32();
+        for route in routes {
+            let param_value =
+                map_to_range(normalized, 0.0, 1.0, route.min, route.max, &route.curve);
 
-                if let Err(e) = self.apply_cc_to_target(target, param, param_value).await {
-                    tracing::warn!("Failed to apply advanced CC to {:?}: {}", target, e);
-                }
+            tracing::debug!(
+                "MIDI CC: target={:?}, cc={}, param={}={:.4}",
+                route.target,
+                cc,
+                route.param,
+                param_value
+            );
+
+            if let Err(e) = self
+                .apply_cc_to_target(&route.target, &route.param, param_value)
+                .await
+            {
+                tracing::warn!("Failed to apply MIDI CC to {:?}: {}", route.target, e);
             }
         }
     }
@@ -2178,8 +2206,14 @@ impl<B: Backend> MidiHandler<B> {
                 controller,
                 value,
             } => {
-                self.handle_midi2_cc(device_id, *group_channel, *controller, *value)
-                    .await;
+                self.handle_advanced_cc(
+                    device_id,
+                    Some(*group_channel),
+                    group_channel.channel(),
+                    *controller,
+                    *value,
+                )
+                .await;
             }
             NewMidiMessage::Midi2PitchBend {
                 group_channel,
@@ -2422,62 +2456,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    async fn handle_midi2_cc(
-        &self,
-        device_id: MidiDeviceId,
-        group_channel: crate::midi::GroupChannel,
-        controller: u8,
-        value: crate::midi::ControlValue,
-    ) {
-        let routes: Vec<_> = {
-            let routing_arc = self.routing_manager.routing();
-            let routing = routing_arc.read().await;
-            routing
-                .midi2_cc_routes
-                .iter()
-                .filter(|r| {
-                    r.device_id == device_id
-                        && r.cc == controller
-                        && r.group.is_none_or(|g| g == group_channel.group())
-                        && r.channel.is_none_or(|c| c == group_channel.channel())
-                })
-                .cloned()
-                .collect()
-        };
-
-        for route in routes {
-            let normalized = value.as_f32();
-            let param_value = map_to_range(
-                normalized,
-                0.0,
-                1.0,
-                route.min_value,
-                route.max_value,
-                &route.curve,
-            );
-
-            tracing::debug!(
-                "MIDI 2.0 CC: voice={}, cc={}, param={}={:.4}",
-                route.voice_id.0,
-                controller,
-                route.param,
-                param_value
-            );
-
-            let target = FadeTarget::Voice(route.voice_id);
-            if let Err(e) = self
-                .apply_cc_to_target(&target, &route.param, param_value)
-                .await
-            {
-                tracing::warn!(
-                    "Failed to apply MIDI 2.0 CC to voice {}: {}",
-                    route.voice_id.0,
-                    e
-                );
-            }
-        }
-    }
-
     async fn handle_midi2_pitch_bend(
         &self,
         device_id: MidiDeviceId,
@@ -2607,7 +2585,7 @@ mod tests {
     use crate::compat::{channel, timeout, RwLock};
     use crate::handlers::VoicesHandler;
     use crate::midi::{Channel, NoteRouteBuilder, Velocity};
-    use crate::reload::{AdvancedMidiBendRoute, LooperConfig};
+    use crate::reload::{AdvancedMidiBendRoute, AdvancedMidiCcRoute, LooperConfig};
     use crate::state::GroupState;
     use crate::traits::{VoiceConfig, Voices};
     use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
@@ -2615,6 +2593,51 @@ mod tests {
     use std::path::Path;
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    struct WarningCapture {
+        messages: Arc<StdMutex<Vec<String>>>,
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for WarningCapture
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            if *event.metadata().level() != tracing::Level::WARN {
+                return;
+            }
+
+            #[derive(Default)]
+            struct MessageVisitor(String);
+
+            impl tracing::field::Visit for MessageVisitor {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message" {
+                        self.0 = format!("{value:?}");
+                    }
+                }
+
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "message" {
+                        self.0 = value.to_string();
+                    }
+                }
+            }
+
+            let mut visitor = MessageVisitor::default();
+            event.record(&mut visitor);
+            self.messages.lock().unwrap().push(visitor.0);
+        }
+    }
 
     #[derive(Debug)]
     struct MockError;
@@ -2649,6 +2672,10 @@ mod tests {
 
         fn set_param_calls(&self) -> Vec<SetParamCall> {
             self.set_param_calls.lock().unwrap().clone()
+        }
+
+        fn clear_set_param_calls(&self) {
+            self.set_param_calls.lock().unwrap().clear();
         }
 
         fn synth_create_params(&self) -> Vec<ParamMap> {
@@ -2801,6 +2828,50 @@ mod tests {
         config
     }
 
+    fn advanced_cc_route(
+        device_id: MidiDeviceId,
+        cc: u8,
+        group: Option<u8>,
+        curve: &str,
+        target: FadeTarget,
+        param: &str,
+        min: f32,
+        max: f32,
+    ) -> AdvancedMidiCcRoute {
+        AdvancedMidiCcRoute {
+            device_id,
+            cc,
+            channel: None,
+            group,
+            curve: curve.to_string(),
+            target,
+            param: param.to_string(),
+            min,
+            max,
+        }
+    }
+
+    async fn send_ump_cc(
+        midi: &MidiHandler<MockBackend>,
+        device_id: MidiDeviceId,
+        sequence: u64,
+        group: u8,
+        cc: u8,
+        value: ControlValue,
+    ) {
+        assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+            sequence,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::Midi2ControlChange {
+                group_channel: GroupChannel::new(group, 0),
+                controller: cc,
+                value,
+            },
+        )));
+        midi.tick().await;
+    }
+
     #[test]
     fn arrival_beat_subtracts_handler_delay_when_transport_is_playing() {
         let processing_at = Instant::now();
@@ -2890,6 +2961,615 @@ mod tests {
             gate < 0.65,
             "gate {gate} should stay near the timestamp-derived duration"
         );
+    }
+
+    #[tokio::test]
+    async fn ump_note_downconversion_still_feeds_legacy_looper() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let handler =
+            MidiHandler::new(Arc::new(MockBackend::new()), Arc::clone(&state), runtime_tx);
+        handler
+            .reconcile_loopers(&[LooperConfig {
+                device_id,
+                voice_id,
+                channel: None,
+                silence_bars: 0.25,
+                quantize_beats: 0.0,
+            }])
+            .await;
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(4.0);
+            state.tempo = 120.0;
+            state.playing = true;
+        }
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            1,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::Midi2NoteOn {
+                group_channel: GroupChannel::new(2, 0),
+                note: 60,
+                velocity: Velocity::from_midi2(0xC000),
+                attribute_type: 0,
+                attribute_value: 0,
+            },
+        )));
+        handler.tick().await;
+        state.write().await.current_beat = Beat::from_f64(4.5);
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            2,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::Midi2NoteOff {
+                group_channel: GroupChannel::new(2, 0),
+                note: 60,
+                velocity: Velocity::ZERO,
+                attribute_type: 0,
+                attribute_value: 0,
+            },
+        )));
+        handler.tick().await;
+        state.write().await.current_beat = Beat::from_f64(6.0);
+        handler.tick().await;
+
+        let mut saw_pattern = false;
+        while let Ok(message) = runtime_rx.try_recv() {
+            saw_pattern |= matches!(message, Message::Pattern(PatternMessage::Create { .. }));
+        }
+        assert!(saw_pattern);
+    }
+
+    #[tokio::test]
+    async fn advanced_cc_is_transport_transparent_for_voice_and_group_targets() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), Arc::clone(&state), runtime_tx);
+        let mut sequence = 1;
+
+        for curve in ["linear", "exponential", "logarithmic", "s_curve"] {
+            for value in [0, 1, 63, 64, 126, 127] {
+                let voice_param = format!("voice_{curve}_{value}");
+                midi.apply_advanced_cc_routes(&[advanced_cc_route(
+                    device_id,
+                    74,
+                    None,
+                    curve,
+                    FadeTarget::Voice(voice_id),
+                    &voice_param,
+                    200.0,
+                    8000.0,
+                )])
+                .await;
+
+                midi.handle_message(
+                    device_id,
+                    MidiMessage::ControlChange {
+                        channel: 0,
+                        cc: 74,
+                        value,
+                    },
+                )
+                .await;
+                let midi1_value = {
+                    let state = state.read().await;
+                    state.voices[&voice_id].config.params[&voice_param]
+                };
+
+                send_ump_cc(
+                    &midi,
+                    device_id,
+                    sequence,
+                    7,
+                    74,
+                    ControlValue::from_7bit(value),
+                )
+                .await;
+                sequence += 1;
+                let ump_value = {
+                    let state = state.read().await;
+                    state.voices[&voice_id].config.params[&voice_param]
+                };
+                assert_eq!(
+                    midi1_value.to_bits(),
+                    ump_value.to_bits(),
+                    "voice {curve} value {value}"
+                );
+
+                midi.apply_advanced_cc_routes(&[advanced_cc_route(
+                    device_id,
+                    74,
+                    None,
+                    curve,
+                    FadeTarget::Group(group_id),
+                    "cutoff",
+                    200.0,
+                    8000.0,
+                )])
+                .await;
+                backend.clear_set_param_calls();
+                midi.handle_message(
+                    device_id,
+                    MidiMessage::ControlChange {
+                        channel: 0,
+                        cc: 74,
+                        value,
+                    },
+                )
+                .await;
+                let midi1_calls = backend.set_param_calls();
+                assert_eq!(midi1_calls.len(), 1);
+
+                backend.clear_set_param_calls();
+                send_ump_cc(
+                    &midi,
+                    device_id,
+                    sequence,
+                    7,
+                    74,
+                    ControlValue::from_7bit(value),
+                )
+                .await;
+                sequence += 1;
+                let ump_calls = backend.set_param_calls();
+                assert_eq!(
+                    ump_calls.len(),
+                    1,
+                    "UMP group route must apply exactly once"
+                );
+                assert_eq!(
+                    midi1_calls[0].value.to_bits(),
+                    ump_calls[0].value.to_bits(),
+                    "group {curve} value {value}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn advanced_cc_preserves_native_ump_precision_and_exact_midi1_steps() {
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            74,
+            None,
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )])
+        .await;
+
+        backend.clear_set_param_calls();
+        let seven_bit_step = ControlValue::from_7bit(64).to_32bit();
+        let next_f32_value = seven_bit_step + 256;
+        for (sequence, value) in [
+            ControlValue::from_32bit(0),
+            ControlValue::from_32bit(seven_bit_step),
+            ControlValue::from_32bit(next_f32_value),
+            ControlValue::from_32bit(u32::MAX),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            send_ump_cc(&midi, device_id, sequence as u64, 0, 74, value).await;
+        }
+        let ump_values: Vec<_> = backend
+            .set_param_calls()
+            .into_iter()
+            .map(|call| call.value)
+            .collect();
+        assert_eq!(ump_values.len(), 4);
+        assert_eq!(ump_values[0].to_bits(), 0.0f32.to_bits());
+        assert!(ump_values[2] > ump_values[1]);
+        assert!(ump_values[2] - ump_values[1] < 1.0 / 127.0);
+        assert_eq!(ump_values[3].to_bits(), 1.0f32.to_bits());
+
+        backend.clear_set_param_calls();
+        for value in 0..=127 {
+            midi.handle_message(
+                device_id,
+                MidiMessage::ControlChange {
+                    channel: 0,
+                    cc: 74,
+                    value,
+                },
+            )
+            .await;
+        }
+        let midi1_values: Vec<_> = backend
+            .set_param_calls()
+            .into_iter()
+            .map(|call| call.value)
+            .collect();
+        assert_eq!(midi1_values.len(), 128);
+        assert_eq!(midi1_values[0].to_bits(), 0.0f32.to_bits());
+        assert_eq!(midi1_values[127].to_bits(), 1.0f32.to_bits());
+        assert!(midi1_values.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[tokio::test]
+    async fn advanced_cc_group_filters_only_matching_ump_groups() {
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            74,
+            Some(2),
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )])
+        .await;
+        backend.clear_set_param_calls();
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 127,
+            },
+        )
+        .await;
+        for group in [1, 2, 3] {
+            send_ump_cc(&midi, device_id, group as u64, group, 74, ControlValue::MAX).await;
+        }
+        assert_eq!(backend.set_param_calls().len(), 1);
+
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            74,
+            None,
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )])
+        .await;
+        backend.clear_set_param_calls();
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 127,
+            },
+        )
+        .await;
+        send_ump_cc(&midi, device_id, 4, 7, 74, ControlValue::MAX).await;
+        assert_eq!(backend.set_param_calls().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn group_filter_diagnostic_is_apply_time_only_and_repeats_on_reload() {
+        let messages = Arc::new(StdMutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::registry().with(WarningCapture {
+            messages: Arc::clone(&messages),
+        });
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(backend, state, runtime_tx);
+        let routes = [advanced_cc_route(
+            device_id,
+            74,
+            Some(2),
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )];
+
+        midi.apply_advanced_cc_routes(&routes).await;
+        midi.apply_advanced_cc_routes(&routes).await;
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 127,
+            },
+        )
+        .await;
+
+        let warnings = messages.lock().unwrap();
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|message| message.contains("the route will never fire"))
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn cc_curve_diagnostics_are_apply_time_only_with_finite_linear_fallbacks() {
+        let messages = Arc::new(StdMutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::registry().with(WarningCapture {
+            messages: Arc::clone(&messages),
+        });
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+        midi.apply_advanced_cc_routes(&[
+            advanced_cc_route(
+                device_id,
+                74,
+                None,
+                "unknown",
+                FadeTarget::Group(group_id),
+                "unknown_curve",
+                0.0,
+                1.0,
+            ),
+            advanced_cc_route(
+                device_id,
+                75,
+                None,
+                "logarithmic",
+                FadeTarget::Group(group_id),
+                "invalid_log",
+                0.0,
+                1.0,
+            ),
+        ])
+        .await;
+
+        for cc in [74, 75] {
+            midi.handle_message(
+                device_id,
+                MidiMessage::ControlChange {
+                    channel: 0,
+                    cc,
+                    value: 64,
+                },
+            )
+            .await;
+        }
+
+        let calls = backend.set_param_calls();
+        assert_eq!(calls.len(), 2);
+        let expected = ControlValue::from_7bit(64).as_f32();
+        assert!(calls
+            .iter()
+            .all(|call| call.value.to_bits() == expected.to_bits() && call.value.is_finite()));
+
+        let warnings = messages.lock().unwrap();
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|message| message.contains("Unknown MIDI CC curve"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|message| message.contains("is not positive"))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn ump_cc_routes_once_while_legacy_callback_and_recording_are_preserved() {
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            74,
+            None,
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )])
+        .await;
+        midi.register_callback(
+            device_id,
+            CallbackType::ControlChange(74),
+            None,
+            CallbackData::External,
+        )
+        .await;
+        midi.recordings()
+            .write()
+            .await
+            .insert(device_id, MidiRecording::new(device_id, Beat::ZERO));
+
+        backend.clear_set_param_calls();
+        send_ump_cc(&midi, device_id, 1, 3, 74, ControlValue::from_7bit(96)).await;
+        assert_eq!(backend.set_param_calls().len(), 1);
+
+        let notifications = midi.callback_manager.poll_callbacks();
+        assert_eq!(notifications.len(), 1);
+        assert!(matches!(
+            notifications[0].message,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 96
+            }
+        ));
+        let recordings = midi.recordings();
+        let recordings = recordings.read().await;
+        let events = &recordings[&device_id].cc_events;
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            (events[0].cc, events[0].value, events[0].channel),
+            (74, 96, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn advanced_cc_reload_replaces_routes_without_reset_and_last_voice_route_wins() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(backend, Arc::clone(&state), runtime_tx);
+
+        midi.apply_advanced_cc_routes(&[
+            advanced_cc_route(
+                device_id,
+                74,
+                None,
+                "linear",
+                FadeTarget::Voice(voice_id),
+                "cutoff",
+                0.0,
+                1.0,
+            ),
+            advanced_cc_route(
+                device_id,
+                74,
+                None,
+                "linear",
+                FadeTarget::Voice(voice_id),
+                "cutoff",
+                0.0,
+                2.0,
+            ),
+        ])
+        .await;
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 127,
+            },
+        )
+        .await;
+        assert_eq!(
+            state.read().await.voices[&voice_id].config.params["cutoff"],
+            2.0
+        );
+
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            75,
+            None,
+            "linear",
+            FadeTarget::Voice(voice_id),
+            "cutoff",
+            10.0,
+            20.0,
+        )])
+        .await;
+        assert_eq!(
+            state.read().await.voices[&voice_id].config.params["cutoff"],
+            2.0
+        );
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 0,
+            },
+        )
+        .await;
+        assert_eq!(
+            state.read().await.voices[&voice_id].config.params["cutoff"],
+            2.0
+        );
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 75,
+                value: 0,
+            },
+        )
+        .await;
+        assert_eq!(
+            state.read().await.voices[&voice_id].config.params["cutoff"],
+            10.0
+        );
+    }
+
+    #[cfg(not(feature = "pipewire-midi2"))]
+    #[tokio::test]
+    async fn unified_cc_route_stays_reachable_without_ump_transport() {
+        let device_id = MidiDeviceId::new(1);
+        let group_id = GroupId::new(1);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+        let backend = Arc::new(MockBackend::new());
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+        midi.apply_advanced_cc_routes(&[advanced_cc_route(
+            device_id,
+            74,
+            None,
+            "linear",
+            FadeTarget::Group(group_id),
+            "cutoff",
+            0.0,
+            1.0,
+        )])
+        .await;
+        midi.handle_message(
+            device_id,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 74,
+                value: 127,
+            },
+        )
+        .await;
+        assert_eq!(backend.set_param_calls().len(), 1);
     }
 
     #[tokio::test]

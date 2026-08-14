@@ -150,8 +150,8 @@ The complete type-by-type classification is:
 | <code>Fx</code> | 3 / 4 | Pure effect-instance Builder until apply | EffectBuilder then EffectRef |
 | <code>RecordHandle</code> | 12 / 15 | Pure recording Builder; apply starts and returns a pending SampleHandle | RecordBuilder then RecordRef |
 | <code>BendMapping</code> | 3 / 3 | Conditional MIDI route Builder | BendRouteBuilder then MidiRouteRef |
-| <code>Cc32Route</code> | 4 / 5 | Conditional MIDI 2 route Builder | Midi2CcRouteBuilder then MidiRouteRef |
-| <code>CcMapping</code> | 3 / 3 | Conditional MIDI route Builder | CcRouteBuilder then MidiRouteRef |
+| <code>Cc32Route</code> | 4 / 5 | Deprecated compatibility Builder into the transport-transparent CC registry | Compatibility alias to CcRouteBuilder |
+| <code>CcMapping</code> | 4 / 4 | Conditional transport-transparent MIDI route Builder | CcRouteBuilder then MidiRouteRef |
 | <code>CcRoute</code> | 3 / 4 | Deprecated conditional MIDI route Builder | Compatibility alias to CcRouteBuilder |
 | <code>GroupRoute</code> | 6 / 7 | Conditional MIDI 2 route Builder | Midi2GroupRouteBuilder then MidiRouteRef |
 | <code>KeyboardRoute</code> | 9 / 10 | Conditional MIDI route Builder | KeyboardRouteBuilder then MidiRouteRef |
@@ -304,7 +304,8 @@ Sources: <code>crates/vibelang-rhai/src/api/midi/device.rs</code>,
 |---|---|---|
 | Simple device routes | <code>route_to</code>, <code>route_to_channel</code>, <code>route_cc</code>, <code>route_cc_to_group</code>, <code>open_input</code>, <code>open_output</code> | <code>register</code> desired routes/endpoints. The last four are deprecated or legacy. |
 | MIDI 1 route builders | KeyboardRoute/NoteRoute <code>to</code>; CcMapping/BendMapping <code>to</code>; CcRoute <code>to_param</code>; LooperBuilder <code>to</code> | <code>register</code> ScriptState routes and input endpoints. |
-| MIDI 2 route builders | GroupRoute <code>route_to</code>; PerNotePitchBendBuilder, PerNoteControllerBuilder, PerNotePressureBuilder, and Cc32Route <code>to</code> | <code>register</code> the corresponding MIDI 2 route. |
+| MIDI 2 route builders | GroupRoute <code>route_to</code>; PerNotePitchBendBuilder, PerNoteControllerBuilder, and PerNotePressureBuilder <code>to</code> | <code>register</code> the corresponding MIDI 2 route. |
+| CC route builders | CcMapping <code>to</code> and deprecated Cc32Route <code>to</code> | <code>register</code> the same transport-transparent MIDI CC route. |
 | Direct output | <code>note_on</code>, <code>note_off</code>, <code>cc</code>, <code>program_change</code>, <code>pitch_bend</code>, <code>note_on_hires</code>, <code>note_off_hires</code>, <code>cc_hires</code>, <code>pitch_bend_hires</code>, <code>send_per_note_bend</code>, <code>send_per_note_cc</code>, <code>poly_pressure_hires</code> | <code>register</code> an external-command intent for queueing; do not synchronously transmit. |
 | Callbacks | <code>on_note</code>, <code>on_note_channel</code>, <code>on_cc</code>, <code>on_cc_num</code>, <code>on_clock_sync</code>, <code>on_midi</code> | <code>register</code> FnPtr/AST callbacks for later dispatch. |
 | Clock/transport | <code>enable_clock</code>, <code>disable_clock</code>, <code>send_start</code>, <code>send_stop</code>, <code>send_continue</code> | <code>register</code> desired clock state or an external-command intent; send_stop is not the authoring <code>stop</code> effect. |

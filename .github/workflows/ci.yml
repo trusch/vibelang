@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_BUILD_JOBS: 1
+  CARGO_INCREMENTAL: 0
 
 jobs:
   fmt:
@@ -16,8 +17,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Format workspace
+        run: cargo fmt --all
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --all -- --check
+          git diff --exit-code
+      - name: Capture formatting patch on failure
+        if: failure()
+        run: git diff --binary > "$RUNNER_TEMP/rustfmt.patch"
+      - name: Upload formatting patch on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rustfmt.patch
 
   clippy:
     # Informational only: the workspace currently has pre-existing clippy
@@ -106,6 +120,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    needs: [fmt, features]
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -124,6 +139,35 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: crates/vibelang-wasm/package-lock.json
+      - name: Test vibelang-core
+        run: cargo test -p vibelang-core
+      - name: Test vibelang-rhai library
+        run: cargo test -p vibelang-rhai --lib
+      - name: Test transparent MIDI CC runtime
+        run: cargo test -p vibelang-rhai --test transparent_midi_cc_runtime
+      - name: Test artifact tooling
+        run: cargo test -p xtask
+      - name: Generate public artifacts twice
+        run: |
+          fingerprint() {
+            git ls-files --cached --others --exclude-standard -z \
+              | sort -z \
+              | xargs -0 sha256sum \
+              | sha256sum \
+              | cut -d ' ' -f 1
+          }
+
+          scripts/public-artifacts.sh generate
+          first_fingerprint="$(fingerprint)"
+          echo "first whole-tree fingerprint: $first_fingerprint"
+
+          scripts/public-artifacts.sh generate
+          second_fingerprint="$(fingerprint)"
+          echo "second whole-tree fingerprint: $second_fingerprint"
+
+          test "$first_fingerprint" = "$second_fingerprint"
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=normal)"
       - name: Check public artifact drift
         run: scripts/public-artifacts.sh check
       - name: Run unit tests
@@ -133,3 +177,16 @@ jobs:
         # tests/integration/run_tests.sh (needs scsynth + a sound server) and
         # are intentionally NOT run in CI.
         run: cargo test --workspace
+      - name: Capture generated artifact patch on failure
+        if: failure()
+        run: |
+          git diff --binary > "$RUNNER_TEMP/public-artifacts.patch"
+          git status --short > "$RUNNER_TEMP/worktree-status.txt"
+      - name: Upload generated artifact patch on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-artifacts-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/public-artifacts.patch
+            ${{ runner.temp }}/worktree-status.txt

@@ -90,13 +90,30 @@ note values warn and use C4.
 Factories are `device.map_cc(cc: Int)`, `device.map_bend()`, and deprecated
 `device.cc_route(cc: Int)`.
 
-`CcMapping` and `BendMapping` both expose `channel(Int)`, `curve(String)`, and
-terminal `to(target: Dynamic, param: String, min: Float, max: Float) -> Unit`.
-Target may be Voice, GroupHandle, Fx, or String. A String resolves voice, then
-group, then a new voice name. Unsupported Dynamic warns and targets a voice
-named `unknown`. Curves recognize linear, `log`/`logarithmic`, and
-`exp`/`exponential`; unknown becomes linear. Range/parameter values are not
-validated.
+`CcMapping` exposes `group(Int)`, `channel(Int)`, `curve(String)`, and terminal
+`to(target: Dynamic, param: String, min: Float, max: Float) -> Unit`. Target may
+be Voice, GroupHandle, Fx, or String. A String resolves voice, then group, then
+a new voice name. Unsupported Dynamic warns and targets a voice named
+`unknown`. `BendMapping` has the same surface except for `group`.
+
+`map_cc` is transport-transparent. An unqualified route matches MIDI 1 CC and
+UMP CC on every group. `group(0..15)` is an explicit UMP-only filter: it never
+matches MIDI 1 and matches only the named UMP group. Applying a group-filtered
+route to a known MIDI 1 device warns once per reload; events do not repeat the
+warning.
+
+Curves recognize `linear`, `log`/`logarithmic`, `exp`/`exponential`, and
+`s_curve`/`scurve`/`s-curve`. Unknown names warn and fall back to linear.
+Logarithmic mapping is geometric in the output range, preserving the existing
+`map_cc` frequency taper; a non-positive logarithmic endpoint warns and falls
+back to linear instead of producing NaN. Inverted ranges remain valid.
+
+UMP carries the native 32-bit `ControlValue` to the existing `f32` parameter
+boundary. MIDI 1 uses exact `ControlValue::from_7bit` widening, so all 128 steps
+are uniform and both range endpoints remain reachable. MIDI 1 14-bit CC pairing
+is not performed. Identical Voice routes are deterministic: the last route
+registered by the script wins. Reload replaces the route registry without
+resetting the current parameter; it changes on the next matching CC event.
 
 Legacy CcRoute exposes `channel(Int)`, `curve(String)`, and
 `to_param(voice: Voice or String, param, min, max) -> Unit`; it is voice-only.
@@ -120,13 +137,13 @@ Factory `device.looper()`.
 | `device.per_note_pitch_bend()` → PerNotePitchBendBuilder | `group`, `channel`, `range` | `to(Voice or String,param,min,max) -> Unit` |
 | `device.per_note_controller(controller:Int)` → PerNoteControllerBuilder | `group`, `channel`, `curve` | `to(Voice or String,param,min,max) -> Unit` |
 | `device.per_note_pressure()` → PerNotePressureBuilder | `group`, `channel`, `curve` | `to(Voice or String,param,min,max) -> Unit` |
-| `device.cc32(cc:Int)` → Cc32Route | `group`, `channel`, `curve` | `to(Voice or String,param,min,max) -> Unit` |
+| deprecated `device.cc32(cc:Int)` → Cc32Route | `group`, `channel`, `curve` | Compatibility alias into the `map_cc` registry; `to(Voice or String,param,min,max) -> Unit` |
 
 Group factories clamp group 0..15; builder channel uses 1..16; note/controller
 numbers clamp 0..127. GroupRoute defaults all channels/notes, transpose 0, and
-linear velocity; invalid note range names become 0/127 and curve text is not
-validated. Per-note pitch range defaults 48 semitones and clamps 1..96. Other
-MIDI 2 curve strings are stored without validation.
+linear velocity; invalid note range names become 0/127. Per-note pitch range
+defaults 48 semitones and clamps 1..96. Per-note controller curve strings remain
+separate from the canonicalized `map_cc`/`cc32` vocabulary.
 
 Source: [`routing.rs`](../../crates/vibelang-rhai/src/api/midi/routing.rs) and
 [`midi2.rs`](../../crates/vibelang-rhai/src/api/midi/midi2.rs).
@@ -192,3 +209,19 @@ keys.on_note(|note, velocity, is_on| {
     print(`${note}: ${velocity}, on=${is_on}`);
 });
 ```
+
+Migration from the compatibility alias is mechanical:
+
+```rhai
+// Deprecated
+keys.cc32(74).to(lead, "cutoff", 100.0, 8000.0);
+
+// Canonical; automatically uses UMP precision when UMP is delivered
+keys.map_cc(74).to(lead, "cutoff", 100.0, 8000.0);
+```
+
+Existing `cc32(...).curve("log")` and `.curve("exp")` scripts previously fell
+through silently to linear. The alias now canonicalizes those spellings, so
+they produce the intended logarithmic or exponential curve and may sound
+different. `cc32` remains available through the v1 surface and is scheduled
+for removal with the v2 surface bump.
