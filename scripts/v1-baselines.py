@@ -267,7 +267,8 @@ FAILURE_SEAM_TRUTH = [
         "async fn phase_create_entities",
         "backend or resource failure while creating an entity",
         "continue",
-        "execution.phases[4].failures = self.phase_create_entities(&diff, &new_state, staged).await;",
+        "execution.phases[4]",
+        ".extend(self.phase_create_entities(&diff, &new_state, staged).await)",
     ),
     reload_apply_seam(
         "update",
@@ -277,7 +278,8 @@ FAILURE_SEAM_TRUTH = [
         "async fn phase_update_entities",
         "backend or resource failure while updating an entity",
         "continue",
-        "execution.phases[5].failures = self.phase_update_entities(&diff, &new_state).await;",
+        "execution.phases[5].failures.extend(",
+        "self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)",
     ),
     reload_apply_seam(
         "output_routes",
