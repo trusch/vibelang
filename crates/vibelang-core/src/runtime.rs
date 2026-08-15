@@ -997,6 +997,37 @@ impl<B: Backend> Runtime<B> {
         ids
     }
 
+    async fn structurally_recreated_effect_ids(
+        &self,
+        diff: &reload::ReloadDiff,
+        new_state: &reload::ScriptState,
+    ) -> Vec<crate::types::EffectId> {
+        let state = self.state.read().await;
+        let mut ids: Vec<_> = diff
+            .effects
+            .updated
+            .iter()
+            .filter_map(|(id, new_config)| {
+                let current = state.effects.get(id)?;
+                (current.synthdef != new_config.synthdef
+                    || current.group != new_config.group
+                    || reload::synthdef_body_changed(&state, new_state, &new_config.synthdef))
+                .then_some(*id)
+            })
+            .collect();
+        ids.sort_by_key(|id| {
+            (
+                new_state
+                    .effect_order
+                    .iter()
+                    .position(|ordered| ordered == id)
+                    .unwrap_or(usize::MAX),
+                id.raw(),
+            )
+        });
+        ids
+    }
+
     fn push_param_route_once(routes: &mut Vec<ParamRoute>, route: ParamRoute) {
         if !routes.contains(&route) {
             routes.push(route);
@@ -1425,14 +1456,39 @@ impl<B: Backend> Runtime<B> {
 
         tracing::info!("Reload: applying changes");
 
+        let structurally_recreated_voices = self
+            .structurally_recreated_voice_ids(&diff, &new_state)
+            .await;
+        let structurally_recreated_effects = self
+            .structurally_recreated_effect_ids(&diff, &new_state)
+            .await;
+        let group_teardown_grace = self
+            .reload_group_teardown_grace(
+                &diff,
+                &structurally_recreated_voices,
+                &structurally_recreated_effects,
+            )
+            .await;
+
         self.phase_apply_transport_changes(&diff).await?;
+        self.phase_quiesce_and_drain_schedulers(&diff, &structurally_recreated_voices)
+            .await;
         self.phase_stop_deleted_entities(&diff).await;
-        self.phase_delete_entities(&diff).await;
+        // Replacement parents must exist before same-ID voices move out of
+        // groups that this reload is about to destroy.
+        self.phase_create_groups(&diff).await;
+        self.phase_recreate_structural_voices(&diff, &structurally_recreated_voices)
+            .await;
+        self.phase_remove_structural_effects(&structurally_recreated_effects)
+            .await;
+        self.phase_delete_entities(&diff, group_teardown_grace)
+            .await;
         if !self.phase_open_midi_devices(&new_state).await? {
             return Ok(());
         }
         self.phase_create_entities(&diff, &new_state, staged).await;
-        self.phase_update_entities(&diff, &new_state).await;
+        self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)
+            .await;
         self.phase_finalize_output_routes(&diff).await?;
         self.phase_finalize_input_routes(&input_routes).await?;
         self.phase_apply_effects(&diff, &new_state).await;
@@ -1630,6 +1686,138 @@ impl<B: Backend> Runtime<B> {
         Ok(())
     }
 
+    /// Stop affected lookahead schedulers from dispatching, then leave enough
+    /// wall-clock time for every already-sent timed bundle to execute while
+    /// its original voice and parent group still exist.
+    async fn phase_quiesce_and_drain_schedulers(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        structurally_recreated_voices: &[VoiceId],
+    ) {
+        let should_drain = {
+            let mut state = self.state.write().await;
+            let mut affected_voices: std::collections::HashSet<VoiceId> = diff
+                .voices
+                .deleted
+                .iter()
+                .copied()
+                .chain(structurally_recreated_voices.iter().copied())
+                .collect();
+            for (id, voice) in &state.voices {
+                if diff.groups.deleted.contains(&voice.config.group) {
+                    affected_voices.insert(*id);
+                }
+            }
+
+            let mut drain = false;
+            for (id, pattern) in &mut state.patterns {
+                let affected = diff.patterns.deleted.contains(id)
+                    || pattern
+                        .content
+                        .voice
+                        .is_some_and(|voice| affected_voices.contains(&voice));
+                if affected {
+                    drain |= pattern.scheduled_until.is_some();
+                    pattern.playing = false;
+                }
+            }
+            for (id, melody) in &mut state.melodies {
+                let affected = diff.melodies.deleted.contains(id)
+                    || melody
+                        .content
+                        .voice
+                        .is_some_and(|voice| affected_voices.contains(&voice));
+                if affected {
+                    drain |= melody.scheduled_until.is_some();
+                    melody.playing = false;
+                }
+            }
+            drain
+        };
+
+        if should_drain {
+            const SCHEDULER_DRAIN_MARGIN_MS: u64 = 5;
+            let lookahead_ms =
+                crate::handlers::PATTERN_LOOKAHEAD_MS.max(crate::handlers::MELODY_LOOKAHEAD_MS);
+            let drain =
+                crate::compat::Duration::from_millis(lookahead_ms + SCHEDULER_DRAIN_MARGIN_MS);
+            tracing::debug!(
+                "Reload: draining previously dispatched scheduler bundles for {:?}",
+                drain
+            );
+            crate::compat::sleep(drain).await;
+            self.sync_with_retry("after scheduler lookahead drain")
+                .await;
+        }
+    }
+
+    /// Longest child-removal deadline that a deleted group must outlive.
+    /// This is captured before structural reconciliation detaches the old
+    /// voice/effect state from the maps used to derive it.
+    async fn reload_group_teardown_grace(
+        &self,
+        diff: &reload::ReloadDiff,
+        structurally_recreated_voices: &[VoiceId],
+        structurally_recreated_effects: &[crate::types::EffectId],
+    ) -> crate::compat::Duration {
+        if diff.groups.deleted.is_empty() {
+            return crate::compat::Duration::ZERO;
+        }
+
+        let state = self.state.read().await;
+        let mut grace = crate::compat::Duration::ZERO;
+        for id in diff
+            .voices
+            .deleted
+            .iter()
+            .chain(structurally_recreated_voices.iter())
+        {
+            if let Some(voice) = state.voices.get(id) {
+                let sounding = !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
+                if sounding && crate::handlers::voice_is_gated(&voice.config) {
+                    grace = grace.max(crate::handlers::voice_release_grace(&voice.config));
+                }
+            }
+        }
+        if !diff.effects.deleted.is_empty() || !structurally_recreated_effects.is_empty() {
+            grace = grace.max(crate::compat::Duration::from_millis(
+                crate::handlers::EFFECT_GRACE_PERIOD_MS,
+            ));
+        }
+        grace
+    }
+
+    async fn phase_recreate_structural_voices(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        ids: &[VoiceId],
+    ) {
+        for id in ids {
+            let Some(config) = diff.voices.updated.get(id) else {
+                continue;
+            };
+            tracing::debug!(
+                "Reload: recreating voice {:?} before old-parent teardown",
+                id
+            );
+            if let Err(e) = self.voices.recreate(*id, config.clone()).await {
+                tracing::error!("Reload: failed to recreate voice {:?}: {}", id, e);
+            }
+        }
+    }
+
+    async fn phase_remove_structural_effects(&mut self, ids: &[crate::types::EffectId]) {
+        for id in ids {
+            tracing::debug!(
+                "Reload: detaching effect {:?} before old-parent teardown",
+                id
+            );
+            if let Err(e) = self.effects.remove(*id).await {
+                tracing::warn!("Reload: failed to detach effect {:?}: {}", id, e);
+            }
+        }
+    }
+
     /// Stops or cancels runtime activity for entities that are about to be removed or restarted.
     async fn phase_stop_deleted_entities(&mut self, diff: &reload::ReloadDiff) {
         // NOTE: We NO LONGER stop patterns/melodies that are being updated.
@@ -1680,7 +1868,11 @@ impl<B: Backend> Runtime<B> {
     }
 
     /// Removes deleted runtime entities and frees script-owned resources.
-    async fn phase_delete_entities(&mut self, diff: &reload::ReloadDiff) {
+    async fn phase_delete_entities(
+        &mut self,
+        diff: &reload::ReloadDiff,
+        group_teardown_grace: crate::compat::Duration,
+    ) {
         // Delete effects (they depend on groups)
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
@@ -1713,30 +1905,6 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: deleting sequence {:?}", id);
             let _ = self.sequences.delete(*id).await;
         }
-
-        // Compute the group-teardown grace BEFORE deleting the voices:
-        // group nodes must outlive the release tails of every voice node
-        // that is gate-released in this reload pass (deleted voices below,
-        // plus structurally-recreated voices in phase_update_entities whose
-        // old nodes sit inside a group deleted here).
-        let group_teardown_grace = {
-            let state = self.state.read().await;
-            let mut grace = crate::compat::Duration::ZERO;
-            let deleted = diff.voices.deleted.iter();
-            let recreated = diff.voices.updated.iter().filter_map(|(id, new_config)| {
-                let current = state.voices.get(id)?;
-                Self::voice_needs_structural_recreate(&current.config, new_config).then_some(id)
-            });
-            for id in deleted.chain(recreated) {
-                if let Some(voice) = state.voices.get(id) {
-                    let sounding = !voice.active_nodes.is_empty() || !voice.note_nodes.is_empty();
-                    if sounding && crate::handlers::voice_is_gated(&voice.config) {
-                        grace = grace.max(crate::handlers::voice_release_grace(&voice.config));
-                    }
-                }
-            }
-            grace
-        };
 
         // Delete voices (before groups they belong to). Graceful: sounding
         // gated nodes get gate=0 and tail out via their release envelope;
@@ -1993,7 +2161,70 @@ impl<B: Backend> Runtime<B> {
         Ok(true)
     }
 
-    /// Creates new samples, buffers, groups, voices, patterns, melodies, sequences, and SFZ instruments.
+    /// Creates replacement parent groups before any same-ID voice is moved
+    /// out of an old group that this reload will destroy.
+    async fn phase_create_groups(&mut self, diff: &reload::ReloadDiff) {
+        let ordered_group_creations = reload::order_group_creations(&diff.groups.created);
+        for id in ordered_group_creations {
+            if let Some(config) = diff.groups.created.get(&id) {
+                tracing::debug!("Reload: creating group {:?}", id);
+                if let Err(e) = self.groups.create(id, &config.name, config.parent).await {
+                    tracing::error!(
+                        "Reload: failed to create group {:?} '{}': {}",
+                        id,
+                        config.name,
+                        e
+                    );
+                    continue;
+                }
+                for (param, value) in &config.params {
+                    if let Err(e) = self.groups.set_param(id, param, *value).await {
+                        tracing::warn!(
+                            "Reload: failed to set initial param '{}'={} on group {:?} '{}': {}",
+                            param,
+                            value,
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
+                }
+                if config.muted {
+                    if let Err(e) = self.groups.mute(id, true).await {
+                        tracing::warn!(
+                            "Reload: failed to mute group {:?} '{}': {}",
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
+                }
+                if config.soloed {
+                    if let Err(e) = self.groups.solo(id, true).await {
+                        tracing::warn!(
+                            "Reload: failed to solo group {:?} '{}': {}",
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
+                }
+                if config.output_bus.is_some() {
+                    let mut state = self.state.write().await;
+                    if let Some(group) = state.groups.get_mut(&id) {
+                        group.output_bus = config.output_bus;
+                        group.output_channels = config.output_channels;
+                    }
+                }
+            }
+        }
+
+        if !diff.groups.created.is_empty() {
+            self.sync_with_retry("after group creation").await;
+        }
+    }
+
+    /// Creates new samples, buffers, voices, patterns, melodies, sequences, and SFZ instruments.
     async fn phase_create_entities(
         &mut self,
         diff: &reload::ReloadDiff,
@@ -2126,73 +2357,6 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Create groups in correct order (parents first)
-        let ordered_group_creations = reload::order_group_creations(&diff.groups.created);
-        for id in ordered_group_creations {
-            if let Some(config) = diff.groups.created.get(&id) {
-                tracing::debug!("Reload: creating group {:?}", id);
-                if let Err(e) = self.groups.create(id, &config.name, config.parent).await {
-                    tracing::error!(
-                        "Reload: failed to create group {:?} '{}': {}",
-                        id,
-                        config.name,
-                        e
-                    );
-                    continue;
-                }
-                // Apply initial params
-                for (param, value) in &config.params {
-                    if let Err(e) = self.groups.set_param(id, param, *value).await {
-                        tracing::warn!(
-                            "Reload: failed to set initial param '{}'={} on group {:?} '{}': {}",
-                            param,
-                            value,
-                            id,
-                            config.name,
-                            e
-                        );
-                    }
-                }
-                // Apply initial mute/solo state
-                if config.muted {
-                    if let Err(e) = self.groups.mute(id, true).await {
-                        tracing::warn!(
-                            "Reload: failed to mute group {:?} '{}': {}",
-                            id,
-                            config.name,
-                            e
-                        );
-                    }
-                }
-                if config.soloed {
-                    if let Err(e) = self.groups.solo(id, true).await {
-                        tracing::warn!(
-                            "Reload: failed to solo group {:?} '{}': {}",
-                            id,
-                            config.name,
-                            e
-                        );
-                    }
-                }
-                // Apply output_bus / output_channels routing override.
-                // The two fields are coupled (both Some(_) or both None);
-                // mirror them together so the link-synth dispatch in
-                // `GroupsHandler::finalize` sees a consistent pair.
-                if config.output_bus.is_some() {
-                    let mut state = self.state.write().await;
-                    if let Some(group) = state.groups.get_mut(&id) {
-                        group.output_bus = config.output_bus;
-                        group.output_channels = config.output_channels;
-                    }
-                }
-            }
-        }
-
-        // Sync with backend to ensure groups are created before we create synths targeting them
-        if !diff.groups.created.is_empty() {
-            self.sync_with_retry("after group creation").await;
-        }
-
         // Create new voices in merged script evaluation order. Repeated
         // group bodies contribute to one ScriptState, so this is the order the
         // Rhai layer recorded after all body/include merging.
@@ -2251,6 +2415,7 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
+        structurally_recreated_voices: &[VoiceId],
     ) {
         // Update groups (params and mute/solo, parent changes not supported during reload).
         //
@@ -2417,9 +2582,6 @@ impl<B: Backend> Runtime<B> {
                         group.output_bus = new_config.output_bus;
                         group.output_channels = new_config.output_channels;
                         let teardown = group.link_synth_node_id.take();
-                        if let Some(node) = teardown {
-                            state.free_node_id(node);
-                        }
                         tracing::info!(
                             "Reload: group {:?} routing changed (bus {:?} -> {:?}, channels {:?} -> {:?}); link will be respawned by finalize",
                             id,
@@ -2438,6 +2600,7 @@ impl<B: Backend> Runtime<B> {
             };
             if let Some(node) = teardown_link_node {
                 let _ = self.backend.free_node(node).await;
+                self.state.write().await.free_node_id(node);
             }
         }
 
@@ -2464,6 +2627,9 @@ impl<B: Backend> Runtime<B> {
             )
         });
         for id in updated_voice_ids {
+            if structurally_recreated_voices.contains(&id) {
+                continue;
+            }
             let Some(new_config) = diff.voices.updated.get(&id) else {
                 continue;
             };
@@ -3555,8 +3721,8 @@ mod tests {
     use crate::handlers::RouteDest;
     use crate::reload::ParamRouteKind;
     use crate::state::GroupState;
-    use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
-    use std::collections::HashMap;
+    use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::layer::SubscriberExt;
@@ -4811,6 +4977,92 @@ mod tests {
     /// synthdef name, target node, add action, and `in_bus`/`out_bus`/
     /// `__fx_bus_in` params (the routing-relevant ones). Tests assert against
     /// this transcript to prove the post-mix invariant.
+    #[derive(Clone)]
+    struct ScheduledSynth {
+        def: String,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        params: ParamMap,
+        param_buses: Vec<(String, u32)>,
+        at: Instant,
+    }
+
+    #[derive(Clone)]
+    struct ModeledNode {
+        parent: Option<NodeId>,
+        def: Option<String>,
+        is_group: bool,
+    }
+
+    struct FaithfulGraph {
+        nodes: HashMap<NodeId, ModeledNode>,
+        scheduled: Vec<ScheduledSynth>,
+        violations: Vec<String>,
+        timed_executions: usize,
+    }
+
+    impl FaithfulGraph {
+        fn new() -> Self {
+            Self {
+                nodes: HashMap::from([(
+                    NodeId::new(0),
+                    ModeledNode {
+                        parent: None,
+                        def: None,
+                        is_group: true,
+                    },
+                )]),
+                scheduled: Vec::new(),
+                violations: Vec::new(),
+                timed_executions: 0,
+            }
+        }
+
+        fn parent_for_create(&mut self, target: NodeId, action: AddAction) -> Option<NodeId> {
+            let Some(target_node) = self.nodes.get(&target) else {
+                self.violations
+                    .push(format!("spawn targeted absent node {}", target.raw()));
+                return None;
+            };
+            match action {
+                AddAction::Head | AddAction::Tail => {
+                    if !target_node.is_group {
+                        self.violations
+                            .push(format!("spawn targeted non-group node {}", target.raw()));
+                        None
+                    } else {
+                        Some(target)
+                    }
+                }
+                AddAction::Before | AddAction::After => target_node.parent,
+                AddAction::Replace => target_node.parent,
+            }
+        }
+
+        fn remove_recursive(&mut self, node: NodeId) -> Vec<NodeId> {
+            if !self.nodes.contains_key(&node) {
+                self.violations
+                    .push(format!("duplicate free of absent node {}", node.raw()));
+                return Vec::new();
+            }
+            let mut removed = Vec::new();
+            let mut stack = vec![node];
+            while let Some(parent) = stack.pop() {
+                let children: Vec<_> = self
+                    .nodes
+                    .iter()
+                    .filter_map(|(id, child)| (child.parent == Some(parent)).then_some(*id))
+                    .collect();
+                stack.extend(children);
+                if self.nodes.remove(&parent).is_some() {
+                    removed.push(parent);
+                }
+            }
+            removed
+        }
+    }
+
     struct RecordingBackend {
         create_synth_log: std::sync::Mutex<Vec<RecordedSynth>>,
         create_group_log: std::sync::Mutex<Vec<NodeId>>,
@@ -4821,6 +5073,8 @@ mod tests {
         /// node N after free+respawn" even when the ID pool recycles a freed
         /// id back into the next create.
         events: std::sync::Mutex<Vec<BackendEvent>>,
+        faithful_graph: Option<Arc<std::sync::Mutex<FaithfulGraph>>>,
+        ended_nodes: std::sync::Mutex<HashSet<NodeId>>,
     }
 
     #[derive(Clone, Debug)]
@@ -4867,7 +5121,149 @@ mod tests {
                 free_node_log: std::sync::Mutex::new(Vec::new()),
                 map_param_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
+                faithful_graph: None,
+                ended_nodes: std::sync::Mutex::new(HashSet::new()),
             }
+        }
+
+        fn faithful() -> Self {
+            Self {
+                faithful_graph: Some(Arc::new(std::sync::Mutex::new(FaithfulGraph::new()))),
+                ..Self::new()
+            }
+        }
+
+        fn record_synth(
+            &self,
+            def: &str,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
+            params: &ParamMap,
+        ) {
+            self.ended_nodes.lock().unwrap().remove(&node);
+            let link_outbus = params.get("outbus").copied();
+            self.create_synth_log.lock().unwrap().push(RecordedSynth {
+                def: def.to_string(),
+                node,
+                target,
+                action,
+                in_bus: params.get("in_bus").copied(),
+                out_bus: params.get("out_bus").copied(),
+                fx_bus_in: params.get("__fx_bus_in").copied(),
+                fx_bus_out: params.get("__fx_bus_out").copied(),
+                link_outbus,
+                params: params.clone(),
+            });
+            self.events.lock().unwrap().push(BackendEvent::Create {
+                def: def.to_string(),
+                node,
+                link_outbus,
+            });
+        }
+
+        fn insert_modeled_synth(
+            &self,
+            def: &str,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
+            params: &ParamMap,
+        ) {
+            if let Some(graph) = &self.faithful_graph {
+                let mut graph = graph.lock().unwrap();
+                let Some(parent) = graph.parent_for_create(target, action) else {
+                    return;
+                };
+                if graph.nodes.contains_key(&node) {
+                    graph
+                        .violations
+                        .push(format!("spawn reused live node {}", node.raw()));
+                    return;
+                }
+                graph.nodes.insert(
+                    node,
+                    ModeledNode {
+                        parent: Some(parent),
+                        def: Some(def.to_string()),
+                        is_group: false,
+                    },
+                );
+            }
+            self.record_synth(def, node, target, action, params);
+        }
+
+        fn execute_due(&self) {
+            let Some(graph) = &self.faithful_graph else {
+                return;
+            };
+            let due = {
+                let mut graph = graph.lock().unwrap();
+                let now = Instant::now();
+                let mut due = Vec::new();
+                let mut pending = Vec::new();
+                for scheduled in graph.scheduled.drain(..) {
+                    if scheduled.at <= now {
+                        due.push(scheduled);
+                    } else {
+                        pending.push(scheduled);
+                    }
+                }
+                graph.scheduled = pending;
+                graph.timed_executions += due.len();
+                due
+            };
+            for scheduled in due {
+                self.insert_modeled_synth(
+                    &scheduled.def,
+                    scheduled.node,
+                    scheduled.target,
+                    scheduled.action,
+                    &scheduled.params,
+                );
+                for (param, bus) in scheduled.param_buses {
+                    self.map_param_log.lock().unwrap().push(RecordedMap {
+                        node: scheduled.node,
+                        param,
+                        bus,
+                    });
+                }
+            }
+        }
+
+        fn self_end(&self, node: NodeId) {
+            self.execute_due();
+            let graph = self.faithful_graph.as_ref().expect("faithful graph");
+            let removed = graph.lock().unwrap().nodes.remove(&node);
+            assert!(removed.is_some(), "modeled node {node:?} must be live");
+            self.ended_nodes.lock().unwrap().insert(node);
+            self.events
+                .lock()
+                .unwrap()
+                .push(BackendEvent::Free { node });
+        }
+
+        fn faithful_snapshot(&self) -> (Vec<String>, Vec<(String, NodeId)>, Vec<NodeId>, usize) {
+            self.execute_due();
+            let graph = self.faithful_graph.as_ref().unwrap().lock().unwrap();
+            let mut synths: Vec<_> = graph
+                .nodes
+                .iter()
+                .filter_map(|(id, node)| node.def.clone().map(|def| (def, *id)))
+                .collect();
+            synths.sort_by_key(|(_, id)| id.raw());
+            let mut groups: Vec<_> = graph
+                .nodes
+                .iter()
+                .filter_map(|(id, node)| (node.is_group && id.raw() != 0).then_some(*id))
+                .collect();
+            groups.sort_by_key(|id| id.raw());
+            (
+                graph.violations.clone(),
+                synths,
+                groups,
+                graph.timed_executions,
+            )
         }
 
         fn synths(&self) -> Vec<RecordedSynth> {
@@ -4957,44 +5353,132 @@ mod tests {
             action: AddAction,
             params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
-            let link_outbus = params.get("outbus").copied();
-            self.create_synth_log.lock().unwrap().push(RecordedSynth {
-                def: def.to_string(),
-                node,
-                target,
-                action,
-                in_bus: params.get("in_bus").copied(),
-                out_bus: params.get("out_bus").copied(),
-                fx_bus_in: params.get("__fx_bus_in").copied(),
-                fx_bus_out: params.get("__fx_bus_out").copied(),
-                link_outbus,
-                params: params.clone(),
-            });
-            self.events.lock().unwrap().push(BackendEvent::Create {
-                def: def.to_string(),
-                node,
-                link_outbus,
-            });
+            self.execute_due();
+            self.insert_modeled_synth(def, node, target, action, params);
+            Ok(())
+        }
+
+        async fn create_synth_at(
+            &self,
+            def: &str,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
+            params: &ParamMap,
+            param_buses: &[(String, u32)],
+            at: Option<Instant>,
+        ) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
+            if let (Some(graph), Some(at)) = (&self.faithful_graph, at) {
+                if at > Instant::now() {
+                    let scheduled = ScheduledSynth {
+                        def: def.to_string(),
+                        node,
+                        target,
+                        action,
+                        params: params.clone(),
+                        param_buses: param_buses.to_vec(),
+                        at,
+                    };
+                    graph.lock().unwrap().scheduled.push(scheduled.clone());
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let graph = graph.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await;
+                            let mut graph = graph.lock().unwrap();
+                            let Some(index) = graph.scheduled.iter().position(|pending| {
+                                pending.node == scheduled.node && pending.at == at
+                            }) else {
+                                return;
+                            };
+                            let scheduled = graph.scheduled.remove(index);
+                            graph.timed_executions += 1;
+                            let Some(parent) =
+                                graph.parent_for_create(scheduled.target, scheduled.action)
+                            else {
+                                return;
+                            };
+                            if graph.nodes.contains_key(&scheduled.node) {
+                                graph.violations.push(format!(
+                                    "timed spawn reused live node {}",
+                                    scheduled.node.raw()
+                                ));
+                                return;
+                            }
+                            graph.nodes.insert(
+                                scheduled.node,
+                                ModeledNode {
+                                    parent: Some(parent),
+                                    def: Some(scheduled.def),
+                                    is_group: false,
+                                },
+                            );
+                        });
+                    }
+                    return Ok(());
+                }
+            }
+            self.insert_modeled_synth(def, node, target, action, params);
+            for (param, bus) in param_buses {
+                self.map_param_log.lock().unwrap().push(RecordedMap {
+                    node,
+                    param: param.clone(),
+                    bus: *bus,
+                });
+            }
             Ok(())
         }
 
         async fn create_group(
             &self,
             node: NodeId,
-            _target: NodeId,
-            _action: AddAction,
+            target: NodeId,
+            action: AddAction,
         ) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
+            self.ended_nodes.lock().unwrap().remove(&node);
+            if let Some(graph) = &self.faithful_graph {
+                let mut graph = graph.lock().unwrap();
+                let Some(parent) = graph.parent_for_create(target, action) else {
+                    return Ok(());
+                };
+                if graph.nodes.contains_key(&node) {
+                    graph
+                        .violations
+                        .push(format!("group reused live node {}", node.raw()));
+                    return Ok(());
+                }
+                graph.nodes.insert(
+                    node,
+                    ModeledNode {
+                        parent: Some(parent),
+                        def: None,
+                        is_group: true,
+                    },
+                );
+            }
             self.create_group_log.lock().unwrap().push(node);
             Ok(())
         }
 
         async fn free_node(&self, node: NodeId) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
             self.free_node_log.lock().unwrap().push(node);
-            self.events
-                .lock()
-                .unwrap()
-                .push(BackendEvent::Free { node });
+            let removed = if let Some(graph) = &self.faithful_graph {
+                graph.lock().unwrap().remove_recursive(node)
+            } else {
+                vec![node]
+            };
+            let mut events = self.events.lock().unwrap();
+            for removed_node in removed {
+                events.push(BackendEvent::Free { node: removed_node });
+            }
             Ok(())
+        }
+
+        fn node_has_ended(&self, node: NodeId) -> bool {
+            self.ended_nodes.lock().unwrap().contains(&node)
         }
 
         async fn run_node(
@@ -5007,10 +5491,19 @@ mod tests {
 
         async fn set_param(
             &self,
-            _node: NodeId,
+            node: NodeId,
             _param: &str,
             _value: f32,
         ) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
+            if let Some(graph) = &self.faithful_graph {
+                let mut graph = graph.lock().unwrap();
+                if !graph.nodes.contains_key(&node) {
+                    graph
+                        .violations
+                        .push(format!("parameter set on absent node {}", node.raw()));
+                }
+            }
             Ok(())
         }
 
@@ -5020,6 +5513,15 @@ mod tests {
             param: &str,
             bus: u32,
         ) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
+            if let Some(graph) = &self.faithful_graph {
+                let mut graph = graph.lock().unwrap();
+                if !graph.nodes.contains_key(&node) {
+                    graph
+                        .violations
+                        .push(format!("parameter map on absent node {}", node.raw()));
+                }
+            }
             self.map_param_log.lock().unwrap().push(RecordedMap {
                 node,
                 param: param.to_string(),
@@ -5068,6 +5570,11 @@ mod tests {
         fn current_time(&self) -> Instant {
             Instant::now()
         }
+
+        async fn sync(&self) -> std::result::Result<(), Self::Error> {
+            self.execute_due();
+            Ok(())
+        }
     }
 
     /// Pre-register a synthdef name with explicit OutputPort descriptors so
@@ -5091,6 +5598,305 @@ mod tests {
             .await
             .synthdefs
             .insert(name.to_string());
+    }
+
+    fn register_reload_shape_voice_defaults(name: &str) {
+        vibelang_dsp::register_synthdef_ir(
+            name.to_string(),
+            vibelang_dsp::GraphIR {
+                name: name.to_string(),
+                constants: Vec::new(),
+                params: vec![
+                    vibelang_dsp::ParamSpec {
+                        name: "gate".to_string(),
+                        default: vec![1.0],
+                        index: 0,
+                        lag_ms: None,
+                    },
+                    vibelang_dsp::ParamSpec {
+                        name: "release".to_string(),
+                        default: vec![0.0],
+                        index: 1,
+                        lag_ms: None,
+                    },
+                ],
+                nodes: Vec::new(),
+                out_bus: 0,
+            },
+        );
+    }
+
+    fn reload_shape_state(index: u32, label: &str) -> reload::ScriptState {
+        use crate::reload::{EffectConfig, GroupConfig};
+        use crate::traits::{PatternConfig, Step, VoiceConfig};
+        use crate::types::{EffectId, PatternId};
+
+        let group = GroupId::new(40_000 + index);
+        let voice = VoiceId::new(41_000);
+        let effect = EffectId::new(42_000);
+        let pattern = PatternId::new(43_000);
+        let voice_synth = format!("reload_shape_{label}_voice");
+        let effect_synth = format!("reload_shape_{label}_effect");
+
+        let mut state = reload::ScriptState::new();
+        state.add_group(
+            group,
+            GroupConfig {
+                name: format!("{label}_group"),
+                effects: vec![effect],
+                ..GroupConfig::default()
+            },
+        );
+        state.add_voice(
+            voice,
+            VoiceConfig::new(format!("{label}_voice"), voice_synth, group),
+        );
+        state.add_effect(
+            effect,
+            EffectConfig {
+                group,
+                synthdef: effect_synth,
+                params: ParamMap::from([("mix".to_string(), 1.0)]),
+            },
+        );
+        // At 120 BPM this dispatches 45 ms into the backend's future, close
+        // to the 50 ms scheduler horizon and effect teardown grace.
+        state.add_pattern(
+            pattern,
+            PatternConfig::with_length(format!("{label}_pattern"), voice, 1.0)
+                .with_step(Step::at(0.09).with_param("amp", 0.5)),
+        );
+        state.playing_patterns.insert(pattern);
+        state.running_voices.insert(voice);
+        state
+    }
+
+    async fn assert_reload_shape_generation(
+        runtime: &Runtime<RecordingBackend>,
+        index: u32,
+        label: &str,
+        minimum_timed_executions: usize,
+        obsolete_group_nodes: &[NodeId],
+    ) -> NodeId {
+        use crate::types::{EffectId, PatternId};
+
+        let group = GroupId::new(40_000 + index);
+        let voice = VoiceId::new(41_000);
+        let effect = EffectId::new(42_000);
+        let pattern = PatternId::new(43_000);
+        let expected_voice = format!("reload_shape_{label}_voice");
+        let expected_effect = format!("reload_shape_{label}_effect");
+
+        let state = runtime.state.read().await;
+        assert_eq!(state.groups.len(), 1);
+        assert!(state.groups.contains_key(&group));
+        let current_group_node = state.groups[&group].node_id;
+        assert_eq!(state.voices.len(), 1);
+        let live_voice = state.voices.get(&voice).expect("active voice");
+        assert_eq!(live_voice.config.synthdef, expected_voice);
+        assert!(!live_voice.active_nodes.is_empty());
+        assert_eq!(state.effects.len(), 1);
+        assert_eq!(state.effects[&effect].synthdef, expected_effect);
+        assert_eq!(state.patterns.len(), 1);
+        assert!(state.patterns[&pattern].playing);
+        drop(state);
+
+        let (violations, synths, live_group_nodes, timed_executions) =
+            runtime.backend.faithful_snapshot();
+        assert!(violations.is_empty(), "backend violations: {violations:#?}");
+        assert!(
+            live_group_nodes.contains(&current_group_node),
+            "current script group node must be live: {live_group_nodes:?}"
+        );
+        for obsolete in obsolete_group_nodes {
+            assert!(
+                !live_group_nodes.contains(obsolete),
+                "obsolete script group generation {obsolete:?} is still live: {live_group_nodes:?}; frees: {:?}",
+                runtime.backend.free_node_log.lock().unwrap()
+            );
+        }
+        assert!(timed_executions >= minimum_timed_executions);
+
+        let voice_generations: std::collections::HashSet<_> = synths
+            .iter()
+            .filter_map(|(def, _)| def.starts_with("reload_shape_").then_some(def.as_str()))
+            .filter(|def| def.ends_with("_voice"))
+            .collect();
+        let effect_generations: std::collections::HashSet<_> = synths
+            .iter()
+            .filter_map(|(def, _)| def.starts_with("reload_shape_").then_some(def.as_str()))
+            .filter(|def| def.ends_with("_effect"))
+            .collect();
+        assert_eq!(
+            voice_generations,
+            std::collections::HashSet::from([expected_voice.as_str()])
+        );
+        assert_eq!(
+            effect_generations,
+            std::collections::HashSet::from([expected_effect.as_str()])
+        );
+        current_group_node
+    }
+
+    async fn settle_reload_shape_teardown(runtime: &mut Runtime<RecordingBackend>) {
+        tokio::time::sleep(std::time::Duration::from_millis(110)).await;
+        runtime.effects.tick().await;
+        runtime.voices.tick().await;
+        runtime.groups.tick().await;
+        runtime.backend.sync().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn structural_reload_is_parent_safe_and_scheduler_safe() {
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::faithful());
+        for label in ["pads", "jungle_breaks", "heartbeat"] {
+            let voice_synth = format!("reload_shape_{label}_voice");
+            let effect_synth = format!("reload_shape_{label}_effect");
+            register_reload_shape_voice_defaults(&voice_synth);
+            register_voice_synthdef(
+                &runtime,
+                &voice_synth,
+                vec![OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: PortRate::Ar,
+                }],
+            )
+            .await;
+            register_effect_synthdef(&runtime, &effect_synth).await;
+        }
+
+        runtime
+            .apply_reload(reload_shape_state(0, "pads"))
+            .await
+            .unwrap();
+        let pads_group = assert_reload_shape_generation(&runtime, 0, "pads", 0, &[]).await;
+        runtime.patterns.tick(Beat::ZERO).await;
+
+        runtime
+            .apply_reload(reload_shape_state(1, "jungle_breaks"))
+            .await
+            .unwrap();
+        settle_reload_shape_teardown(&mut runtime).await;
+        let jungle_group =
+            assert_reload_shape_generation(&runtime, 1, "jungle_breaks", 1, &[pads_group]).await;
+        runtime.patterns.tick(Beat::ZERO).await;
+
+        runtime
+            .apply_reload(reload_shape_state(2, "heartbeat"))
+            .await
+            .unwrap();
+        settle_reload_shape_teardown(&mut runtime).await;
+        assert_reload_shape_generation(&runtime, 2, "heartbeat", 2, &[pads_group, jungle_group])
+            .await;
+    }
+
+    #[tokio::test]
+    async fn voice_reclaim_skips_fallback_free_after_definitive_node_end() {
+        use crate::traits::VoiceConfig;
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let runtime = Runtime::new(RecordingBackend::faithful());
+        let group = GroupId::new(44_001);
+        let voice = VoiceId::new(44_002);
+        let synth = "reload_done_action_gated";
+        register_reload_shape_voice_defaults(synth);
+        register_voice_synthdef(
+            &runtime,
+            synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+        runtime.groups.create(group, "gated", None).await.unwrap();
+        runtime
+            .voices
+            .create(voice, VoiceConfig::new("gated", synth, group))
+            .await
+            .unwrap();
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let node = runtime.state.read().await.voices[&voice].active_nodes[0];
+
+        runtime.voices.stop(voice).await.unwrap();
+        runtime.backend.self_end(node);
+        tokio::time::sleep(std::time::Duration::from_millis(110)).await;
+        runtime.voices.tick().await;
+
+        assert!(runtime.backend.free_node_log.lock().unwrap().is_empty());
+        let (violations, _, _, _) = runtime.backend.faithful_snapshot();
+        assert!(violations.is_empty(), "backend violations: {violations:#?}");
+    }
+
+    #[tokio::test]
+    async fn gateless_one_shot_end_is_not_freed_again_on_polyphony_reclaim() {
+        use crate::traits::VoiceConfig;
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let runtime = Runtime::new(RecordingBackend::faithful());
+        let group = GroupId::new(45_001);
+        let voice = VoiceId::new(45_002);
+        let synth = "reload_done_action_one_shot";
+        register_voice_synthdef(
+            &runtime,
+            synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+        runtime
+            .groups
+            .create(group, "one-shot", None)
+            .await
+            .unwrap();
+        runtime
+            .voices
+            .create(
+                voice,
+                VoiceConfig::new("one-shot", synth, group).with_polyphony(1),
+            )
+            .await
+            .unwrap();
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let first = runtime.state.read().await.voices[&voice].active_nodes[0];
+        runtime.backend.self_end(first);
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let second = runtime.state.read().await.voices[&voice].active_nodes[0];
+        assert_ne!(second, first);
+        runtime.backend.self_end(second);
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let third = runtime.state.read().await.voices[&voice].active_nodes[0];
+        assert_eq!(third, first, "definitively ended ID should be reusable");
+
+        assert!(runtime.backend.free_node_log.lock().unwrap().is_empty());
+        let (violations, _, _, _) = runtime.backend.faithful_snapshot();
+        assert!(violations.is_empty(), "backend violations: {violations:#?}");
     }
 
     #[tokio::test]

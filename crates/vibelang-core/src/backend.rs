@@ -177,6 +177,16 @@ pub trait Backend: Send + Sync + 'static {
     /// Works for both synths and groups.
     async fn free_node(&self, node: NodeId) -> Result<(), Self::Error>;
 
+    /// Return whether the backend has observed this node's definitive end.
+    ///
+    /// Backends with node-lifecycle notifications can use this to suppress a
+    /// stale teardown command after a synth has already freed itself. The
+    /// default is conservative: without definitive evidence, callers still
+    /// issue the free.
+    fn node_has_ended(&self, _node: NodeId) -> bool {
+        false
+    }
+
     /// Pause or resume a node.
     ///
     /// Paused nodes don't process audio but retain their state.
@@ -435,6 +445,11 @@ pub trait Backend: 'static {
 
     /// Free (destroy) a node.
     async fn free_node(&self, node: NodeId) -> Result<(), Self::Error>;
+
+    /// Return whether the backend has observed this node's definitive end.
+    fn node_has_ended(&self, _node: NodeId) -> bool {
+        false
+    }
 
     /// Pause or resume a node.
     async fn run_node(&self, node: NodeId, running: bool) -> Result<(), Self::Error>;

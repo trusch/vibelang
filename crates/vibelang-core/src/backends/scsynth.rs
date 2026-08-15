@@ -18,7 +18,7 @@ use crate::backend::{AddAction, Backend, BufferInfo};
 use crate::types::{BufferId, NodeId, ParamMap};
 use async_trait::async_trait;
 use rosc::{decoder, encoder, OscBundle, OscMessage, OscPacket, OscTime, OscType};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::net::UdpSocket;
@@ -191,6 +191,9 @@ pub struct ScsynthBackend {
     next_sync_id: Arc<std::sync::atomic::AtomicI32>,
     /// General response callbacks.
     callbacks: Arc<Mutex<Vec<OscCallback>>>,
+    /// Node IDs for which scsynth has delivered a definitive `/n_end`.
+    /// Cleared before an ID is submitted for a new node generation.
+    ended_nodes: Arc<Mutex<HashSet<NodeId>>>,
     /// Server status (updated by listener).
     server_ready: Arc<AtomicBool>,
 }
@@ -236,6 +239,7 @@ impl ScsynthBackend {
         let pending_synthdef_load = Arc::new(Mutex::new(None));
         let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
+        let ended_nodes = Arc::new(Mutex::new(HashSet::new()));
 
         let socket = Arc::new(socket);
 
@@ -251,8 +255,27 @@ impl ScsynthBackend {
             pending_synthdef_load: pending_synthdef_load.clone(),
             next_sync_id,
             callbacks: callbacks.clone(),
+            ended_nodes: ended_nodes.clone(),
             server_ready: server_ready.clone(),
         };
+
+        // Record lifecycle notifications independently of the best-effort
+        // State callback installed by the CLI. Voice teardown consults this
+        // set before sending a fallback /n_free, so a contended State lock
+        // cannot turn an already-observed /n_end into a server-side failure.
+        backend.on_response(Arc::new(move |response| match response {
+            OscResponse::NodeEnd { node_id, .. } => {
+                if let Ok(mut ended) = ended_nodes.lock() {
+                    ended.insert(node_id);
+                }
+            }
+            OscResponse::NodeGo { node_id, .. } => {
+                if let Ok(mut ended) = ended_nodes.lock() {
+                    ended.remove(&node_id);
+                }
+            }
+            _ => {}
+        }));
 
         // Start OSC listener thread
         Self::start_listener(
@@ -1078,6 +1101,12 @@ impl ScsynthBackend {
         }
     }
 
+    fn prepare_node_generation(&self, node: NodeId) {
+        if let Ok(mut ended) = self.ended_nodes.lock() {
+            ended.remove(&node);
+        }
+    }
+
     /// Request buffer info and wait for response.
     pub async fn query_buffer_info(&self, id: BufferId) -> Result<BufferInfo, ScsynthError> {
         // Create oneshot channel for response
@@ -1262,6 +1291,7 @@ impl Backend for ScsynthBackend {
         action: AddAction,
         params: &ParamMap,
     ) -> Result<(), Self::Error> {
+        self.prepare_node_generation(node);
         tracing::debug!(
             "s_new: def='{}', node={}, target={}, params={:?}",
             def,
@@ -1287,6 +1317,7 @@ impl Backend for ScsynthBackend {
         param_buses: &[(String, u32)],
         at: Option<Instant>,
     ) -> Result<(), Self::Error> {
+        self.prepare_node_generation(node);
         tracing::debug!(
             "s_new (scheduled): def='{}', node={}, target={}, at={:?}, params={:?}",
             def,
@@ -1320,6 +1351,7 @@ impl Backend for ScsynthBackend {
         target: NodeId,
         action: AddAction,
     ) -> Result<(), Self::Error> {
+        self.prepare_node_generation(node);
         self.send_msg(
             "/g_new",
             vec![
@@ -1332,8 +1364,22 @@ impl Backend for ScsynthBackend {
     }
 
     async fn free_node(&self, node: NodeId) -> Result<(), Self::Error> {
+        if self.node_has_ended(node) {
+            tracing::debug!(
+                "Skipping /n_free for node {} after definitive /n_end",
+                node.0
+            );
+            return Ok(());
+        }
         self.send_msg("/n_free", vec![OscType::Int(node.0 as i32)])?;
         Ok(())
+    }
+
+    fn node_has_ended(&self, node: NodeId) -> bool {
+        self.ended_nodes
+            .lock()
+            .map(|ended| ended.contains(&node))
+            .unwrap_or(false)
     }
 
     async fn run_node(&self, node: NodeId, running: bool) -> Result<(), Self::Error> {
