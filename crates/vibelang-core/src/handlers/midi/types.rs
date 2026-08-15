@@ -247,8 +247,8 @@ pub struct MidiEventNotification {
     pub message: MidiMessage,
 }
 
-/// Map a value from one range to another with optional curve transformation.
-pub fn map_to_range(
+/// Map a transport-transparent CC value with the canonical curve semantics.
+pub fn map_cc_to_range(
     value: f32,
     in_min: f32,
     in_max: f32,
@@ -291,6 +291,52 @@ pub fn map_to_range(
 
     // Map to output range
     out_min + curved.clamp(0.0, 1.0) * (out_max - out_min)
+}
+
+/// Map a MIDI 2 per-note value with the legacy curve semantics.
+pub fn map_per_note_to_range(
+    value: f32,
+    in_min: f32,
+    in_max: f32,
+    out_min: f32,
+    out_max: f32,
+    curve: &str,
+) -> f32 {
+    let normalized = if (in_max - in_min).abs() > f32::EPSILON {
+        (value - in_min) / (in_max - in_min)
+    } else {
+        0.5
+    };
+
+    let curved = match curve {
+        "logarithmic" => {
+            if normalized <= 0.0 {
+                0.0
+            } else {
+                (normalized.ln() + 5.0) / 5.0
+            }
+        }
+        "exponential" => normalized * normalized,
+        "s_curve" | "scurve" => {
+            let t = normalized.clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        }
+        _ => normalized,
+    };
+
+    out_min + curved.clamp(0.0, 1.0) * (out_max - out_min)
+}
+
+/// Backward-compatible name for the legacy MIDI 2 per-note evaluator.
+pub fn map_to_range(
+    value: f32,
+    in_min: f32,
+    in_max: f32,
+    out_min: f32,
+    out_max: f32,
+    curve: &str,
+) -> f32 {
+    map_per_note_to_range(value, in_min, in_max, out_min, out_max, curve)
 }
 
 #[cfg(test)]
@@ -345,7 +391,7 @@ mod tests {
 
         for (curve, expected) in cases {
             for ((input, expected), index) in inputs.into_iter().zip(expected).zip(0..) {
-                let actual = map_to_range(input, 0.0, 1.0, 200.0, 8000.0, curve);
+                let actual = map_cc_to_range(input, 0.0, 1.0, 200.0, 8000.0, curve);
                 if index == 0 || index == 4 {
                     assert_eq!(
                         actual.to_bits(),
@@ -368,8 +414,8 @@ mod tests {
         let inverted: [f32; 5] = [8000.0, 6050.0, 4100.0, 2150.0, 200.0];
 
         for ((input, expected), index) in inputs.into_iter().zip(unit_linear).zip(0..) {
-            let invalid_log = map_to_range(input, 0.0, 1.0, 0.0, 1.0, "logarithmic");
-            let unknown = map_to_range(input, 0.0, 1.0, 0.0, 1.0, "unknown");
+            let invalid_log = map_cc_to_range(input, 0.0, 1.0, 0.0, 1.0, "logarithmic");
+            let unknown = map_cc_to_range(input, 0.0, 1.0, 0.0, 1.0, "unknown");
             assert_eq!(
                 invalid_log.to_bits(),
                 expected.to_bits(),
@@ -380,12 +426,33 @@ mod tests {
         }
 
         for ((input, expected), index) in inputs.into_iter().zip(inverted).zip(0..) {
-            let actual = map_to_range(input, 0.0, 1.0, 8000.0, 200.0, "linear");
+            let actual = map_cc_to_range(input, 0.0, 1.0, 8000.0, 200.0, "linear");
             assert_eq!(actual.to_bits(), expected.to_bits(), "inverted {index}");
         }
 
-        let inverted_log = map_to_range(0.25, 0.0, 1.0, 8000.0, 200.0, "logarithmic");
+        let inverted_log = map_cc_to_range(0.25, 0.0, 1.0, 8000.0, 200.0, "logarithmic");
         assert!((inverted_log - 3181.083).abs() < 0.02);
         assert!(inverted_log.is_finite());
+    }
+
+    #[test]
+    fn per_note_log_curve_preserves_legacy_normalized_warp() {
+        let unit_mid = map_per_note_to_range(0.5, 0.0, 1.0, 0.0, 1.0, "logarithmic");
+        let frequency_mid = map_per_note_to_range(0.5, 0.0, 1.0, 200.0, 8000.0, "logarithmic");
+
+        assert!((unit_mid - 0.861_370_56).abs() < f32::EPSILON);
+        assert!((frequency_mid - 6_918.690_4).abs() < 0.001);
+        assert_eq!(
+            map_per_note_to_range(0.0, 0.0, 1.0, 200.0, 8000.0, "logarithmic").to_bits(),
+            200.0f32.to_bits()
+        );
+        assert_eq!(
+            map_per_note_to_range(1.0, 0.0, 1.0, 200.0, 8000.0, "logarithmic").to_bits(),
+            8000.0f32.to_bits()
+        );
+        assert_eq!(
+            map_to_range(0.5, 0.0, 1.0, 200.0, 8000.0, "logarithmic").to_bits(),
+            frequency_mid.to_bits()
+        );
     }
 }

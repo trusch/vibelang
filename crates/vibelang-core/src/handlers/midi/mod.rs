@@ -51,7 +51,7 @@ pub use recording::MidiRecordingManager;
 pub use routing::MidiRoutingManager;
 pub use types::{CcRoute, KeyboardRoute, MidiEventNotification, MidiMessage, MidiRouting};
 
-pub use types::{map_to_range, Midi2ControllerType};
+pub use types::{map_cc_to_range, map_per_note_to_range, map_to_range, Midi2ControllerType};
 
 use crate::backend::Backend;
 use crate::compat::RwLock;
@@ -1766,7 +1766,7 @@ impl<B: Backend> MidiHandler<B> {
         let normalized = value.as_f32();
         for route in routes {
             let param_value =
-                map_to_range(normalized, 0.0, 1.0, route.min, route.max, &route.curve);
+                map_cc_to_range(normalized, 0.0, 1.0, route.min, route.max, &route.curve);
 
             tracing::debug!(
                 "MIDI CC: target={:?}, cc={}, param={}={:.4}",
@@ -2257,7 +2257,7 @@ impl<B: Backend> MidiHandler<B> {
                 let normalized = centered as f64 / 0x8000_0000u64 as f64;
                 let semitones = (normalized * range as f64) as f32;
 
-                let param_value = map_to_range(
+                let param_value = map_per_note_to_range(
                     semitones,
                     -(range as f32),
                     range as f32,
@@ -2325,7 +2325,7 @@ impl<B: Backend> MidiHandler<B> {
 
             if matches {
                 let normalized = value.as_f32();
-                let param_value = map_to_range(
+                let param_value = map_per_note_to_range(
                     normalized,
                     0.0,
                     1.0,
@@ -2585,7 +2585,10 @@ mod tests {
     use crate::compat::{channel, timeout, RwLock};
     use crate::handlers::VoicesHandler;
     use crate::midi::{Channel, NoteRouteBuilder, Velocity};
-    use crate::reload::{AdvancedMidiBendRoute, AdvancedMidiCcRoute, LooperConfig};
+    use crate::reload::{
+        AdvancedMidiBendRoute, AdvancedMidiCcRoute, LooperConfig, Midi2PerNoteControllerType,
+        Midi2PerNoteRoute,
+    };
     use crate::state::GroupState;
     use crate::traits::{VoiceConfig, Voices};
     use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
@@ -3135,6 +3138,71 @@ mod tests {
                     "group {curve} value {value}"
                 );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn midi2_per_note_controller_and_pressure_keep_legacy_log_curve() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        create_test_voice(&voices, voice_id).await;
+        voices.note_on(voice_id, 60, 0.5).await.unwrap();
+
+        let (runtime_tx, _runtime_rx) = channel(32);
+        let midi = MidiHandler::new(Arc::clone(&backend), state, runtime_tx);
+        midi.apply_midi2_per_note_routes(&[
+            Midi2PerNoteRoute {
+                device_id,
+                group: Some(3),
+                channel: Some(0),
+                controller_type: Midi2PerNoteControllerType::Controller(74),
+                voice: voice_id,
+                param: "timbre".to_string(),
+                min_value: 200.0,
+                max_value: 8000.0,
+                curve: "logarithmic".to_string(),
+            },
+            Midi2PerNoteRoute {
+                device_id,
+                group: Some(3),
+                channel: Some(0),
+                controller_type: Midi2PerNoteControllerType::Pressure,
+                voice: voice_id,
+                param: "pressure".to_string(),
+                min_value: 200.0,
+                max_value: 8000.0,
+                curve: "logarithmic".to_string(),
+            },
+        ])
+        .await;
+
+        backend.clear_set_param_calls();
+        for (sequence, controller) in [74, 0x7B].into_iter().enumerate() {
+            assert!(midi.event_sender().try_send(TimestampedMidiEvent::new(
+                sequence as u64,
+                Instant::now(),
+                device_id,
+                NewMidiMessage::Midi2PerNoteController {
+                    group_channel: GroupChannel::new(3, 0),
+                    note: 60,
+                    controller,
+                    value: ControlValue::from_32bit(0x8000_0000),
+                },
+            )));
+            midi.tick().await;
+        }
+
+        let calls = backend.set_param_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].param, "timbre");
+        assert_eq!(calls[1].param, "pressure");
+        for call in calls {
+            assert!((call.value - 6_918.690_4).abs() < 0.001);
         }
     }
 
