@@ -101,10 +101,10 @@ pub(crate) fn voice_release_grace(config: &VoiceConfig) -> Duration {
 /// are therefore NOT recycled at release time (a recycled ID could be handed
 /// to a new synth while the old node still exists — commit 8ca4fed's
 /// discipline). Instead each release stashes one of these entries; after
-/// `grace` the tick loop sends a fallback `/n_free` (a no-op "Node not
-/// found" if the node already self-freed, which the backend tolerates) and
-/// only then recycles IDs and returns buses to their allocators, so a bus
-/// can never be reallocated while a released node is still sounding into it.
+/// `grace` the tick loop skips the fallback when the backend has observed a
+/// definitive node end, otherwise sends `/n_free`; only then does it recycle
+/// IDs and return buses to their allocators, so a bus can never be reallocated
+/// while a released node is still sounding into it.
 struct PendingVoiceReclaim {
     /// When the release was requested (or, for scheduled note steals, the
     /// scheduled sounding time).
@@ -145,6 +145,21 @@ impl<B: Backend> VoicesHandler<B> {
         }
     }
 
+    async fn free_node_if_live(&self, node: NodeId) {
+        if self.backend.node_has_ended(node) {
+            tracing::debug!(
+                "Voice reclaim: node {:?} already ended; skipping fallback free",
+                node
+            );
+            return;
+        }
+        tracing::debug!(
+            "Voice reclaim: grace elapsed, fallback-freeing node {:?}",
+            node
+        );
+        let _ = self.backend.free_node(node).await;
+    }
+
     /// Process pending voice reclaims whose grace period has elapsed.
     ///
     /// Called by the runtime's tick loop (same idiom as
@@ -178,15 +193,11 @@ impl<B: Backend> VoicesHandler<B> {
 
         for entry in due {
             for node in entry.released_nodes.iter().chain(entry.route_nodes.iter()) {
-                tracing::debug!(
-                    "Voice reclaim: grace elapsed, fallback-freeing node {:?}",
-                    node
-                );
-                let _ = self.backend.free_node(*node).await;
+                self.free_node_if_live(*node).await;
             }
             let mut state = self.state.write().await;
-            // The /n_free above has been sent, so the IDs are definitively
-            // dead and safe to recycle now.
+            // Every node above either had a definitive backend end or was
+            // fallback-freed, so the IDs are now safe to recycle.
             for node in entry.released_nodes.iter().chain(entry.route_nodes.iter()) {
                 state.free_node_id(*node);
             }
@@ -896,7 +907,7 @@ impl<B: Backend> VoicesHandler<B> {
                 })
                 .await;
             } else {
-                let _ = self.backend.free_node(old).await;
+                self.free_node_if_live(old).await;
             }
         }
 
@@ -1202,28 +1213,30 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     async fn delete(&self, id: VoiceId) -> Result<()> {
         let detached = {
             let mut state = self.state.write().await;
-            let detached = detach_voice(&mut state, id)?;
-            // Hard delete: every node is explicitly /n_free'd below, so the
-            // IDs are definitively done and safe to recycle right away; the
-            // buses go back to the allocators in the same breath.
-            reclaim_detached_now(&mut state, &detached);
-            detached
+            detach_voice(&mut state, id)?
         };
 
-        // Release any still-sounding pool notes on the external device.
-        #[cfg(feature = "midi")]
-        self.flush_pool_cleanup(detached.pool_cleanup).await;
-
         // Free all active synth nodes (lock released)
-        for node_id in detached.nodes {
-            let _ = self.backend.free_node(node_id).await;
+        for node_id in &detached.nodes {
+            self.free_node_if_live(*node_id).await;
         }
         // Free per-port route mixer synths so they no longer read from the
         // voice's freed audio bus (avoids stale `In.ar` reads when the bus
         // is recycled to a later voice).
-        for node_id in detached.route_nodes {
-            let _ = self.backend.free_node(node_id).await;
+        for node_id in &detached.route_nodes {
+            self.free_node_if_live(*node_id).await;
         }
+
+        // The backend teardown is now definitive; only now may the allocator
+        // hand these node IDs and buses to a replacement voice.
+        {
+            let mut state = self.state.write().await;
+            reclaim_detached_now(&mut state, &detached);
+        }
+
+        // Release any still-sounding pool notes on the external device.
+        #[cfg(feature = "midi")]
+        self.flush_pool_cleanup(detached.pool_cleanup).await;
 
         Ok(())
     }
@@ -1235,25 +1248,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Only gated voices with sounding nodes need the deferred path;
             // everything else reclaims immediately, exactly like `delete`.
             let defer = detached.gated && !detached.nodes.is_empty();
-            if !defer {
-                reclaim_detached_now(&mut state, &detached);
-            }
             (detached, defer)
         };
+
+        if !defer {
+            for node_id in &detached.nodes {
+                self.free_node_if_live(*node_id).await;
+            }
+            for node_id in &detached.route_nodes {
+                self.free_node_if_live(*node_id).await;
+            }
+            {
+                let mut state = self.state.write().await;
+                reclaim_detached_now(&mut state, &detached);
+            }
+            #[cfg(feature = "midi")]
+            self.flush_pool_cleanup(detached.pool_cleanup).await;
+            return Ok(());
+        }
 
         // Release any still-sounding pool notes on the external device.
         #[cfg(feature = "midi")]
         self.flush_pool_cleanup(detached.pool_cleanup).await;
-
-        if !defer {
-            for node_id in detached.nodes {
-                let _ = self.backend.free_node(node_id).await;
-            }
-            for node_id in detached.route_nodes {
-                let _ = self.backend.free_node(node_id).await;
-            }
-            return Ok(());
-        }
 
         // Set gate=0 on all active synth nodes to trigger release envelopes.
         // The synths free themselves via doneAction=2 when the envelope
@@ -1477,7 +1493,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // then. Gated chokes are scheduled at the trigger time so the choke
         // lands exactly when the new note sounds.
         for choke_node in choke_free {
-            let _ = self.backend.free_node(choke_node).await;
+            self.free_node_if_live(choke_node).await;
         }
         for (grace, nodes) in choke_release {
             for node in &nodes {
@@ -1535,7 +1551,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         } else {
             for old_node in old_nodes {
-                let _ = self.backend.free_node(old_node).await;
+                self.free_node_if_live(old_node).await;
             }
         }
 
@@ -1613,7 +1629,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .await;
         } else {
             for node_id in nodes {
-                let _ = self.backend.free_node(node_id).await;
+                self.free_node_if_live(node_id).await;
             }
         }
 

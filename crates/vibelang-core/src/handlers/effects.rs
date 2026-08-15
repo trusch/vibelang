@@ -21,7 +21,7 @@ use crate::compat::Duration;
 
 /// Grace period before freeing an effect node (in milliseconds).
 /// This allows time for the mix parameter to fade to 0.
-const EFFECT_GRACE_PERIOD_MS: u64 = 50;
+pub(crate) const EFFECT_GRACE_PERIOD_MS: u64 = 50;
 
 /// Handler for effect operations.
 pub struct EffectsHandler<B: Backend> {

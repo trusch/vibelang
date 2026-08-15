@@ -85,10 +85,13 @@ mod recordings;
 mod midi;
 
 pub use effects::EffectsHandler;
+pub(crate) use effects::EFFECT_GRACE_PERIOD_MS;
 pub use fades::FadesHandler;
 pub use groups::GroupsHandler;
 pub use melodies::MelodiesHandler;
+pub(crate) use melodies::LOOKAHEAD_MS as MELODY_LOOKAHEAD_MS;
 pub use patterns::PatternsHandler;
+pub(crate) use patterns::LOOKAHEAD_MS as PATTERN_LOOKAHEAD_MS;
 pub use routes::{
     compute_input_route_diff, default_routes_for_voice, merge_default_routes, InputRoute,
     InputRouteDiff, InputRouteMap, InputRouteSrc, ParamRoute, ParamRouteDiff, ParamRouteMap,

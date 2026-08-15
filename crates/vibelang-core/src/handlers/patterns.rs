@@ -17,7 +17,7 @@ use std::time::Duration;
 /// Matches the melody lookahead for consistent timing behavior.
 /// Notes within this window ahead of the current beat are scheduled with
 /// precise wall-clock timestamps.
-const LOOKAHEAD_MS: u64 = 50;
+pub(crate) const LOOKAHEAD_MS: u64 = 50;
 
 /// Resolve the absolute scheduling window `[w_from, w_to)` for this tick.
 ///
