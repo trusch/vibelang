@@ -3722,7 +3722,7 @@ mod tests {
     use crate::reload::ParamRouteKind;
     use crate::state::GroupState;
     use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::layer::SubscriberExt;
@@ -5074,6 +5074,7 @@ mod tests {
         /// id back into the next create.
         events: std::sync::Mutex<Vec<BackendEvent>>,
         faithful_graph: Option<Arc<std::sync::Mutex<FaithfulGraph>>>,
+        ended_nodes: std::sync::Mutex<HashSet<NodeId>>,
     }
 
     #[derive(Clone, Debug)]
@@ -5121,6 +5122,7 @@ mod tests {
                 map_param_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
                 faithful_graph: None,
+                ended_nodes: std::sync::Mutex::new(HashSet::new()),
             }
         }
 
@@ -5139,6 +5141,7 @@ mod tests {
             action: AddAction,
             params: &ParamMap,
         ) {
+            self.ended_nodes.lock().unwrap().remove(&node);
             let link_outbus = params.get("outbus").copied();
             self.create_synth_log.lock().unwrap().push(RecordedSynth {
                 def: def.to_string(),
@@ -5226,6 +5229,18 @@ mod tests {
                     });
                 }
             }
+        }
+
+        fn self_end(&self, node: NodeId) {
+            self.execute_due();
+            let graph = self.faithful_graph.as_ref().expect("faithful graph");
+            let removed = graph.lock().unwrap().nodes.remove(&node);
+            assert!(removed.is_some(), "modeled node {node:?} must be live");
+            self.ended_nodes.lock().unwrap().insert(node);
+            self.events
+                .lock()
+                .unwrap()
+                .push(BackendEvent::Free { node });
         }
 
         fn faithful_snapshot(&self) -> (Vec<String>, Vec<(String, NodeId)>, Vec<NodeId>, usize) {
@@ -5422,6 +5437,7 @@ mod tests {
             action: AddAction,
         ) -> std::result::Result<(), Self::Error> {
             self.execute_due();
+            self.ended_nodes.lock().unwrap().remove(&node);
             if let Some(graph) = &self.faithful_graph {
                 let mut graph = graph.lock().unwrap();
                 let Some(parent) = graph.parent_for_create(target, action) else {
@@ -5459,6 +5475,10 @@ mod tests {
                 events.push(BackendEvent::Free { node: removed_node });
             }
             Ok(())
+        }
+
+        fn node_has_ended(&self, node: NodeId) -> bool {
+            self.ended_nodes.lock().unwrap().contains(&node)
         }
 
         async fn run_node(
@@ -5771,6 +5791,112 @@ mod tests {
         settle_reload_shape_teardown(&mut runtime).await;
         assert_reload_shape_generation(&runtime, 2, "heartbeat", 2, &[pads_group, jungle_group])
             .await;
+    }
+
+    #[tokio::test]
+    async fn voice_reclaim_skips_fallback_free_after_definitive_node_end() {
+        use crate::traits::VoiceConfig;
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let runtime = Runtime::new(RecordingBackend::faithful());
+        let group = GroupId::new(44_001);
+        let voice = VoiceId::new(44_002);
+        let synth = "reload_done_action_gated";
+        register_reload_shape_voice_defaults(synth);
+        register_voice_synthdef(
+            &runtime,
+            synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+        runtime.groups.create(group, "gated", None).await.unwrap();
+        runtime
+            .voices
+            .create(voice, VoiceConfig::new("gated", synth, group))
+            .await
+            .unwrap();
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let node = runtime.state.read().await.voices[&voice].active_nodes[0];
+
+        runtime.voices.stop(voice).await.unwrap();
+        runtime.backend.self_end(node);
+        tokio::time::sleep(std::time::Duration::from_millis(110)).await;
+        runtime.voices.tick().await;
+
+        assert!(runtime.backend.free_node_log.lock().unwrap().is_empty());
+        let (violations, _, _, _) = runtime.backend.faithful_snapshot();
+        assert!(violations.is_empty(), "backend violations: {violations:#?}");
+    }
+
+    #[tokio::test]
+    async fn gateless_one_shot_end_is_not_freed_again_on_polyphony_reclaim() {
+        use crate::traits::VoiceConfig;
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let runtime = Runtime::new(RecordingBackend::faithful());
+        let group = GroupId::new(45_001);
+        let voice = VoiceId::new(45_002);
+        let synth = "reload_done_action_one_shot";
+        register_voice_synthdef(
+            &runtime,
+            synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+        runtime
+            .groups
+            .create(group, "one-shot", None)
+            .await
+            .unwrap();
+        runtime
+            .voices
+            .create(
+                voice,
+                VoiceConfig::new("one-shot", synth, group).with_polyphony(1),
+            )
+            .await
+            .unwrap();
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let first = runtime.state.read().await.voices[&voice].active_nodes[0];
+        runtime.backend.self_end(first);
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let second = runtime.state.read().await.voices[&voice].active_nodes[0];
+        assert_ne!(second, first);
+        runtime.backend.self_end(second);
+
+        runtime
+            .voices
+            .trigger(voice, &ParamMap::new())
+            .await
+            .unwrap();
+        let third = runtime.state.read().await.voices[&voice].active_nodes[0];
+        assert_eq!(third, first, "definitively ended ID should be reusable");
+
+        assert!(runtime.backend.free_node_log.lock().unwrap().is_empty());
+        let (violations, _, _, _) = runtime.backend.faithful_snapshot();
+        assert!(violations.is_empty(), "backend violations: {violations:#?}");
     }
 
     #[tokio::test]
