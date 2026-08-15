@@ -6619,7 +6619,7 @@ mod tests {
                 let expected = crate::conventions::build(&discovery.v1).unwrap();
                 assert_eq!(manifest.conventions.as_ref(), Some(&expected));
                 assert_eq!(expected.capabilities.len(), 28);
-                assert_eq!(expected.parameter_quantities.len(), 18_789);
+                assert_eq!(expected.parameter_quantities.len(), 18_791);
             })
             .unwrap()
             .join()
@@ -7737,7 +7737,7 @@ export type ArbitraryUnion = string | number;
                 let mut manifest = build_v2(&discovery).unwrap();
                 let composition =
                     validate_fragment_join(&discovery, &manifest, &discovery.fragments).unwrap();
-                assert_eq!(composition.accounting.semantic_records, 123);
+                assert_eq!(composition.accounting.semantic_records, 125);
                 assert_eq!(composition.accounting.orphan_records, 0);
                 assert_eq!(composition.accounting.unclassified_records, 0);
                 assert!(composition.accounting.unclassified_targets.is_empty());
