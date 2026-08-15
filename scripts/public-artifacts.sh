@@ -56,7 +56,7 @@ export NO_COLOR=1
   done
 } > "$snapshot"
 
-run_cargo run --locked -p xtask -- public-artifacts "$mode" "$snapshot"
+run_cargo run --locked -p xtask -- public-projections "$mode" "$snapshot"
 
 npm --prefix vscode-extension ci --ignore-scripts --no-audit --no-fund
 if [[ "$mode" == "generate" ]]; then
@@ -89,3 +89,5 @@ python3 scripts/v1-baselines.py "$mode"
 if [[ "$mode" == "check" ]]; then
   python3 scripts/v1-baselines.py test-drift
 fi
+
+run_cargo run --locked -p xtask -- effective-contract "$mode"

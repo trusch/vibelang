@@ -37,6 +37,16 @@ fn run() -> Result<(), String> {
             }
             public_api::generate(&root, check)
         }
+        "public-projections" => {
+            let cli_help = args.next().ok_or_else(|| {
+                "public-projections requires a CLI help snapshot path".to_string()
+            })?;
+            if args.next().is_some() {
+                return Err("unexpected extra arguments".into());
+            }
+            public_api::generate(&root, check)?;
+            public_artifacts::generate(&root, &PathBuf::from(cli_help), check)
+        }
         "public-artifacts" => {
             let cli_help = args
                 .next()
@@ -65,6 +75,6 @@ fn run() -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "usage: cargo run -p xtask -- <public-api|public-artifacts|effective-contract|effective-metadata> <generate|check> [cli-help-snapshot]"
+    "usage: cargo run -p xtask -- <public-api|public-projections|public-artifacts|effective-contract|effective-metadata> <generate|check> [cli-help-snapshot]"
         .into()
 }
