@@ -62,7 +62,7 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
 
     // Process each line in the content
     for line in content.lines() {
-        let line = line.trim();
+        let line = line.split("//").next().unwrap_or_default().trim();
 
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with("//") {
@@ -70,7 +70,7 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
         }
 
         // Handle section headers
-        if line.starts_with('<') && line.contains('>') {
+        let opcode_text = if line.starts_with('<') && line.contains('>') {
             if let Some(section) = current_section.take() {
                 // Add the completed section to the SFZ file
                 match section.section_type {
@@ -91,7 +91,8 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
             }
 
             // Parse the section header
-            let section_type = parse_section_header(line)?;
+            let end = line.find('>').expect("checked above");
+            let section_type = parse_section_header(&line[..=end])?;
             let mut opcodes = HashMap::new();
 
             // Inherit opcodes from parent sections
@@ -142,34 +143,27 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                 section_type,
                 opcodes,
             });
-        } else if line.contains('=') {
-            // Handle opcode definitions
-            if let Some(ref mut section) = current_section {
-                let parts: Vec<&str> = line.splitn(2, '=').collect();
-                if parts.len() == 2 {
-                    let opcode = parts[0].trim();
+            line[end + 1..].trim()
+        } else {
+            line
+        };
 
-                    // Remove inline comments from the value
-                    let mut value = parts[1].trim();
-                    if let Some(comment_pos) = value.find("//") {
-                        value = value[..comment_pos].trim();
-                    }
-
-                    // Track unrecognized opcodes for a per-file summary
-                    // warning. Curve/effect sections carry free-form names
-                    // (v000..v127, vendor params) and are exempt.
-                    if !matches!(
-                        section.section_type,
-                        SfzSectionType::Curve | SfzSectionType::Effect
-                    ) && !crate::parser::opcodes::is_known_opcode(opcode)
-                    {
-                        *sfz.unknown_opcodes.entry(opcode.to_string()).or_insert(0) += 1;
-                    }
-
-                    section
-                        .opcodes
-                        .insert(opcode.to_string(), value.to_string());
+        if let Some(ref mut section) = current_section {
+            for (opcode, value) in parse_opcode_pairs(opcode_text) {
+                // Track unrecognized opcodes for a per-file summary
+                // warning. Curve/effect sections carry free-form names
+                // (v000..v127, vendor params) and are exempt.
+                if !matches!(
+                    section.section_type,
+                    SfzSectionType::Curve | SfzSectionType::Effect
+                ) && !crate::parser::opcodes::is_known_opcode(opcode)
+                {
+                    *sfz.unknown_opcodes.entry(opcode.to_string()).or_insert(0) += 1;
                 }
+
+                section
+                    .opcodes
+                    .insert(opcode.to_string(), value.to_string());
             }
         }
     }
@@ -188,6 +182,43 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
     }
 
     Ok(sfz)
+}
+
+/// Splits one SFZ source line into `opcode=value` pairs. Values may contain
+/// spaces (notably sample paths); a new pair begins only at whitespace
+/// followed by an identifier and `=`.
+fn parse_opcode_pairs(line: &str) -> Vec<(&str, &str)> {
+    let bytes = line.as_bytes();
+    let mut starts = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        let boundary = index == 0 || bytes[index - 1].is_ascii_whitespace();
+        if boundary && bytes[index].is_ascii_alphabetic() {
+            let start = index;
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+            {
+                index += 1;
+            }
+            if index < bytes.len() && bytes[index] == b'=' {
+                starts.push((start, index));
+            }
+        }
+        index += 1;
+    }
+
+    starts
+        .iter()
+        .enumerate()
+        .map(|(position, (start, equals))| {
+            let end = starts
+                .get(position + 1)
+                .map(|(next, _)| *next)
+                .unwrap_or(line.len());
+            (&line[*start..*equals], line[*equals + 1..end].trim())
+        })
+        .collect()
 }
 
 /// Parse a section header from a line
@@ -279,5 +310,25 @@ mod tests {
         let region = &sfz.regions[0];
         assert_eq!(region.get_opcode_str("sample"), Some("piano_C3.wav"));
         assert_eq!(region.get_opcode_str("key"), Some("60"));
+    }
+
+    #[test]
+    fn parses_multiple_opcodes_and_space_paths_on_one_line() {
+        let sfz = parse_sfz(
+            "<control> default_path=Samples/Grand Piano\n\
+             <region> sample=Soft C 4.wav lokey=0 hikey=63 lorand=0.0 hirand=0.5\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            sfz.control.as_ref().unwrap().get_opcode_str("default_path"),
+            Some("Samples/Grand Piano")
+        );
+        let region = &sfz.regions[0];
+        assert_eq!(region.get_opcode_str("sample"), Some("Soft C 4.wav"));
+        assert_eq!(region.get_opcode_str("lokey"), Some("0"));
+        assert_eq!(region.get_opcode_str("hikey"), Some("63"));
+        assert_eq!(region.get_opcode_str("lorand"), Some("0.0"));
+        assert_eq!(region.get_opcode_str("hirand"), Some("0.5"));
     }
 }

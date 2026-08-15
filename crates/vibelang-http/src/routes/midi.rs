@@ -9,6 +9,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use vibelang_core::midi::MidiReadiness;
 use vibelang_core::types::MidiDeviceId;
 
 use crate::AppState;
@@ -164,6 +165,17 @@ pub async fn list_devices(State(_state): State<Arc<AppState>>) -> Json<Vec<MidiD
     }
 
     Json(devices)
+}
+
+/// Return the current logical MIDI input readiness independently of engine health.
+///
+/// GET /midi/readiness
+pub async fn get_readiness(State(state): State<Arc<AppState>>) -> Json<MidiReadiness> {
+    Json(
+        state
+            .with_state(|runtime| runtime.midi_readiness.clone())
+            .await,
+    )
 }
 
 /// Open a MIDI input device.
@@ -697,4 +709,48 @@ pub async fn clear_routes(
         })?;
 
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vibelang_core::midi::{MidiEndpointReadiness, MidiReadinessState};
+
+    #[test]
+    fn midi_readiness_json_mirrors_order_and_optional_fields() {
+        let readiness = MidiReadiness {
+            primary_role: "gamma".to_string(),
+            endpoints: vec![
+                MidiEndpointReadiness {
+                    role: "gamma".to_string(),
+                    state: MidiReadinessState::Connected,
+                    resolved_name: Some("Gamma:Gamma MIDI 1 24:0".to_string()),
+                    detail: None,
+                },
+                MidiEndpointReadiness {
+                    role: "f_midi".to_string(),
+                    state: MidiReadinessState::Waiting,
+                    resolved_name: None,
+                    detail: Some("Waiting for exact ALSA MIDI client 'f_midi'".to_string()),
+                },
+                MidiEndpointReadiness {
+                    role: "panel".to_string(),
+                    state: MidiReadinessState::Unavailable,
+                    resolved_name: None,
+                    detail: Some("permission denied".to_string()),
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(readiness).expect("readiness should serialize");
+        assert_eq!(json["primary_role"], "gamma");
+        assert_eq!(json["endpoints"][0]["state"], "connected");
+        assert_eq!(json["endpoints"][1]["state"], "waiting");
+        assert_eq!(json["endpoints"][2]["state"], "unavailable");
+        assert!(json["endpoints"][0].get("detail").is_none());
+        assert_eq!(
+            json["endpoints"][0]["resolved_name"],
+            "Gamma:Gamma MIDI 1 24:0"
+        );
+    }
 }

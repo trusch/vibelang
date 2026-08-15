@@ -257,6 +257,7 @@ pub async fn start_server(
     #[cfg(feature = "midi")]
     let app = app
         .route("/midi/devices", get(routes::midi::list_devices))
+        .route("/midi/readiness", get(routes::midi::get_readiness))
         .route("/midi/input/open", post(routes::midi::open_input))
         .route("/midi/output/open", post(routes::midi::open_output))
         .route("/midi/close", post(routes::midi::close_device))

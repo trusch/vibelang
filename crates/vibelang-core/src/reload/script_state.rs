@@ -4,6 +4,8 @@
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
 use crate::handlers::{InputRouteMap, InputRouteSrc, ParamRouteMap, ParamRouteTarget, RouteMap};
+#[cfg(feature = "midi")]
+use crate::midi::MidiInputIntent;
 use crate::state::State;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
@@ -800,6 +802,10 @@ pub struct ScriptState {
     /// MIDI devices to open for input.
     #[cfg(feature = "midi")]
     pub midi_inputs: HashSet<MidiDeviceId>,
+
+    /// Stable logical MIDI input intents resolved and rebound by the runtime.
+    #[cfg(feature = "midi")]
+    pub midi_input_intents: Vec<MidiInputIntent>,
 
     /// MIDI devices to open for output.
     #[cfg(feature = "midi")]
