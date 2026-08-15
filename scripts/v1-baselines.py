@@ -245,7 +245,8 @@ FAILURE_SEAM_TRUTH = [
         "async fn phase_delete_entities",
         "backend or resource rejection while deleting entities",
         "continue",
-        "execution.phases[2].failures = self.phase_delete_entities(&diff).await;",
+        "execution.phases[2].failures = self",
+        ".phase_delete_entities(&diff, group_teardown_grace)",
     ),
     reload_apply_seam(
         "open_midi",
