@@ -205,13 +205,8 @@ impl UmpParser {
     /// # Returns
     /// Number of 32-bit words in the packet (1, 2, 3, or 4).
     pub fn packet_size(first_word: u32) -> usize {
-        let msg_type = ((first_word >> 28) & 0xF) as u8;
-        match msg_type {
-            0x0..=0x2 => 1, // Utility, System, MIDI 1.0 CV
-            0x3 | 0x4 => 2, // Data 64, MIDI 2.0 CV
-            0x5 | 0xD => 4, // Data 128, Flex Data
-            _ => 1,         // Unknown/reserved
-        }
+        const PACKET_WORDS: [usize; 16] = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4];
+        PACKET_WORDS[((first_word >> 28) & 0xF) as usize]
     }
 
     /// Parse MIDI 1.0 Channel Voice message (UMP type 0x2).
@@ -683,11 +678,13 @@ mod tests {
 
     #[test]
     fn test_packet_size() {
-        // MIDI 1.0 CV = 1 word
-        assert_eq!(UmpParser::packet_size(0x20000000), 1);
-        // MIDI 2.0 CV = 2 words
-        assert_eq!(UmpParser::packet_size(0x40000000), 2);
-        // System = 1 word
-        assert_eq!(UmpParser::packet_size(0x10000000), 1);
+        let expected = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4];
+        for (message_type, word_count) in expected.into_iter().enumerate() {
+            assert_eq!(
+                UmpParser::packet_size((message_type as u32) << 28),
+                word_count,
+                "message type {message_type:#x}"
+            );
+        }
     }
 }

@@ -102,6 +102,8 @@ mod recording;
 mod ump;
 mod voice_output;
 
+const MIDI_INPUT_TRANSPORT_MASK: u32 = 0xC000_0000;
+
 // =============================================================================
 // Legacy re-exports (existing API, maintained for compatibility)
 // =============================================================================

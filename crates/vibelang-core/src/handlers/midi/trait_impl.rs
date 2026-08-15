@@ -92,15 +92,21 @@ impl<B: Backend> Midi for MidiHandler<B> {
     async fn open_input(&self, id: MidiDeviceId) -> Result<()> {
         #[cfg(target_os = "linux")]
         if crate::midi::is_alsa_ump_input_id(id) {
-            {
-                let inputs = self.alsa_ump_inputs.lock().map_err(|e| {
+            let stale = {
+                let mut inputs = self.alsa_ump_inputs.lock().map_err(|e| {
                     Error::MidiError(format!("ALSA UMP inputs lock poisoned: {}", e))
                 })?;
-                if inputs.contains_key(&id) {
+                if inputs
+                    .get(&id)
+                    .map(|input| input.is_alive())
+                    .unwrap_or(false)
+                {
                     tracing::trace!("ALSA UMP input {:?} already open", id);
                     return Ok(());
                 }
-            }
+                inputs.remove(&id)
+            };
+            drop(stale);
 
             let conn = crate::midi::open_alsa_ump_input(
                 id,
@@ -327,13 +333,14 @@ impl<B: Backend> Midi for MidiHandler<B> {
         let mut removed = false;
 
         #[cfg(target_os = "linux")]
-        if self
+        let alsa_ump_input = self
             .alsa_ump_inputs
             .lock()
             .map_err(|e| Error::MidiError(format!("ALSA UMP inputs lock poisoned: {}", e)))?
-            .remove(&id)
-            .is_some()
-        {
+            .remove(&id);
+        #[cfg(target_os = "linux")]
+        if alsa_ump_input.is_some() {
+            drop(alsa_ump_input);
             tracing::info!("Closed ALSA UMP input: id={}", id.0);
             removed = true;
         }
