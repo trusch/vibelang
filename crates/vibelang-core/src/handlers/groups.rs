@@ -113,17 +113,6 @@ impl<B: Backend> GroupsHandler<B> {
         let group = {
             let mut state = self.state.write().await;
             let group = state.groups.remove(&id).ok_or(Error::GroupNotFound(id))?;
-            if immediate {
-                // Immediate path: nodes are /n_free'd below in this same
-                // call, so IDs and the bus are definitively done.
-                state.free_node_id(group.node_id);
-                if let Some(link_id) = group.link_synth_node_id {
-                    state.free_node_id(link_id);
-                }
-                // Return the group's stereo audio bus to the free pool so
-                // long-running sessions don't burn through bus IDs.
-                state.free_audio_bus(group.audio_bus, 2);
-            }
             // Drop the live chain-order tracking; a recreated group with the
             // same id starts a fresh chain.
             state.group_effect_chain.remove(&id);
@@ -141,6 +130,16 @@ impl<B: Backend> GroupsHandler<B> {
                 .free_node(group.node_id)
                 .await
                 .map_err(Error::backend)?;
+
+            // Keep IDs and the bus owned until every backend free above has
+            // been sent. Reclaiming them before /n_free lets a same-pass
+            // create reuse an ID or bus while the old subtree still exists.
+            let mut state = self.state.write().await;
+            state.free_node_id(group.node_id);
+            if let Some(link_id) = group.link_synth_node_id {
+                state.free_node_id(link_id);
+            }
+            state.free_audio_bus(group.audio_bus, 2);
 
             tracing::debug!("Deleted group {} (node_id={})", id.0, group.node_id.0);
             return Ok(());

@@ -26,7 +26,7 @@ use std::time::Duration;
 /// - Short enough to respond to transport stops quickly
 /// - At 120 BPM: 0.1 beats of lookahead
 /// - At 180 BPM: 0.15 beats of lookahead
-const LOOKAHEAD_MS: u64 = 50;
+pub(crate) const LOOKAHEAD_MS: u64 = 50;
 
 /// Tracks pending note-off: (voice_id, note) -> (beat, wall-clock timestamp)
 ///

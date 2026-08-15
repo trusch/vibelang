@@ -1202,28 +1202,30 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     async fn delete(&self, id: VoiceId) -> Result<()> {
         let detached = {
             let mut state = self.state.write().await;
-            let detached = detach_voice(&mut state, id)?;
-            // Hard delete: every node is explicitly /n_free'd below, so the
-            // IDs are definitively done and safe to recycle right away; the
-            // buses go back to the allocators in the same breath.
-            reclaim_detached_now(&mut state, &detached);
-            detached
+            detach_voice(&mut state, id)?
         };
 
-        // Release any still-sounding pool notes on the external device.
-        #[cfg(feature = "midi")]
-        self.flush_pool_cleanup(detached.pool_cleanup).await;
-
         // Free all active synth nodes (lock released)
-        for node_id in detached.nodes {
-            let _ = self.backend.free_node(node_id).await;
+        for node_id in &detached.nodes {
+            let _ = self.backend.free_node(*node_id).await;
         }
         // Free per-port route mixer synths so they no longer read from the
         // voice's freed audio bus (avoids stale `In.ar` reads when the bus
         // is recycled to a later voice).
-        for node_id in detached.route_nodes {
-            let _ = self.backend.free_node(node_id).await;
+        for node_id in &detached.route_nodes {
+            let _ = self.backend.free_node(*node_id).await;
         }
+
+        // The backend teardown is now definitive; only now may the allocator
+        // hand these node IDs and buses to a replacement voice.
+        {
+            let mut state = self.state.write().await;
+            reclaim_detached_now(&mut state, &detached);
+        }
+
+        // Release any still-sounding pool notes on the external device.
+        #[cfg(feature = "midi")]
+        self.flush_pool_cleanup(detached.pool_cleanup).await;
 
         Ok(())
     }
@@ -1235,25 +1237,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Only gated voices with sounding nodes need the deferred path;
             // everything else reclaims immediately, exactly like `delete`.
             let defer = detached.gated && !detached.nodes.is_empty();
-            if !defer {
-                reclaim_detached_now(&mut state, &detached);
-            }
             (detached, defer)
         };
+
+        if !defer {
+            for node_id in &detached.nodes {
+                let _ = self.backend.free_node(*node_id).await;
+            }
+            for node_id in &detached.route_nodes {
+                let _ = self.backend.free_node(*node_id).await;
+            }
+            {
+                let mut state = self.state.write().await;
+                reclaim_detached_now(&mut state, &detached);
+            }
+            #[cfg(feature = "midi")]
+            self.flush_pool_cleanup(detached.pool_cleanup).await;
+            return Ok(());
+        }
 
         // Release any still-sounding pool notes on the external device.
         #[cfg(feature = "midi")]
         self.flush_pool_cleanup(detached.pool_cleanup).await;
-
-        if !defer {
-            for node_id in detached.nodes {
-                let _ = self.backend.free_node(node_id).await;
-            }
-            for node_id in detached.route_nodes {
-                let _ = self.backend.free_node(node_id).await;
-            }
-            return Ok(());
-        }
 
         // Set gate=0 on all active synth nodes to trigger release envelopes.
         // The synths free themselves via doneAction=2 when the envelope
