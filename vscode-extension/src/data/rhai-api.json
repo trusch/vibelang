@@ -5857,6 +5857,30 @@
   },
   {
     "name": "group",
+    "description": "Source-backed rhai method on CcMapping registration; availability: conditional.",
+    "signature": "group(_: CcMapping, _: i64) -> CcMapping",
+    "example": "",
+    "receiver": "CcMapping",
+    "lifecycle": {
+      "phase": "builder_or_handle_call",
+      "terminal": "non_terminal_chain",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "conditional",
+      "cfg": [
+        "cfg (feature = \"midi\")"
+      ],
+      "targets": [],
+      "features": [
+        "midi"
+      ],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
+    "name": "group",
     "description": "Source-backed rhai method on MidiDevice registration; availability: conditional.",
     "signature": "group(_: MidiDevice, _: i64) -> vibelang_rhai::api::midi::midi2::GroupRoute",
     "example": "",

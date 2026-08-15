@@ -47,7 +47,7 @@ const FRAGMENT_DIR: &str = "api/contract";
 const GENERATOR_NAME: &str = "vibelang-xtask-effective-contract";
 const API_VERSION: &str = "0.4.0";
 const ACCEPTED_V1_MANIFEST_SHA256: &str =
-    "24e973fa95143f996823a38e2a359a5c72443d16b9391f3a9cc2ae76c5f1d184";
+    "6cba069dce1052c82a2fc4e216f391bf1fcc99541c6b9361c6150605b1b44e6f";
 const ACCEPTED_V1_HTTP_SHA256: &str =
     "d93913c5d95d799c93a96e727d88e5ddd996a55a8a2ed4c014f0f35ce579a0cd";
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
