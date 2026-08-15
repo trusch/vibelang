@@ -21,6 +21,94 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+impl<B: Backend> MidiHandler<B> {
+    pub(super) async fn open_legacy_input_as(
+        &self,
+        port_id: MidiDeviceId,
+        logical_id: MidiDeviceId,
+    ) -> Result<()> {
+        {
+            let inputs = self
+                .inputs
+                .lock()
+                .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?;
+            if inputs.contains_key(&logical_id) {
+                tracing::trace!("MIDI input {} already open", logical_id.0);
+                return Ok(());
+            }
+        }
+
+        let midi_in = MidiInput::new("vibelang-core2-in")
+            .map_err(|e| Error::MidiError(format!("Failed to create MIDI input: {}", e)))?;
+        let ports = midi_in.ports();
+        let port = ports
+            .get(port_id.0 as usize)
+            .ok_or_else(|| Error::MidiError(format!("MIDI device {} not found", port_id.0)))?;
+        let port_name = midi_in
+            .port_name(port)
+            .unwrap_or_else(|_| format!("Unknown {}", port_id.0));
+
+        let tx = self.tx.clone();
+        let event_sender = self.event_queue.sender();
+        let midi_clock = Arc::clone(&self.midi_clock);
+        let callback_id = logical_id;
+        let input_drops = Arc::clone(&self.input_callback_drops);
+
+        let conn = midi_in
+            .connect(
+                port,
+                "vibelang-input",
+                move |timestamp_us, data, _| {
+                    let received_at = std::time::Instant::now();
+                    midi_clock.calibrate(timestamp_us);
+
+                    if let Some(new_msg) = new_parse_midi_bytes(data) {
+                        let timestamped_event = TimestampedMidiEvent {
+                            timestamp_us,
+                            received_at,
+                            device_id: callback_id,
+                            message: new_msg.clone(),
+                        };
+
+                        if !event_sender.try_send(timestamped_event) {
+                            let fell_back = convert_new_to_legacy_message(&new_msg)
+                                .map(|legacy_msg| tx.try_send((callback_id, legacy_msg)).is_ok())
+                                .unwrap_or(false);
+                            if !fell_back {
+                                input_drops.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                },
+                (),
+            )
+            .map_err(|e| Error::MidiError(format!("Failed to connect MIDI input: {}", e)))?;
+
+        self.inputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?
+            .insert(logical_id, conn);
+        tracing::info!(
+            "Opened MIDI input: {} (port={}, logical={}) with timestamp preservation",
+            port_name,
+            port_id.0,
+            logical_id.0
+        );
+        Ok(())
+    }
+
+    pub(super) fn close_legacy_input(&self, logical_id: MidiDeviceId) {
+        match self.inputs.lock() {
+            Ok(mut inputs) => {
+                if inputs.remove(&logical_id).is_some() {
+                    tracing::info!("Closed MIDI input: logical={}", logical_id.0);
+                }
+            }
+            Err(error) => tracing::error!("MIDI inputs lock poisoned: {}", error),
+        }
+    }
+}
+
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Midi for MidiHandler<B> {
@@ -157,92 +245,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
             return Ok(());
         }
 
-        // Check if already open (idempotent operation)
-        {
-            let inputs = self
-                .inputs
-                .lock()
-                .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?;
-            if inputs.contains_key(&id) {
-                tracing::trace!("MIDI input {} already open", id.0);
-                return Ok(());
-            }
-        }
-
-        let midi_in = MidiInput::new("vibelang-core2-in")
-            .map_err(|e| Error::MidiError(format!("Failed to create MIDI input: {}", e)))?;
-
-        let ports = midi_in.ports();
-        let port = ports
-            .get(id.0 as usize)
-            .ok_or_else(|| Error::MidiError(format!("MIDI device {} not found", id.0)))?;
-
-        let port_name = midi_in
-            .port_name(port)
-            .unwrap_or_else(|_| format!("Unknown {}", id.0));
-
-        let tx = self.tx.clone();
-
-        // Timestamped input queue and clock for timestamp calibration.
-        let event_sender = self.event_queue.sender();
-        let midi_clock = Arc::clone(&self.midi_clock);
-        let device_id = id;
-        let input_drops = Arc::clone(&self.input_callback_drops);
-
-        let conn = midi_in
-            .connect(
-                port,
-                "vibelang-input",
-                move |timestamp_us, data, _| {
-                    let received_at = std::time::Instant::now();
-
-                    // Calibrate clock on first message
-                    midi_clock.calibrate(timestamp_us);
-
-                    // Parse with new infrastructure (preserves all message types)
-                    if let Some(new_msg) = new_parse_midi_bytes(data) {
-                        // Send to new event queue with full timestamp info
-                        let timestamped_event = TimestampedMidiEvent {
-                            timestamp_us,
-                            received_at,
-                            device_id: crate::types::ids::MidiDeviceId::new(device_id.0),
-                            message: new_msg.clone(),
-                        };
-
-                        if !event_sender.try_send(timestamped_event) {
-                            // Event queue full. Fall back to the legacy channel,
-                            // but never block: this closure runs on the MIDI
-                            // driver's realtime thread. The crossbeam bounded
-                            // channel has no overwrite-oldest semantics, so on
-                            // double overflow the *newest* event is dropped —
-                            // under sustained overload this can lose a note-off;
-                            // the panic-clear on device open bounds the damage.
-                            // Drops are counted here and reported (rate-limited)
-                            // from the consumer side in `tick()`.
-                            let fell_back = convert_new_to_legacy_message(&new_msg)
-                                .map(|legacy_msg| tx.try_send((device_id, legacy_msg)).is_ok())
-                                .unwrap_or(false);
-                            if !fell_back {
-                                input_drops.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                    }
-                },
-                (),
-            )
-            .map_err(|e| Error::MidiError(format!("Failed to connect MIDI input: {}", e)))?;
-
-        self.inputs
-            .lock()
-            .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?
-            .insert(id, conn);
-        tracing::info!(
-            "Opened MIDI input: {} (id={}) with timestamp preservation",
-            port_name,
-            id.0
-        );
-
-        Ok(())
+        self.open_legacy_input_as(id, id).await
     }
 
     async fn open_output(&self, id: MidiDeviceId) -> Result<()> {

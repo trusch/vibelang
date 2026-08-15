@@ -59,9 +59,11 @@ use crate::compat::RwLock;
 use crate::midi::PipeWireMidiInputConnection;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, ControlValue, GroupChannel, KeyboardRouteBuilder,
-    MidiClock, MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
+    MidiClock, MidiEventQueue, MidiEventSender, MidiInputIntent, MidiInputIntentRuntime,
+    MidiMessage as NewMidiMessage, MidiReadiness, MidiReadinessState, MidiRealtimeService,
     MidiRecording, NoteRouteBuilder, ScheduledMidiEvent, TimestampedMidiEvent,
 };
+use crate::midi::{LegacyInputAction, LegacyMidiPort};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport_snapshot::TransportSnapshot;
 
@@ -84,9 +86,7 @@ use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
 use std::collections::{HashMap, HashSet, VecDeque};
-#[cfg(feature = "pipewire-midi2")]
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -94,6 +94,7 @@ use tokio::sync::mpsc;
 /// Maximum number of runtime messages parked while the runtime channel is
 /// full. When exceeded, the oldest non-protected message is dropped.
 const PENDING_RUNTIME_CAP: usize = 16384;
+const MIDI_INPUT_INTENT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// A runtime message parked because the runtime channel was full.
 struct PendingRuntimeMessage {
@@ -208,6 +209,7 @@ struct VoiceCcTelemetry {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct MidiRouteSnapshot {
+    input_intents: Vec<MidiInputIntent>,
     keyboard_routes: Vec<crate::reload::MidiKeyboardRoute>,
     cc_routes: Vec<crate::reload::MidiCcRoute>,
     advanced_keyboard_routes: Vec<crate::reload::AdvancedMidiKeyboardRoute>,
@@ -223,6 +225,7 @@ pub(crate) struct MidiRouteSnapshot {
 impl MidiRouteSnapshot {
     pub(crate) fn from_script_state(state: &crate::reload::ScriptState) -> Self {
         Self {
+            input_intents: state.midi_input_intents.clone(),
             keyboard_routes: state.midi_keyboard_routes.clone(),
             cc_routes: state.midi_cc_routes.clone(),
             advanced_keyboard_routes: state.advanced_keyboard_routes.clone(),
@@ -248,6 +251,15 @@ pub struct MidiHandler<B: Backend> {
 
     /// Open input connections (uses std::sync::Mutex because MidiInputConnection is !Send).
     inputs: Arc<Mutex<HashMap<MidiDeviceId, MidiInputConnection<()>>>>,
+
+    /// Stable logical MIDI-1 endpoints declared by the active script.
+    input_intents: Mutex<Vec<MidiInputIntentRuntime>>,
+
+    /// Last legacy-input discovery pass used to enforce the 250 ms cadence.
+    last_input_intent_poll: Mutex<Option<Instant>>,
+
+    /// Whether the active generation's script routes have been installed.
+    input_routes_ready: AtomicBool,
 
     /// Open output connections (uses std::sync::Mutex because MidiOutputConnection is !Send).
     outputs: Arc<Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>>,
@@ -402,6 +414,9 @@ impl<B: Backend> MidiHandler<B> {
             backend,
             state,
             inputs: Arc::new(Mutex::new(HashMap::new())),
+            input_intents: Mutex::new(Vec::new()),
+            last_input_intent_poll: Mutex::new(None),
+            input_routes_ready: AtomicBool::new(true),
             outputs: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "pipewire-midi2")]
             pipewire_inputs: Arc::new(Mutex::new(HashMap::new())),
@@ -779,6 +794,227 @@ impl<B: Backend> MidiHandler<B> {
         tracing::debug!("Cleared MIDI capability cache");
     }
 
+    pub(crate) async fn set_input_intents(&self, intents: &[MidiInputIntent]) {
+        self.input_routes_ready.store(false, Ordering::Release);
+
+        let removed = {
+            let mut current = self.input_intents.lock().unwrap_or_else(|e| e.into_inner());
+            let mut previous = std::mem::take(&mut *current);
+            let mut next = Vec::with_capacity(intents.len());
+
+            for intent in intents {
+                if let Some(index) = previous
+                    .iter()
+                    .position(|runtime| runtime.intent == *intent)
+                {
+                    next.push(previous.remove(index));
+                } else {
+                    next.push(MidiInputIntentRuntime::new(intent.clone()));
+                }
+            }
+            *current = next;
+            previous
+        };
+
+        for runtime in removed {
+            if runtime.is_bound() {
+                self.panic_and_close_input(runtime.intent.device_id).await;
+            }
+        }
+
+        *self
+            .last_input_intent_poll
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        self.publish_input_readiness().await;
+        self.reconcile_input_intents(true).await;
+    }
+
+    async fn poll_input_intents(&self) {
+        self.reconcile_input_intents(false).await;
+    }
+
+    async fn reconcile_input_intents(&self, force: bool) {
+        if self
+            .input_intents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+        {
+            return;
+        }
+
+        let now = Instant::now();
+        {
+            let mut last = self
+                .last_input_intent_poll
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if !force
+                && last
+                    .is_some_and(|last| now.duration_since(last) < MIDI_INPUT_INTENT_POLL_INTERVAL)
+            {
+                return;
+            }
+            *last = Some(now);
+        }
+
+        let discovery = Self::enumerate_legacy_input_ports();
+        let actions = {
+            let mut runtimes = self.input_intents.lock().unwrap_or_else(|e| e.into_inner());
+            runtimes
+                .iter_mut()
+                .enumerate()
+                .map(|(index, runtime)| {
+                    let action = match &discovery {
+                        Ok(ports) => runtime.observe(Ok(ports)),
+                        Err(error) => runtime.observe(Err(error)),
+                    };
+                    (index, runtime.intent.device_id, action)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for (index, logical_id, action) in actions {
+            match action {
+                LegacyInputAction::None => {}
+                LegacyInputAction::Disconnect => {
+                    self.panic_and_close_input(logical_id).await;
+                }
+                LegacyInputAction::Open {
+                    port,
+                    disconnect_first,
+                } => {
+                    if disconnect_first {
+                        self.panic_and_close_input(logical_id).await;
+                    }
+
+                    let open_result = self.open_legacy_input_as(port.id, logical_id).await;
+                    let mut runtimes = self.input_intents.lock().unwrap_or_else(|e| e.into_inner());
+                    let Some(runtime) = runtimes.get_mut(index) else {
+                        continue;
+                    };
+                    if runtime.intent.device_id != logical_id {
+                        continue;
+                    }
+                    match open_result {
+                        Ok(()) => runtime.mark_opened(port),
+                        Err(error) => runtime.mark_open_failed(&port, &error.to_string()),
+                    }
+                }
+            }
+        }
+
+        self.publish_input_readiness().await;
+    }
+
+    fn enumerate_legacy_input_ports() -> std::result::Result<Vec<LegacyMidiPort>, String> {
+        let midi_in =
+            midir::MidiInput::new("vibelang-intent-list").map_err(|error| error.to_string())?;
+        let mut ports = Vec::new();
+        for (index, port) in midi_in.ports().iter().enumerate() {
+            let name = midi_in.port_name(port).map_err(|error| {
+                format!("Failed to read MIDI input name at index {index}: {error}")
+            })?;
+            ports.push(LegacyMidiPort {
+                id: MidiDeviceId::new(index as u32),
+                name,
+            });
+        }
+        Ok(ports)
+    }
+
+    async fn publish_input_readiness(&self) {
+        let routes_ready = self.input_routes_ready.load(Ordering::Acquire);
+        let mut endpoints = self
+            .input_intents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(MidiInputIntentRuntime::readiness)
+            .collect::<Vec<_>>();
+
+        if !routes_ready {
+            for endpoint in &mut endpoints {
+                if endpoint.state == MidiReadinessState::Connected {
+                    endpoint.state = MidiReadinessState::Unavailable;
+                    endpoint.detail = Some(
+                        "MIDI routes are being installed for the active runtime generation"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+
+        let readiness = MidiReadiness::from_endpoints(endpoints);
+        let mut state = self.state.write().await;
+        if state.midi_readiness != readiness {
+            state.midi_readiness = readiness;
+        }
+    }
+
+    async fn panic_and_close_input(&self, device_id: MidiDeviceId) {
+        let routing = self.routing_manager.routing();
+        let routing = routing.read().await;
+        let mut target_voices = HashSet::new();
+        target_voices.extend(
+            routing
+                .keyboard_routes
+                .iter()
+                .filter(|route| route.device_id == device_id)
+                .map(|route| route.voice_id),
+        );
+        target_voices.extend(
+            routing
+                .advanced_keyboard_routes
+                .iter()
+                .filter(|route| route.device_id == device_id)
+                .filter_map(|route| route.target_voice),
+        );
+        target_voices.extend(
+            routing
+                .note_routes
+                .iter()
+                .filter(|route| route.device_id == device_id)
+                .filter_map(|route| route.target_voice),
+        );
+        drop(routing);
+
+        let active_notes = {
+            let state = self.state.read().await;
+            target_voices
+                .iter()
+                .flat_map(|voice_id| {
+                    state
+                        .voices
+                        .get(voice_id)
+                        .into_iter()
+                        .flat_map(|voice| voice.note_nodes.keys().copied())
+                        .map(|note| (*voice_id, note))
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for (voice, note) in active_notes {
+            self.send_runtime_from_tick(
+                Message::Voice(VoiceMessage::NoteOff { voice, note }),
+                true,
+                "input disconnect all-notes-off",
+            );
+        }
+        self.pending_voice_cc
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(voice, _), _| !target_voices.contains(voice));
+
+        self.close_legacy_input(device_id);
+        tracing::info!(
+            "MIDI input {} disconnected; issued all-notes-off for {} routed voices",
+            device_id.raw(),
+            target_voices.len()
+        );
+    }
+
     // ========================================================================
     // New Infrastructure Accessors
     // ========================================================================
@@ -885,12 +1121,16 @@ impl<B: Backend> MidiHandler<B> {
         *current != desired
     }
 
-    pub(crate) fn mark_script_routes_applied(&self, state: &crate::reload::ScriptState) {
-        let mut current = self
-            .last_script_routes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *current = MidiRouteSnapshot::from_script_state(state);
+    pub(crate) async fn mark_script_routes_applied(&self, state: &crate::reload::ScriptState) {
+        {
+            let mut current = self
+                .last_script_routes
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *current = MidiRouteSnapshot::from_script_state(state);
+        }
+        self.input_routes_ready.store(true, Ordering::Release);
+        self.publish_input_readiness().await;
     }
 
     /// Apply CC routes from script state.
@@ -1063,6 +1303,11 @@ impl<B: Backend> MidiHandler<B> {
             mgr.tick(current_beat, time_sig_num)
         };
         self.dispatch_looper_actions(looper_actions);
+
+        // Legacy ALSA ports have unstable numeric IDs. Re-resolve logical
+        // intents after processing this tick's queued events so a disconnect
+        // panic is ordered after any already-received note-on.
+        self.poll_input_intents().await;
     }
 
     // ========================================================================
@@ -2873,6 +3118,87 @@ mod tests {
             },
         )));
         midi.tick().await;
+    }
+
+    #[test]
+    fn midi_input_intent_changes_are_part_of_reload_snapshot() {
+        let mut before = crate::reload::ScriptState::new();
+        before
+            .midi_input_intents
+            .push(MidiInputIntent::new("gamma", "gamma"));
+        let mut after = before.clone();
+        after.midi_input_intents[0] = MidiInputIntent::new("gamma", "renamed-gamma");
+
+        assert_ne!(
+            MidiRouteSnapshot::from_script_state(&before),
+            MidiRouteSnapshot::from_script_state(&after)
+        );
+    }
+
+    #[tokio::test]
+    async fn midi_input_intent_routes_channel_velocity_and_note_off() {
+        let intent = MidiInputIntent::new("gamma", "gamma");
+        let note_voice = VoiceId::new(11);
+        let chord_voice = VoiceId::new(12);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, mut runtime_rx) = channel(8);
+        let handler = MidiHandler::new(Arc::new(MockBackend::new()), state, runtime_tx);
+        handler
+            .add_keyboard_route(
+                KeyboardRouteBuilder::new(intent.device_id)
+                    .channel(1)
+                    .velocity_curve_name("linear")
+                    .to(note_voice),
+            )
+            .await;
+        handler
+            .add_keyboard_route(
+                KeyboardRouteBuilder::new(intent.device_id)
+                    .channel(2)
+                    .velocity_curve_name("linear")
+                    .to(chord_voice),
+            )
+            .await;
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            1,
+            Instant::now(),
+            intent.device_id,
+            NewMidiMessage::NoteOn {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::from_midi1(96),
+            },
+        )));
+        handler.tick().await;
+
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOn {
+                voice,
+                note: 60,
+                velocity,
+            })) if voice == note_voice && (velocity - 96.0 / 127.0).abs() < f32::EPSILON
+        ));
+        assert!(runtime_rx.try_recv().is_err());
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            2,
+            Instant::now(),
+            intent.device_id,
+            NewMidiMessage::NoteOff {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::from_midi1(0),
+            },
+        )));
+        handler.tick().await;
+
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOff { voice, note: 60 })) if voice == note_voice
+        ));
+        assert!(runtime_rx.try_recv().is_err());
     }
 
     #[test]

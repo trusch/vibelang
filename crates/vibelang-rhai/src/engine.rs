@@ -4408,6 +4408,65 @@ keyboard_route(mpk).channel(2).to(lead);
 
     #[cfg(feature = "midi")]
     #[test]
+    fn midi_input_intent_is_nonfatal_and_advanced_routes_auto_open() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let note = voice("note");
+                let chord = voice("chord");
+                let gamma = midi_input("gamma", "gamma");
+                gamma.keys().channel(1).range(0, 127).velocity("linear").to(note);
+                gamma.keys().channel(2).range(0, 127).velocity("linear").to(chord);
+                gamma.map_cc(15).channel(1).to(note, "brightness", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.midi_input_intents.len(), 1);
+        let intent = &state.midi_input_intents[0];
+        assert_eq!(intent.role, "gamma");
+        assert_eq!(intent.exact_client, "gamma");
+        assert!(state.midi_inputs.contains(&intent.device_id));
+        assert_eq!(state.advanced_keyboard_routes.len(), 2);
+        assert_eq!(state.advanced_keyboard_routes[0].channel, Some(0));
+        assert_eq!(state.advanced_keyboard_routes[1].channel, Some(1));
+        assert!(state
+            .advanced_keyboard_routes
+            .iter()
+            .all(|route| route.note_min == 0
+                && route.note_max == 127
+                && route.velocity_curve == "linear"
+                && route.device_id == intent.device_id));
+        assert_eq!(state.advanced_cc_routes.len(), 1);
+        let expression = &state.advanced_cc_routes[0];
+        assert_eq!(expression.device_id, intent.device_id);
+        assert_eq!(expression.channel, Some(0));
+        assert_eq!(expression.cc, 15);
+        assert_eq!(expression.param, "brightness");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn midi_input_intent_legacy_route_terminals_auto_open() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let note = voice("note");
+                let gamma = midi_input("gamma", "gamma");
+                gamma.route_to_channel(1, note);
+            "#,
+            )
+            .unwrap();
+
+        let intent = &state.midi_input_intents[0];
+        assert_eq!(state.midi_keyboard_routes.len(), 1);
+        assert!(state.midi_inputs.contains(&intent.device_id));
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
     fn test_midi_output_voice() {
         let mut engine = ScriptEngine::new();
         let state = engine

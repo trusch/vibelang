@@ -2874,6 +2874,14 @@ impl<B: Backend> Runtime<B> {
         let _ = new_state;
         #[cfg(feature = "midi")]
         {
+            self.midi
+                .set_input_intents(&new_state.midi_input_intents)
+                .await;
+            let intent_ids: std::collections::HashSet<_> = new_state
+                .midi_input_intents
+                .iter()
+                .map(|intent| intent.device_id)
+                .collect();
             // Story 4: open MIDI devices in `MidiDeviceId::raw()` order. The
             // backing collections are `HashSet<MidiDeviceId>` so iteration is
             // randomised per process; without sorting the order in which we
@@ -2886,7 +2894,10 @@ impl<B: Backend> Runtime<B> {
 
             let mut midi_input_ids: Vec<_> = new_state.midi_inputs.iter().copied().collect();
             midi_input_ids.sort_by_key(|id| id.raw());
-            for device_id in &midi_input_ids {
+            for device_id in midi_input_ids
+                .iter()
+                .filter(|device_id| !intent_ids.contains(device_id))
+            {
                 tracing::debug!("Reload: opening MIDI input {:?}", device_id);
                 if let Err(e) = self.midi.open_input(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI input {:?}: {}", device_id, e);
@@ -4837,7 +4848,7 @@ impl<B: Backend> Runtime<B> {
                 }
             }
 
-            self.midi.mark_script_routes_applied(new_state);
+            self.midi.mark_script_routes_applied(new_state).await;
         }
         failures
     }
@@ -7344,7 +7355,7 @@ mod tests {
             silence_bars: 1.0,
             quantize_beats: 0.0,
         });
-        runtime.midi.mark_script_routes_applied(&old_state);
+        runtime.midi.mark_script_routes_applied(&old_state).await;
 
         let mut new_state = ScriptState::new();
         new_state.loopers.push(LooperConfig {

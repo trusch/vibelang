@@ -164,6 +164,7 @@ impl MidiDevice {
 
         context::with_state(|state| {
             state.midi_keyboard_routes.push(route);
+            state.midi_inputs.insert(self.id);
         });
 
         self
@@ -181,6 +182,7 @@ impl MidiDevice {
 
         context::with_state(|state| {
             state.midi_keyboard_routes.push(route);
+            state.midi_inputs.insert(self.id);
         });
 
         self
@@ -198,6 +200,7 @@ impl MidiDevice {
 
         context::with_state(|state| {
             state.midi_keyboard_routes.push(route);
+            state.midi_inputs.insert(self.id);
         });
 
         self

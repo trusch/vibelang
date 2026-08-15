@@ -57,8 +57,10 @@ pub use recording::MidiRecordingHandle;
 pub use routing::{CcRoute, KeyboardRoute, NoteRoute};
 
 use rhai::{Array, Dynamic, Engine};
-use vibelang_core::midi::list_pipewire_midi2_inputs;
+use vibelang_core::midi::{list_pipewire_midi2_inputs, MidiInputIntent};
 use vibelang_core::types::MidiDeviceId;
+
+use crate::context;
 
 /// List all available MIDI devices.
 ///
@@ -227,6 +229,30 @@ pub fn midi_device_by_id(id: i64) -> MidiDevice {
     midi_device(id.to_string())
 }
 
+/// Declare a stable, optional MIDI-1 input by logical role and exact ALSA client.
+pub fn midi_input(role: String, exact_client: String) -> MidiDevice {
+    let intent = MidiInputIntent::new(role, exact_client);
+    context::with_state(|state| {
+        if !state.midi_input_intents.iter().any(|existing| {
+            existing.role.eq_ignore_ascii_case(&intent.role)
+                && existing
+                    .exact_client
+                    .eq_ignore_ascii_case(&intent.exact_client)
+        }) {
+            state.midi_input_intents.push(intent.clone());
+        }
+    });
+
+    MidiDevice {
+        id: intent.device_id,
+        name: intent.exact_client,
+        has_input: true,
+        has_output: false,
+        channel: 0,
+        default_note: None,
+    }
+}
+
 /// Resolve a device name (or full port name) to an **output**-port index.
 ///
 /// `midi_device()` searches the *input* port list before the output list, so a
@@ -270,6 +296,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("list_midi_devices", list_midi_devices);
     engine.register_fn("midi_device", midi_device);
     engine.register_fn("midi_device", midi_device_by_id);
+    engine.register_fn("midi_input", midi_input);
 
     // Getters
     engine.register_fn("id", MidiDevice::get_id);
@@ -399,6 +426,7 @@ pub fn register(engine: &mut Engine) {
     engine.build_type::<KeyboardRoute>();
     engine.register_fn("channel", KeyboardRoute::channel);
     engine.register_fn("range_midi", KeyboardRoute::range_midi);
+    engine.register_fn("range", KeyboardRoute::range_midi);
     engine.register_fn("range", KeyboardRoute::range);
     engine.register_fn("transpose", KeyboardRoute::transpose);
     engine.register_fn("octave", KeyboardRoute::octave);
