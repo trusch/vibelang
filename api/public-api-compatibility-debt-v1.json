@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-compatibility-debt/v1",
   "schema_version": 1,
-  "contract_digest": "649f0a064419892198818059b7f88687ccb177d9ff2e738cca60075ba7d2a4be",
+  "contract_digest": "2b52725cfd3ae395690ae382a207bec3e2f4e7e1caa44988e5b1e1c9eeaa2dd4",
   "records": [
     {
       "id": "v1:debt:001cc8b4d1999b0e",

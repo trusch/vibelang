@@ -1,10 +1,10 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "649f0a064419892198818059b7f88687ccb177d9ff2e738cca60075ba7d2a4be",
+  "contract_digest": "2b52725cfd3ae395690ae382a207bec3e2f4e7e1caa44988e5b1e1c9eeaa2dd4",
   "totals": {
-    "entries": 3626,
-    "overloads": 8433,
+    "entries": 3629,
+    "overloads": 8436,
     "routes": 102,
     "http_types": 108,
     "http_fields": 423,
@@ -19592,11 +19592,14 @@
       "id": "v1:source:881dac226b33f8ce",
       "path": "crates/vibelang-rhai/src/api/midi/cc_mapping.rs",
       "kind": "mechanical_declaration",
-      "node_count": 22,
+      "node_count": 28,
       "node_ids": [
+        "v1:entry:19fc61d54169d03a",
         "v1:entry:1e852db020ab2a12",
         "v1:entry:4395040b3fcae3cc",
         "v1:entry:446e4fa6ffe16f03",
+        "v1:entry:65d0b0ee6f0078c6",
+        "v1:entry:74dcdbd2862d95dc",
         "v1:entry:91a9aede3f0a126e",
         "v1:entry:923ab9c330d0bb01",
         "v1:entry:aa55b20c6a29ebcd",
@@ -19605,19 +19608,22 @@
         "v1:entry:dab83f8c4e7d76e4",
         "v1:entry:f68399a502a01062",
         "v1:entry:f78684bd415df0b4",
+        "v1:overload:1177033bd6efc4a4",
         "v1:overload:194c7dfbaf7aca25",
         "v1:overload:1b7697ddf051fd01",
         "v1:overload:1eed269d9aaf6c9d",
         "v1:overload:23d6548a94a5c636",
         "v1:overload:4111b68836469d38",
+        "v1:overload:81613d3b7db889ed",
         "v1:overload:8d7159ec96b1fe87",
         "v1:overload:8eb11c1901a7f310",
         "v1:overload:91c19796acab3971",
         "v1:overload:b4ffcfb58c0cc974",
+        "v1:overload:dc0acdf3b29aaaae",
         "v1:overload:deac3d4613133ba8",
         "v1:overload:e52b72652cc06f20"
       ],
-      "node_ids_sha256": "f3550499ce30024a16e334e53a23b967ab8790c521711d2ddb6ded32744a8732"
+      "node_ids_sha256": "6d2a228c6aa41a307db401142deabcb407a08d16c164b401e2ffd7e8cdd60917"
     },
     {
       "id": "v1:source:8829bcf850510426",
@@ -22596,7 +22602,7 @@
       "id": "v1:source:aa307d48f6d41ccf",
       "path": "crates/vibelang-rhai/src/api/midi/mod.rs",
       "kind": "mechanical_declaration",
-      "node_count": 454,
+      "node_count": 460,
       "node_ids": [
         "v1:entry:0035039364a40b15",
         "v1:entry:0212f3953cb71d2a",
@@ -22623,6 +22629,7 @@
         "v1:entry:17b258a52569d4be",
         "v1:entry:18ae3a0fd084cbd8",
         "v1:entry:190264bcec90936b",
+        "v1:entry:19fc61d54169d03a",
         "v1:entry:1a4c7d64ba8a8365",
         "v1:entry:1cbb8f083dd66141",
         "v1:entry:1d65fbae54e9518e",
@@ -22693,6 +22700,7 @@
         "v1:entry:62764b7125331964",
         "v1:entry:64ae324b3583fb15",
         "v1:entry:6516642d20f7323f",
+        "v1:entry:65d0b0ee6f0078c6",
         "v1:entry:660edf4a8b6086c3",
         "v1:entry:67d12c3102724b0d",
         "v1:entry:684ff464d023377c",
@@ -22700,6 +22708,7 @@
         "v1:entry:6d9076e00344471c",
         "v1:entry:72cdbdc073139334",
         "v1:entry:738cac1343e06028",
+        "v1:entry:74dcdbd2862d95dc",
         "v1:entry:752eec58d7cd0d3d",
         "v1:entry:768e674ffb3e1fb2",
         "v1:entry:7706b1b6a3a25272",
@@ -22837,6 +22846,7 @@
         "v1:overload:0baf1663c24e7dfd",
         "v1:overload:0c4854383ea1d97e",
         "v1:overload:0ff42f1f9468c95f",
+        "v1:overload:1177033bd6efc4a4",
         "v1:overload:1401a0f8ec31b6c4",
         "v1:overload:156c1b6e9a546894",
         "v1:overload:15782e9bec289eff",
@@ -22953,6 +22963,7 @@
         "v1:overload:7e9d101d60de923a",
         "v1:overload:80c89701a809a498",
         "v1:overload:813685fd069fb432",
+        "v1:overload:81613d3b7db889ed",
         "v1:overload:841405453fb96280",
         "v1:overload:843fc67251f7d994",
         "v1:overload:8588dd7145335db3",
@@ -23036,6 +23047,7 @@
         "v1:overload:da0766518b22246d",
         "v1:overload:da5cddbf4cc23b4a",
         "v1:overload:db2475553967934c",
+        "v1:overload:dc0acdf3b29aaaae",
         "v1:overload:ddb4cb0b70f7a6c0",
         "v1:overload:deac3d4613133ba8",
         "v1:overload:ded990873631cc28",
@@ -23053,7 +23065,7 @@
         "v1:overload:f9ad8c22fb556ce5",
         "v1:overload:fe970d89107493a6"
       ],
-      "node_ids_sha256": "f58d5f3c9ca9d18713ed32250d881653a082697b824f0249f9e739cc7f691b15"
+      "node_ids_sha256": "ce19df935f25be85c0f5c11ec54b8fec856af5f8118c35c37ba1a0e324b0b43f"
     },
     {
       "id": "v1:source:aafe72e834ac3fbc",
@@ -26783,11 +26795,13 @@
       "id": "v1:source:cf4f93dea1eb90a6",
       "path": "api/contract/authoring.toml",
       "kind": "semantic_fragment",
-      "node_count": 1,
+      "node_count": 3,
       "node_ids": [
-        "v1:entry:0002c6e95d407c5a"
+        "v1:entry:0002c6e95d407c5a",
+        "v1:entry:51360d5a6e37af91",
+        "v1:overload:a19c13f166a0307d"
       ],
-      "node_ids_sha256": "944932e38dc82b3167e1153f791d24b779b387e0751ac13e19826e76c8719d68"
+      "node_ids_sha256": "51bd0911cd4267a481bf8df6662c1f633d967ceca3443084a466fb9e142d70bc"
     },
     {
       "id": "v1:source:d0a72b4266e58798",
@@ -30019,8 +30033,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13542,
-      "eligible_count": 13542,
+      "included_count": 13548,
+      "eligible_count": 13548,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -30145,13 +30159,13 @@
         "vscode-extension/ugen_manifests/reverb.json",
         "vscode-extension/ugen_manifests/triggers.json"
       ],
-      "included_count": 2143,
-      "eligible_count": 3143,
+      "included_count": 2144,
+      "eligible_count": 3146,
       "accepted_denominator": 3141,
       "denominator_baseline_owner": "vibelang-tools",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
       "excluded_count": 725,
-      "unresolved_count": 275,
+      "unresolved_count": 277,
       "unclassified_count": 0
     }
   ],
@@ -30159,8 +30173,8 @@
     {
       "path": "api/contract/authoring.toml",
       "domain": "authoring",
-      "record_count": 1,
-      "sha256": "2c05468ea67b1973c271943c89acf6fb1a91dc94def4fa36a9d31261ddb82810"
+      "record_count": 3,
+      "sha256": "933b45ef961558bf23a34a6f71ec171a394bb4fec11595b46b2dd9b58aec22d2"
     },
     {
       "path": "api/contract/runtime.toml",
