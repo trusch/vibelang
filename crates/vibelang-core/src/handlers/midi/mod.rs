@@ -252,6 +252,10 @@ pub struct MidiHandler<B: Backend> {
     #[cfg(feature = "pipewire-midi2")]
     pipewire_inputs: Arc<Mutex<HashMap<MidiDeviceId, PipeWireMidiInputConnection>>>,
 
+    /// Open ALSA raw UMP endpoints (Linux MIDI 2.0 without PipeWire).
+    #[cfg(target_os = "linux")]
+    alsa_ump_inputs: Arc<Mutex<HashMap<MidiDeviceId, crate::midi::AlsaUmpInputConnection>>>,
+
     /// Incoming MIDI message channel (legacy).
     rx: Arc<Mutex<mpsc::Receiver<(MidiDeviceId, MidiMessage)>>>,
 
@@ -394,6 +398,8 @@ impl<B: Backend> MidiHandler<B> {
             outputs: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "pipewire-midi2")]
             pipewire_inputs: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(target_os = "linux")]
+            alsa_ump_inputs: Arc::new(Mutex::new(HashMap::new())),
             rx: Arc::new(Mutex::new(rx)),
             tx,
             routing_manager: MidiRoutingManager::new(),

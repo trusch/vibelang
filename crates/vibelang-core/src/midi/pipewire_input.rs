@@ -25,7 +25,7 @@ fn target_cache() -> &'static Mutex<HashMap<MidiDeviceId, String>> {
 }
 
 pub fn is_pipewire_midi_input_id(id: MidiDeviceId) -> bool {
-    id.raw() & PIPEWIRE_MIDI_INPUT_FLAG != 0
+    id.raw() & super::MIDI_INPUT_TRANSPORT_MASK == PIPEWIRE_MIDI_INPUT_FLAG
 }
 
 pub fn pipewire_midi_input_id(target_object: &str) -> MidiDeviceId {
@@ -34,7 +34,7 @@ pub fn pipewire_midi_input_id(target_object: &str) -> MidiDeviceId {
         hash ^= *byte as u32;
         hash = hash.wrapping_mul(0x0100_0193);
     }
-    MidiDeviceId::new(PIPEWIRE_MIDI_INPUT_FLAG | (hash & !PIPEWIRE_MIDI_INPUT_FLAG))
+    MidiDeviceId::new(PIPEWIRE_MIDI_INPUT_FLAG | (hash & !super::MIDI_INPUT_TRANSPORT_MASK))
 }
 
 fn remember_target(id: MidiDeviceId, target_object: &str) {
@@ -561,6 +561,19 @@ mod tests {
 
         assert!(is_pipewire_midi_input_id(id));
         assert_eq!(id, pipewire_midi_input_id("MPK-FAKE"));
+        assert!(!is_pipewire_midi_input_id(MidiDeviceId::new(0xC000_0000)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pipewire_and_alsa_ids_are_disjoint_in_both_directions() {
+        let pipewire = pipewire_midi_input_id("Gamma");
+        let alsa = crate::midi::alsa_ump_input_id("/dev/snd/umpC1D0");
+
+        assert!(is_pipewire_midi_input_id(pipewire));
+        assert!(!crate::midi::is_alsa_ump_input_id(pipewire));
+        assert!(crate::midi::is_alsa_ump_input_id(alsa));
+        assert!(!is_pipewire_midi_input_id(alsa));
     }
 
     #[test]
