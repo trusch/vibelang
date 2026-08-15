@@ -1336,6 +1336,10 @@ pub struct State {
     /// in place when `polyphony` changes on reload.
     pub midi_voice_pool: HashMap<VoiceId, MidiVoicePool>,
 
+    /// Current logical MIDI endpoint readiness for the active script generation.
+    #[cfg(feature = "midi")]
+    pub midi_readiness: crate::midi::MidiReadiness,
+
     /// Current note generation per `(voice, MIDI note)`.
     ///
     /// Pattern playback captures this generation when it starts a note and
@@ -1449,6 +1453,8 @@ impl Default for State {
             ar_to_kr_adapters: HashMap::new(),
             param_triggers: HashMap::new(),
             midi_voice_pool: HashMap::new(),
+            #[cfg(feature = "midi")]
+            midi_readiness: crate::midi::MidiReadiness::default(),
             voice_note_generations: HashMap::new(),
             next_voice_note_generation: 1,
         }

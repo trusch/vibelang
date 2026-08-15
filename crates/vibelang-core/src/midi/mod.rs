@@ -98,6 +98,7 @@ mod per_note_state;
 #[cfg(feature = "pipewire-midi2")]
 mod pipewire_input;
 mod queue;
+mod readiness;
 mod recording;
 mod ump;
 mod voice_output;
@@ -226,6 +227,12 @@ pub use hotplug::{AutoReconnect, AutoReconnectConfig, HotPlugEvent, HotPlugWatch
 
 // MIDI Recording
 pub use recording::{MidiRecording, MidiRecordingInfo, RecordedMidiCc, RecordedMidiNote};
+
+pub use readiness::{
+    is_midi_input_intent_id, midi_input_intent_id, MidiEndpointReadiness, MidiInputIntent,
+    MidiReadiness, MidiReadinessState,
+};
+pub(crate) use readiness::{LegacyInputAction, LegacyMidiPort, MidiInputIntentRuntime};
 
 // MIDI Voice Output (for MIDI voices with CC mappings)
 pub use voice_output::{is_midi_voice, send_cc_for_param, value_to_cc};

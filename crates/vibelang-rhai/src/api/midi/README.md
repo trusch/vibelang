@@ -16,7 +16,7 @@ Rust entry point: `register()` in [`mod.rs`](./mod.rs) wires all functions and c
 
 ## Mental model
 
-1. **Resolve a device** — `midi_device(...)` or `list_midi_devices()` yields a [`MidiDevice`](./device.rs) (name, capabilities, internal ID).
+1. **Resolve a device** — `midi_device(...)` / `list_midi_devices()` resolves a port that exists during script evaluation. `midi_input(role, exact_client)` declares an optional stable MIDI 1 input that can arrive, disconnect, or reappear later.
 2. **Declare intent** — Routing methods and builders append entries to `ScriptState` (`midi_keyboard_routes`, `advanced_*_routes`, `midi2_*`, `loopers`, …). **Inputs and outputs are opened automatically** when you use routing, `note_on`, `enable_clock`, etc. Deprecated `open_input` / `open_output` only mark IDs in state; you can remove them from scripts.
 3. **Immediate output** — `note_on`, `cc`, `send_start`, … append [`MidiOutputMessage`](https://docs.rs/vibelang-core/latest/vibelang_core/reload/enum.MidiOutputMessage.html) values to `midi_output_messages` for the next runtime flush.
 4. **Voices** — `voice("x").on(midi_device)` (see [`voice.rs`](../voice.rs)) sends note/CC traffic to an external device instead of a synth/sample, using the channel stored on the `MidiDevice`.
@@ -30,6 +30,19 @@ Rust entry point: `register()` in [`mod.rs`](./mod.rs) wires all functions and c
 | `list_midi_devices()` | `() -> Array` | Enumerates ports. Merges input and output names where both exist. Each element is a `MidiDevice` dynamic. |
 | `midi_device(name_or_idx)` | `string -> MidiDevice` | If `name_or_idx` parses as a **non‑negative integer**, treats it as an **input port index**. Otherwise **case‑insensitive substring** match on input port names, then output port names. |
 | `midi_device(id)` | `i64 -> MidiDevice` | Same as `midi_device(id.to_string())` (index path). |
+| `midi_input(role, exact_client)` | `(string, string) -> MidiDevice` | Declares a non-fatal stable MIDI 1 input intent. The runtime polls, opens, and rebinds the exact ALSA client while keeping routes on a deterministic logical ID. |
+
+### Stable optional MIDI 1 inputs
+
+Use `midi_input` for controllers that may be absent when Vibe starts or may be unplugged during a session:
+
+```rhai
+let gamma = midi_input("gamma", "gamma");
+gamma.keys().channel(1).range(0, 127).velocity("linear").to(voice("note"));
+gamma.keys().channel(2).range(0, 127).velocity("linear").to(voice("chord"));
+```
+
+`exact_client` is compared case-insensitively with the ALSA client portion before the first `:`. It is never a substring match, so `gamma` does not select `super-gamma`. Missing devices are non-fatal and remain armed for late arrival. Disconnect releases notes routed from that endpoint before closing its physical binding, and reappearance restores the same logical routes without a script reload. Current per-endpoint state is available from the HTTP API at `GET /midi/readiness` as `waiting`, `connected`, or `unavailable` with actionable detail.
 
 ### Sentinel / missing device
 
@@ -101,7 +114,7 @@ Legacy routes still write [`MidiCcRoute`](https://docs.rs/vibelang-core/latest/v
 |--------|-------------|
 | `channel(ch)` | 1–16. |
 | `range_midi(min, max)` | Note numbers 0–127. |
-| `range(min, max)` | Note names, e.g. `"C2"`, `"C6"`. |
+| `range(min, max)` | Note numbers 0–127 or note names such as `"C2"`, `"C6"`. |
 | `transpose(semitones)`, `octave(octaves)` | Pitch shift before triggering. |
 | `velocity(name)` | Curve: `"linear"`, `"soft"`, `"hard"`, `"exponential"`, `"compressed"`. |
 | `fixed_velocity(v)` | 0–127; constant velocity. |
