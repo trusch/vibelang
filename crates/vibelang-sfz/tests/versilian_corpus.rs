@@ -64,9 +64,29 @@ fn versilian_corpus_parses() {
 
     let mut failures = Vec::new();
     let mut unknown = BTreeMap::<String, usize>::new();
+    let mut regions = 0usize;
+    let mut sample_refs = 0usize;
     for path in &files {
         match parse_sfz_file(path) {
             Ok(parsed) => {
+                if parsed.regions.is_empty() {
+                    failures.push(format!("{}: parsed no regions", path.display()));
+                }
+                regions += parsed.regions.len();
+                for (index, region) in parsed.regions.iter().enumerate() {
+                    if region
+                        .get_opcode_str("sample")
+                        .is_some_and(|value| !value.is_empty())
+                    {
+                        sample_refs += 1;
+                    } else {
+                        failures.push(format!(
+                            "{}: region {} has no sample opcode",
+                            path.display(),
+                            index
+                        ));
+                    }
+                }
                 for (opcode, count) in parsed.unknown_opcodes {
                     *unknown.entry(opcode).or_default() += count;
                 }
@@ -76,9 +96,11 @@ fn versilian_corpus_parses() {
     }
 
     eprintln!(
-        "audited {} SFZ files ({} bytes); ignored opcodes: {:?}",
+        "audited {} SFZ files ({} bytes), {} regions / {} sample refs; ignored opcodes: {:?}",
         files.len(),
         bytes,
+        regions,
+        sample_refs,
         unknown
     );
     assert!(
