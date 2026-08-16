@@ -377,7 +377,7 @@ pub fn define_group(
     // Propagate closure failures instead of logging them: the body builds the
     // group's whole graph, so swallowing an error here ships a half-built
     // group as silence and lets `vibe run` exit 0 on a broken script.
-    context::with_group_path(&full_path, || {
+    let _ = context::with_group_path(&full_path, || {
         closure
             .call_within_context::<rhai::Dynamic>(&ctx, ())
             .map_err(|e| group_body_error("define_group", &group_name, e))
