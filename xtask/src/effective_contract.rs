@@ -2098,7 +2098,7 @@ fn build_v2(discovery: &Discovery) -> Result<PublicApiManifestV2, String> {
             "crates/vibelang-http/src/lib.rs",
             "cfg(feature = \"midi\") route chain",
             "Cargo feature midi and the Axum cfg-gated route chain",
-            "Expose the 18 MIDI routes only when feature.midi is available",
+            "Expose the 19 MIDI routes only when feature.midi is available",
         ),
         contract_capability(
             native_capability_id.clone(),
@@ -3827,9 +3827,9 @@ fn validate_http_graph(
         .filter(|operation| operation.metadata.availability.status == AvailabilityStatus::Available)
         .count();
     let conditional = actual_operations.len() - available;
-    if available != 80 || conditional != 22 {
+    if available != 80 || conditional != 23 {
         return Err(format!(
-            "HTTP route conditions must be exactly 80 unconditional and 22 conditional, got {available}/{conditional}"
+            "HTTP route conditions must be exactly 80 unconditional and 23 conditional, got {available}/{conditional}"
         ));
     }
     Ok(())
@@ -6825,7 +6825,7 @@ mod tests {
                         operation.metadata.availability.status == AvailabilityStatus::Available
                     })
                     .count();
-                assert_eq!((available, http_operations.len() - available), (80, 22));
+                assert_eq!((available, http_operations.len() - available), (80, 23));
 
                 let carrier_id = semantic_id(
                     "type",
