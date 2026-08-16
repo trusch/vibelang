@@ -19,7 +19,10 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget, RouteDest};
 use vibelang_core::reload::{ParamRouteConflict, ParamRouteKind};
 use vibelang_core::types::VoiceId;
-use vibelang_dsp::{get_synthdef_outputs, get_synthdef_param_defaults, OutputPort, PortRate};
+use vibelang_dsp::{
+    get_effect_param_defaults, get_synthdef_outputs, get_synthdef_param_defaults, OutputPort,
+    PortRate,
+};
 
 use super::group::GroupHandle;
 use super::sequence::Fx;
@@ -127,6 +130,24 @@ impl RouteHandle {
             );
         });
         Ok(self)
+    }
+
+    /// Fx-target overload of [`Self::to_input`] — always an error.
+    ///
+    /// `define_fx` modules are **group inserts**: the body receives the group
+    /// bus as its `input` and writes back in place, so an fx has no
+    /// addressable named input port to route into. Input routes are keyed by
+    /// `(VoiceId, port)` end-to-end, and there is no effect-side equivalent.
+    ///
+    /// Registered purely so the script author gets an actionable message
+    /// naming the two supported ways to express the patch, instead of Rhai's
+    /// bare `Function not found: to_input (RouteHandle, Fx, String)`.
+    pub fn to_input_fx(self, target: Fx, input_name: String) -> Result<Self, Box<EvalAltResult>> {
+        Err(fx_input_route_error(
+            &self.port_name,
+            &target.id,
+            &input_name,
+        ))
     }
 
     /// Install a CV-to-param route from this kr-rate output port to the named
@@ -422,19 +443,46 @@ impl ParamSourceValidation {
 
     fn unknown_target_param_error(
         self,
+        target: ParamRouteTarget,
         target_name: &str,
         target_synth: &str,
         param: &str,
         available: &std::collections::HashMap<String, f32>,
     ) -> Box<EvalAltResult> {
+        let kind = target_kind_noun(target);
         match self {
-            Self::ModulateBy => {
-                modulate_by_unknown_target_param_error(target_name, target_synth, param, available)
-            }
+            Self::ModulateBy => modulate_by_unknown_target_param_error(
+                kind,
+                target_name,
+                target_synth,
+                param,
+                available,
+            ),
             Self::ToParam | Self::ToParamAudio | Self::ToTrigger => {
-                unknown_target_param_error(target_name, target_synth, param, available)
+                unknown_target_param_error(kind, target_name, target_synth, param, available)
             }
         }
+    }
+}
+
+/// Declared params of a param-route target, read from the registry that owns
+/// the target kind: synthdefs for voices, `define_fx` bodies for effects.
+fn target_param_defaults(
+    target: ParamRouteTarget,
+    target_synth: &str,
+) -> std::collections::HashMap<String, f32> {
+    match target {
+        ParamRouteTarget::Voice(_) => get_synthdef_param_defaults(target_synth),
+        ParamRouteTarget::Effect(_) => get_effect_param_defaults(target_synth),
+    }
+}
+
+/// User-facing noun for a param-route target, so errors name what the script
+/// actually wrote (`voice` vs `fx`) instead of always saying "voice".
+fn target_kind_noun(target: ParamRouteTarget) -> &'static str {
+    match target {
+        ParamRouteTarget::Voice(_) => "voice",
+        ParamRouteTarget::Effect(_) => "fx",
     }
 }
 
@@ -463,9 +511,15 @@ fn install_param_route(
         }
     }
 
-    let target_params = get_synthdef_param_defaults(target_synth);
+    // Resolve the target's declared params from the registry that actually
+    // owns them: voice targets live in the synthdef registry, fx targets
+    // (`define_fx`) in the effect registry. Looking an fx up in the synthdef
+    // registry yields an empty param set, which rejected every fx param
+    // route.
+    let target_params = target_param_defaults(target, target_synth);
     if !target_params.contains_key(&target_param) {
         return Err(validation.unknown_target_param_error(
+            target,
             target_name,
             target_synth,
             &target_param,
@@ -713,7 +767,8 @@ fn missing_source_port_error(
 }
 
 fn unknown_target_param_error(
-    target_voice: &str,
+    target_kind: &str,
+    target_name: &str,
     target_synth: &str,
     param: &str,
     available: &std::collections::HashMap<String, f32>,
@@ -731,9 +786,31 @@ fn unknown_target_param_error(
     };
     Box::new(EvalAltResult::ErrorRuntime(
         format!(
-            "to_param(): target voice '{}' synthdef '{}' has no param '{}' \
+            "to_param(): target {} '{}' synthdef '{}' has no param '{}' \
              (available: {})",
-            target_voice, target_synth, param, avail_list
+            target_kind, target_name, target_synth, param, avail_list
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+/// Error for `source.output(port).to_input(fx, name)` — fx are group-scope
+/// inserts and cannot be per-port routing destinations.
+fn fx_input_route_error(port: &str, fx_id: &str, input_name: &str) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "to_input() on port '{}': target '{}' is an fx, and fx are \
+             group-scope inserts with no named input ports — `define_fx` \
+             bodies receive the group bus as their input and write it back \
+             in place, so '{}' cannot be addressed. Either (a) route the \
+             port into a sub-group that owns the fx \
+             (`v.output(\"{}\").to(group(\"fx_chain\").effect(\"...\"))`), or \
+             (b) make the processor a voice: declare the input on its \
+             synthdef with `.input(\"{}\")` and route \
+             `.to_input(voice, \"{}\")`. Fx params remain routable with \
+             `.to_param(fx, \"param\")` / `fx.param(\"param\").modulate_by(...)`.",
+            port, fx_id, input_name, port, input_name, input_name
         )
         .into(),
         Position::NONE,
@@ -946,7 +1023,8 @@ fn modulate_by_missing_source_port_error(
 }
 
 fn modulate_by_unknown_target_param_error(
-    target_voice: &str,
+    target_kind: &str,
+    target_name: &str,
     target_synth: &str,
     param: &str,
     available: &std::collections::HashMap<String, f32>,
@@ -964,9 +1042,9 @@ fn modulate_by_unknown_target_param_error(
     };
     Box::new(EvalAltResult::ErrorRuntime(
         format!(
-            "modulate_by(): target voice '{}' synthdef '{}' has no param '{}' \
+            "modulate_by(): target {} '{}' synthdef '{}' has no param '{}' \
              (available: {})",
-            target_voice, target_synth, param, avail_list
+            target_kind, target_name, target_synth, param, avail_list
         )
         .into(),
         Position::NONE,
@@ -1159,6 +1237,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
     engine.register_fn("to_input", RouteHandle::to_input);
+    // Fx destinations are rejected with an actionable message rather than a
+    // bare Rhai "Function not found" — see `to_input_fx`.
+    engine.register_fn("to_input", RouteHandle::to_input_fx);
     // Voice-target verbs (existing surface).
     engine.register_fn("to_param", RouteHandle::to_param);
     engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
@@ -1202,10 +1283,12 @@ mod tests {
     //! `RouteDest::Param` semantics: `(target_voice_id, target_param_name)`
     //! pairs keyed by source `(voice_id, port_name)`).
     use super::ParamRouteTarget;
+    use crate::api::sequence::Fx;
     use crate::api::voice::Voice;
     use crate::context;
     use vibelang_dsp::{
-        register_synthdef_ir, register_synthdef_outputs, GraphIR, OutputPort, ParamSpec, PortRate,
+        register_effect_ir, register_synthdef_ir, register_synthdef_outputs, GraphIR, OutputPort,
+        ParamSpec, PortRate,
     };
 
     fn with_test_context<F: FnOnce()>(f: F) {
@@ -2737,6 +2820,156 @@ mod tests {
                 assert!(state
                     .input_routes
                     .contains_key(&(voc_id, "carrier".to_string())));
+            });
+        });
+    }
+    /// Declare a `define_fx`-style effect with the named params. Effects live
+    /// in the EFFECT registry, not the synthdef registry — the distinction
+    /// this block of tests exists to pin.
+    fn declare_effect_with_params(name: &str, params: &[&str]) {
+        let param_specs: Vec<ParamSpec> = params
+            .iter()
+            .enumerate()
+            .map(|(i, n)| ParamSpec {
+                name: (*n).to_string(),
+                default: vec![0.0],
+                index: i,
+                lag_ms: None,
+            })
+            .collect();
+        register_effect_ir(
+            name.to_string(),
+            GraphIR {
+                name: name.to_string(),
+                constants: vec![],
+                params: param_specs,
+                nodes: vec![],
+                out_bus: 0,
+            },
+        );
+    }
+
+    /// Regression: `fx.param("cutoff").modulate_by(lfo, "out")` used to be
+    /// rejected because the target param set was read from the SYNTHDEF
+    /// registry, where a `define_fx` name has no entry — so every fx param
+    /// looked undeclared and LFO->fx modulation was dead on the device.
+    #[test]
+    fn modulate_by_fx_param_installs_route() {
+        with_test_context(|| {
+            let src_synth = "fxparam_modby_src";
+            let fx_synth = "fxparam_modby_fx";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_effect_with_params(fx_synth, &["cutoff", "res"]);
+
+            let src = make_voice("vox_src_modby_fx").synth(src_synth.to_string());
+            let mut target = Fx::for_test("fx_modby_target", fx_synth);
+
+            target
+                .param_handle("cutoff")
+                .modulate_by(src, "out".to_string())
+                .expect("fx param resolves through the effect registry");
+
+            let src_id = context::get_or_create_voice_id("vox_src_modby_fx");
+            let fx_id = context::get_or_create_effect_id("fx_modby_target");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes_bend
+                    .get(&(src_id, "out".to_string()))
+                    .expect("param route installed");
+                assert_eq!(
+                    entries.as_slice(),
+                    &[(ParamRouteTarget::Effect(fx_id), "cutoff".to_string())]
+                );
+            });
+        });
+    }
+
+    /// Source-first dual of the above: `lfo.output("out").to_param(fx, ...)`
+    /// shared the same broken registry lookup.
+    #[test]
+    fn to_param_fx_target_installs_route() {
+        with_test_context(|| {
+            let src_synth = "fxparam_toparam_src";
+            let fx_synth = "fxparam_toparam_fx";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_effect_with_params(fx_synth, &["mix"]);
+
+            let mut src = make_voice("vox_src_toparam_fx").synth(src_synth.to_string());
+            let target = Fx::for_test("fx_toparam_target", fx_synth);
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param_fx(target, "mix".to_string())
+                .expect("fx param resolves through the effect registry");
+
+            let src_id = context::get_or_create_voice_id("vox_src_toparam_fx");
+            let fx_id = context::get_or_create_effect_id("fx_toparam_target");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes_set
+                    .get(&(src_id, "env".to_string()))
+                    .expect("param route installed");
+                assert_eq!(
+                    entries.as_slice(),
+                    &[(ParamRouteTarget::Effect(fx_id), "mix".to_string())]
+                );
+            });
+        });
+    }
+
+    /// A genuinely undeclared fx param still errors — and names the target as
+    /// an `fx`, listing the effect's declared params rather than `<none>`.
+    #[test]
+    fn modulate_by_unknown_fx_param_errors_with_effect_params() {
+        with_test_context(|| {
+            let src_synth = "fxparam_unknown_src";
+            let fx_synth = "fxparam_unknown_fx";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_effect_with_params(fx_synth, &["cutoff", "res"]);
+
+            let src = make_voice("vox_src_unknown_fx").synth(src_synth.to_string());
+            let mut target = Fx::for_test("fx_unknown_target", fx_synth);
+
+            let err = target
+                .param_handle("nope")
+                .modulate_by(src, "out".to_string())
+                .expect_err("unknown fx param must error");
+            let msg = err.to_string();
+            assert!(msg.contains("target fx"), "msg = {}", msg);
+            assert!(msg.contains("'nope'"), "msg = {}", msg);
+            assert!(msg.contains("'cutoff'"), "msg = {}", msg);
+            assert!(msg.contains("'res'"), "msg = {}", msg);
+        });
+    }
+
+    /// `to_input` onto an fx is rejected with an actionable message naming
+    /// both supported alternatives, instead of Rhai's bare
+    /// "Function not found: to_input (RouteHandle, Fx, String)".
+    #[test]
+    fn to_input_fx_target_errors_with_actionable_message() {
+        with_test_context(|| {
+            let src_synth = "fxinput_src";
+            declare_ar_synthdef(src_synth, &["out"]);
+            declare_effect_with_params("fxinput_fx", &["cutoff"]);
+
+            let mut src = make_voice("vox_src_fxinput").synth(src_synth.to_string());
+            let target = Fx::for_test("fx_input_target", "fxinput_fx");
+
+            let err = src
+                .output_by_name("out")
+                .expect("port resolves")
+                .to_input_fx(target, "carrier".to_string())
+                .expect_err("fx is not a routable input destination");
+            let msg = err.to_string();
+            assert!(msg.contains("fx_input_target"), "msg = {}", msg);
+            assert!(msg.contains("group-scope inserts"), "msg = {}", msg);
+            assert!(msg.contains("to_param"), "msg = {}", msg);
+
+            // Nothing was written into the input-route map.
+            let src_id = context::get_or_create_voice_id("vox_src_fxinput");
+            context::with_state(|state| {
+                assert!(state.routes.get(&(src_id, "out".to_string())).is_none());
+                assert!(state.input_routes.is_empty());
             });
         });
     }
