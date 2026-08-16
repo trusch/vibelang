@@ -1407,7 +1407,11 @@ fn midi_direction(entry: &ApiEntry) -> Result<MidiDirection, String> {
                         | "MidiDevice::start_recording"
                         | "MidiDevice::start_recording_channel"
                 )
-        });
+        })
+        // `midi_input(role, exact_client)` is a free function that declares a
+        // stable MIDI-1 input intent; it carries no MidiDevice:: method symbol
+        // of its own, so classify it by registered name.
+        || entry.registered_name == "midi_input";
     let output = symbols.iter().any(|symbol| {
         symbol.starts_with("Voice::midi_channel")
             || symbol.starts_with("Voice::midi_output_device")
