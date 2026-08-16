@@ -300,9 +300,16 @@ async fn run_simple_mode(
     output_channels: u32,
     ext_config: ExtensionSettings,
 ) -> Result<()> {
-    // Initialize logging - uses RUST_LOG env var
+    // Initialize logging - uses RUST_LOG env var.
+    //
+    // With RUST_LOG unset the env filter is empty, which silences *every*
+    // level — including the `error!` a failed hot reload emits, so a broken
+    // script looked like a successful one. Default to `warn` so real
+    // failures are visible out of the box; RUST_LOG still overrides.
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
+        )
         .init();
 
     // Setup shutdown signal
