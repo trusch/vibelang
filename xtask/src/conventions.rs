@@ -18,7 +18,7 @@ use vibelang_api_manifest::{
 const METADATA_PATH: &str = "api/effective-metadata-v1.json";
 const CONVENTIONS_SOURCE: &str =
     "docs/architecture/api-unification/conventions-and-capabilities.md";
-const PARAMETER_COUNT: usize = 18_791;
+const PARAMETER_COUNT: usize = 18_795;
 const UGEN_INPUT_COUNT: usize = 5_089;
 
 pub fn generate(root: &Path, check: bool) -> Result<(), String> {

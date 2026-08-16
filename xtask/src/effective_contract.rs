@@ -6619,7 +6619,7 @@ mod tests {
                 let expected = crate::conventions::build(&discovery.v1).unwrap();
                 assert_eq!(manifest.conventions.as_ref(), Some(&expected));
                 assert_eq!(expected.capabilities.len(), 28);
-                assert_eq!(expected.parameter_quantities.len(), 18_791);
+                assert_eq!(expected.parameter_quantities.len(), 18_795);
             })
             .unwrap()
             .join()
