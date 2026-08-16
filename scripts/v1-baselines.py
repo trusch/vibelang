@@ -311,7 +311,8 @@ FAILURE_SEAM_TRUTH = [
         "async fn phase_apply_effects",
         "missing synthdef or backend effect failure",
         "continue",
-        "execution.phases[8].failures = self.phase_apply_effects(&diff, &new_state).await;",
+        "execution.phases[8]",
+        ".extend(self.phase_apply_effects(&diff, &new_state).await)",
     ),
     reload_apply_seam(
         "groups",

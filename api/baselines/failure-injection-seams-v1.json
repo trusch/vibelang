@@ -210,7 +210,8 @@
       "source": "crates/vibelang-core/src/runtime.rs",
       "anchor": "async fn phase_delete_entities",
       "source_assertions": [
-        "execution.phases[2].failures = self.phase_delete_entities(&diff).await;"
+        "execution.phases[2].failures = self",
+        ".phase_delete_entities(&diff, group_teardown_grace)"
       ],
       "current_injection": "backend or resource rejection while deleting entities",
       "current_outcome": "failures are structured on reload/delete_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
@@ -255,7 +256,8 @@
       "source": "crates/vibelang-core/src/runtime.rs",
       "anchor": "async fn phase_create_entities",
       "source_assertions": [
-        "execution.phases[4].failures = self.phase_create_entities(&diff, &new_state, staged).await;"
+        "execution.phases[4]",
+        ".extend(self.phase_create_entities(&diff, &new_state, staged).await)"
       ],
       "current_injection": "backend or resource failure while creating an entity",
       "current_outcome": "failures are structured on reload/create_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
@@ -277,7 +279,8 @@
       "source": "crates/vibelang-core/src/runtime.rs",
       "anchor": "async fn phase_update_entities",
       "source_assertions": [
-        "execution.phases[5].failures = self.phase_update_entities(&diff, &new_state).await;"
+        "execution.phases[5].failures.extend(",
+        "self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)"
       ],
       "current_injection": "backend or resource failure while updating an entity",
       "current_outcome": "failures are structured on reload/update_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
@@ -345,7 +348,8 @@
       "source": "crates/vibelang-core/src/runtime.rs",
       "anchor": "async fn phase_apply_effects",
       "source_assertions": [
-        "execution.phases[8].failures = self.phase_apply_effects(&diff, &new_state).await;"
+        "execution.phases[8]",
+        ".extend(self.phase_apply_effects(&diff, &new_state).await)"
       ],
       "current_injection": "missing synthdef or backend effect failure",
       "current_outcome": "failures are structured on reload/effects; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",

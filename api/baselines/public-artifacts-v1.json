@@ -87,7 +87,7 @@
     "fixtures": {
       "counts": {
         "authoring_families": 17,
-        "bytes": 64915,
+        "bytes": 65000,
         "failure_phases": 33,
         "files": 31,
         "negative_defects": 5
@@ -99,9 +99,9 @@
           "sha256": "7dd92a7384db0e1917945504362bf56ae16b72d71d7478e81704e19c6ee8f46b"
         },
         {
-          "bytes": 33073,
+          "bytes": 33158,
           "path": "api/baselines/failure-injection-seams-v1.json",
-          "sha256": "20f02825e6a326ab1c0c989ca18d2b9eb27530b7e2c4d87fa00fa74cf77a3087"
+          "sha256": "c2214e4e14be0429f7c774e0b5a016e2958074f24e1e10031efd230bca50625a"
         },
         {
           "bytes": 864,
@@ -249,7 +249,7 @@
           "sha256": "2f7001dc3302672872e953ac59c905805c260982cb49088b703054d3ad30d9c8"
         }
       ],
-      "tree_sha256": "f2dfa7a61672034c604bfdcedfc69d947d388f194aca6acb56d3ff7637cbb8c0"
+      "tree_sha256": "e5d5827dd30426dfc9f1f037a4ca000799973805db6bee3c2c7e4145e80553dd"
     },
     "http": {
       "counts": {
