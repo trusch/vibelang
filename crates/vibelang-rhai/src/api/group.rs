@@ -276,7 +276,14 @@ impl GroupHandle {
     ///
     /// This is the builder equivalent of `define_group("name", || { ... })`.
     /// The closure executes in the group's context, allowing nested definitions.
-    fn body(ctx: NativeCallContext, handle: Self, closure: FnPtr) -> Self {
+    /// Closure failures propagate rather than being logged: the body builds
+    /// the group's whole graph, so swallowing an error here ships a half-built
+    /// group as silence and lets `vibe run` exit 0 on a broken script.
+    fn body(
+        ctx: NativeCallContext,
+        handle: Self,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
         let group_id = context::get_or_create_group_id(&handle.path);
 
         context::with_state(|state| {
@@ -297,13 +304,15 @@ impl GroupHandle {
         let result = context::with_group_path(&handle.path, || {
             closure.call_within_context::<rhai::Dynamic>(&ctx, ())
         });
+        // End the contribution before propagating: the body-contribution stack
+        // must unwind even when the closure failed.
         context::end_body_contribution(contribution_id);
 
-        if let Err(e) = result {
-            log::error!("Error in group('{}').body(): {}", handle.name, e);
-        }
+        // `let _ =` binds the closure's `Dynamic` return, which is #[must_use];
+        // the `?` above it is what propagates the failure.
+        let _ = result.map_err(|e| group_body_error("group body", &handle.name, e))?;
 
-        handle
+        Ok(handle)
     }
 
     /// Register an authoring alias for a canonical group handle.
@@ -419,13 +428,31 @@ pub fn define_group(
         state.groups.entry(group_id).or_insert(config);
     });
 
-    context::with_group_path(&full_path, || {
-        if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
-            log::error!("Error in define_group '{}': {}", group_name, e);
-        }
-    });
+    // Propagate closure failures instead of logging them: the body builds the
+    // group's whole graph, so swallowing an error here ships a half-built
+    // group as silence and lets `vibe run` exit 0 on a broken script.
+    let _ = context::with_group_path(&full_path, || {
+        closure
+            .call_within_context::<rhai::Dynamic>(&ctx, ())
+            .map_err(|e| group_body_error("define_group", &group_name, e))
+    })?;
 
     Ok(GroupHandle::new(full_path))
+}
+
+/// Wrap a failing group-body closure error so the script author sees which
+/// group's body failed, with the underlying error preserved as the message.
+///
+/// The free-standing `group_body`/`group_alias` that lived here upstream are
+/// gone: this branch moved both onto `impl GroupHandle` as `body`/`alias`,
+/// which is what `register_fn` now binds. Only the error wrapper is shared,
+/// by `define_group` and by `GroupHandle::body`.
+fn group_body_error(verb: &str, group_name: &str, err: Box<EvalAltResult>) -> Box<EvalAltResult> {
+    let pos = err.position();
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!("{}('{}'): {}", verb, group_name, err).into(),
+        pos,
+    ))
 }
 
 /// Get a group handle by path.

@@ -2877,9 +2877,12 @@ keyboard_route(mpk).channel(2).to(lead);
     }
 
     #[test]
-    fn test_group_body_restores_context_after_inner_body_error() {
+    fn test_group_body_error_propagates_and_names_group_chain() {
+        // A failing body used to be swallowed with a `log::error!`, so the
+        // script "succeeded" with a half-built graph. It now aborts the run
+        // and reports which group's body failed, innermost first.
         let mut engine = ScriptEngine::new();
-        let state = engine
+        let err = engine
             .execute(
                 r#"
             group("Outer").body(|| {
@@ -2891,27 +2894,37 @@ keyboard_route(mpk).channel(2).to(lead);
             });
         "#,
             )
-            .unwrap();
+            .expect_err("an error inside a group body must fail the script");
 
-        let outer_id = state
+        let msg = err.to_string();
+        assert!(msg.contains("Outer"), "msg = {}", msg);
+        assert!(msg.contains("Inner"), "msg = {}", msg);
+        assert!(msg.contains("missing_function"), "msg = {}", msg);
+
+        // The group-path context still unwinds: a later run is unaffected by
+        // the aborted one and puts its voice under its own group, not under
+        // the leaked "Outer/Inner" path.
+        let state = engine
+            .execute(
+                r#"
+            group("Fresh").body(|| {
+                voice("fresh_voice").synth("pad_synth");
+            });
+        "#,
+            )
+            .expect("engine stays usable after a failed group body");
+
+        let fresh_id = state
             .groups
             .iter()
-            .find_map(|(id, config)| (config.name == "Outer").then_some(*id))
-            .expect("Outer group should exist");
-        let inner_id = state
-            .groups
-            .iter()
-            .find_map(|(id, config)| (config.name == "Inner").then_some(*id))
-            .expect("Inner group should exist");
-
-        let outer_after = state
+            .find_map(|(id, config)| (config.name == "Fresh").then_some(*id))
+            .expect("Fresh group should exist");
+        let fresh_voice = state
             .voices
             .values()
-            .find(|voice| voice.name == "outer_after")
-            .expect("outer_after voice should exist");
-
-        assert_eq!(outer_after.group, outer_id);
-        assert_ne!(outer_after.group, inner_id);
+            .find(|voice| voice.name == "fresh_voice")
+            .expect("fresh_voice should exist");
+        assert_eq!(fresh_voice.group, fresh_id);
     }
 
     #[test]

@@ -40,7 +40,13 @@ let capture_demo = define_group("ArrayCapture", || {
         .synth("test_saw")
         .set_param("freq", 110.0)
         .set_param("amp", 0.20);
-    source.output("out").mute();
+    // The saw is an analysis source only — it must reach `cap_osc.analyze`
+    // without leaking into the mix. `.mute()` is not usable here: a muted
+    // port is rejected as a named-input source, so route the port into a
+    // dedicated sub-group attenuated to silence instead. The `analyze`
+    // link reads the port's own bus, which is allocated either way.
+    let analysis_only = group("analysis_only").gain(0.0);
+    source.output("out").to(analysis_only);
 
     // Capture leg: a single Spectraphon voice analyzes `source` and writes
     // the live magnitude bank into the SAO array buffer.

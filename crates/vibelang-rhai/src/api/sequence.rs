@@ -672,6 +672,21 @@ impl Fx {
         }
     }
 
+    /// Construct an `Fx` outside Rhai's calling convention, for tests.
+    ///
+    /// Mirrors [`Voice::for_test`](crate::api::voice::Voice) — skips the
+    /// `NativeCallContext` that `Fx::new` needs so sibling test modules
+    /// (`route.rs`) can exercise fx-target route handles directly.
+    #[cfg(test)]
+    pub(crate) fn for_test(id: &str, synth_name: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            synth_name: Some(synth_name.to_string()),
+            params: HashMap::new(),
+            group_path: context::current_group_path(),
+        }
+    }
+
     /// Set the synthdef for this effect.
     pub fn synth(mut self, synth_name: String) -> Self {
         self.synth_name = Some(synth_name);

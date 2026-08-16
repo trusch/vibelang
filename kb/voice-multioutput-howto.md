@@ -938,6 +938,17 @@ non-crossed bullets are deferred non-features.
   routes it through `port_tr_to_param_link_1` for sample-accurate
   edge forwarding (§3f). No scale/offset on triggers and no fan-in;
   trigger routing is 1:1.
+* **Fx are group-scope inserts, not per-port audio destinations.** A
+  `define_fx` body receives the group bus as its `input` and writes it
+  back in place, so an fx has no named input port to patch into —
+  input routes are keyed `(VoiceId, port)` end-to-end. `.to_input(fx,
+  "name")` is therefore rejected with an error naming the two
+  supported spellings: route the port into a sub-group that owns the
+  fx (§3b), or make the processor a voice whose synthdef declares
+  `.input("name")` (§5a). Fx **params** are fully routable in both
+  directions — `.to_param(fx, "cutoff")` and
+  `fx.param("cutoff").modulate_by(src, "out")` resolve the param set
+  through the effect registry and `/n_map` the effect node.
 * **No `solo()`, `tap()`, `scope()`** — the wider verb table from the
   plan §5.2 is still deferred. Today the verb set is `to`, `to_main`,
   `to_current_group`, `mute`, `to_param` (kr SET), `to_param_audio`
