@@ -285,6 +285,14 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/midi/readiness",
+      "handler": "routes::midi::get_readiness",
+      "availability": [
+        "feature = \"midi\""
+      ]
+    },
+    {
       "method": "POST",
       "path": "/midi/record/start",
       "handler": "routes::midi::start_recording",

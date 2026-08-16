@@ -47,17 +47,17 @@ const FRAGMENT_DIR: &str = "api/contract";
 const GENERATOR_NAME: &str = "vibelang-xtask-effective-contract";
 const API_VERSION: &str = "0.4.0";
 const ACCEPTED_V1_MANIFEST_SHA256: &str =
-    "6cba069dce1052c82a2fc4e216f391bf1fcc99541c6b9361c6150605b1b44e6f";
+    "465c4fe86dd98abc96689e082780544067465550ce6e2e67dac0c90c03eab33f";
 const ACCEPTED_V1_HTTP_SHA256: &str =
-    "d93913c5d95d799c93a96e727d88e5ddd996a55a8a2ed4c014f0f35ce579a0cd";
+    "76949f764c09d24c6abb22ae1f3b9d1e16830f0fcd5a6450e8cce3c164b61055";
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
     "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003";
 const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
 const CORE_MANIFEST_PATH: &str = "crates/vibelang-core/Cargo.toml";
 const CORE_WIRE_TEST_PATH: &str = "crates/vibelang-core/tests/mutation_ledger.rs";
-const EXPECTED_ENTRIES: usize = 3_629;
-const EXPECTED_OVERLOADS: usize = 8_436;
-const EXPECTED_HTTP_ROUTES: usize = 102;
+const EXPECTED_ENTRIES: usize = 3_630;
+const EXPECTED_OVERLOADS: usize = 8_438;
+const EXPECTED_HTTP_ROUTES: usize = 103;
 const EXPECTED_HTTP_TYPES: usize = 108;
 const EXPECTED_HTTP_FIELDS: usize = 423;
 

@@ -19,9 +19,9 @@
     },
     "docs": {
       "counts": {
-        "bytes": 794963,
+        "bytes": 795046,
         "files": 11,
-        "lines": 5013,
+        "lines": 5014,
         "shell_fences": 4,
         "vibe_fences": 4
       },
@@ -57,9 +57,9 @@
           "sha256": "b0b291ac1b81e21c469e7dd78346a6d62308f424b8b8f6f8009f90b51b2682f7"
         },
         {
-          "bytes": 23137,
+          "bytes": 23220,
           "path": "docs/reference/generated/http-routes.md",
-          "sha256": "de4eb47c5dec20dbfd2f835cee507e6c9bf462aefecd89f2e17951ac49092666"
+          "sha256": "1faf64ec218f265cecf1164d0b1e271b7da35d9ad990d9b859fb35cfec39cabe"
         },
         {
           "bytes": 406921,
@@ -82,7 +82,7 @@
           "sha256": "30644171b75f4a4a43d2e08444c32bcfba096ad4fbe4ecbf6410abb6e53d8f6d"
         }
       ],
-      "tree_sha256": "97d5b032513104f1d35a770a636cbde3915bf0e088630f7c3f5cd82a11b864a8"
+      "tree_sha256": "8686072c992bea303b09f98785733324b6a95f507cc5725718dfae378f5ce1bb"
     },
     "fixtures": {
       "counts": {
@@ -253,47 +253,47 @@
     },
     "http": {
       "counts": {
-        "bytes": 98477,
+        "bytes": 98655,
         "fields": 423,
         "files": 1,
         "methods": {
           "DELETE": 10,
-          "GET": 32,
+          "GET": 33,
           "PATCH": 7,
           "POST": 49,
           "PUT": 4
         },
         "mutating_routes": 70,
-        "routes": 102,
+        "routes": 103,
         "types": 108
       },
       "files": [
         {
-          "bytes": 98477,
+          "bytes": 98655,
           "path": "api/http-api-snapshot-v1.json",
-          "sha256": "d93913c5d95d799c93a96e727d88e5ddd996a55a8a2ed4c014f0f35ce579a0cd"
+          "sha256": "76949f764c09d24c6abb22ae1f3b9d1e16830f0fcd5a6450e8cce3c164b61055"
         }
       ],
-      "tree_sha256": "ec8b845c38eee537cc67a62f720a279b9c7d33fe785caebf1ba13b3e3f2e34cc"
+      "tree_sha256": "a3c338c4ad603b81c37abf0db5ddbfaf63f2638ed59c4d964f182d84ad7b44d6"
     },
     "manifest": {
       "counts": {
-        "bytes": 33314621,
-        "entries": 3629,
+        "bytes": 33322175,
+        "entries": 3630,
         "files": 1,
         "named_terminals": 26,
-        "overloads": 8436,
+        "overloads": 8438,
         "properties": 277,
         "registered_types": 34
       },
       "files": [
         {
-          "bytes": 33314621,
+          "bytes": 33322175,
           "path": "api/public-api-manifest-v1.json",
-          "sha256": "6cba069dce1052c82a2fc4e216f391bf1fcc99541c6b9361c6150605b1b44e6f"
+          "sha256": "465c4fe86dd98abc96689e082780544067465550ce6e2e67dac0c90c03eab33f"
         }
       ],
-      "tree_sha256": "9c7c8b234eb7f6e2cceb81ebc577ad6dd67029f1dd18bf3f376238a5ab19abeb"
+      "tree_sha256": "14539804285a438dd45f1513a2761d146d41cb0b2d63783f180ff076ed1cb98b"
     },
     "packages": {
       "counts": {
@@ -432,21 +432,21 @@
     },
     "rhai_editor": {
       "counts": {
-        "bytes": 1805001,
+        "bytes": 1807543,
         "canonical_ugen_categories": 71,
         "files": 51,
-        "lsp_rhai_rows": 603,
+        "lsp_rhai_rows": 605,
         "lsp_ugen_categories": 24,
         "rhai_projections_equal": true,
-        "rhai_rows": 603,
+        "rhai_rows": 605,
         "stdlib_rows": 887,
         "vscode_ugen_categories": 24
       },
       "files": [
         {
-          "bytes": 377874,
+          "bytes": 379145,
           "path": "crates/vibelang-lsp/src/data/rhai-api.json",
-          "sha256": "e1d8f659596d476be1da175dc1aa7ebe6d042ca367f8d82d8bb41ec9a0bb7742"
+          "sha256": "322ba2fbc482ca9c8d4cb768fbb7ec2c0a28b51ef3bd83743a094e20dc5b1e39"
         },
         {
           "bytes": 16998,
@@ -569,9 +569,9 @@
           "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
         },
         {
-          "bytes": 377874,
+          "bytes": 379145,
           "path": "vscode-extension/src/data/rhai-api.json",
-          "sha256": "e1d8f659596d476be1da175dc1aa7ebe6d042ca367f8d82d8bb41ec9a0bb7742"
+          "sha256": "322ba2fbc482ca9c8d4cb768fbb7ec2c0a28b51ef3bd83743a094e20dc5b1e39"
         },
         {
           "bytes": 521451,
@@ -699,7 +699,7 @@
           "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
         }
       ],
-      "tree_sha256": "b9f2a8b42d6d18d8b72c0afd864715ab238d898c61b5924ccaa4c7f2d59bf3f5"
+      "tree_sha256": "ffee103c9946ba1f05f947c5325b3be7b3fc12e8b0441903b7534031896f30bb"
     },
     "wasm": {
       "counts": {

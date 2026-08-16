@@ -2,7 +2,7 @@
 
 > Generated from `api/http-api-snapshot-v1.json`; edit Axum routes or Serde DTOs and regenerate instead of editing this file.
 
-The source snapshot contains **102 method/path registrations** and **108 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
+The source snapshot contains **103 method/path registrations** and **108 public serialized/deserialized Rust types**. It records declarations and feature gates, not handler effectiveness or runtime status semantics.
 
 ## Routes
 
@@ -52,6 +52,7 @@ The source snapshot contains **102 method/path registrations** and **108 public 
 | `POST` | `/midi/note/off` | `routes::midi::send_note_off` | `feature = "midi"` |
 | `POST` | `/midi/note/on` | `routes::midi::send_note_on` | `feature = "midi"` |
 | `POST` | `/midi/output/open` | `routes::midi::open_output` | `feature = "midi"` |
+| `GET` | `/midi/readiness` | `routes::midi::get_readiness` | `feature = "midi"` |
 | `POST` | `/midi/record/start` | `routes::midi::start_recording` | `feature = "midi"` |
 | `POST` | `/midi/record/stop` | `routes::midi::stop_recording` | `feature = "midi"` |
 | `POST` | `/midi/route/keyboard` | `routes::midi::add_keyboard_route` | `feature = "midi"` |

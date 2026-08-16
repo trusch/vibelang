@@ -6924,6 +6924,30 @@
     }
   },
   {
+    "name": "midi_input",
+    "description": "Source-backed rhai registration; availability: conditional.",
+    "signature": "midi_input(_: string, _: string) -> MidiDevice",
+    "example": "",
+    "receiver": null,
+    "lifecycle": {
+      "phase": "call",
+      "terminal": "call_result",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "conditional",
+      "cfg": [
+        "cfg (feature = \"midi\")"
+      ],
+      "targets": [],
+      "features": [
+        "midi"
+      ],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
     "name": "modulate_by",
     "description": "Source-backed rhai method on ParamHandle registration; availability: available.",
     "signature": "modulate_by(_: ParamHandle, _: Voice, _: string) -> core::result::Result<vibelang_rhai::api::route::ParamHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -8873,6 +8897,30 @@
     "signature": "range(_: GroupRoute, _: string, _: string) -> GroupRoute",
     "example": "",
     "receiver": "GroupRoute",
+    "lifecycle": {
+      "phase": "builder_or_handle_call",
+      "terminal": "non_terminal_chain",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "conditional",
+      "cfg": [
+        "cfg (feature = \"midi\")"
+      ],
+      "targets": [],
+      "features": [
+        "midi"
+      ],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
+    "name": "range",
+    "description": "Source-backed rhai method on KeyboardRoute registration; availability: conditional.",
+    "signature": "range(_: KeyboardRoute, _: i64, _: i64) -> KeyboardRoute",
+    "example": "",
+    "receiver": "KeyboardRoute",
     "lifecycle": {
       "phase": "builder_or_handle_call",
       "terminal": "non_terminal_chain",
