@@ -383,6 +383,9 @@ async fn run_simple_mode(
     // colliding with hardware input buses on setups with >16 hardware buses.
     let mut runtime = Runtime::new_with_audio_config(backend, output_channels, input_channels);
     let handle = runtime.handle();
+    // Kept past the runtime move so every reload can ask the server whether
+    // the graph it just built is whole (see `settle_and_report`).
+    let integrity_backend = runtime.backend().clone();
 
     // Set up metering callback to receive SendTrig messages from link synths
     setup_metering(runtime.backend(), runtime.state().clone());
@@ -557,7 +560,9 @@ async fn run_simple_mode(
     // This ensures MIDI devices are registered before transport starts,
     // so they receive the Start message
     handle.sync_and_wait().await?;
-    info!("State applied");
+    if graph_is_whole(&integrity_backend, "Initial load") {
+        info!("State applied");
+    }
 
     // Start transport
     handle
@@ -573,6 +578,7 @@ async fn run_simple_mode(
         let include_paths_clone = include_paths.clone();
         let ext_config_clone = ext_config.clone();
         let handle_clone = handle.clone();
+        let reload_backend = integrity_backend.clone();
         #[cfg(feature = "midi")]
         let midi_dispatch_tx_clone = midi_dispatch_tx.clone();
 
@@ -616,6 +622,9 @@ async fn run_simple_mode(
                     while rx.try_recv().is_ok() {}
 
                     info!("File changed, reloading...");
+                    // Anything the server refused before this reload is not
+                    // this reload's verdict.
+                    let _ = reload_backend.take_missing_synthdefs();
                     match execute_script(&file_clone, &include_paths_clone, &ext_config_clone) {
                         Ok(output) => {
                             #[cfg(feature = "midi")]
@@ -637,7 +646,12 @@ async fn run_simple_mode(
                                 .await
                             {
                                 error!("Failed to apply reload: {}", e);
-                            } else {
+                            } else if let Err(e) = handle_clone.sync_and_wait().await {
+                                // Without the barrier the reload's verdict
+                                // would be read before the server has
+                                // answered for it, so it cannot be claimed.
+                                error!("Reload could not be confirmed: {}", e);
+                            } else if graph_is_whole(&reload_backend, "Reload") {
                                 info!("Reload successful");
                             }
                         }
@@ -670,6 +684,34 @@ async fn run_simple_mode(
 
     info!("Goodbye!");
     Ok(())
+}
+
+/// Whether the graph the server just built contains every synth the script
+/// asked for — and a loud report naming what is missing when it does not.
+///
+/// A reload that instantiates voices against SynthDefs the server does not
+/// have leaves a partial graph: some voices play, others are silent, and
+/// nothing about it looks broken from the outside. Reporting that as a
+/// successful reload is the failure mode this guards. Call it after a
+/// `/sync` barrier, so the server has already answered for every `/s_new`.
+fn graph_is_whole(backend: &Arc<vibelang_core::ScsynthBackend>, what: &str) -> bool {
+    let missing = backend.take_missing_synthdefs();
+    if missing.is_empty() {
+        return true;
+    }
+    let mut names: Vec<&str> = missing.iter().map(|m| m.def.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    error!(
+        "{} FAILED: the graph is incomplete — scsynth has no SynthDef for {} \
+         of the synths it was asked to create ({}). Those voices are SILENT. \
+         Check the server's own log for `exception in GraphDef_Recv` (a UGen \
+         it does not have), then fix the script and reload.",
+        what,
+        missing.len(),
+        names.join(", ")
+    );
+    false
 }
 
 /// Run in TUI mode
