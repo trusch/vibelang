@@ -220,12 +220,16 @@ pub fn take_state() -> ScriptState {
             .map(|c| std::mem::take(&mut c.state))
             .unwrap_or_default();
 
-        // Record content hashes for every script-deployed synthdef referenced
+        // Record deploy hashes for every script-deployed synthdef referenced
         // by a voice or effect. The reload differ compares these against the
         // hashes snapshotted on the last applied reload to detect body-only
         // synthdef edits (same name/params, different compiled graph), which
         // must structurally recreate dependent voices/effects. Names without
         // a registry hash (builtins, sample voices) are simply not recorded.
+        //
+        // The deploy hash, not the raw content hash: a def the server refused
+        // to instantiate and that was re-sent has unchanged source bytes but
+        // lost its voices with it, so it has to read as changed exactly once.
         let referenced: std::collections::HashSet<String> = state
             .voices
             .values()
@@ -234,7 +238,7 @@ pub fn take_state() -> ScriptState {
             .filter(|name| !name.is_empty())
             .collect();
         for name in referenced {
-            if let Some(hash) = vibelang_dsp::get_synthdef_hash(&name) {
+            if let Some(hash) = vibelang_dsp::get_synthdef_deploy_hash(&name) {
                 state.synthdef_hashes.insert(name, hash);
             }
         }
