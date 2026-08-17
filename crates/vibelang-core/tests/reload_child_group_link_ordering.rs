@@ -49,10 +49,26 @@ struct Tree {
     parent: HashMap<NodeId, NodeId>,
     defs: HashMap<NodeId, String>,
     controls: HashMap<NodeId, ParamMap>,
+    /// Things a real scsynth would have REFUSED. The mock is permissive by
+    /// construction (a `HashMap` happily takes a node id twice), so anything
+    /// the server would reject has to be recorded explicitly or the harness
+    /// silently simulates a tree the board can never have.
+    rejects: Vec<String>,
 }
 
 impl Tree {
     fn insert(&mut self, node: NodeId, target: NodeId, action: AddAction) -> Result<(), MockError> {
+        // scsynth refuses `/s_new` and `/g_new` for a node id that is already
+        // alive ("node id already in use") and creates NOTHING — the runtime
+        // then holds a node id in state that does not exist in the tree.
+        // That is state/tree divergence by the front door, so it must never
+        // be simulated as a success.
+        if self.parent.contains_key(&node) {
+            self.rejects.push(format!(
+                "create with node id {} which is ALREADY ALIVE — scsynth would reject it",
+                node.0
+            ));
+        }
         self.children.entry(target).or_default();
         match action {
             AddAction::Head => {
@@ -85,6 +101,12 @@ impl Tree {
         }
         self.children.entry(node).or_default();
         Ok(())
+    }
+
+    /// Every node id currently alive in the tree carries a parent entry, so
+    /// this is the tree's own answer to "does this node exist".
+    fn alive(&self, node: NodeId) -> bool {
+        self.parent.contains_key(&node)
     }
 
     fn free(&mut self, node: NodeId) {
@@ -180,6 +202,42 @@ impl MockBackend {
 
     fn breaks(&self) -> Vec<AudioPathBreak> {
         audio_path_breaks(&self.tree())
+    }
+
+    fn rejects(&self) -> Vec<String> {
+        self.state.tree.lock().unwrap().rejects.clone()
+    }
+
+    fn alive(&self, node: NodeId) -> bool {
+        self.state.tree.lock().unwrap().alive(node)
+    }
+
+    /// The node's parent in the TREE — which is not necessarily the parent
+    /// the runtime's state believes it has.
+    fn tree_parent(&self, node: NodeId) -> Option<NodeId> {
+        self.state.tree.lock().unwrap().parent.get(&node).copied()
+    }
+
+    /// Evaluation position of every node — groups included, unlike
+    /// `synths_in_evaluation_order`, because a group's position is what
+    /// decides whether its link can be reached in time.
+    fn eval_index(&self) -> HashMap<NodeId, usize> {
+        let tree = self.state.tree.lock().unwrap();
+        let mut out = HashMap::new();
+        let mut stack: Vec<NodeId> = tree
+            .children
+            .get(&NodeId::new(0))
+            .map(|kids| kids.iter().rev().copied().collect())
+            .unwrap_or_default();
+        let mut idx = 0usize;
+        while let Some(node) = stack.pop() {
+            out.insert(node, idx);
+            idx += 1;
+            if let Some(kids) = tree.children.get(&node) {
+                stack.extend(kids.iter().rev().copied());
+            }
+        }
+        out
     }
 
     /// The whole tree — groups included — in evaluation order, so a failing
@@ -776,6 +834,333 @@ async fn detector_flags_a_child_link_after_the_parent_link() {
 /// a real wetness defect — but it is NOT an audio-path break, because the
 /// parent's link synth still reads the bus afterwards. No fixture driven
 /// through `audio_path_breaks` can ever turn this lead red.
+// =========================================================================
+// STATE invariants — the assertion `audio_path_breaks` cannot make.
+// =========================================================================
+
+/// What the board defect violates, stated over runtime STATE and the live
+/// tree together instead of over the audio path:
+///
+/// 1. every group in state has a group node that is ALIVE in the tree;
+/// 2. every group in state has `link_synth_node_id == Some(n)`, `n` alive —
+///    a `None` link with a live link node is the state/tree divergence that
+///    sends the next child group down `groups.rs` case 3 (`Tail`), and a
+///    `Some` link pointing at a dead node is the same divergence mirrored;
+/// 3. a child group's node sits inside its parent's subtree in the TREE, not
+///    only in state;
+/// 4. a child group's link runs BEFORE its parent's link.
+///
+/// `audio_path_breaks` can only ever see (4), and only when nothing else
+/// reads the bus afterwards. (1)-(3) are pure divergence and are invisible
+/// to any assertion made over the audio path alone.
+async fn state_violations(runtime: &Runtime<MockBackend>, backend: &MockBackend) -> Vec<String> {
+    let state = runtime.state().read().await;
+    let order = backend.eval_index();
+    let mut groups: Vec<&vibelang_core::GroupState> = state.groups.values().collect();
+    groups.sort_by_key(|g| g.id.0);
+
+    let mut out = Vec::new();
+    for g in groups {
+        if !backend.alive(g.node_id) {
+            out.push(format!(
+                "group {} is in state with node {} but that node is DEAD in the tree",
+                g.id.0, g.node_id.0
+            ));
+        }
+        match g.link_synth_node_id {
+            None => out.push(format!(
+                "group {} (node {}) has link_synth_node_id == None after a settled reload",
+                g.id.0, g.node_id.0
+            )),
+            Some(link) => {
+                if !backend.alive(link) {
+                    out.push(format!(
+                        "group {} points at link node {} which is DEAD in the tree",
+                        g.id.0, link.0
+                    ));
+                }
+            }
+        }
+
+        let Some(parent_id) = g.parent else { continue };
+        let Some(parent) = state.groups.get(&parent_id) else {
+            out.push(format!(
+                "group {} claims parent {} which is not in state",
+                g.id.0, parent_id.0
+            ));
+            continue;
+        };
+        let tree_parent = backend.tree_parent(g.node_id);
+        if tree_parent != Some(parent.node_id) {
+            out.push(format!(
+                "group {} (node {}) claims parent {} (node {}) but the TREE has it under {:?}",
+                g.id.0,
+                g.node_id.0,
+                parent_id.0,
+                parent.node_id.0,
+                tree_parent.map(|n| n.0)
+            ));
+        }
+        if let (Some(child_link), Some(parent_link)) =
+            (g.link_synth_node_id, parent.link_synth_node_id)
+        {
+            match (order.get(&child_link), order.get(&parent_link)) {
+                (Some(c), Some(p)) if c > p => out.push(format!(
+                    "group {}'s link (node {}, eval #{c}) runs AFTER its parent {}'s link \
+                     (node {}, eval #{p}) — the child is silent",
+                    g.id.0, child_link.0, parent_id.0, parent_link.0
+                )),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// Everything that is wrong with the machine right now: state/tree
+/// divergence, orderings scsynth would have refused, and audio-path breaks.
+async fn all_violations(runtime: &Runtime<MockBackend>, backend: &MockBackend) -> Vec<String> {
+    let mut out = state_violations(runtime, backend).await;
+    out.extend(backend.rejects());
+    out.extend(backend.breaks().iter().map(|b| b.to_string()));
+    out
+}
+
+/// The invariant holds on a cold boot — otherwise every fuzz failure below
+/// would just be the harness being wrong about what "correct" looks like.
+#[tokio::test(flavor = "current_thread")]
+async fn state_invariant_holds_on_a_cold_boot() {
+    let (mut runtime, backend) = boot_with_defs(
+        patch_with_def(
+            MASTER_A,
+            &MASTER_CHAIN,
+            DEF_JPVERB,
+            &[(CHILD_N17, &[FX_1], DEF_JPVERB)],
+        ),
+        &[DEF_JPVERB, DEF_HALL, DEF_FX],
+    )
+    .await;
+    settle(&mut runtime).await;
+    let violations = all_violations(&runtime, &backend).await;
+    assert!(
+        violations.is_empty(),
+        "cold boot must satisfy the state invariant:\n{}\n{}",
+        backend.render(),
+        violations.join("\n")
+    );
+}
+
+// =========================================================================
+// Fuzzing reload SEQUENCES.
+// =========================================================================
+
+/// xorshift64*, so a failing run is a seed and not a mystery.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+/// One patch, in the form the failure message can print verbatim so a fuzz
+/// hit converts straight into a deterministic test.
+#[derive(Clone, Debug, PartialEq)]
+struct Spec {
+    /// (master id, fx chain in audio-path order, synthdef)
+    masters: Vec<(u32, Vec<u32>, &'static str)>,
+    /// (child id, parent master id, fx chain, synthdef)
+    children: Vec<(u32, u32, Vec<u32>, &'static str)>,
+}
+
+impl Spec {
+    fn build(&self) -> ScriptState {
+        let mut script = ScriptState::new();
+        for (master, fx, def) in &self.masters {
+            script.add_group(
+                GroupId(*master),
+                GroupConfig {
+                    // Names are id-stable: on the board an id IS the hash of
+                    // the name, so a group cannot change its name and keep
+                    // its id.
+                    name: format!("g{master}"),
+                    effects: fx.iter().map(|f| EffectId(*f)).collect(),
+                    ..Default::default()
+                },
+            );
+            for f in fx {
+                script.add_effect(
+                    EffectId(*f),
+                    EffectConfig {
+                        group: GroupId(*master),
+                        synthdef: (*def).to_string(),
+                        params: ParamMap::new(),
+                    },
+                );
+            }
+        }
+        for (child, parent, fx, def) in &self.children {
+            script.add_group(
+                GroupId(*child),
+                GroupConfig {
+                    name: format!("g{child}"),
+                    parent: Some(GroupId(*parent)),
+                    effects: fx.iter().map(|f| EffectId(*f)).collect(),
+                    ..Default::default()
+                },
+            );
+            for f in fx {
+                script.add_effect(
+                    EffectId(*f),
+                    EffectConfig {
+                        group: GroupId(*child),
+                        synthdef: (*def).to_string(),
+                        params: ParamMap::new(),
+                    },
+                );
+            }
+        }
+        script
+    }
+}
+
+const MASTER_IDS: [u32; 2] = [1, 2];
+const CHILD_IDS: [u32; 3] = [3, 4, 5];
+const FX_IDS: [u32; 3] = [10, 11, 12];
+const DEFS: [&str; 2] = [DEF_JPVERB, DEF_HALL];
+
+/// A random patch of the board's shape: one or two masters, each with a
+/// serial fx chain, each carrying zero or more child groups that mix into
+/// it, and effects that migrate freely between chains.
+///
+/// `stable_parents` distinguishes the two id regimes. The board hashes a
+/// group's FULL PATH, so a child that moves to another master necessarily
+/// changes id (`stable_parents = true`: a given child id always hangs off
+/// the same master). A script that names groups without their path gets the
+/// same id under a new parent (`stable_parents = false`), which is a
+/// legitimate vibelang program but NOT the board's shape — keeping them
+/// apart is what makes a hit interpretable.
+fn random_spec(rng: &mut Rng, stable_parents: bool) -> Spec {
+    let masters: Vec<u32> = match rng.below(3) {
+        0 => vec![MASTER_IDS[0]],
+        1 => vec![MASTER_IDS[1]],
+        _ => vec![MASTER_IDS[0], MASTER_IDS[1]],
+    };
+
+    let mut children: Vec<(u32, u32, Vec<u32>, &'static str)> = Vec::new();
+    for (i, child) in CHILD_IDS.iter().enumerate() {
+        // Each child is present in roughly two patches out of three.
+        let pick = rng.below(masters.len() + 1);
+        if pick == masters.len() {
+            continue;
+        }
+        let parent = if stable_parents {
+            // A child id belongs to exactly one master forever; it is
+            // present only when that master is.
+            let owner = MASTER_IDS[i % MASTER_IDS.len()];
+            if !masters.contains(&owner) {
+                continue;
+            }
+            owner
+        } else {
+            masters[pick]
+        };
+        children.push((*child, parent, Vec::new(), DEFS[rng.below(2)]));
+    }
+
+    // Every effect lands on some chain — a master's or a child's — or is
+    // absent from this patch entirely. Migration between the two is the
+    // structural-recreate that the board does on every recall.
+    let mut master_fx: Vec<Vec<u32>> = masters.iter().map(|_| Vec::new()).collect();
+    for fx in FX_IDS {
+        let slots = masters.len() + children.len() + 1;
+        let slot = rng.below(slots);
+        if slot < masters.len() {
+            master_fx[slot].push(fx);
+        } else if slot < masters.len() + children.len() {
+            children[slot - masters.len()].2.push(fx);
+        }
+    }
+
+    let mut spec = Spec {
+        masters: masters
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (*m, master_fx[i].clone(), DEFS[rng.below(2)]))
+            .collect(),
+        children,
+    };
+    // Declaration order is audio-path order, and it is deliberately NOT id
+    // order: reversing a chain is what makes the `min_by_key(id.raw())`
+    // anchor disagree with the real chain head.
+    for (_, fx, _) in spec.masters.iter_mut() {
+        if rng.below(2) == 0 {
+            fx.reverse();
+        }
+    }
+    spec
+}
+
+/// Drive a random sequence of recalls through ONE runtime — an aged process,
+/// which is the condition the predecessor's 35-cycle bank could not
+/// reproduce from a fresh start — and check the STATE invariant after every
+/// settled recall.
+async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bool) {
+    for run in 0..runs {
+        let mut rng = Rng(seed.wrapping_add(run as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        let mut history: Vec<Spec> = Vec::new();
+
+        let first = random_spec(&mut rng, stable_parents);
+        history.push(first.clone());
+        let (mut runtime, backend) =
+            boot_with_defs(first.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX]).await;
+        settle(&mut runtime).await;
+
+        for step in 0..steps {
+            let spec = random_spec(&mut rng, stable_parents);
+            history.push(spec.clone());
+            apply(&mut runtime, spec.build()).await;
+            settle(&mut runtime).await;
+
+            let violations = all_violations(&runtime, &backend).await;
+            assert!(
+                violations.is_empty(),
+                "run {run} (seed {seed}) broke at recall #{step}\n\
+                 --- violations ---\n{}\n--- settled tree ---\n{}\n--- sequence ---\n{}",
+                violations.join("\n"),
+                backend.render(),
+                history
+                    .iter()
+                    .map(|s| format!("{s:?}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+        }
+    }
+}
+
+/// The board's id regime: a child group belongs to one master forever,
+/// because its id hashes the full path.
+#[tokio::test(flavor = "current_thread")]
+async fn fuzz_reload_sequences_board_id_regime() {
+    fuzz_sequences(0x5EED_0001, 6, 12, true).await;
+}
+
+/// The looser regime: the same group id reappears under a different parent.
+#[tokio::test(flavor = "current_thread")]
+async fn fuzz_reload_sequences_reparenting() {
+    fuzz_sequences(0x5EED_0002, 6, 12, false).await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn detector_is_blind_to_a_child_landing_mid_fx_chain() {
     let tree = vec![
