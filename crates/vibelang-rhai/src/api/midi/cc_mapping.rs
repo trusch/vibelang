@@ -1,6 +1,7 @@
 //! CcMapping builder — polymorphic MIDI CC routing to Voice, Group, Fx, or String targets.
 
 use rhai::{CustomType, Dynamic, EvalAltResult, Position, TypeBuilder};
+use vibelang_core::midi::canonical_cc_curve_name;
 use vibelang_core::traits::FadeTarget;
 use vibelang_core::types::MidiDeviceId;
 
@@ -18,6 +19,7 @@ pub struct CcMapping {
     device_id: MidiDeviceId,
     cc: u8,
     channel: Option<u8>,
+    group: Option<u8>,
     curve: String,
 }
 
@@ -28,6 +30,7 @@ impl CcMapping {
             device_id,
             cc,
             channel: None,
+            group: None,
             curve: "linear".to_string(),
         }
     }
@@ -38,14 +41,22 @@ impl CcMapping {
         self
     }
 
+    /// Filter to a specific UMP group (0-15).
+    pub fn group(mut self, group: i64) -> Self {
+        self.group = Some(group.clamp(0, 15) as u8);
+        self
+    }
+
     /// Set the parameter curve.
     ///
-    /// Available curves: "linear", "log"/"logarithmic", "exp"/"exponential"
+    /// Available curves: linear, log/logarithmic, exp/exponential, and s-curve aliases.
     pub fn curve(mut self, name: String) -> Self {
-        self.curve = match name.to_lowercase().as_str() {
-            "log" | "logarithmic" => "logarithmic".to_string(),
-            "exp" | "exponential" => "exponential".to_string(),
-            _ => "linear".to_string(),
+        self.curve = match canonical_cc_curve_name(&name) {
+            Some(curve) => curve.to_string(),
+            None => {
+                tracing::warn!("Unknown MIDI CC curve '{}'; falling back to linear", name);
+                "linear".to_string()
+            }
         };
         self
     }
@@ -93,6 +104,7 @@ impl CcMapping {
             device_id: self.device_id,
             cc: self.cc,
             channel: self.channel,
+            group: self.group,
             curve: self.curve,
             target: fade_target,
             param,

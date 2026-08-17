@@ -831,8 +831,8 @@ impl MidiDevice {
         PerNotePressureBuilder::new(self.id)
     }
 
-    /// Start building a high-resolution 32-bit CC route.
-
+    /// Start building a deprecated compatibility CC route.
+    #[deprecated(note = "use map_cc(); transport resolution is selected automatically")]
     pub fn cc32(self, cc: i64) -> Cc32Route {
         Cc32Route::new(self.id, cc.clamp(0, 127) as u8)
     }

@@ -109,9 +109,9 @@ const MIDI_INPUT_TRANSPORT_MASK: u32 = 0xC000_0000;
 // Legacy re-exports (existing API, maintained for compatibility)
 // =============================================================================
 pub use callbacks::{
-    parse_note_name, CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder,
-    MidiCallbacks, NoteRouteBuilder, ParameterCurve, StoredCallback, VelocityCurve,
-    VelocityMapping,
+    canonical_cc_curve_name, parse_note_name, CallbackData, CallbackType, CcRouteBuilder,
+    KeyboardRouteBuilder, MidiCallbacks, NoteRouteBuilder, ParameterCurve, StoredCallback,
+    VelocityCurve, VelocityMapping,
 };
 pub use constants::{
     decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, trigger_ids,
