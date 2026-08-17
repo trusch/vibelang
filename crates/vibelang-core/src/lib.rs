@@ -166,8 +166,8 @@ pub use transport_snapshot::TransportSnapshot;
 // Re-export the scsynth backend when available (native only)
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub use backends::{
-    setup_metering, setup_node_tracking, ProcessError, ScsynthBackend, ScsynthConfig,
-    ScsynthProcess,
+    setup_metering, setup_node_tracking, MissingSynthDef, ProcessError, ScsynthBackend,
+    ScsynthConfig, ScsynthProcess,
 };
 
 // Re-export the web backend for WASM

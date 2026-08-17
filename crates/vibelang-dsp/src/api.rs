@@ -35,6 +35,12 @@ static SYNTHDEF_INPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<InputPort>>>
 // a different compiled graph. Names not in this map (builtins, auto-generated
 // sample voices) have no hash and are never treated as body-changed.
 static SYNTHDEF_HASH_REGISTRY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+// How many times the server has refused to instantiate each def (see
+// `forget_synthdef_hash`). A def that went missing and came back is a
+// different deployed instance even though its source bytes never changed,
+// so this is folded into the hash the reload differ sees — otherwise the
+// re-sent def sits on the server with no voice pointing at it.
+static SYNTHDEF_REFUSAL_GENERATIONS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 // Callback for deploying synthdef bytes to scsynth
 static DEPLOY_CALLBACK: OnceLock<Mutex<Option<DeployCallback>>> = OnceLock::new();
 // Per-synthdef memoized single-value param defaults (Fix B). Built lazily from
@@ -293,6 +299,60 @@ pub fn get_synthdef_hash(name: &str) -> Option<u64> {
         .copied()
 }
 
+/// Drop the content hash for one synthdef / effect body, so the next eval
+/// re-sends it instead of skipping it as unchanged, and mark it as having
+/// been refused so dependent voices are rebuilt against the re-sent def.
+///
+/// The hash registry assumes a `/d_recv` the server answered `/done` to is
+/// a def the server can build — scsynth breaks that assumption: it accepts
+/// a def whose graph it cannot construct (an uninstalled UGen) and only
+/// refuses later, at `/s_new`. Without this, one such refusal silences that
+/// voice for the life of the process, because every later reload sees an
+/// unchanged body and skips the send.
+///
+/// Re-sending alone is not enough to make the instrument sound again. The
+/// voice whose `/s_new` was refused has no node on the server, but the
+/// reload differ compares content hashes to decide what to rebuild — and
+/// the re-sent body hashes to exactly what it hashed before, so the differ
+/// would see "unchanged" and leave the voice missing. Bumping the refusal
+/// generation makes the def read as a new deployed instance for one reload,
+/// which is what it is, so the differ recreates the voices that point at it.
+pub fn forget_synthdef_hash(name: &str) {
+    get_synthdef_hash_registry().lock().unwrap().remove(name);
+    *get_refusal_generations()
+        .lock()
+        .unwrap()
+        .entry(name.to_string())
+        .or_insert(0) += 1;
+    invalidate_param_defaults_memo(name);
+}
+
+/// The content hash the reload differ should compare for `name`, or `None`
+/// when the def never went through the script deploy path.
+///
+/// This is [`get_synthdef_hash`] folded with the number of times the server
+/// has refused to instantiate the def. Callers snapshotting hashes for the
+/// differ must use this rather than the raw content hash: a def that was
+/// refused and re-sent has identical source bytes but is a different
+/// deployed instance, and the voices that were lost with it have to be
+/// recreated.
+pub fn get_synthdef_deploy_hash(name: &str) -> Option<u64> {
+    let hash = get_synthdef_hash(name)?;
+    let generation = get_refusal_generations()
+        .lock()
+        .unwrap()
+        .get(name)
+        .copied()
+        .unwrap_or(0);
+    // Odd multiplier so a generation bump cannot cancel out against a body
+    // hash; generation 0 leaves the content hash untouched.
+    Some(hash ^ generation.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+}
+
+fn get_refusal_generations() -> &'static Mutex<HashMap<String, u64>> {
+    SYNTHDEF_REFUSAL_GENERATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// Clear the synthdef content-hash registry. Useful for tests.
 ///
 /// Called on scsynth (re)connect to force a full re-send of every def. Also
@@ -300,6 +360,10 @@ pub fn get_synthdef_hash(name: &str) -> Option<u64> {
 /// server can never serve stale defaults out of the memo.
 pub fn clear_synthdef_hash_registry() {
     get_synthdef_hash_registry().lock().unwrap().clear();
+    // A fresh server has refused nothing yet, and every def is about to be
+    // re-sent anyway — carrying old refusals over would recreate voices
+    // that are already being rebuilt from scratch.
+    get_refusal_generations().lock().unwrap().clear();
     clear_param_defaults_memo();
 }
 
