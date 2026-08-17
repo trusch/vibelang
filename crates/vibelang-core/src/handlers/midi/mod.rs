@@ -86,9 +86,7 @@ use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
 use std::collections::{HashMap, HashSet, VecDeque};
-#[cfg(feature = "pipewire-midi2")]
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
