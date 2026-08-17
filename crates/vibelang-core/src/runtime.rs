@@ -1477,6 +1477,11 @@ impl<B: Backend> Runtime<B> {
         // Replacement parents must exist before same-ID voices move out of
         // groups that this reload is about to destroy.
         self.phase_create_groups(&diff).await;
+        // Before anything is deleted: a group that moved to a new parent has
+        // to leave the old parent's subtree while that subtree still exists.
+        // `phase_delete_entities` frees the old parent's group node, and
+        // scsynth frees a group's children with it.
+        self.phase_reparent_groups(&diff).await;
         self.phase_recreate_structural_voices(&diff, &structurally_recreated_voices)
             .await;
         self.phase_remove_structural_effects(&structurally_recreated_effects)
@@ -2232,6 +2237,41 @@ impl<B: Backend> Runtime<B> {
 
         if !diff.groups.created.is_empty() {
             self.sync_with_retry("after group creation").await;
+        }
+    }
+
+    /// Moves updated groups whose parent changed into their new parent.
+    ///
+    /// Runs directly after group creation — the new parent may itself have
+    /// been created by this reload — and before `phase_delete_entities`,
+    /// because the old parent may be one of the groups this reload deletes and
+    /// freeing a group node frees everything inside it.
+    async fn phase_reparent_groups(&mut self, diff: &reload::ReloadDiff) {
+        // Parents before children, so a group moving under a sibling that is
+        // itself moving lands relative to the sibling's final position.
+        let mut moved: Vec<_> = diff.groups.updated.iter().collect();
+        moved.sort_by_key(|(id, config)| (config.parent.is_some(), id.raw()));
+        for (id, config) in moved {
+            let unchanged = {
+                let state = self.state.read().await;
+                state
+                    .groups
+                    .get(id)
+                    .map(|g| g.parent == config.parent)
+                    .unwrap_or(true)
+            };
+            if unchanged {
+                continue;
+            }
+            tracing::debug!("Reload: reparenting group {:?} to {:?}", id, config.parent);
+            if let Err(e) = self.groups.reparent(*id, config.parent).await {
+                tracing::error!(
+                    "Reload: failed to reparent group {:?} '{}': {}",
+                    id,
+                    config.name,
+                    e
+                );
+            }
         }
     }
 

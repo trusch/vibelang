@@ -46,6 +46,47 @@ fn effective_mute(muted: bool, soloed: bool, any_soloed: bool) -> bool {
     }
 }
 
+/// Where a group whose parent is `parent` has to be placed in the tree.
+///
+/// A child group feeds the parent's bus through its own link synth, so it has
+/// to run BEFORE everything in the parent that reads that bus: the parent's fx
+/// chain and the parent's link synth. scsynth evaluates in tree order and
+/// zeroes audio buses every block, so a child group Tail-added after the
+/// parent's link synth writes a bus nobody reads any more — that whole branch
+/// of the instrument goes silent while every synth in it is alive and correct.
+///
+/// On a cold build the parent has neither fx nor link yet (both come later, fx
+/// at Tail and the link at Tail from `finalize`), so Tail is right and
+/// reproduces the cold-boot order. On a RELOAD that recreates or REPARENTS a
+/// group the parent already carries both, which is where Tail strands it. Same
+/// three-case placement as `RoutesHandler::spawn_route` and
+/// `EffectsHandler::add`, one slot earlier than the fx chain.
+fn child_group_placement(state: &State, parent: Option<GroupId>) -> Result<(NodeId, AddAction)> {
+    let Some(parent_id) = parent else {
+        // Add to root group (node 0). Root children write either bus 0 or a
+        // sibling's bus via their own link; the driver drains bus 0 at the end
+        // of the block, so Tail carries no ordering hazard here.
+        return Ok((NodeId::new(0), AddAction::Tail));
+    };
+    let parent_node_id = state
+        .groups
+        .get(&parent_id)
+        .ok_or(Error::GroupNotFound(parent_id))?
+        .node_id;
+    let first_fx_node = state.first_effect_node_in_group(parent_id);
+    let parent_link = state
+        .groups
+        .get(&parent_id)
+        .and_then(|g| g.link_synth_node_id);
+    Ok(if let Some(first_fx_node) = first_fx_node {
+        (first_fx_node, AddAction::Before)
+    } else if let Some(link_node) = parent_link {
+        (link_node, AddAction::Before)
+    } else {
+        (parent_node_id, AddAction::Tail)
+    })
+}
+
 impl<B: Backend> GroupsHandler<B> {
     /// Create a new groups handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
@@ -162,6 +203,80 @@ impl<B: Backend> GroupsHandler<B> {
             nodes,
             audio_bus: group.audio_bus,
         });
+        Ok(())
+    }
+
+    /// Move a live group under a new parent.
+    ///
+    /// A script can move a group between parents while its id stays the same
+    /// (the id is the hash of the group's name), which the diff reports as an
+    /// ordinary `updated` group. Without this the group node is never moved:
+    /// the tree keeps it inside the OLD parent's subtree and `GroupState.parent`
+    /// keeps the old value, so
+    ///
+    /// - the group mixes into the wrong bus, and
+    /// - when the old parent is later deleted, `/n_free` on the old parent's
+    ///   group node takes the whole subtree with it — including this group —
+    ///   while the runtime still holds it in state with a node id and a link
+    ///   node that no longer exist. From then on the branch is silent and NO
+    ///   recall can repair it, because the group is still in state and is
+    ///   therefore never re-created.
+    ///
+    /// The link synth is torn down rather than patched: `finalize` respawns it
+    /// pointed at the new parent's audio bus, which is the same mechanism the
+    /// `output_bus`/`output_channels` change path already uses.
+    pub async fn reparent(&self, id: GroupId, new_parent: Option<GroupId>) -> Result<()> {
+        let (node_id, old_parent, link, target, action) = {
+            let state = self.state.read().await;
+            let group = state.groups.get(&id).ok_or(Error::GroupNotFound(id))?;
+            if group.parent == new_parent {
+                return Ok(());
+            }
+            let (target, action) = child_group_placement(&state, new_parent)?;
+            (
+                group.node_id,
+                group.parent,
+                group.link_synth_node_id,
+                target,
+                action,
+            )
+        };
+
+        match action {
+            AddAction::Before => self
+                .backend
+                .move_node_before(node_id, target)
+                .await
+                .map_err(Error::backend)?,
+            _ => self
+                .backend
+                .move_node_to_tail(node_id, target)
+                .await
+                .map_err(Error::backend)?,
+        }
+
+        if let Some(link_node_id) = link {
+            let _ = self.backend.free_node(link_node_id).await;
+        }
+
+        {
+            let mut state = self.state.write().await;
+            if let Some(link_node_id) = link {
+                state.free_node_id(link_node_id);
+            }
+            if let Some(group) = state.groups.get_mut(&id) {
+                group.parent = new_parent;
+                group.link_synth_node_id = None;
+            }
+        }
+
+        tracing::info!(
+            "Reparented group {} (node {}) from {:?} to {:?}; link will be respawned by finalize",
+            id.0,
+            node_id.0,
+            old_parent.map(|p| p.0),
+            new_parent.map(|p| p.0),
+        );
         Ok(())
     }
 
@@ -312,29 +427,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
         // a group the parent already carries both, which is where Tail strands
         // it. Same three-case placement as `RoutesHandler::spawn_route` and
         // `EffectsHandler::add`, one slot earlier than the fx chain.
-        let (target, action) = if let Some(parent_id) = parent {
-            let parent_node_id = state
-                .groups
-                .get(&parent_id)
-                .ok_or(Error::GroupNotFound(parent_id))?
-                .node_id;
-            if let Some(first_fx_node) = state.first_effect_node_in_group(parent_id) {
-                (first_fx_node, AddAction::Before)
-            } else if let Some(link_node) = state
-                .groups
-                .get(&parent_id)
-                .and_then(|g| g.link_synth_node_id)
-            {
-                (link_node, AddAction::Before)
-            } else {
-                (parent_node_id, AddAction::Tail)
-            }
-        } else {
-            // Add to root group (node 0). Root children write either bus 0 or
-            // a sibling's bus via their own link; the driver drains bus 0 at
-            // the end of the block, so Tail carries no ordering hazard here.
-            (NodeId::new(0), AddAction::Tail)
-        };
+        let (target, action) = child_group_placement(&state, parent)?;
 
         // Create group in backend
         self.backend

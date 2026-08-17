@@ -147,6 +147,20 @@ impl Tree {
         Ok(())
     }
 
+    fn move_to_tail(&mut self, node: NodeId, group: NodeId) -> Result<(), MockError> {
+        let old_parent = self
+            .parent
+            .remove(&node)
+            .ok_or_else(|| MockError(format!("moved node {:?} not in tree", node)))?;
+        self.children
+            .get_mut(&old_parent)
+            .unwrap()
+            .retain(|n| *n != node);
+        self.children.entry(group).or_default().push(node);
+        self.parent.insert(node, group);
+        Ok(())
+    }
+
     /// Every synth under `root` in evaluation order — exactly what
     /// `/g_queryTree` reports and what `audio_path_breaks` expects.
     fn synths_in_evaluation_order(&self, root: NodeId) -> Vec<TreeSynth> {
@@ -210,6 +224,17 @@ impl MockBackend {
 
     fn alive(&self, node: NodeId) -> bool {
         self.state.tree.lock().unwrap().alive(node)
+    }
+
+    fn control(&self, node: NodeId, name: &str) -> Option<f32> {
+        self.state
+            .tree
+            .lock()
+            .unwrap()
+            .controls
+            .get(&node)
+            .and_then(|c| c.get(name))
+            .copied()
     }
 
     /// The node's parent in the TREE — which is not necessarily the parent
@@ -317,6 +342,10 @@ impl Backend for MockBackend {
 
     async fn move_node_before(&self, node: NodeId, before: NodeId) -> Result<(), Self::Error> {
         self.state.tree.lock().unwrap().move_before(node, before)
+    }
+
+    async fn move_node_to_tail(&self, node: NodeId, group: NodeId) -> Result<(), Self::Error> {
+        self.state.tree.lock().unwrap().move_to_tail(node, group)
     }
 
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error> {
@@ -1146,6 +1175,102 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
             );
         }
     }
+}
+
+/// The fuzz hit above, minimized to two recalls: a child group moves to
+/// another master in the same reload that deletes its old master.
+///
+/// Unfixed, the reload never moves the group node. It stays inside master 1's
+/// subtree, so `/n_free` on master 1's group node takes it — and its link —
+/// with it, while the runtime keeps the group in state pointing at both dead
+/// nodes and at a parent that no longer exists. The branch is silent, and no
+/// further recall can repair it: the group is still in state, so it is never
+/// re-created.
+#[tokio::test(flavor = "current_thread")]
+async fn a_child_that_moves_master_survives_the_old_master_being_deleted() {
+    let before = Spec {
+        masters: vec![(1, vec![11], DEF_HALL), (2, vec![], DEF_HALL)],
+        children: vec![(3, 1, vec![10], DEF_HALL)],
+    };
+    let after = Spec {
+        masters: vec![(2, vec![], DEF_HALL)],
+        children: vec![(3, 2, vec![10], DEF_HALL)],
+    };
+
+    let (mut runtime, backend) =
+        boot_with_defs(before.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX]).await;
+    settle(&mut runtime).await;
+    assert!(
+        all_violations(&runtime, &backend).await.is_empty(),
+        "precondition: cold boot is whole"
+    );
+
+    apply(&mut runtime, after.build()).await;
+    settle(&mut runtime).await;
+
+    let violations = all_violations(&runtime, &backend).await;
+    assert!(
+        violations.is_empty(),
+        "a child that moved to another master was destroyed with its old \
+         master, and the runtime does not know:\n{}\n{}",
+        backend.render(),
+        violations.join("\n")
+    );
+
+    let state = runtime.state().read().await;
+    let child = state.groups.get(&GroupId(3)).expect("child still in state");
+    let master = state.groups.get(&GroupId(2)).expect("new master in state");
+    assert_eq!(
+        child.parent,
+        Some(GroupId(2)),
+        "state must record the new parent, or the group diffs as `updated` forever"
+    );
+    assert_eq!(
+        backend.control(child.link_synth_node_id.unwrap(), "outbus"),
+        Some(master.audio_bus.0 as f32),
+        "the moved group's link must write its NEW parent's bus"
+    );
+}
+
+/// The same move with both masters surviving: no node is destroyed, but the
+/// group still has to leave the old subtree and re-point its link, or it
+/// keeps mixing into the master the script no longer sends it to.
+#[tokio::test(flavor = "current_thread")]
+async fn a_child_that_moves_master_mixes_into_the_new_master() {
+    let before = Spec {
+        masters: vec![(1, vec![11], DEF_HALL), (2, vec![12], DEF_HALL)],
+        children: vec![(3, 1, vec![10], DEF_HALL)],
+    };
+    let after = Spec {
+        masters: vec![(1, vec![11], DEF_HALL), (2, vec![12], DEF_HALL)],
+        children: vec![(3, 2, vec![10], DEF_HALL)],
+    };
+
+    let (mut runtime, backend) =
+        boot_with_defs(before.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX]).await;
+    settle(&mut runtime).await;
+    apply(&mut runtime, after.build()).await;
+    settle(&mut runtime).await;
+
+    let violations = all_violations(&runtime, &backend).await;
+    assert!(violations.is_empty(), "{}\n{}", backend.render(), violations.join("\n"));
+
+    let state = runtime.state().read().await;
+    let child = state.groups.get(&GroupId(3)).expect("child in state");
+    let master_2 = state.groups.get(&GroupId(2)).expect("new master in state");
+    assert_eq!(child.parent, Some(GroupId(2)));
+    assert_eq!(
+        backend.tree_parent(child.node_id),
+        Some(master_2.node_id),
+        "the group node must physically live under its new master:\n{}",
+        backend.render()
+    );
+    assert_eq!(
+        backend.control(child.link_synth_node_id.unwrap(), "outbus"),
+        Some(master_2.audio_bus.0 as f32),
+        "the moved group's link must write its NEW parent's bus:\n{}",
+        backend.render()
+    );
 }
 
 /// The board's id regime: a child group belongs to one master forever,

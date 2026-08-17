@@ -1792,6 +1792,15 @@ impl Backend for ScsynthBackend {
         Ok(())
     }
 
+    async fn move_node_to_tail(&self, node: NodeId, group: NodeId) -> Result<(), Self::Error> {
+        // `/g_tail` takes the group first, then the node.
+        self.send_msg(
+            "/g_tail",
+            vec![OscType::Int(group.0 as i32), OscType::Int(node.0 as i32)],
+        )?;
+        Ok(())
+    }
+
     async fn set_param(&self, node: NodeId, param: &str, value: f32) -> Result<(), Self::Error> {
         self.send_msg(
             "/n_set",
