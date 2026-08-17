@@ -41,7 +41,8 @@ pub mod scsynth_process;
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub use scsynth::{
-    setup_metering, setup_node_tracking, OscCallback, OscResponse, ScsynthBackend, ScsynthError,
+    setup_metering, setup_node_tracking, MissingSynthDef, OscCallback, OscResponse, ScsynthBackend,
+    ScsynthError,
 };
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]

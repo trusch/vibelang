@@ -164,6 +164,69 @@ pub enum OscResponse {
 /// Callback type for OSC responses.
 pub type OscCallback = Arc<dyn Fn(OscResponse) + Send + Sync>;
 
+/// A synth scsynth refused to create because its SynthDef is not loaded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingSynthDef {
+    /// The SynthDef name the `/s_new` asked for.
+    pub def: String,
+    /// The node id the synth would have taken.
+    pub node: NodeId,
+    /// The server's own words.
+    pub reason: String,
+}
+
+/// Which `/s_new` requests the server has answered, and which it refused.
+///
+/// scsynth accepts a `/d_recv` whose graph it cannot build — it prints
+/// `exception in GraphDef_Recv` to its own stdout and still replies
+/// `/done`, so a `/d_recv` reply proves nothing about whether the def is
+/// usable. The refusal only surfaces later, as `/fail /s_new SynthDef not
+/// found` when a voice is instantiated, and that `/fail` carries no node
+/// id or def name — so on its own it cannot say WHICH voice went missing.
+///
+/// Attribution is by order. scsynth executes commands in the order it
+/// receives them and answers each one before the next, so when a `/fail
+/// /s_new` arrives, the oldest `/s_new` that has not yet come back as
+/// `/n_go` is the one that failed.
+#[derive(Default)]
+struct GraphIntegrity {
+    /// `/s_new` requests still waiting for `/n_go` or `/fail`, in send order.
+    outstanding: std::collections::VecDeque<(NodeId, String)>,
+    /// Refusals observed since the last take.
+    missing: Vec<MissingSynthDef>,
+}
+
+/// Cap on unanswered `/s_new` requests kept for attribution. A request
+/// that is still unanswered after this many later ones is not going to be
+/// attributable; forgetting it bounds the queue on a long-running server.
+const MAX_OUTSTANDING_SYNTHS: usize = 4096;
+
+impl GraphIntegrity {
+    fn sent(&mut self, node: NodeId, def: &str) {
+        if self.outstanding.len() >= MAX_OUTSTANDING_SYNTHS {
+            self.outstanding.pop_front();
+        }
+        self.outstanding.push_back((node, def.to_string()));
+    }
+
+    fn went_live(&mut self, node: NodeId) {
+        if let Some(pos) = self.outstanding.iter().position(|(id, _)| *id == node) {
+            self.outstanding.remove(pos);
+        }
+    }
+
+    fn refused(&mut self, reason: &str) -> Option<MissingSynthDef> {
+        let (node, def) = self.outstanding.pop_front()?;
+        let missing = MissingSynthDef {
+            def,
+            node,
+            reason: reason.to_string(),
+        };
+        self.missing.push(missing.clone());
+        Some(missing)
+    }
+}
+
 /// SuperCollider scsynth backend.
 ///
 /// Communicates with scsynth via OSC over UDP.
@@ -194,6 +257,8 @@ pub struct ScsynthBackend {
     /// Node IDs for which scsynth has delivered a definitive `/n_end`.
     /// Cleared before an ID is submitted for a new node generation.
     ended_nodes: Arc<Mutex<HashSet<NodeId>>>,
+    /// `/s_new` requests the server has not answered, and the ones it refused.
+    graph_integrity: Arc<Mutex<GraphIntegrity>>,
     /// Server status (updated by listener).
     server_ready: Arc<AtomicBool>,
 }
@@ -240,6 +305,7 @@ impl ScsynthBackend {
         let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
         let ended_nodes = Arc::new(Mutex::new(HashSet::new()));
+        let graph_integrity = Arc::new(Mutex::new(GraphIntegrity::default()));
 
         let socket = Arc::new(socket);
 
@@ -256,6 +322,7 @@ impl ScsynthBackend {
             next_sync_id,
             callbacks: callbacks.clone(),
             ended_nodes: ended_nodes.clone(),
+            graph_integrity: graph_integrity.clone(),
             server_ready: server_ready.clone(),
         };
 
@@ -272,6 +339,38 @@ impl ScsynthBackend {
             OscResponse::NodeGo { node_id, .. } => {
                 if let Ok(mut ended) = ended_nodes.lock() {
                     ended.remove(&node_id);
+                }
+                if let Ok(mut integrity) = graph_integrity.lock() {
+                    integrity.went_live(node_id);
+                }
+            }
+            // A refused `/s_new` is the only place a SynthDef the server
+            // never built becomes observable: `/d_recv` answered `/done`
+            // for it. Name the def, and drop its content hash so the next
+            // eval re-sends the def instead of skipping it as unchanged —
+            // otherwise one refusal silences that voice for the life of
+            // the process, and no amount of reloading brings it back.
+            OscResponse::Fail { command, reason } if command == "/s_new" => {
+                let missing = graph_integrity
+                    .lock()
+                    .ok()
+                    .and_then(|mut integrity| integrity.refused(&reason));
+                match missing {
+                    Some(missing) => {
+                        tracing::error!(
+                            "SynthDef '{}' is not on the server: node {} was not created ({}). \
+                             The graph is incomplete — that voice is silent.",
+                            missing.def,
+                            missing.node.0,
+                            missing.reason
+                        );
+                        vibelang_dsp::forget_synthdef_hash(&missing.def);
+                    }
+                    None => tracing::error!(
+                        "scsynth refused an /s_new ({}) that no outstanding request \
+                         could be attributed to — the graph is incomplete.",
+                        reason
+                    ),
                 }
             }
             _ => {}
@@ -609,6 +708,10 @@ impl ScsynthBackend {
                         command,
                         reason
                     );
+                } else if command == "/s_new" {
+                    // Reported by the graph-integrity callback instead, which
+                    // can name the SynthDef and node this bare reason cannot.
+                    tracing::debug!("Fail: {} - {}", command, reason);
                 } else {
                     tracing::warn!("Fail: {} - {}", command, reason);
                 }
@@ -740,6 +843,27 @@ impl ScsynthBackend {
             OscType::String(s) => Some(s.clone()),
             _ => None,
         })
+    }
+
+    /// Note an `/s_new` about to go out, so a later `/fail` can name it.
+    fn record_synth_request(&self, node: NodeId, def: &str) {
+        if let Ok(mut integrity) = self.graph_integrity.lock() {
+            integrity.sent(node, def);
+        }
+    }
+
+    /// Take the SynthDefs the server has refused to instantiate since the
+    /// last call, and reset the ledger.
+    ///
+    /// A caller that has just applied a reload uses this to decide whether
+    /// the graph it built is whole. Call it AFTER a `/sync` barrier: the
+    /// `/fail` for an `/s_new` reaches this process before the `/synced`
+    /// that follows it, so a synced reload has already been judged.
+    pub fn take_missing_synthdefs(&self) -> Vec<MissingSynthDef> {
+        match self.graph_integrity.lock() {
+            Ok(mut integrity) => std::mem::take(&mut integrity.missing),
+            Err(_) => Vec::new(),
+        }
     }
 
     fn clear_pending_synthdef_load(&self, name: &str) {
@@ -1300,6 +1424,7 @@ impl Backend for ScsynthBackend {
             params
         );
 
+        self.record_synth_request(node, def);
         self.send_msg(
             "/s_new",
             Self::s_new_args(def, node, target, action, params),
@@ -1327,6 +1452,7 @@ impl Backend for ScsynthBackend {
             params
         );
 
+        self.record_synth_request(node, def);
         let mut msgs = vec![(
             "/s_new",
             Self::s_new_args(def, node, target, action, params),
