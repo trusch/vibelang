@@ -383,6 +383,9 @@ pub struct AdvancedMidiCcRoute {
     /// Optional channel filter (None = all channels).
     pub channel: Option<u8>,
 
+    /// Optional UMP group filter (None = MIDI 1 and every UMP group).
+    pub group: Option<u8>,
+
     /// Curve type name.
     pub curve: String,
 
@@ -491,38 +494,6 @@ pub struct Midi2PerNoteRoute {
 
     /// Controller type.
     pub controller_type: Midi2PerNoteControllerType,
-
-    /// Voice to control.
-    pub voice: VoiceId,
-
-    /// Parameter name.
-    pub param: String,
-
-    /// Min value.
-    pub min_value: f32,
-
-    /// Max value.
-    pub max_value: f32,
-
-    /// Curve type name.
-    pub curve: String,
-}
-
-/// MIDI 2.0 high-resolution CC route configuration.
-#[cfg(feature = "midi")]
-#[derive(Clone, Debug, PartialEq)]
-pub struct Midi2CcRoute {
-    /// MIDI device ID.
-    pub device_id: MidiDeviceId,
-
-    /// MIDI 2.0 group (0-15).
-    pub group: Option<u8>,
-
-    /// Optional channel filter (None = all channels).
-    pub channel: Option<u8>,
-
-    /// CC number (0-127).
-    pub cc: u8,
 
     /// Voice to control.
     pub voice: VoiceId,
@@ -838,10 +809,6 @@ pub struct ScriptState {
     /// MIDI 2.0 per-note routes.
     #[cfg(feature = "midi")]
     pub midi2_per_note_routes: Vec<Midi2PerNoteRoute>,
-
-    /// MIDI 2.0 CC routes.
-    #[cfg(feature = "midi")]
-    pub midi2_cc_routes: Vec<Midi2CcRoute>,
 }
 
 /// Declarative config written by the .vibe script.

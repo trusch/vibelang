@@ -3619,9 +3619,6 @@ impl<B: Backend> Runtime<B> {
             self.midi
                 .apply_midi2_per_note_routes(&new_state.midi2_per_note_routes)
                 .await;
-            self.midi
-                .apply_midi2_cc_routes(&new_state.midi2_cc_routes)
-                .await;
 
             // Reconcile looper instances against the new config list.
             self.midi.reconcile_loopers(&new_state.loopers).await;

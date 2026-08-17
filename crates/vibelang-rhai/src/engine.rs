@@ -3517,6 +3517,7 @@ mod tests {
         assert_eq!(route.cc, 14, "CC number should be 14");
         assert_eq!(route.curve, "linear", "Default curve should be linear");
         assert_eq!(route.channel, None, "No channel filter by default");
+        assert_eq!(route.group, None, "No UMP group filter by default");
         assert_eq!(route.param, "cutoff", "Param should be cutoff");
         assert!((route.min - 200.0f32).abs() < 0.01, "Min should be 200.0");
         assert!((route.max - 8000.0f32).abs() < 0.01, "Max should be 8000.0");
@@ -3602,6 +3603,54 @@ mod tests {
             "\"log\" maps to \"logarithmic\""
         );
         assert_eq!(route.param, "cutoff", "Param should be cutoff");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_group_and_curve_aliases_are_canonical() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let effect = fx("echo").synth("delay").apply();
+                let dev = midi_device("test-device");
+                dev.map_cc(18).group(3).curve("s-curve").to(synth, "shape", 0.0, 1.0);
+                dev.map_cc(19).curve("unknown").to(synth, "fallback", 0.0, 1.0);
+                dev.map_cc(20).to(effect, "mix", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 3);
+        assert_eq!(state.advanced_cc_routes[0].group, Some(3));
+        assert_eq!(state.advanced_cc_routes[0].curve, "s_curve");
+        assert_eq!(state.advanced_cc_routes[1].group, None);
+        assert_eq!(state.advanced_cc_routes[1].curve, "linear");
+        assert!(matches!(
+            state.advanced_cc_routes[2].target,
+            vibelang_core::traits::FadeTarget::Effect(_)
+        ));
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_cc32_is_equivalent_alias_into_advanced_registry() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let dev = midi_device("test-device");
+                dev.map_cc(74).group(2).channel(1).curve("log").to(synth, "cutoff", 200.0, 8000.0);
+                dev.cc32(74).group(2).channel(1).curve("log").to(synth, "cutoff", 200.0, 8000.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 2);
+        assert_eq!(state.advanced_cc_routes[0], state.advanced_cc_routes[1]);
+        assert_eq!(state.advanced_cc_routes[1].curve, "logarithmic");
     }
 
     #[cfg(feature = "midi")]
