@@ -4063,7 +4063,10 @@ mod tests {
                             && return_type_is_receiver(&overload.return_type, receiver)
                     })
                     .collect::<Vec<_>>();
-                assert_eq!(fallible_receiver_chains.len(), 33);
+                // 33 -> 35 with the #16 merge: `RouteHandle::to_input` gained a
+                // fallible fx-target overload, and `GroupHandle::body` now returns
+                // `Result<Self, _>` so group-body closure errors propagate.
+                assert_eq!(fallible_receiver_chains.len(), 35);
                 assert!(fallible_receiver_chains
                     .iter()
                     .all(|(_, overload)| overload.returns_receiver == Some(true)));
