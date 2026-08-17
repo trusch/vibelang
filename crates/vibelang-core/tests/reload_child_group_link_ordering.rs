@@ -1319,6 +1319,9 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
     // far, so every one of these is a window a SOUNDING VOICE held open, and
     // a run that scores zero has not tested the thing this fuzz exists for.
     let mut wide_windows = 0usize;
+    // Recalls that landed while a previous recall's groups were still
+    // pending their deferred free.
+    let mut interleaved = 0usize;
 
     for run in 0..runs {
         let mut rng = Rng(seed.wrapping_add(run as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
@@ -1347,7 +1350,21 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
             // still carrying them.
             tokio::time::sleep(BETWEEN_THE_TWO_GRACES).await;
             runtime.tick().await;
-            wide_windows += open_free_windows(&runtime, &backend, &live_before).await;
+            let open = open_free_windows(&runtime, &backend, &live_before).await;
+            wide_windows += open;
+
+            // One recall in three lands WHILE the window is open, instead of
+            // waiting for it to close. That is what the board does: the
+            // player walks the preset gate with notes still ringing, so the
+            // next reload diffs against a tree that still carries the last
+            // one's pending groups. Nothing is asserted mid-flight — the
+            // invariant is a settled-tree statement — but any divergence this
+            // interleaving creates is permanent, so the next settled recall
+            // reports it.
+            if open > 0 && step + 1 < steps && rng.below(3) == 0 {
+                interleaved += 1;
+                continue;
+            }
 
             settle(&mut runtime).await;
             sound_voices(&mut runtime, &spec.voice_ids()).await;
@@ -1375,8 +1392,14 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
          {runs} runs x {steps} recalls — the voices are not buying a grace and \
          this fuzz is measuring the immediate path again"
     );
+    assert!(
+        interleaved >= runs / 2,
+        "only {interleaved} recalls landed while the window was open — the \
+         mid-flight reload this fuzz is meant to cover barely happened"
+    );
     eprintln!(
-        "coverage: {wide_windows} voice-held group-free windows across {runs} runs x {steps} recalls"
+        "coverage: {wide_windows} voice-held group-free windows across {runs} runs x \
+         {steps} recalls, {interleaved} recalls landing mid-window"
     );
 }
 
