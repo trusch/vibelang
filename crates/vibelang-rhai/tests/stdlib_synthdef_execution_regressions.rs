@@ -256,3 +256,25 @@ async fn vibrato_drift_doc_usage_executes_and_spawns_node() {
     )
     .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn utility_lfo_alias_and_canonical_import_share_one_definition() {
+    let _registry = registry_lock();
+
+    assert_snippet_spawns(
+        r#"
+        import "stdlib/cv/lfo/lfo_sine.vibe" as canonical_lfo_sine;
+        import "stdlib/utility/lfo.vibe" as utility_lfo;
+
+        let aliased_lfo = voice("utility_lfo_alias")
+            .synth("lfo_sine")
+            .set_param("freq", 2.0)
+            .set_param("amp", 0.5)
+            .set_param("gate", 1.0);
+        aliased_lfo.output("out").to_main();
+        aliased_lfo.run();
+        "#,
+        "lfo_sine",
+    )
+    .await;
+}

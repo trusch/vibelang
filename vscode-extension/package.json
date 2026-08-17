@@ -725,9 +725,12 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "generate-stdlib": "node scripts/generate-stdlib-metadata.js",
-    "generate-ugen-functions": "node scripts/add-snake-case-names.js",
-    "compile": "npm run generate-stdlib && tsc -p ./",
+    "generate-stdlib": "../scripts/public-artifacts.sh generate",
+    "generate-ugen-functions": "../scripts/public-artifacts.sh generate",
+    "check-public-artifacts": "../scripts/public-artifacts.sh check",
+    "compile": "tsc -p ./",
+    "test:demand-quarantine": "tsc -p ./ && node --test out/utils/ugenAvailability.test.js",
+    "test:emitters": "tsc -p ./ && node --test out/utils/sourceEmitters.test.js",
     "watch": "tsc -watch -p ./"
   },
   "dependencies": {

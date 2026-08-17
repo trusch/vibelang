@@ -4,22 +4,11 @@
 // Various LFO shapes for modulation purposes.
 // Note: These output audio-rate signals for modulation.
 
-// Sine LFO
-define_synthdef("lfo_sine", |builder| {
-    builder
-        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
-        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
-        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
-        .body(|freq, amp, gate| {
-            let env = envelope()
-                .asr(0.001, 1.0, 0.001)
-                .gate(gate)
-                .cleanup_on_finish()
-                .build();
-
-            sin_osc_ar(freq) * env * amp
-        })
-});
+// Canonical definitions live under stdlib/cv/lfo. Keep these imports as
+// compatibility aliases so existing utility/lfo imports retain their inventory.
+import "stdlib/cv/lfo/lfo_sine.vibe";
+import "stdlib/cv/lfo/lfo_saw.vibe";
+import "stdlib/cv/lfo/lfo_random.vibe";
 
 // Triangle LFO (approximated)
 define_synthdef("lfo_triangle", |builder| {
@@ -37,44 +26,6 @@ define_synthdef("lfo_triangle", |builder| {
             // Use sine as approximation
             let tri = sin_osc_ar(freq);
             tri * env * amp
-        })
-});
-
-// Sawtooth LFO
-define_synthdef("lfo_saw", |builder| {
-    builder
-        .param("freq", 1.0) // units: Hz, range: 0..20000, default: 1.0. Pitch frequency in Hz; higher raises the note or resonator center.
-        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
-        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
-        .body(|freq, amp, gate| {
-            let env = envelope()
-                .asr(0.001, 1.0, 0.001)
-                .gate(gate)
-                .cleanup_on_finish()
-                .build();
-
-            saw_ar(freq) * env * amp
-        })
-});
-
-// Random/Sample & Hold LFO (stepped random)
-define_synthdef("lfo_random", |builder| {
-    builder
-        .param("freq", 4.0) // units: Hz, range: 0..20000, default: 4.0. Pitch frequency in Hz; higher raises the note or resonator center.
-        .param("amp", 1.0) // units: linear, range: 0..1, default: 1.0. Output level multiplier; higher is louder.
-        .param("gate", 1.0) // units: trigger, range: 0..1, default: 1.0. Gate or trigger input; positive edges fire the event or advance the clock.
-        .body(|freq, amp, gate| {
-            let env = envelope()
-                .asr(0.001, 1.0, 0.001)
-                .gate(gate)
-                .cleanup_on_finish()
-                .build();
-
-            // Use noise filtered for stepped random effect
-            let noise = white_noise_ar();
-            let stepped = lpf_ar(noise, freq);
-
-            stepped * env * amp
         })
 });
 

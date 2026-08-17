@@ -135,6 +135,24 @@ pub fn register_extensions(engine: &mut Engine, config: &ExtensionConfig) {
     }
 }
 
+/// Register all enabled extensions with strict vibe-api 2 boundaries.
+pub(crate) fn register_extensions_v2(engine: &mut Engine, config: &ExtensionConfig) {
+    #[cfg(feature = "ext-fs")]
+    if config.filesystem {
+        fs::register_v2(engine, config.fs_base_path.as_deref());
+    }
+
+    #[cfg(feature = "ext-exec")]
+    if config.exec {
+        exec::register_v2(engine);
+    }
+
+    #[cfg(feature = "ext-net")]
+    if config.networking {
+        net::register_v2(engine);
+    }
+}
+
 /// Check if any extensions are available (compiled in).
 pub fn has_extensions() -> bool {
     cfg!(any(

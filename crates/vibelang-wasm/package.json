@@ -15,6 +15,12 @@
   ],
   "main": "pkg/vibelang_wasm.js",
   "types": "types/index.d.ts",
+  "scripts": {
+    "check:types": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
   "sideEffects": [
     "./pkg/snippets/*"
   ]

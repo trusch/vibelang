@@ -78,9 +78,9 @@ pub use script_state::{
 #[cfg(feature = "midi")]
 pub use script_state::{
     AdvancedMidiBendRoute, AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute,
-    LooperConfig, LooperKey, Midi2CcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType,
-    Midi2PerNoteRoute, MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute,
-    MidiOutputMessage, MidiRecordingRequest,
+    LooperConfig, LooperKey, Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute,
+    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
+    MidiRecordingRequest,
 };
 
 // Types available on all platforms (for order_group_creations)
@@ -118,6 +118,8 @@ pub struct StagedReloadAssets {
     /// Pre-loaded SFZ instruments (all region buffers loaded), ready to
     /// insert into `State::sfz_instruments`.
     pub sfz: HashMap<SfzId, crate::state::SfzInstrumentState>,
+    /// Exact outcomes for every asset requested by the staging plan.
+    pub(crate) outcomes: Vec<StagedAssetOutcome>,
 }
 
 impl StagedReloadAssets {
@@ -125,6 +127,19 @@ impl StagedReloadAssets {
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty() && self.sfz.is_empty()
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StagedAssetOutcome {
+    pub path: String,
+    pub action: String,
+    pub failure: Option<StagedAssetFailure>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StagedAssetFailure {
+    pub code: &'static str,
+    pub message: String,
 }
 
 /// Quantization mode for applying hot reload changes.

@@ -7,10 +7,12 @@
 // pre-feedback loop tap; `return_*` is summed back into the corresponding loop
 // input for patchable insert-style processing.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _dld_gate(x) {
     clip_kr(round(x), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _dld_time_multiplier(index) {
     let idx = clip_kr(round(index), 0.0, 5.0);
     let m0 = 1.0 - clip_kr(abs(idx - 0.0), 0.0, 1.0);
@@ -22,6 +24,7 @@ fn _dld_time_multiplier(index) {
     m0 * 0.25 + m1 * 0.5 + m2 + m3 * 2.0 + m4 * 4.0 + m5 * 8.0
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _dld_feedback_path(tap, feedback) {
     let fb = clip_kr(feedback, 0.0, 1.2);
     let raw = tap * fb;

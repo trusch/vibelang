@@ -15,4 +15,5 @@ pub mod samples;
 pub mod sequences;
 pub mod synthdefs;
 pub mod transport;
+pub mod v2;
 pub mod voices;

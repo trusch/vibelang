@@ -1081,9 +1081,583 @@ pub fn register(engine: &mut Engine) {
     engine.register_get("name", |m: &mut Melody| m.name.clone());
 }
 
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CandidateFragment, CanonicalF64,
+    Composition, DeclarationOwner, DeclarationPayload, DesiredLifecycle, GroupScope,
+    LifecycleAction, LifecycleMetadata, MelodyAuthoring, MelodyEventAuthoring, MelodyKind,
+    StartMode, TerminalEffect, VoiceKind,
+};
+
+use super::voice::VoiceRef;
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MelodyRef {
+    base: RefBase,
+}
+
+impl MelodyRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<MelodyKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Start(_) => (TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Stop => (TerminalEffect::Stop, Cancellation::NotCancellable),
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Cancel => (TerminalEffect::Cancel, Cancellation::BeforePlanning),
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported MelodyRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn start(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Normal), "start")
+    }
+
+    pub fn start_now(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Immediate), "start-now")
+    }
+
+    pub fn stop(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Stop, "stop")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn cancel(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Cancel, "cancel")
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MelodyContent {
+    Text(String),
+    Events(Vec<MelodyEventAuthoring>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MelodyBuilder {
+    base: BuilderBase,
+    voice: Option<VoiceRef>,
+    content: Option<MelodyContent>,
+    length: Option<f64>,
+    velocity: f64,
+}
+
+impl MelodyBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            voice: None,
+            content: None,
+            length: None,
+            velocity: 1.0,
+        }
+    }
+
+    #[must_use]
+    pub fn on(mut self, voice: VoiceRef) -> Self {
+        self.voice = Some(voice);
+        self
+    }
+
+    pub fn notes(mut self, notes: String) -> Result<Self, FoundationError> {
+        if matches!(&self.content, Some(MelodyContent::Events(_))) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody text and event content cannot be combined".into(),
+            )
+            .into());
+        }
+        self.content = Some(MelodyContent::Text(notes));
+        Ok(self)
+    }
+
+    pub fn events(mut self, events: Vec<MelodyEventAuthoring>) -> Result<Self, FoundationError> {
+        if matches!(&self.content, Some(MelodyContent::Text(_))) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody text and event content cannot be combined".into(),
+            )
+            .into());
+        }
+        self.content = Some(MelodyContent::Events(events));
+        Ok(self)
+    }
+
+    pub fn len(mut self, beats: f64) -> Result<Self, FoundationError> {
+        if !beats.is_finite() || beats <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody length must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = Some(beats);
+        Ok(self)
+    }
+
+    pub fn velocity(mut self, velocity: f64) -> Result<Self, FoundationError> {
+        if !velocity.is_finite() || !(0.0..=1.0).contains(&velocity) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody velocity must be in 0.0..=1.0".into(),
+            )
+            .into());
+        }
+        self.velocity = velocity;
+        Ok(self)
+    }
+
+    pub(crate) fn build_fragment(
+        self,
+        lifecycle: DesiredLifecycle,
+    ) -> Result<(CandidateFragment, MelodyRef), FoundationError> {
+        let voice = self.voice.ok_or_else(|| {
+            CandidateError::InvalidAuthoring("MelodyBuilder needs a typed VoiceRef".into())
+        })?;
+        let content = self.content.ok_or_else(|| {
+            CandidateError::InvalidAuthoring("MelodyBuilder needs tagged content".into())
+        })?;
+        let (events, inferred_length) = match content {
+            MelodyContent::Text(text) => parse_melody_text_v2(&text, self.velocity)?,
+            MelodyContent::Events(events) => {
+                let inferred = validate_melody_events_v2(&events)?;
+                (events, inferred)
+            }
+        };
+        let length = self.length.unwrap_or(inferred_length);
+        if events.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody content must contain at least one event".into(),
+            )
+            .into());
+        }
+        if events
+            .iter()
+            .any(|event| melody_event_end(event) > Beat::from_f64(length).raw())
+        {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody event extends beyond the declared length".into(),
+            )
+            .into());
+        }
+        let declaration = MelodyAuthoring {
+            voice: voice.base().typed::<VoiceKind>()?,
+            events,
+            length_ticks: Beat::from_f64(length).raw(),
+            lifecycle,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Melody(declaration))?;
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        let dependency_source = self.base.source().clone();
+        let (fragment, reference) = self.base.fragment(
+            owner,
+            metadata,
+            payload,
+            [(voice.base().clone(), dependency_source)],
+        )?;
+        Ok((fragment, MelodyRef::new(reference)?))
+    }
+
+    fn terminal(self, lifecycle: DesiredLifecycle) -> Result<MelodyRef, FoundationError> {
+        let (fragment, reference) = self.build_fragment(lifecycle)?;
+        foundation::commit_fragment(fragment)?;
+        Ok(reference)
+    }
+
+    pub fn apply(self) -> Result<MelodyRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Dormant)
+    }
+
+    pub fn start(self) -> Result<MelodyRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Normal))
+    }
+
+    pub fn start_now(self) -> Result<MelodyRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Immediate))
+    }
+
+    pub fn launch(self) -> Result<MelodyRef, FoundationError> {
+        self.start()
+    }
+}
+
+fn melody_event_end(event: &MelodyEventAuthoring) -> i64 {
+    match event {
+        MelodyEventAuthoring::Note {
+            beat_ticks,
+            duration_ticks,
+            ..
+        }
+        | MelodyEventAuthoring::Rest {
+            beat_ticks,
+            duration_ticks,
+        } => beat_ticks.saturating_add(*duration_ticks),
+    }
+}
+
+fn validate_melody_events_v2(events: &[MelodyEventAuthoring]) -> Result<f64, FoundationError> {
+    let mut end = 0_i64;
+    for event in events {
+        let (beat, duration) = match event {
+            MelodyEventAuthoring::Note {
+                beat_ticks,
+                duration_ticks,
+                ..
+            }
+            | MelodyEventAuthoring::Rest {
+                beat_ticks,
+                duration_ticks,
+            } => (*beat_ticks, *duration_ticks),
+        };
+        if beat < 0 || duration <= 0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Melody events need non-negative beats and positive durations".into(),
+            )
+            .into());
+        }
+        end = end.max(beat.saturating_add(duration));
+    }
+    Ok(Beat::from_raw(end).to_f64())
+}
+
+fn parse_melody_text_v2(
+    text: &str,
+    velocity: f64,
+) -> Result<(Vec<MelodyEventAuthoring>, f64), FoundationError> {
+    if text.trim().is_empty() {
+        return Err(CandidateError::InvalidAuthoring("Melody text cannot be empty".into()).into());
+    }
+    let bars = text.split('|').collect::<Vec<_>>();
+    let mut events = Vec::new();
+    for (bar_index, bar) in bars.iter().enumerate() {
+        let tokens = bar.split_whitespace().collect::<Vec<_>>();
+        if tokens.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(format!(
+                "Melody bar {} cannot be empty",
+                bar_index + 1
+            ))
+            .into());
+        }
+        let step = 4.0 / tokens.len() as f64;
+        for (token_index, token) in tokens.iter().enumerate() {
+            let beat = bar_index as f64 * 4.0 + token_index as f64 * step;
+            let beat_ticks = Beat::from_f64(beat).raw();
+            let duration_ticks = Beat::from_f64(step).raw();
+            match *token {
+                "." | "_" => events.push(MelodyEventAuthoring::Rest {
+                    beat_ticks,
+                    duration_ticks,
+                }),
+                "-" => {
+                    let previous = events.last_mut().ok_or_else(|| {
+                        CandidateError::InvalidAuthoring(
+                            "Melody tie needs a preceding note in the same content".into(),
+                        )
+                    })?;
+                    match previous {
+                        MelodyEventAuthoring::Note { duration_ticks, .. } => {
+                            *duration_ticks = duration_ticks.saturating_add(Beat::from_f64(step).raw());
+                        }
+                        MelodyEventAuthoring::Rest { .. } => {
+                            return Err(CandidateError::InvalidAuthoring(
+                                "Melody tie cannot extend a rest".into(),
+                            )
+                            .into())
+                        }
+                    }
+                }
+                note if is_strict_note_name_v2(note) => {
+                    let midi_note = parse_note_name(note).ok_or_else(|| {
+                        CandidateError::InvalidAuthoring(format!(
+                            "Melody note `{note}` is outside the MIDI range"
+                        ))
+                    })?;
+                    events.push(MelodyEventAuthoring::Note {
+                        beat_ticks,
+                        duration_ticks,
+                        midi_note,
+                        velocity: CanonicalF64::new(velocity)?,
+                    });
+                }
+                unsupported => {
+                    return Err(CandidateError::InvalidAuthoring(format!(
+                        "unsupported Melody token `{unsupported}`; v2 text accepts notes, rests, and ties"
+                    ))
+                    .into())
+                }
+            }
+        }
+    }
+    Ok((events, bars.len() as f64 * 4.0))
+}
+
+fn is_strict_note_name_v2(note: &str) -> bool {
+    let mut chars = note.chars().peekable();
+    if !matches!(chars.next(), Some('A'..='G' | 'a'..='g')) {
+        return false;
+    }
+    if matches!(chars.peek(), Some('#' | 'b' | '♯' | '♭')) {
+        chars.next();
+    }
+    if chars.peek() == Some(&'-') {
+        chars.next();
+    }
+    let mut digits = 0;
+    while matches!(chars.peek(), Some('0'..='9')) {
+        chars.next();
+        digits += 1;
+    }
+    chars.next().is_none() && (digits > 0 || !note.ends_with('-'))
+}
+
+pub(crate) fn melody_builder_v2(name: String) -> Result<MelodyBuilder, Box<EvalAltResult>> {
+    Ok(MelodyBuilder::new(
+        foundation::authoring_builder::<MelodyKind>(&name, GroupScope::root())
+            .map_err(|error| melody_v2_error(error, Position::NONE))?,
+    ))
+}
+
+pub(crate) fn melody_ref_v2(name: String) -> Result<MelodyRef, Box<EvalAltResult>> {
+    MelodyRef::new(
+        foundation::authoring_ref::<MelodyKind>(&name, GroupScope::root())
+            .map_err(|error| melody_v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| melody_v2_error(error, Position::NONE))
+}
+
+fn melody_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<MelodyContent>("MelodyContent")
+        .register_type_with_name::<MelodyBuilder>("MelodyBuilder")
+        .register_type_with_name::<MelodyRef>("MelodyRef")
+        .register_fn("melody", melody_builder_v2)
+        .register_fn("melody_ref", melody_ref_v2)
+        .register_fn("on", MelodyBuilder::on)
+        .register_fn("notes", |builder: MelodyBuilder, notes: String| {
+            builder
+                .notes(notes)
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("len", |builder: MelodyBuilder, beats: f64| {
+            builder
+                .len(beats)
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("velocity", |builder: MelodyBuilder, velocity: f64| {
+            builder
+                .velocity(velocity)
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("apply", |builder: MelodyBuilder| {
+            builder
+                .apply()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |builder: MelodyBuilder| {
+            builder
+                .start()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |builder: MelodyBuilder| {
+            builder
+                .start_now()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("launch", |builder: MelodyBuilder| {
+            builder
+                .launch()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |reference: MelodyRef| {
+            reference
+                .start()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |reference: MelodyRef| {
+            reference
+                .start_now()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("stop", |reference: MelodyRef| {
+            reference
+                .stop()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("remove", |reference: MelodyRef| {
+            reference
+                .remove()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("cancel", |reference: MelodyRef| {
+            reference
+                .cancel()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        })
+        .register_fn("status", |reference: MelodyRef| {
+            reference
+                .status()
+                .map_err(|error| melody_v2_error(error, Position::NONE))
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"melody-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn v2_voice_ref(name: &str) -> VoiceRef {
+        VoiceRef::new(foundation::authoring_ref::<VoiceKind>(name, GroupScope::root()).unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn v2_melody_configuration_is_pure_strict_and_tagged() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let voice = v2_voice_ref("lead");
+        let text = MelodyBuilder::new(
+            foundation::authoring_builder::<MelodyKind>("text", GroupScope::root()).unwrap(),
+        )
+        .on(voice.clone())
+        .notes("C4 . D4 -".into())
+        .unwrap();
+        let events = MelodyBuilder::new(
+            foundation::authoring_builder::<MelodyKind>("events", GroupScope::root()).unwrap(),
+        )
+        .on(voice)
+        .events(vec![MelodyEventAuthoring::Rest {
+            beat_ticks: 0,
+            duration_ticks: Beat::ONE.raw(),
+        }])
+        .unwrap();
+
+        assert!(matches!(text.content, Some(MelodyContent::Text(_))));
+        assert!(matches!(events.content, Some(MelodyContent::Events(_))));
+        assert!(matches!(
+            text.clone().events(vec![MelodyEventAuthoring::Rest {
+                beat_ticks: 0,
+                duration_ticks: Beat::ONE.raw(),
+            }]),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            events.clone().notes("C4".into()),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            parse_melody_text_v2("C4 [velocity=0.5]", 1.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn v2_melody_launch_alias_matches_start_and_immediate_remains_distinct() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let voice = crate::api::voice::VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap()
+        .apply()
+        .unwrap();
+        let build = |name: &str| {
+            MelodyBuilder::new(
+                foundation::authoring_builder::<MelodyKind>(name, GroupScope::root()).unwrap(),
+            )
+            .on(voice.clone())
+            .notes("C4 D4".into())
+            .unwrap()
+        };
+        let started = build("started").start().unwrap();
+        build("launched").launch().unwrap();
+        build("immediate").start_now().unwrap();
+
+        assert!(matches!(
+            started.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        let lifecycles = candidate
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.payload() {
+                DeclarationPayload::Authoring {
+                    declaration: AuthoringDeclaration::Melody(melody),
+                    ..
+                } => Some((
+                    declaration.address().key().as_str(),
+                    (melody.lifecycle, declaration.lifecycle().terminal_effect),
+                )),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            lifecycles["started"],
+            (
+                DesiredLifecycle::Start(StartMode::Normal),
+                TerminalEffect::Start
+            )
+        );
+        assert_eq!(lifecycles["launched"], lifecycles["started"]);
+        assert_eq!(
+            lifecycles["immediate"].0,
+            DesiredLifecycle::Start(StartMode::Immediate)
+        );
+    }
 
     // ==================== Tokenizer Tests ====================
 

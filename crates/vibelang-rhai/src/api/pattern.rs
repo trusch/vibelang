@@ -4,7 +4,7 @@
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use vibelang_core::traits::{PatternConfig, Step};
 use vibelang_core::types::Beat;
 
@@ -434,9 +434,542 @@ pub fn register(engine: &mut Engine) {
     engine.register_get("name", |p: &mut Pattern| p.name.clone());
 }
 
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CandidateFragment, CanonicalF64,
+    Composition, DeclarationOwner, DeclarationPayload, DesiredLifecycle, GroupScope,
+    LifecycleAction, LifecycleMetadata, PatternAuthoring, PatternKind, PatternStepAuthoring,
+    StartMode, TerminalEffect, VoiceKind,
+};
+
+use super::voice::VoiceRef;
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PatternRef {
+    base: RefBase,
+}
+
+impl PatternRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<PatternKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Start(_) => (TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Stop => (TerminalEffect::Stop, Cancellation::NotCancellable),
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Cancel => (TerminalEffect::Cancel, Cancellation::BeforePlanning),
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported PatternRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn start(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Normal), "start")
+    }
+
+    pub fn start_now(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Start(StartMode::Immediate), "start-now")
+    }
+
+    pub fn stop(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Stop, "stop")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn cancel(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Cancel, "cancel")
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PatternContent {
+    Steps(String),
+    Euclidean {
+        hits: usize,
+        steps: usize,
+        rotation: i64,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatternBuilder {
+    base: BuilderBase,
+    voice: Option<VoiceRef>,
+    content: Option<PatternContent>,
+    length: Option<f64>,
+    swing: f64,
+    params: BTreeMap<String, f64>,
+}
+
+impl PatternBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            voice: None,
+            content: None,
+            length: None,
+            swing: 0.0,
+            params: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn on(mut self, voice: VoiceRef) -> Self {
+        self.voice = Some(voice);
+        self
+    }
+
+    pub fn step(mut self, steps: String) -> Result<Self, FoundationError> {
+        if matches!(&self.content, Some(PatternContent::Euclidean { .. })) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Pattern step text and Euclidean content cannot be combined".into(),
+            )
+            .into());
+        }
+        validate_pattern_text_v2(&steps)?;
+        parse_pattern_steps(
+            &steps,
+            calculate_loop_length_from_pattern(&steps),
+            self.swing as f32,
+        )
+        .map_err(|error| {
+            FoundationError::Candidate(CandidateError::InvalidAuthoring(error.to_string()))
+        })?;
+        self.content = Some(PatternContent::Steps(steps));
+        Ok(self)
+    }
+
+    pub fn euclid(mut self, hits: i64, steps: i64) -> Result<Self, FoundationError> {
+        self = self.euclid_rotated(hits, steps, 0)?;
+        Ok(self)
+    }
+
+    pub fn euclid_rotated(
+        mut self,
+        hits: i64,
+        steps: i64,
+        rotation: i64,
+    ) -> Result<Self, FoundationError> {
+        if matches!(&self.content, Some(PatternContent::Steps(_))) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Pattern step text and Euclidean content cannot be combined".into(),
+            )
+            .into());
+        }
+        if steps <= 0 || hits < 0 || hits > steps || steps > 4096 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Euclidean rhythm needs 0 <= hits <= steps <= 4096 and steps > 0".into(),
+            )
+            .into());
+        }
+        self.content = Some(PatternContent::Euclidean {
+            hits: hits as usize,
+            steps: steps as usize,
+            rotation,
+        });
+        Ok(self)
+    }
+
+    pub fn len(mut self, beats: f64) -> Result<Self, FoundationError> {
+        if !beats.is_finite() || beats <= 0.0 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Pattern length must be finite and positive".into(),
+            )
+            .into());
+        }
+        self.length = Some(beats);
+        Ok(self)
+    }
+
+    pub fn swing(mut self, amount: f64) -> Result<Self, FoundationError> {
+        if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Pattern swing must be in 0.0..=1.0".into(),
+            )
+            .into());
+        }
+        self.swing = amount;
+        Ok(self)
+    }
+
+    pub fn set_param(mut self, name: String, value: f64) -> Result<Self, FoundationError> {
+        self.base = self
+            .base
+            .configured(format!("param.{name}"), value.to_bits().to_be_bytes())?;
+        self.params.insert(name, value);
+        Ok(self)
+    }
+
+    pub(crate) fn build_fragment(
+        self,
+        lifecycle: DesiredLifecycle,
+    ) -> Result<(CandidateFragment, PatternRef), FoundationError> {
+        let voice = self.voice.ok_or_else(|| {
+            CandidateError::InvalidAuthoring("PatternBuilder needs a typed VoiceRef".into())
+        })?;
+        let content = self.content.ok_or_else(|| {
+            CandidateError::InvalidAuthoring("PatternBuilder needs tagged step content".into())
+        })?;
+        let step_string = match &content {
+            PatternContent::Steps(steps) => steps.clone(),
+            PatternContent::Euclidean {
+                hits,
+                steps,
+                rotation,
+            } => generate_euclidean(*hits, *steps, *rotation),
+        };
+        let length = self.length.unwrap_or_else(|| match &content {
+            PatternContent::Steps(steps) => calculate_loop_length_from_pattern(steps),
+            PatternContent::Euclidean { .. } => 4.0,
+        });
+        let parsed =
+            parse_pattern_steps(&step_string, length, self.swing as f32).map_err(|error| {
+                FoundationError::Candidate(CandidateError::InvalidAuthoring(error.to_string()))
+            })?;
+        let steps = parsed
+            .into_iter()
+            .map(|step| {
+                Ok(PatternStepAuthoring {
+                    beat_ticks: step.beat.raw(),
+                    velocity: CanonicalF64::new(f64::from(
+                        *step.params.get("amp").unwrap_or(&0.0),
+                    ))?,
+                })
+            })
+            .collect::<Result<Vec<_>, CandidateError>>()?;
+        let params = self
+            .params
+            .into_iter()
+            .map(|(name, value)| Ok((name, CanonicalF64::new(value)?)))
+            .collect::<Result<BTreeMap<_, _>, CandidateError>>()?;
+        let declaration = PatternAuthoring {
+            voice: voice.base().typed::<VoiceKind>()?,
+            steps,
+            length_ticks: Beat::from_f64(length).raw(),
+            swing: CanonicalF64::new(self.swing)?,
+            params,
+            lifecycle,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Pattern(declaration))?;
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        let dependency_source = self.base.source().clone();
+        let (fragment, reference) = self.base.fragment(
+            owner,
+            metadata,
+            payload,
+            [(voice.base().clone(), dependency_source)],
+        )?;
+        Ok((fragment, PatternRef::new(reference)?))
+    }
+
+    fn terminal(self, lifecycle: DesiredLifecycle) -> Result<PatternRef, FoundationError> {
+        let (fragment, reference) = self.build_fragment(lifecycle)?;
+        foundation::commit_fragment(fragment)?;
+        Ok(reference)
+    }
+
+    pub fn apply(self) -> Result<PatternRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Dormant)
+    }
+
+    pub fn start(self) -> Result<PatternRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Normal))
+    }
+
+    pub fn start_now(self) -> Result<PatternRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Immediate))
+    }
+
+    pub fn launch(self) -> Result<PatternRef, FoundationError> {
+        self.start()
+    }
+}
+
+pub(crate) fn pattern_builder_v2(name: String) -> Result<PatternBuilder, Box<EvalAltResult>> {
+    Ok(PatternBuilder::new(
+        foundation::authoring_builder::<PatternKind>(&name, GroupScope::root())
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    ))
+}
+
+pub(crate) fn pattern_ref_v2(name: String) -> Result<PatternRef, Box<EvalAltResult>> {
+    PatternRef::new(
+        foundation::authoring_ref::<PatternKind>(&name, GroupScope::root())
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| v2_error(error, Position::NONE))
+}
+
+fn v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<PatternContent>("PatternContent")
+        .register_type_with_name::<PatternBuilder>("PatternBuilder")
+        .register_type_with_name::<PatternRef>("PatternRef")
+        .register_fn("pattern", pattern_builder_v2)
+        .register_fn("pattern_ref", pattern_ref_v2)
+        .register_fn("on", PatternBuilder::on)
+        .register_fn("step", |builder: PatternBuilder, steps: String| {
+            builder
+                .step(steps)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn(
+            "euclid",
+            |builder: PatternBuilder, hits: i64, steps: i64| {
+                builder
+                    .euclid(hits, steps)
+                    .map_err(|error| v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn(
+            "euclid",
+            |builder: PatternBuilder, hits: i64, steps: i64, rotation: i64| {
+                builder
+                    .euclid_rotated(hits, steps, rotation)
+                    .map_err(|error| v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn("len", |builder: PatternBuilder, beats: f64| {
+            builder
+                .len(beats)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("swing", |builder: PatternBuilder, amount: f64| {
+            builder
+                .swing(amount)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn(
+            "set_param",
+            |builder: PatternBuilder, name: String, value: f64| {
+                builder
+                    .set_param(name, value)
+                    .map_err(|error| v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn("apply", |builder: PatternBuilder| {
+            builder
+                .apply()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |builder: PatternBuilder| {
+            builder
+                .start()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |builder: PatternBuilder| {
+            builder
+                .start_now()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("launch", |builder: PatternBuilder| {
+            builder
+                .launch()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("start", |reference: PatternRef| {
+            reference
+                .start()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("start_now", |reference: PatternRef| {
+            reference
+                .start_now()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("stop", |reference: PatternRef| {
+            reference
+                .stop()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("remove", |reference: PatternRef| {
+            reference
+                .remove()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("cancel", |reference: PatternRef| {
+            reference
+                .cancel()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("status", |reference: PatternRef| {
+            reference
+                .status()
+                .map_err(|error| v2_error(error, Position::NONE))
+        });
+}
+
+fn validate_pattern_text_v2(steps: &str) -> Result<(), FoundationError> {
+    if steps.trim().is_empty() || steps.split('|').any(|bar| bar.trim().is_empty()) {
+        return Err(CandidateError::InvalidAuthoring(
+            "Pattern text needs one or more non-empty bars".into(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"pattern-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn v2_voice_ref(name: &str) -> VoiceRef {
+        VoiceRef::new(foundation::authoring_ref::<VoiceKind>(name, GroupScope::root()).unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn v2_pattern_configuration_is_pure_strict_and_tagged() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let voice = v2_voice_ref("lead");
+        let steps = PatternBuilder::new(
+            foundation::authoring_builder::<PatternKind>("steps", GroupScope::root()).unwrap(),
+        )
+        .on(voice.clone())
+        .step("x...".into())
+        .unwrap();
+        let euclidean = PatternBuilder::new(
+            foundation::authoring_builder::<PatternKind>("euclid", GroupScope::root()).unwrap(),
+        )
+        .on(voice)
+        .euclid_rotated(3, 8, -1)
+        .unwrap();
+
+        assert!(matches!(steps.content, Some(PatternContent::Steps(_))));
+        assert!(matches!(
+            euclidean.content,
+            Some(PatternContent::Euclidean { .. })
+        ));
+        assert!(matches!(
+            PatternBuilder::new(
+                foundation::authoring_builder::<PatternKind>("bad", GroupScope::root()).unwrap()
+            )
+            .step("x||x".into()),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            steps.clone().euclid(3, 8),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            euclidean.clone().step("x...".into()),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn v2_pattern_launch_alias_matches_start_and_immediate_remains_distinct() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let voice = crate::api::voice::VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap()
+        .apply()
+        .unwrap();
+        let build = |name: &str| {
+            PatternBuilder::new(
+                foundation::authoring_builder::<PatternKind>(name, GroupScope::root()).unwrap(),
+            )
+            .on(voice.clone())
+            .step("x...".into())
+            .unwrap()
+        };
+        let started = build("started").start().unwrap();
+        build("launched").launch().unwrap();
+        build("immediate").start_now().unwrap();
+
+        assert!(matches!(
+            started.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        let lifecycles = candidate
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.payload() {
+                DeclarationPayload::Authoring {
+                    declaration: AuthoringDeclaration::Pattern(pattern),
+                    ..
+                } => Some((
+                    declaration.address().key().as_str(),
+                    (pattern.lifecycle, declaration.lifecycle().terminal_effect),
+                )),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            lifecycles["started"],
+            (
+                DesiredLifecycle::Start(StartMode::Normal),
+                TerminalEffect::Start
+            )
+        );
+        assert_eq!(lifecycles["launched"], lifecycles["started"]);
+        assert_eq!(
+            lifecycles["immediate"].0,
+            DesiredLifecycle::Start(StartMode::Immediate)
+        );
+    }
 
     // ==================== Euclidean Pattern Tests ====================
 

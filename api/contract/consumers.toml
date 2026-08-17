@@ -1,0 +1,71 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "consumers"
+
+[denominator_baseline]
+acceptance = "M02.B1.2"
+accepted_revision = "128dbc2381476a39d999f1f61dacae4448c6b669"
+sha256 = "f7e8d99ba9fd97e3f28eae264a78b0be9116f6e8b9cf449c3fb9cd6588aef003"
+
+[[denominator_baseline.consumers]]
+consumer = "cli"
+consumer_id = "v1:consumer:3265d9fcf3519e34"
+accepted_denominator = 33
+owner = "vibelang-cli"
+
+[[denominator_baseline.consumers]]
+consumer = "docs"
+consumer_id = "v1:consumer:0af034fb1cff2f55"
+accepted_denominator = 14
+owner = "vibelang-docs"
+
+[[denominator_baseline.consumers]]
+consumer = "fixtures"
+consumer_id = "v1:consumer:0dfe83852391656c"
+accepted_denominator = 26
+owner = "vibelang-tests"
+
+[[denominator_baseline.consumers]]
+consumer = "http"
+consumer_id = "v1:consumer:896a869a77c54af2"
+accepted_denominator = 620
+owner = "vibelang-http"
+
+[[denominator_baseline.consumers]]
+consumer = "manifest"
+consumer_id = "v1:consumer:16e2e50f489f310b"
+accepted_denominator = 13001
+owner = "xtask"
+
+[[denominator_baseline.consumers]]
+consumer = "packages"
+consumer_id = "v1:consumer:b058e523879b3bf3"
+accepted_denominator = 21
+owner = "vibelang-packaging"
+
+[[denominator_baseline.consumers]]
+consumer = "rhai_editor"
+consumer_id = "v1:consumer:ea25ac3bbcaff076"
+accepted_denominator = 3141
+owner = "vibelang-tools"
+
+[[denominator_baseline.consumers]]
+consumer = "wasm"
+consumer_id = "v1:consumer:0e23d87125f9c6ea"
+accepted_denominator = 51
+owner = "vibelang-wasm"
+
+[[records]]
+target_id = "v1:consumer:ea25ac3bbcaff076"
+owner = "vibelang-tools"
+
+[records.policy]
+surfaces = ["rhai_editor"]
+kinds = ["v1_compatibility_projection"]
+capability_ids = []
+include_preview = false
+
+[records.coverage]
+require_complete_eligibility = true
+allow_curated_exclusions = true
+forbid_denominator_shrink = true

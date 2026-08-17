@@ -1,0 +1,31 @@
+{
+  "schema": "https://vibelang.org/schemas/m05-metadata-negative-fixture/1",
+  "cases": [
+    {
+      "mutation": "missing_parameter_occurrence",
+      "expected_error_contains": "parameter coverage mismatch"
+    },
+    {
+      "mutation": "stale_ugen_input_occurrence",
+      "expected_error_contains": "UGen input coverage mismatch"
+    },
+    {
+      "mutation": "unknown_range_id",
+      "expected_error_contains": "unknown range_id range.missing"
+    },
+    {
+      "mutation": "heuristic_only_provenance",
+      "expected_error_contains": "must use a reviewed classification basis"
+    }
+  ],
+  "source_assertions": [
+    {
+      "path": "docs/architecture/api-unification/conventions-and-capabilities.md",
+      "contains": "Classify all 18,786 parameter occurrences"
+    },
+    {
+      "path": "docs/architecture/api-unification/conventions-and-capabilities.md",
+      "contains": "Classify all 5,089 UGen inputs from a reviewed source table"
+    }
+  ]
+}

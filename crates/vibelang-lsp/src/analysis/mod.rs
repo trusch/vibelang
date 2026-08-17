@@ -595,6 +595,12 @@ fn extract_synthdef_from_chain(content: &str, line: usize) -> Option<String> {
 
 /// Detect the object type from the prefix for method completion.
 fn detect_object_type(prefix: &str) -> Option<String> {
+    if prefix.contains("define_synthdef(") {
+        return Some("SynthDefBuilderHandle".to_string());
+    }
+    if prefix.contains("define_fx(") {
+        return Some("FxBuilderHandle".to_string());
+    }
     if prefix.contains("voice(") || prefix.contains("voice (") {
         return Some("Voice".to_string());
     }
@@ -611,25 +617,19 @@ fn detect_object_type(prefix: &str) -> Option<String> {
         return Some("Fx".to_string());
     }
     if prefix.contains("group(") || prefix.contains("group (") || prefix.contains("define_group(") {
-        return Some("Group".to_string());
+        return Some("GroupHandle".to_string());
     }
     if prefix.contains("fade(") || prefix.contains("fade (") {
         return Some("Fade".to_string());
     }
     if prefix.contains("sample(") || prefix.contains("sample (") {
-        return Some("Sample".to_string());
+        return Some("SampleHandle".to_string());
     }
     if prefix.contains("record(") || prefix.contains("record (") {
-        return Some("Record".to_string());
-    }
-    if prefix.contains("define_synthdef(") {
-        return Some("SynthdefBuilder".to_string());
-    }
-    if prefix.contains("define_fx(") {
-        return Some("FxBuilder".to_string());
+        return Some("RecordHandle".to_string());
     }
     if prefix.contains("envelope(") {
-        return Some("Envelope".to_string());
+        return Some("EnvelopeBuilder".to_string());
     }
     None
 }
@@ -1170,6 +1170,26 @@ mod tests {
             .into_iter()
             .filter(|d| d.severity == Some(DiagnosticSeverity::ERROR))
             .collect()
+    }
+
+    #[test]
+    fn method_chain_detection_uses_canonical_manifest_receiver_names() {
+        for (prefix, receiver) in [
+            ("voice(\"lead\").", "Voice"),
+            ("pattern(\"beat\").", "Pattern"),
+            ("melody(\"lead\").", "Melody"),
+            ("sequence(\"song\").", "Sequence"),
+            ("fx(\"delay\").", "Fx"),
+            ("group(\"mix\").", "GroupHandle"),
+            ("fade(\"intro\").", "Fade"),
+            ("sample(\"kick\", \"kick.wav\").", "SampleHandle"),
+            ("record(\"take\").", "RecordHandle"),
+            ("define_synthdef(\"tone\").", "SynthDefBuilderHandle"),
+            ("define_fx(\"delay\").", "FxBuilderHandle"),
+            ("envelope().", "EnvelopeBuilder"),
+        ] {
+            assert_eq!(detect_object_type(prefix).as_deref(), Some(receiver));
+        }
     }
 
     #[test]

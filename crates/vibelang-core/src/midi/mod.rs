@@ -109,9 +109,9 @@ const MIDI_INPUT_TRANSPORT_MASK: u32 = 0xC000_0000;
 // Legacy re-exports (existing API, maintained for compatibility)
 // =============================================================================
 pub use callbacks::{
-    parse_note_name, CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder,
-    MidiCallbacks, NoteRouteBuilder, ParameterCurve, StoredCallback, VelocityCurve,
-    VelocityMapping,
+    canonical_cc_curve_name, parse_note_name, CallbackData, CallbackType, CcRouteBuilder,
+    KeyboardRouteBuilder, MidiCallbacks, NoteRouteBuilder, ParameterCurve, StoredCallback,
+    VelocityCurve, VelocityMapping,
 };
 pub use constants::{
     decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, trigger_ids,
@@ -133,7 +133,9 @@ pub use events::{
 
 // Device management with separate input/output namespaces
 pub use devices::{
-    MidiDeviceInfo, MidiDeviceManager, MidiInputId, MidiInputInfo, MidiOutputId, MidiOutputInfo,
+    resolve_midi_output_endpoint, resolve_midi_output_endpoint_from, MidiDeviceInfo,
+    MidiDeviceManager, MidiInputId, MidiInputInfo, MidiOutputEndpoint, MidiOutputId,
+    MidiOutputInfo, MidiOutputResolutionError,
 };
 
 // Event queue for lock-free MIDI processing
@@ -148,8 +150,8 @@ pub use parser::{parse_midi_bytes, MidiParser};
 #[cfg(feature = "pipewire-midi2")]
 pub use pipewire_input::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs, open_pipewire_midi2_input,
-    parse_pipewire_midi_pod, pipewire_midi_input_id, PipeWireMidiInputConnection,
-    PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
+    parse_pipewire_midi_pod, pipewire_midi2_input_ids, pipewire_midi_input_id,
+    PipeWireMidiInputConnection, PipeWireMidiInputInfo, PIPEWIRE_MIDI_INPUT_FLAG,
 };
 
 // ALSA raw UMP endpoints (Linux): full-resolution MIDI 2.0 without PipeWire.

@@ -1,0 +1,8 @@
+sample("sample_one", "fixtures/missing.wav").amp(0.5).rate(0.75).one_shot();
+
+load_sfz("sfz_one", "fixtures/missing.sfz");
+let scratch = allocate_buffer("scratch", 4096, 2);
+let _bufnum = scratch.bufnum;
+
+let pending = record("take_one").from_group("main").beats(4).immediate().apply();
+let _pending_id = pending.id;

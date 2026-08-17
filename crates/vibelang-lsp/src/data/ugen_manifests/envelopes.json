@@ -101,7 +101,8 @@
     "category": "Envelopes",
     "functions": [
       "envelope"
-    ]
+    ],
+    "unavailable_reason": "VibeLang fluent envelope builder; no literal server UGen named envelope is emitted."
   },
   {
     "name": "EnvGen",
@@ -441,6 +442,40 @@
     "category": "Envelopes",
     "functions": [
       "linen_kr"
+    ]
+  },
+  {
+    "name": "IEnvGen",
+    "description": "Initialization-rate envelope generator. Plays back a break-point envelope by polling values at the index point. The envelope is set up at construction and is static for the life of the UGen; the index can be a signal.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "index",
+        "type": "signal",
+        "default": 0,
+        "description": "Index into the envelope (in seconds along the envelope's time axis)"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output is multiplied by this value"
+      },
+      {
+        "name": "add",
+        "type": "float",
+        "default": 0,
+        "description": "Value added to the output"
+      }
+    ],
+    "outputs": 1,
+    "category": "Envelopes",
+    "functions": [
+      "i_env_gen_ar",
+      "i_env_gen_kr"
     ]
   }
 ]

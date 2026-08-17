@@ -1,0 +1,21 @@
+{
+  "schema": "https://vibelang.org/schemas/public-api-compatibility-diff/v1",
+  "schema_version": 1,
+  "base": {
+    "path": "api/public-api-manifest-v1.json",
+    "sha256": "48e5900b562f7487c540662bedeb98ed69972aaa7922d94004e7d9c76b75f67b",
+    "bytes": 33326377
+  },
+  "candidate_v1_projection": {
+    "path": "api/public-api-manifest-v1.json",
+    "sha256": "48e5900b562f7487c540662bedeb98ed69972aaa7922d94004e7d9c76b75f67b",
+    "bytes": 33326377
+  },
+  "candidate_v2_digest": "0b5db8a4483962086fd66deba8c9abadcface0d2a4646b875c9a5721a8c162c2",
+  "unchanged_entry_ids": 3630,
+  "unchanged_overload_ids": 8439,
+  "unclassified_count": 0,
+  "report": {
+    "changes": []
+  }
+}

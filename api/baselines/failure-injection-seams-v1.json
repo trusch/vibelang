@@ -1,0 +1,772 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-failure-injection-seam-inventory/1",
+  "schema_version": 1,
+  "accepted_base": "8c7c1fd1c70bb04e70e6f7da802ff7357acfe6a2",
+  "provenance": {
+    "assessed_commit": "8c7c1fd1c70bb04e70e6f7da802ff7357acfe6a2",
+    "assessed_tree": "a46bdf742dff00439fc19f85c1d08424867fee03",
+    "m04_parent": "34d31d68c4fa821a493bd244344025d620425a16",
+    "m04_lineage": [
+      "b781fe90dde75559e9b2f1767255345ffbde0af0",
+      "0d62dee9fb70f5699e757a85226f818029b995ad",
+      "870d2e8e11943a81130828e2e254705a9200e31d",
+      "f28279429499c045b9058e5686b47382c9d5a29f",
+      "09ed9a84bf4b4c250de493015c71c166406b0986",
+      "f189c4ad8009c0102ca1af20562df22defeab6ae",
+      "bafd94586524c67c6fc74007aa742326a81d0a94",
+      "8c7c1fd1c70bb04e70e6f7da802ff7357acfe6a2"
+    ]
+  },
+  "policy": "source-backed observed M04 truth; the inventory and its tests do not alter runtime outcomes",
+  "seams": [
+    {
+      "index": 0,
+      "scope": "evaluation",
+      "phase": "parse",
+      "source": "crates/vibelang-rhai/src/engine.rs",
+      "anchor": "pub fn execute(&mut self, script: &str) -> Result<ScriptState>",
+      "source_assertions": [
+        "fn host_failure(error: &Error) -> (FailurePhase, &'static str)"
+      ],
+      "current_injection": "invalid Rhai source",
+      "current_outcome": "the preallocated carrier attempt is terminal Rejected as effect-free, has no revision, and preserves one attempt identity",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-cli/src/main.rs",
+          "anchor": "fn cli_parse_failure_is_effect_free_rejected_attempt()"
+        },
+        {
+          "source": "crates/vibelang-rhai/src/engine.rs",
+          "anchor": "async fn host_parse_failure_is_effect_free_rejected_attempt()"
+        },
+        {
+          "source": "crates/vibelang-http/src/routes/eval.rs",
+          "anchor": "async fn http_eval_parse_failure_is_effect_free_rejected_attempt()"
+        },
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn wasm_parse_failure_is_effect_free_rejected_attempt()"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "scope": "evaluation",
+      "phase": "evaluate",
+      "source": "crates/vibelang-rhai/src/engine.rs",
+      "anchor": "let result = self.engine.run(script).map_err(Error::from);",
+      "source_assertions": [
+        "record_uncertain_effect"
+      ],
+      "current_injection": "runtime Rhai error after eager host work",
+      "current_outcome": "the preallocated attempt is terminal Partial with candidate-local effect evidence and fenced=true; an effect-free evaluation error is Rejected",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-cli/src/main.rs",
+          "anchor": "fn cli_and_http_eager_failures_are_fenced_on_their_canonical_attempts()"
+        },
+        {
+          "source": "crates/vibelang-rhai/src/engine.rs",
+          "anchor": "async fn host_runtime_failure_after_eager_effect_is_fenced_partial()"
+        },
+        {
+          "source": "crates/vibelang-http/src/routes/eval.rs",
+          "anchor": "async fn http_eval_eager_failure_is_fenced_partial()"
+        },
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn wasm_eager_evaluation_failure_is_fenced_partial()"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "scope": "evaluation",
+      "phase": "graph_compile",
+      "source": "crates/vibelang-dsp/src/api.rs",
+      "anchor": "fn build(self, closure: rhai::FnPtr)",
+      "source_assertions": [
+        "self.build(closure).map_err(synthdef_error_to_eval)?"
+      ],
+      "current_injection": "invalid DSP graph closure",
+      "current_outcome": "a structured Rhai evaluation error reaches the carrier; the attempt is Rejected if effect-free or fenced Partial if earlier eager effects were recorded",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-rhai/src/engine.rs",
+          "anchor": "async fn host_runtime_failure_after_eager_effect_is_fenced_partial()"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "scope": "reload_planning",
+      "phase": "validate",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "self.build_reload_diff(&new_state).await;",
+      "source_assertions": [
+        "execution.phases[6].failures = port_reconcile_failures;",
+        "reload_voice_port_reconcile_failed"
+      ],
+      "current_injection": "diff construction or voice-port reconciliation failure",
+      "current_outcome": "there is no standalone atomic validation boundary; port-reconcile failures are structured on reload/output_routes and make the reload receipt fenced Partial",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "scope": "reload_planning",
+      "phase": "plan",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "fn begin_contextual_components(",
+      "source_assertions": [
+        ".begin_planning(context.attempt_id(), planned, now)",
+        "code: \"reload_planning_failed\""
+      ],
+      "current_injection": "receipt planning transition failure",
+      "current_outcome": "the canonical receipt enters Planning before Staging or Committing; a planning transition failure is terminalized as effect-free Rejected",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn receipt_submission_returns_accepted_before_runtime_work_and_preserves_context()"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "scope": "reload_staging",
+      "phase": "stage_resources",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "fn spawn_reload_staging(",
+      "source_assertions": [
+        "failure: Some(reload::StagedAssetFailure",
+        "finish_lost_staged_reload(&ledger, &context, staging, cleanup)"
+      ],
+      "current_injection": "sample or SFZ load failure, or staged completion lost to a closed runtime queue",
+      "current_outcome": "per-asset failures and lost completion are canonical terminal Partial diagnostics; loaded leftovers are deterministically reclaimed and cleanup is a receipt component",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn direct_staging_load_failure_preserves_its_code_and_cleanup()"
+        },
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn lost_staged_apply_frees_every_buffer_in_deterministic_order()"
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "scope": "reload_apply",
+      "phase": "transport",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_apply_transport_changes",
+      "source_assertions": [
+        "execution.phases[0].started = true;",
+        "self.phase_apply_transport_changes(&diff).await"
+      ],
+      "current_injection": "transport handler failure",
+      "current_outcome": "failures are structured on reload/transport; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=abort",
+      "component_index": 0,
+      "component_path": "reload/transport",
+      "component_action": "apply_changes",
+      "continuation": "abort",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "scope": "reload_apply",
+      "phase": "stop_deleted",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_stop_deleted_entities",
+      "source_assertions": [
+        "execution.phases[1].failures = self.phase_stop_deleted_entities(&diff).await;"
+      ],
+      "current_injection": "backend rejection while stopping removed entities",
+      "current_outcome": "failures are structured on reload/stop_deleted; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 1,
+      "component_path": "reload/stop_deleted",
+      "component_action": "stop",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "scope": "reload_apply",
+      "phase": "delete",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_delete_entities",
+      "source_assertions": [
+        "execution.phases[2].failures = self",
+        ".phase_delete_entities(&diff, group_teardown_grace)"
+      ],
+      "current_injection": "backend or resource rejection while deleting entities",
+      "current_outcome": "failures are structured on reload/delete_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 2,
+      "component_path": "reload/delete_entities",
+      "component_action": "delete",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "scope": "reload_apply",
+      "phase": "open_midi",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_open_midi_devices",
+      "source_assertions": [
+        "self.phase_open_midi_devices(&new_state).await;",
+        "if !continue_apply"
+      ],
+      "current_injection": "unavailable MIDI device or MIDI connection-channel failure",
+      "current_outcome": "failures are structured on reload/midi_devices; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=mixed",
+      "component_index": 3,
+      "component_path": "reload/midi_devices",
+      "component_action": "open",
+      "continuation": "mixed",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "scope": "reload_apply",
+      "phase": "create",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_create_entities",
+      "source_assertions": [
+        "execution.phases[4]",
+        ".extend(self.phase_create_entities(&diff, &new_state, staged).await)"
+      ],
+      "current_injection": "backend or resource failure while creating an entity",
+      "current_outcome": "failures are structured on reload/create_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 4,
+      "component_path": "reload/create_entities",
+      "component_action": "create",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "scope": "reload_apply",
+      "phase": "update",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_update_entities",
+      "source_assertions": [
+        "execution.phases[5].failures.extend(",
+        "self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)"
+      ],
+      "current_injection": "backend or resource failure while updating an entity",
+      "current_outcome": "failures are structured on reload/update_entities; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 5,
+      "component_path": "reload/update_entities",
+      "component_action": "update",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "scope": "reload_apply",
+      "phase": "output_routes",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_finalize_output_routes",
+      "source_assertions": [
+        "execution.phases[6].failures = port_reconcile_failures;",
+        "self.phase_finalize_output_routes(&diff).await"
+      ],
+      "current_injection": "voice-port reconcile or output-route finalizer failure",
+      "current_outcome": "failures are structured on reload/output_routes; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=abort_on_finalizer_failure",
+      "component_index": 6,
+      "component_path": "reload/output_routes",
+      "component_action": "finalize",
+      "continuation": "abort_on_finalizer_failure",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "scope": "reload_apply",
+      "phase": "input_routes",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_finalize_input_routes",
+      "source_assertions": [
+        "self.phase_finalize_input_routes(&input_routes).await",
+        "execution.phases[7].failures.push"
+      ],
+      "current_injection": "input-route finalizer failure",
+      "current_outcome": "failures are structured on reload/input_routes; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=abort",
+      "component_index": 7,
+      "component_path": "reload/input_routes",
+      "component_action": "finalize",
+      "continuation": "abort",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "scope": "reload_apply",
+      "phase": "effects",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_apply_effects",
+      "source_assertions": [
+        "execution.phases[8]",
+        ".extend(self.phase_apply_effects(&diff, &new_state).await)"
+      ],
+      "current_injection": "missing synthdef or backend effect failure",
+      "current_outcome": "failures are structured on reload/effects; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 8,
+      "component_path": "reload/effects",
+      "component_action": "apply",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "scope": "reload_apply",
+      "phase": "groups",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_finalize_groups",
+      "source_assertions": [
+        "execution.phases[9].failures = self.phase_finalize_groups(&diff).await;"
+      ],
+      "current_injection": "group link or parameter finalization failure",
+      "current_outcome": "failures are structured on reload/groups; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 9,
+      "component_path": "reload/groups",
+      "component_action": "finalize",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "scope": "reload_apply",
+      "phase": "fades",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_apply_fades",
+      "source_assertions": [
+        "execution.phases[10].failures = self.phase_apply_fades(&diff, &new_state).await;"
+      ],
+      "current_injection": "missing target or backend fade failure",
+      "current_outcome": "failures are structured on reload/fades; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 10,
+      "component_path": "reload/fades",
+      "component_action": "apply",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "scope": "reload_apply",
+      "phase": "start_running",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_start_running_patterns",
+      "source_assertions": [
+        "execution.phases[11].failures = self.phase_start_running_patterns(&diff, &new_state).await;"
+      ],
+      "current_injection": "pattern, melody, or sequence playback reconciliation failure",
+      "current_outcome": "failures are structured on reload/patterns; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 11,
+      "component_path": "reload/patterns",
+      "component_action": "reconcile_playback",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 18,
+      "scope": "reload_apply",
+      "phase": "trigger_running_voices",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_trigger_running_voices",
+      "source_assertions": [
+        "execution.phases[12].failures = self.phase_trigger_running_voices(&new_state).await;"
+      ],
+      "current_injection": "running-voice trigger or dependency failure",
+      "current_outcome": "failures are structured on reload/voices; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 12,
+      "component_path": "reload/voices",
+      "component_action": "reconcile_running",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "scope": "reload_apply",
+      "phase": "param_routes",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_finalize_param_routes",
+      "source_assertions": [
+        "self.phase_finalize_param_routes(&diff, &new_state).await",
+        "execution.phases[13].failures.push"
+      ],
+      "current_injection": "parameter-route finalizer failure",
+      "current_outcome": "failures are structured on reload/param_routes; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=abort",
+      "component_index": 13,
+      "component_path": "reload/param_routes",
+      "component_action": "finalize",
+      "continuation": "abort",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 20,
+      "scope": "reload_apply",
+      "phase": "midi_routes",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn phase_apply_midi_routes",
+      "source_assertions": [
+        "execution.phases[14].failures = self.phase_apply_midi_routes(&new_state).await;"
+      ],
+      "current_injection": "device disappearance or MIDI route handler failure",
+      "current_outcome": "failures are structured on reload/midi_routes; the canonical reload receipt is terminal Partial with the failed component Uncertain, rollback Uncertain, and fenced=true; continuation=continue",
+      "component_index": 14,
+      "component_path": "reload/midi_routes",
+      "component_action": "apply",
+      "continuation": "continue",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        }
+      ]
+    },
+    {
+      "index": 21,
+      "scope": "reload_commit",
+      "phase": "commit",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn snapshot_script_config",
+      "source_assertions": [
+        "self.snapshot_script_config(new_state).await;",
+        "finish_reload_receipt(&self.mutation_ledger, context, execution)"
+      ],
+      "current_injection": "none; commit eligibility depends on apply continuation",
+      "current_outcome": "the script snapshot advances after a no-op or a completed best-effort phase sequence, including non-aborting failures; aborting transport, route, or MIDI-channel failures retain the previous snapshot, and receipt terminalization follows apply",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn reload_failure_reports_exact_phase_components_and_fences()"
+        }
+      ]
+    },
+    {
+      "index": 22,
+      "scope": "reload_cleanup",
+      "phase": "cleanup",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "async fn discard_staged_leftovers",
+      "source_assertions": [
+        "cleanup_phase.failures = cleanup;",
+        "execution.phases[15].failures = cleanup;"
+      ],
+      "current_injection": "backend free-buffer failure for an unconsumed staged asset",
+      "current_outcome": "cleanup always occupies reload/staged_assets; failure is a structured diagnostic and Uncertain component in a terminal fenced Partial receipt",
+      "component_index": 15,
+      "component_path": "reload/staged_assets",
+      "component_action": "discard_leftovers",
+      "continuation": "after_apply",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        },
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn lost_staged_apply_frees_every_buffer_in_deterministic_order()"
+        }
+      ]
+    },
+    {
+      "index": 23,
+      "scope": "reload_receipt",
+      "phase": "receipt",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "fn finish_reload_receipt(",
+      "source_assertions": [
+        "TerminalOutcome::Partial(Partial",
+        "rollback: RollbackState::Uncertain",
+        "fenced: true"
+      ],
+      "current_injection": "any staging, apply-phase, or cleanup failure",
+      "current_outcome": "all failures are caller-visible diagnostics; the first code becomes the terminal Partial code, every failed component is Uncertain, and the runtime is fenced",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage()"
+        },
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn reload_receipt_preserves_multiple_failures_in_one_phase()"
+        }
+      ]
+    },
+    {
+      "index": 24,
+      "scope": "barrier",
+      "phase": "barrier",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "pub async fn sync_and_wait(&self) -> Result<()>",
+      "source_assertions": [
+        "phase: FailurePhase::BackendBarrier",
+        "Err(Error::AcknowledgementLost)",
+        "Err(Error::SyncTimeout)"
+      ],
+      "current_injection": "backend sync failure, timeout, or acknowledgement loss",
+      "current_outcome": "sync is a correlated canonical attempt; backend failure is terminal Partial and fences, while timeout or acknowledgement loss returns a distinct error and fences incomplete work",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn sync_and_wait_reports_backend_failure_timeout_and_ack_loss()"
+        }
+      ]
+    },
+    {
+      "index": 25,
+      "scope": "fencing",
+      "phase": "fence",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "fn mutation_is_fenced(",
+      "source_assertions": [
+        "Error::RuntimeFenced",
+        "pub fn continue_best_effort",
+        "effect_completed_after_runtime_fence"
+      ],
+      "current_injection": "submission after partial or unknown live state, or late completion after a newer fence",
+      "current_outcome": "new mutations are rejected while fenced; late effects remain Partial; continue_best_effort requires exact acknowledgement of the active partial receipt",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn staged_apply_after_newer_fence_is_truthful_partial()"
+        },
+        {
+          "source": "crates/vibelang-cli/src/main.rs",
+          "anchor": "fn runtime_fence_requires_explicit_acknowledgement()"
+        }
+      ]
+    },
+    {
+      "index": 26,
+      "scope": "admission",
+      "phase": "queue_admission",
+      "source": "crates/vibelang-core/src/runtime.rs",
+      "anchor": "enum QueueAdmissionFailure",
+      "source_assertions": [
+        "QueueAdmissionFailure::Full",
+        "QueueAdmissionFailure::Closed"
+      ],
+      "current_injection": "full or closed runtime mutation queue",
+      "current_outcome": "queue_full and queue_closed are distinct effect-free Rejected attempts; a failed admission allocates no revision, while known earlier eager effects retain a fenced Partial receipt",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn queue_full_and_closed_are_distinct_and_never_allocate_failed_revision()"
+        },
+        {
+          "source": "crates/vibelang-core/src/runtime.rs",
+          "anchor": "async fn preallocated_effectful_queue_failure_retains_partial_receipt()"
+        }
+      ]
+    },
+    {
+      "index": 27,
+      "scope": "carrier",
+      "phase": "cli_carrier",
+      "source": "crates/vibelang-cli/src/main.rs",
+      "anchor": "async fn submit_cli_reload_attempt(",
+      "source_assertions": [
+        "async fn wait_terminal",
+        "fn require_applied"
+      ],
+      "current_injection": "late Partial, sync failure, or fenced retry",
+      "current_outcome": "startup and one-shot wait for terminal truth by default; Partial is nonzero and prints components/fence state; watch stops mutation submission while fenced",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-cli/src/main.rs",
+          "anchor": "async fn terminal_wait_preserves_readiness_and_late_partial_truth()"
+        },
+        {
+          "source": "crates/vibelang-cli/src/main.rs",
+          "anchor": "fn late_partial_overrides_accepted_and_fences_retry()"
+        }
+      ]
+    },
+    {
+      "index": 28,
+      "scope": "carrier",
+      "phase": "rhai_carrier",
+      "source": "crates/vibelang-rhai/src/engine.rs",
+      "anchor": "async fn submit_host_attempt(",
+      "source_assertions": [
+        "fn host_submission_receipt(",
+        "fn host_receipt_sink()"
+      ],
+      "current_injection": "admission closes after a terminal callback or a late Partial arrives",
+      "current_outcome": "candidate-local Rhai return values never replace canonical runtime truth; the canonical terminal receipt wins over admission errors and late Partial wins over Accepted",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-rhai/src/engine.rs",
+          "anchor": "fn host_carrier_keeps_late_partial_canonical()"
+        },
+        {
+          "source": "crates/vibelang-rhai/src/engine.rs",
+          "anchor": "fn host_carrier_preserves_terminal_receipt_when_admission_channel_closes()"
+        }
+      ]
+    },
+    {
+      "index": 29,
+      "scope": "carrier",
+      "phase": "http_carrier",
+      "source": "crates/vibelang-http/src/lib.rs",
+      "anchor": "async fn project_http_mutation_response(",
+      "source_assertions": [
+        "fn canonical_http_receipt(",
+        "fn with_receipt_status"
+      ],
+      "current_injection": "pending direct mutation, evaluation-only success, or known Partial",
+      "current_outcome": "pending direct mutation is 202 with canonical receipt and nested legacy result; eval success is evaluation-only; a known Partial outranks pending and never projects a legacy success response",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-http/src/lib.rs",
+          "anchor": "fn accepted_direct_mutation_is_202_with_nested_legacy_result()"
+        },
+        {
+          "source": "crates/vibelang-http/src/lib.rs",
+          "anchor": "fn partial_receipt_outranks_pending_and_never_returns_success()"
+        }
+      ]
+    },
+    {
+      "index": 30,
+      "scope": "carrier",
+      "phase": "websocket_carrier",
+      "source": "crates/vibelang-http/src/websocket.rs",
+      "anchor": "fn telemetry(event_type: &str, data: Value, status: &RuntimeMutationStatus)",
+      "source_assertions": [
+        "event_sequence: status.event_sequence",
+        "reset_required"
+      ],
+      "current_injection": "telemetry gap, reset, or terminal Partial event",
+      "current_outcome": "legacy WebSocket remains telemetry, carries epoch/sequence/receipt freshness, and never acknowledges or maps Partial to success",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-http/src/websocket.rs",
+          "anchor": "fn legacy_telemetry_carries_receipt_freshness_without_acknowledging()"
+        }
+      ]
+    },
+    {
+      "index": 31,
+      "scope": "carrier",
+      "phase": "wasm_bridge",
+      "source": "crates/vibelang-wasm/src/lib.rs",
+      "anchor": "async fn load_synthdef_to_supersonic",
+      "source_assertions": [
+        "fn finish_wasm_attempt_failure(",
+        "synthdef_bridge_failed"
+      ],
+      "current_injection": "missing bridge, rejected Promise, or partial multi-asset bridge delivery",
+      "current_outcome": "known initialization or bridge failure makes evaluation success false; partial delivery preserves all component evidence and yields canonical fenced Partial",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn known_initialization_and_bridge_failures_are_structured_non_success()"
+        },
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn wasm_partial_bridge_load_failure_preserves_all_delivery_evidence()"
+        }
+      ]
+    },
+    {
+      "index": 32,
+      "scope": "carrier",
+      "phase": "wasm_dispatch",
+      "source": "crates/vibelang-wasm/src/lib.rs",
+      "anchor": ".submit_with_sinks(",
+      "source_assertions": [
+        "reload_dispatch_failed",
+        "fn latest_known_receipt("
+      ],
+      "current_injection": "full or closed runtime queue, or terminal callback racing admission",
+      "current_outcome": "queue_full and queue_closed retain distinct canonical codes and non-success projections; a known terminal callback outranks returned admission state; success remains evaluation-only while pending",
+      "direct_tests": [
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn wasm_queue_fault_receipts_preserve_distinct_carrier_projections()"
+        },
+        {
+          "source": "crates/vibelang-wasm/src/lib.rs",
+          "anchor": "fn known_terminal_transition_outranks_returned_queue_admission()"
+        }
+      ]
+    }
+  ]
+}

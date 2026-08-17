@@ -226,3 +226,305 @@ mod tests {
         context::clear_context();
     }
 }
+
+use rhai::{EvalAltResult, Position};
+use vibelang_core::candidate::{
+    AuthoringDeclaration, BufferAuthoring, BufferKind, BufferReplacementAuthoring, Cancellation,
+    CandidateError, Composition, DeclarationOwner, DeclarationPayload, GroupScope, LifecycleAction,
+    LifecycleMetadata, TerminalEffect,
+};
+
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BufferRef {
+    base: RefBase,
+}
+
+impl BufferRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<BufferKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        let source = foundation::operation_source(&self.base, "remove")?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Remove,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BufferBuilder {
+    base: BuilderBase,
+    frames: Option<u32>,
+    channels: u16,
+    replacement: Option<BufferReplacementAuthoring>,
+}
+
+impl BufferBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            frames: None,
+            channels: 1,
+            replacement: None,
+        }
+    }
+
+    pub fn frames(mut self, frames: i64) -> Result<Self, FoundationError> {
+        if frames < 1 || frames > i64::from(u32::MAX) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Buffer frames must be in 1..=4294967295".into(),
+            )
+            .into());
+        }
+        self.frames = Some(frames as u32);
+        Ok(self)
+    }
+
+    pub fn channels(mut self, channels: i64) -> Result<Self, FoundationError> {
+        if !(1..=16).contains(&channels) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Buffer channels must be in 1..=16".into(),
+            )
+            .into());
+        }
+        self.channels = channels as u16;
+        Ok(self)
+    }
+
+    /// Declare the v2-required replacement policy: clear on shape change.
+    #[must_use]
+    pub fn clear(mut self) -> Self {
+        self.replacement = Some(BufferReplacementAuthoring::Clear);
+        self
+    }
+
+    /// Declare the v2-required replacement policy: copy the overlapping
+    /// region on shape change.
+    #[must_use]
+    pub fn copy_overlap(mut self) -> Self {
+        self.replacement = Some(BufferReplacementAuthoring::CopyOverlap);
+        self
+    }
+
+    pub fn apply(self) -> Result<BufferRef, FoundationError> {
+        let frames = self.frames.ok_or_else(|| {
+            CandidateError::InvalidAuthoring("BufferBuilder needs .frames(..) before apply".into())
+        })?;
+        let replacement = self.replacement.ok_or_else(|| {
+            CandidateError::InvalidAuthoring(
+                "BufferBuilder needs an explicit replacement policy: declare .clear() or .copy_overlap()"
+                    .into(),
+            )
+        })?;
+        let declaration = BufferAuthoring {
+            frames,
+            channels: self.channels,
+            replacement,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Buffer(declaration))?;
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let reference = self.base.apply(
+            owner,
+            LifecycleMetadata::register(Composition::Standalone),
+            payload,
+        )?;
+        BufferRef::new(reference)
+    }
+}
+
+pub(crate) fn buffer_builder_v2(name: String) -> Result<BufferBuilder, Box<EvalAltResult>> {
+    Ok(BufferBuilder::new(
+        foundation::authoring_builder::<BufferKind>(&name, GroupScope::root())
+            .map_err(|error| buffer_v2_error(error, Position::NONE))?,
+    ))
+}
+
+/// Effective forwarding alias for the v1 `allocate_buffer(name, frames,
+/// channels)` shape. The result is still a pure builder: the v2-required
+/// replacement policy and the `apply` terminal remain explicit.
+pub(crate) fn allocate_buffer_v2(
+    name: String,
+    frames: i64,
+    channels: i64,
+) -> Result<BufferBuilder, Box<EvalAltResult>> {
+    buffer_builder_v2(name)?
+        .frames(frames)
+        .and_then(|builder| builder.channels(channels))
+        .map_err(|error| buffer_v2_error(error, Position::NONE))
+}
+
+pub(crate) fn buffer_ref_v2(name: String) -> Result<BufferRef, Box<EvalAltResult>> {
+    BufferRef::new(
+        foundation::authoring_ref::<BufferKind>(&name, GroupScope::root())
+            .map_err(|error| buffer_v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| buffer_v2_error(error, Position::NONE))
+}
+
+fn buffer_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
+        result.map_err(|error| buffer_v2_error(error, Position::NONE))
+    }
+
+    engine
+        .register_type_with_name::<BufferBuilder>("BufferBuilder")
+        .register_type_with_name::<BufferRef>("BufferRef")
+        .register_fn("buffer", buffer_builder_v2)
+        .register_fn("allocate_buffer", allocate_buffer_v2)
+        .register_fn("buffer_ref", buffer_ref_v2)
+        .register_fn("frames", |builder: BufferBuilder, frames: i64| {
+            strict(builder.frames(frames))
+        })
+        .register_fn("channels", |builder: BufferBuilder, channels: i64| {
+            strict(builder.channels(channels))
+        })
+        .register_fn("clear", BufferBuilder::clear)
+        .register_fn("copy_overlap", BufferBuilder::copy_overlap)
+        .register_fn("apply", |builder: BufferBuilder| strict(builder.apply()))
+        .register_fn("remove", |reference: BufferRef| strict(reference.remove()))
+        .register_fn("status", |reference: BufferRef| strict(reference.status()));
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+    use vibelang_core::candidate::EntityKind;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"buffer-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn builder(name: &str) -> BufferBuilder {
+        BufferBuilder::new(
+            foundation::authoring_builder::<BufferKind>(name, GroupScope::root()).unwrap(),
+        )
+    }
+
+    #[test]
+    fn v2_buffer_requires_explicit_replacement_policy_and_strict_shape() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        assert!(matches!(
+            builder("scratch").frames(0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("scratch").channels(0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("scratch").channels(17),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            builder("scratch").apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(message)
+            )) if message.contains("frames")
+        ));
+        assert!(matches!(
+            builder("scratch").frames(1024).unwrap().apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(message)
+            )) if message.contains("replacement policy")
+        ));
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(
+            candidate.declarations().is_empty(),
+            "rejected configuration must leave no candidate residue"
+        );
+    }
+
+    #[test]
+    fn v2_buffer_clones_diverge_independently_and_terminals_register_once() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let base = builder("scratch").frames(1024).unwrap();
+        let cleared = base.clone().clear();
+        let copied = base.copy_overlap();
+        assert_eq!(cleared.replacement, Some(BufferReplacementAuthoring::Clear));
+        assert_eq!(
+            copied.replacement,
+            Some(BufferReplacementAuthoring::CopyOverlap)
+        );
+
+        let reference = cleared.apply().unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Buffer);
+        assert!(matches!(
+            copied.apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::DuplicateDeclaration { .. }
+            ))
+        ));
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 1);
+        assert_eq!(
+            candidate.declarations()[0].lifecycle().terminal_effect,
+            TerminalEffect::Register
+        );
+    }
+
+    #[test]
+    fn v2_buffer_rhai_surface_and_allocate_alias_author_from_script() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        crate::foundation::register(&mut engine);
+        install_v2(&mut engine);
+        let reference = engine
+            .eval::<BufferRef>(r#"allocate_buffer("spec_arrays", 65536, 1).clear().apply()"#)
+            .unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Buffer);
+        assert!(
+            engine
+                .eval::<BufferRef>(r#"buffer("plain").frames(64).apply()"#)
+                .is_err(),
+            "a terminal without a declared replacement policy must fail, not no-op"
+        );
+        assert!(engine
+            .eval::<BufferBuilder>(r#"buffer("bad").channels(17)"#)
+            .is_err());
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 1);
+    }
+}

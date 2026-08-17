@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isRuntimeCallableUGen } from './ugenAvailability';
+
+export { isRuntimeCallableUGen } from './ugenAvailability';
 
 export interface UGenInput {
     name: string;
@@ -24,6 +27,7 @@ export interface RhaiFunction {
     description: string;
     signature: string;
     example: string;
+    receiver?: string | null;
 }
 
 export interface StdlibItem {
@@ -92,7 +96,7 @@ export class DataLoader {
                 if (file.endsWith('.json')) {
                     const content = fs.readFileSync(path.join(manifestPath, file), 'utf-8');
                     const ugens = JSON.parse(content) as UGenDefinition[];
-                    this._ugens.push(...ugens);
+                    this._ugens.push(...ugens.filter(isRuntimeCallableUGen));
                 }
             }
         } catch (e) {

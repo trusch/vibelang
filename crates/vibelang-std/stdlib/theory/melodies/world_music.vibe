@@ -5,71 +5,85 @@
 // Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
 
 // Jewish Traditional - Hava Nagila - 4/4 time, starts slow then accelerates
+/// @vibelang-api export=public support=supported
 fn hava_nagila() {
     return "E4 - E4 - E4 - F4 - | G4 - A4 - - - . . | A4 - G4 - F4 - E4 - | D4 - E4 - - - . . |";
 }
 
 // Mexican Traditional - La Cucaracha - 2/4 time
+/// @vibelang-api export=public support=supported
 fn la_cucaracha() {
     return "C4 - . C4 | . C4 - . | F4 - A4 - | C4 - . C4 | . C4 - . | F4 - A4 - |";
 }
 
 // Japanese Traditional - Sakura Sakura - 4/4 time, slow
+/// @vibelang-api export=public support=supported
 fn sakura_sakura() {
     return "E4 - E4 - F#4 - E4 - | F#4 - E4 - B3 - - - | C#4 - D4 - C#4 - B3 - | A3 - - - - - - - |";
 }
 
 // Russian Traditional - Kalinka - Fast 2/4 time
+/// @vibelang-api export=public support=supported
 fn kalinka() {
     return "G4 - A4 - | B4 - C5 - | B4 - A4 - | G4 - - - | E4 - D4 - | C4 - D4 - | E4 - - - |";
 }
 
 // Italian Traditional - Bella Ciao - 4/4 time
+/// @vibelang-api export=public support=supported
 fn bella_ciao() {
     return "E4 - F4 - G4 - A4 - | B4 - - - B4 - - - | A4 - G4 - F4 - E4 - | D4 - - - - - - - |";
 }
 
 // Australian Folk - Waltzing Matilda - 4/4 time
+/// @vibelang-api export=public support=supported
 fn waltzing_matilda() {
     return "C4 - - . | E4 - G4 - | G4 - - . | A4 - G4 - | E4 - - . | D4 - E4 - | C4 - - - |";
 }
 
 // French Traditional - Frère Jacques - 4/4 time
+/// @vibelang-api export=public support=supported
 fn frere_jacques() {
     return "C4 - D4 - E4 - C4 - | C4 - D4 - E4 - C4 - | E4 - F4 - G4 - - - | E4 - F4 - G4 - - - |";
 }
 
 // Spanish Traditional - Malagueña - 3/4 time
+/// @vibelang-api export=public support=supported
 fn malaguena() {
     return "E4 - - | . F4 E4 | D4 - C4 | B3 - C4 | D4 - - | . E4 - |";
 }
 
 // South African Traditional - Siyahamba - 4/4 time
+/// @vibelang-api export=public support=supported
 fn siyahamba() {
     return "C4 - E4 - G4 - E4 - | F4 - D4 - C4 - - - | D4 - F4 - A4 - F4 - | G4 - E4 - C4 - - - |";
 }
 
 // Cuban Traditional - Guantanamera - 4/4 time
+/// @vibelang-api export=public support=supported
 fn guantanamera() {
     return "C4 - - . | E4 - G4 - | A4 - - . | G4 - - . | E4 - - . | C4 - - . | D4 - - - |";
 }
 
 // Irish Traditional - The Irish Washerwoman - Fast 6/8 jig
+/// @vibelang-api export=public support=supported
 fn irish_washerwoman() {
     return "G4 - D5 D5 - D5 | E5 - D5 B4 - G4 | A4 - B4 A4 - G4 | A4 - - - - - |";
 }
 
 // Scottish Traditional - Scotland the Brave - 4/4 march
+/// @vibelang-api export=public support=supported
 fn scotland_brave() {
     return "G4 - - . | B4 - D5 - | D5 - E5 - | D5 - B4 - | G4 - A4 - | B4 - - . | A4 - G4 - |";
 }
 
 // Hebrew Traditional - Hatikvah - 4/4 time, slow and hopeful
+/// @vibelang-api export=public support=supported
 fn hatikvah() {
     return "E4 - E4 - F#4 - G4 - | G4 - A4 - B4 - A4 - | G4 - F#4 - E4 - - . | D4 - - - - - - - |";
 }
 
 // Greek Traditional - Zorba's Dance (Sirtaki) - Starts slow 4/4, accelerates
+/// @vibelang-api export=public support=supported
 fn zorbas_dance() {
     return "D4 - E4 - F4 - E4 - | D4 - C4 - D4 - - - | D4 - E4 - F4 - G4 - | A4 - - - - - - - |";
 }

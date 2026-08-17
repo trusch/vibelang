@@ -1,0 +1,103 @@
+$ vibe --help
+CLI binary for VibeLang
+
+Usage: vibe [FILE] [COMMAND]
+
+Commands:
+  run      Run a .vibe script
+  render   Render a .vibescore file to audio
+  devices  List available MIDI devices
+  lsp      Start the Language Server Protocol server (for IDE integration)
+  help     Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [FILE]  Script file to run (shorthand for `vibe run <file>`)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+$ vibe run --help
+Run a .vibe script
+
+Usage: vibe run [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  The .vibe file to run
+
+Options:
+      --no-watch
+          Disable watching for file changes (watch is enabled by default)
+      --no-api
+          Disable HTTP API server (API is enabled by default)
+      --api-port <API_PORT>
+          HTTP API server port (default: 1606) [default: 1606]
+      --api-bind <ADDR>
+          HTTP API bind address (default: 127.0.0.1; use 0.0.0.0 to expose on all interfaces) [default: 127.0.0.1]
+      --api-allow-extensions
+          Allow code sent to the HTTP /eval endpoint to use fs/exec/net extensions (by default /eval runs sandboxed even when the local script has them)
+  -I, --include <INCLUDE_PATHS>
+          Include paths for imports
+      --scsynth-addr <SCSYNTH_ADDR>
+          SuperCollider server address [default: 127.0.0.1:57110]
+      --no-boot
+          Don't start scsynth automatically
+      --no-jack-connect
+          Don't auto-connect JACK/PipeWire ports to system audio output
+      --jack-connect-to <PORTS>
+          Manually specify JACK/PipeWire output ports to connect to (for audio output). Format: comma-separated list of ports, one per output channel. Example: "Device:playback_FL,Device:playback_FR" Use `pw-link -i` or `jack_lsp` to list available input ports
+      --jack-connect-from <PORTS>
+          Manually specify JACK/PipeWire input ports to connect from (for audio input). Format: comma-separated list of ports, one per input channel. Example: "Device:capture_1,Device:capture_2,Device:capture_3,Device:capture_4" Use `pw-link -o` or `jack_lsp` to list available output ports
+      --device <DEVICE>
+          Audio device name (e.g., "default", "hw:0", "Focusrite USB ASIO")
+      --sample-rate <SAMPLE_RATE>
+          Sample rate (e.g., 44100, 48000, 96000). 0 = hardware default [default: 0]
+      --input-channels <INPUT_CHANNELS>
+          Number of input channels (default: 2)
+      --output-channels <OUTPUT_CHANNELS>
+          Number of output channels (default: 2)
+      --profile <FILE>
+          Startup profile with explicit audio links and readiness requirements
+      --no-extensions
+          Disable all script extensions (filesystem, exec, networking)
+      --no-fs
+          Disable filesystem extension (read_file, write_file, etc.)
+      --no-exec
+          Disable shell command execution extension
+      --no-net
+          Disable networking extension (HTTP fetch)
+      --fs-sandbox <FS_SANDBOX>
+          Base directory for filesystem sandboxing (restricts file operations to this directory)
+  -h, --help
+          Print help
+
+$ vibe render --help
+Render a .vibescore file to audio
+
+Usage: vibe render [OPTIONS] <SCORE_FILE> <OUTPUT>
+
+Arguments:
+  <SCORE_FILE>  Input .vibescore file
+  <OUTPUT>      Output audio file
+
+Options:
+  -f, --format <FORMAT>            Output format (wav, mp3, flac, ogg)
+  -s, --sample-rate <SAMPLE_RATE>  Sample rate (default: 48000) [default: 48000]
+  -b, --bit-depth <BIT_DEPTH>      Bit depth (16, 24, 32) [default: 24]
+  -h, --help                       Print help
+
+$ vibe devices --help
+List available MIDI devices
+
+Usage: vibe devices
+
+Options:
+  -h, --help  Print help
+
+$ vibe lsp --help
+Start the Language Server Protocol server (for IDE integration)
+
+Usage: vibe lsp
+
+Options:
+  -h, --help  Print help

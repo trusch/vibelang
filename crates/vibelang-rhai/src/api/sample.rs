@@ -505,3 +505,581 @@ mod tests {
         assert_eq!(config.overlaps, 8.0);
     }
 }
+
+use rhai::{EvalAltResult, Position};
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CanonicalF64, Composition,
+    DeclarationOwner, DeclarationPayload, GroupScope, LifecycleAction, LifecycleMetadata,
+    SampleAuthoring, SampleKind, SampleTriggerAuthoring, SampleWarpAuthoring, TerminalEffect,
+};
+
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SampleRef {
+    base: RefBase,
+}
+
+impl SampleRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<SampleKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        let source = foundation::operation_source(&self.base, "remove")?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::Remove,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct SampleWarpV2 {
+    speed: f64,
+    pitch: f64,
+    target_bpm: Option<f64>,
+    window_size: f64,
+    overlaps: u8,
+}
+
+impl Default for SampleWarpV2 {
+    fn default() -> Self {
+        Self {
+            speed: 1.0,
+            pitch: 1.0,
+            target_bpm: None,
+            window_size: 0.1,
+            overlaps: 8,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SampleBuilder {
+    base: BuilderBase,
+    source: String,
+    attack: f64,
+    sustain: f64,
+    release: f64,
+    amp: f64,
+    rate: f64,
+    loop_mode: bool,
+    offset: f64,
+    length: Option<f64>,
+    trigger: SampleTriggerAuthoring,
+    warp: Option<SampleWarpV2>,
+}
+
+impl SampleBuilder {
+    pub fn new(base: BuilderBase, source: String) -> Result<Self, FoundationError> {
+        if source.is_empty() || source.trim() != source {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sample source must be a non-empty path without surrounding whitespace".into(),
+            )
+            .into());
+        }
+        Ok(Self {
+            base,
+            source,
+            attack: 0.001,
+            sustain: 1.0,
+            release: 0.01,
+            amp: 1.0,
+            rate: 1.0,
+            loop_mode: false,
+            offset: 0.0,
+            length: None,
+            trigger: SampleTriggerAuthoring::Gate,
+            warp: None,
+        })
+    }
+
+    fn strict(value: f64, valid: bool, message: &str) -> Result<f64, FoundationError> {
+        if !value.is_finite() || !valid {
+            return Err(CandidateError::InvalidAuthoring(message.into()).into());
+        }
+        Ok(value)
+    }
+
+    fn warp_mut(&mut self) -> &mut SampleWarpV2 {
+        self.warp.get_or_insert_with(SampleWarpV2::default)
+    }
+
+    pub fn attack(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        self.attack = Self::strict(
+            seconds,
+            seconds >= 0.0,
+            "Sample attack must be finite and non-negative",
+        )?;
+        Ok(self)
+    }
+
+    pub fn sustain(mut self, level: f64) -> Result<Self, FoundationError> {
+        self.sustain = Self::strict(
+            level,
+            (0.0..=1.0).contains(&level),
+            "Sample sustain must be in 0.0..=1.0",
+        )?;
+        Ok(self)
+    }
+
+    pub fn release(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        self.release = Self::strict(
+            seconds,
+            seconds >= 0.0,
+            "Sample release must be finite and non-negative",
+        )?;
+        Ok(self)
+    }
+
+    pub fn amp(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.amp = Self::strict(
+            value,
+            value >= 0.0,
+            "Sample amp must be finite and non-negative",
+        )?;
+        Ok(self)
+    }
+
+    pub fn rate(mut self, value: f64) -> Result<Self, FoundationError> {
+        self.rate = Self::strict(
+            value,
+            value > 0.0,
+            "Sample rate must be finite and positive",
+        )?;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn loop_mode(mut self, enabled: bool) -> Self {
+        self.loop_mode = enabled;
+        self
+    }
+
+    pub fn offset(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        self.offset = Self::strict(
+            seconds,
+            seconds >= 0.0,
+            "Sample offset must be finite and non-negative",
+        )?;
+        Ok(self)
+    }
+
+    pub fn length(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        self.length = Some(Self::strict(
+            seconds,
+            seconds > 0.0,
+            "Sample length must be finite and positive",
+        )?);
+        Ok(self)
+    }
+
+    /// Effective forwarding alias for `.offset(start).length(end - start)`.
+    pub fn slice(self, start_seconds: f64, end_seconds: f64) -> Result<Self, FoundationError> {
+        if !start_seconds.is_finite() || !end_seconds.is_finite() || end_seconds <= start_seconds {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sample slice needs finite bounds with end after start".into(),
+            )
+            .into());
+        }
+        self.offset(start_seconds)?
+            .length(end_seconds - start_seconds)
+    }
+
+    #[must_use]
+    pub fn warp(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.warp_mut();
+        } else {
+            self.warp = None;
+        }
+        self
+    }
+
+    pub fn speed(mut self, value: f64) -> Result<Self, FoundationError> {
+        let value = Self::strict(
+            value,
+            value > 0.0,
+            "Sample speed must be finite and positive",
+        )?;
+        self.warp_mut().speed = value;
+        Ok(self)
+    }
+
+    pub fn pitch(mut self, value: f64) -> Result<Self, FoundationError> {
+        let value = Self::strict(
+            value,
+            value > 0.0,
+            "Sample pitch must be finite and positive",
+        )?;
+        self.warp_mut().pitch = value;
+        Ok(self)
+    }
+
+    /// Effective forwarding alias for `.pitch(2^(semitones / 12))`.
+    pub fn semitones(self, semitones: f64) -> Result<Self, FoundationError> {
+        if !semitones.is_finite() {
+            return Err(
+                CandidateError::InvalidAuthoring("Sample semitones must be finite".into()).into(),
+            );
+        }
+        self.pitch((2.0_f64).powf(semitones / 12.0))
+    }
+
+    pub fn warp_to_bpm(mut self, target_bpm: f64) -> Result<Self, FoundationError> {
+        let value = Self::strict(
+            target_bpm,
+            target_bpm > 0.0,
+            "Sample warp BPM must be finite and positive",
+        )?;
+        self.warp_mut().target_bpm = Some(value);
+        Ok(self)
+    }
+
+    pub fn window_size(mut self, seconds: f64) -> Result<Self, FoundationError> {
+        let value = Self::strict(
+            seconds,
+            (0.01..=1.0).contains(&seconds),
+            "Sample window size must be in 0.01..=1.0 seconds",
+        )?;
+        self.warp_mut().window_size = value;
+        Ok(self)
+    }
+
+    pub fn overlaps(mut self, count: i64) -> Result<Self, FoundationError> {
+        if !(1..=32).contains(&count) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Sample overlaps must be in 1..=32".into(),
+            )
+            .into());
+        }
+        self.warp_mut().overlaps = count as u8;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn one_shot(mut self) -> Self {
+        self.trigger = SampleTriggerAuthoring::OneShot;
+        self
+    }
+
+    #[must_use]
+    pub fn gate(mut self) -> Self {
+        self.trigger = SampleTriggerAuthoring::Gate;
+        self
+    }
+
+    pub fn apply(self) -> Result<SampleRef, FoundationError> {
+        let warp = self
+            .warp
+            .map(|warp| {
+                Ok::<_, CandidateError>(SampleWarpAuthoring {
+                    speed: CanonicalF64::new(warp.speed)?,
+                    pitch: CanonicalF64::new(warp.pitch)?,
+                    target_bpm: warp.target_bpm.map(CanonicalF64::new).transpose()?,
+                    window_size: CanonicalF64::new(warp.window_size)?,
+                    overlaps: warp.overlaps,
+                })
+            })
+            .transpose()?;
+        let declaration = SampleAuthoring {
+            source: self.source.clone(),
+            attack: CanonicalF64::new(self.attack)?,
+            sustain: CanonicalF64::new(self.sustain)?,
+            release: CanonicalF64::new(self.release)?,
+            amp: CanonicalF64::new(self.amp)?,
+            rate: CanonicalF64::new(self.rate)?,
+            loop_mode: self.loop_mode,
+            offset: CanonicalF64::new(self.offset)?,
+            length: self.length.map(CanonicalF64::new).transpose()?,
+            trigger: self.trigger,
+            warp,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Sample(declaration))?;
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let reference = self.base.apply(
+            owner,
+            LifecycleMetadata::register(Composition::Standalone),
+            payload,
+        )?;
+        SampleRef::new(reference)
+    }
+}
+
+pub(crate) fn sample_builder_v2(
+    name: String,
+    source: String,
+) -> Result<SampleBuilder, Box<EvalAltResult>> {
+    SampleBuilder::new(
+        foundation::authoring_builder::<SampleKind>(&name, GroupScope::root())
+            .map_err(|error| sample_v2_error(error, Position::NONE))?,
+        source,
+    )
+    .map_err(|error| sample_v2_error(error, Position::NONE))
+}
+
+pub(crate) fn sample_ref_v2(name: String) -> Result<SampleRef, Box<EvalAltResult>> {
+    SampleRef::new(
+        foundation::authoring_ref::<SampleKind>(&name, GroupScope::root())
+            .map_err(|error| sample_v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| sample_v2_error(error, Position::NONE))
+}
+
+fn sample_v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    fn strict<T>(result: Result<T, FoundationError>) -> Result<T, Box<EvalAltResult>> {
+        result.map_err(|error| sample_v2_error(error, Position::NONE))
+    }
+
+    engine
+        .register_type_with_name::<SampleBuilder>("SampleBuilder")
+        .register_type_with_name::<SampleRef>("SampleRef")
+        .register_fn("sample", sample_builder_v2)
+        .register_fn("sample_ref", sample_ref_v2)
+        .register_fn("attack", |builder: SampleBuilder, seconds: f64| {
+            strict(builder.attack(seconds))
+        })
+        .register_fn("sustain", |builder: SampleBuilder, level: f64| {
+            strict(builder.sustain(level))
+        })
+        .register_fn("release", |builder: SampleBuilder, seconds: f64| {
+            strict(builder.release(seconds))
+        })
+        .register_fn("amp", |builder: SampleBuilder, value: f64| {
+            strict(builder.amp(value))
+        })
+        .register_fn("rate", |builder: SampleBuilder, value: f64| {
+            strict(builder.rate(value))
+        })
+        .register_fn("loop_mode", SampleBuilder::loop_mode)
+        .register_fn("offset", |builder: SampleBuilder, seconds: f64| {
+            strict(builder.offset(seconds))
+        })
+        .register_fn("length", |builder: SampleBuilder, seconds: f64| {
+            strict(builder.length(seconds))
+        })
+        .register_fn("slice", |builder: SampleBuilder, start: f64, end: f64| {
+            strict(builder.slice(start, end))
+        })
+        .register_fn("warp", SampleBuilder::warp)
+        .register_fn("speed", |builder: SampleBuilder, value: f64| {
+            strict(builder.speed(value))
+        })
+        .register_fn("pitch", |builder: SampleBuilder, value: f64| {
+            strict(builder.pitch(value))
+        })
+        .register_fn("semitones", |builder: SampleBuilder, semitones: f64| {
+            strict(builder.semitones(semitones))
+        })
+        .register_fn("warp_to_bpm", |builder: SampleBuilder, bpm: f64| {
+            strict(builder.warp_to_bpm(bpm))
+        })
+        .register_fn("window_size", |builder: SampleBuilder, seconds: f64| {
+            strict(builder.window_size(seconds))
+        })
+        .register_fn("overlaps", |builder: SampleBuilder, count: i64| {
+            strict(builder.overlaps(count))
+        })
+        .register_fn("one_shot", SampleBuilder::one_shot)
+        .register_fn("gate", SampleBuilder::gate)
+        .register_fn("apply", |builder: SampleBuilder| strict(builder.apply()))
+        .register_fn("remove", |reference: SampleRef| strict(reference.remove()))
+        .register_fn("status", |reference: SampleRef| strict(reference.status()));
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+    use vibelang_core::candidate::EntityKind;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"sample-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn builder(name: &str, source: &str) -> SampleBuilder {
+        SampleBuilder::new(
+            foundation::authoring_builder::<SampleKind>(name, GroupScope::root()).unwrap(),
+            source.into(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn v2_sample_configuration_is_pure_and_strict() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let configured = builder("kick", "samples/kick.wav")
+            .attack(0.002)
+            .unwrap()
+            .sustain(0.8)
+            .unwrap()
+            .rate(1.5)
+            .unwrap()
+            .loop_mode(true);
+
+        assert!(matches!(
+            configured.clone().sustain(1.5),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            configured.clone().rate(0.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            configured.clone().window_size(0.005),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            configured.clone().overlaps(33),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            configured.clone().slice(2.0, 1.0),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        assert!(matches!(
+            SampleBuilder::new(
+                foundation::authoring_builder::<SampleKind>("bad", GroupScope::root()).unwrap(),
+                " padded.wav".into(),
+            ),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(
+            candidate.declarations().is_empty(),
+            "configuration alone must not declare anything"
+        );
+    }
+
+    #[test]
+    fn v2_sample_terminal_registers_once_and_returns_typed_ref() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let reference = builder("kick", "samples/kick.wav").apply().unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Sample);
+        assert!(matches!(
+            reference.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        assert!(matches!(
+            builder("kick", "samples/kick.wav").apply(),
+            Err(FoundationError::Candidate(
+                CandidateError::DuplicateDeclaration { .. }
+            ))
+        ));
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 1);
+        assert_eq!(
+            candidate.declarations()[0].lifecycle().terminal_effect,
+            TerminalEffect::Register
+        );
+    }
+
+    #[test]
+    fn v2_sample_forwarding_aliases_are_effective() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let via_alias = builder("kick", "samples/kick.wav").semitones(12.0).unwrap();
+        let via_pitch = builder("kick", "samples/kick.wav").pitch(2.0).unwrap();
+        assert_eq!(via_alias.warp, via_pitch.warp);
+
+        let via_slice = builder("kick", "samples/kick.wav").slice(0.5, 2.0).unwrap();
+        let explicit = builder("kick", "samples/kick.wav")
+            .offset(0.5)
+            .unwrap()
+            .length(1.5)
+            .unwrap();
+        assert_eq!(via_slice.offset, explicit.offset);
+        assert_eq!(via_slice.length, explicit.length);
+
+        let toggled = builder("kick", "samples/kick.wav").one_shot().gate();
+        assert_eq!(toggled.trigger, SampleTriggerAuthoring::Gate);
+        assert!(builder("kick", "samples/kick.wav")
+            .speed(0.5)
+            .unwrap()
+            .warp
+            .is_some());
+        foundation::abort_evaluation();
+    }
+
+    #[test]
+    fn v2_sample_ref_remove_is_a_real_operation() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let reference = sample_ref_v2("kick".into()).unwrap();
+        reference.clone().remove().unwrap();
+
+        let candidate = foundation::finish_evaluation();
+        assert!(
+            candidate.is_err(),
+            "an operation against an undeclared, uncataloged Sample must not resolve"
+        );
+    }
+
+    #[test]
+    fn v2_sample_rhai_surface_authors_from_script() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        crate::foundation::register(&mut engine);
+        install_v2(&mut engine);
+        let reference = engine
+            .eval::<SampleRef>(
+                r#"sample("kick", "samples/kick.wav")
+                    .attack(0.002)
+                    .slice(0.5, 2.0)
+                    .semitones(12.0)
+                    .one_shot()
+                    .apply()"#,
+            )
+            .unwrap();
+        assert_eq!(reference.base().kind(), EntityKind::Sample);
+        assert!(engine
+            .eval::<SampleBuilder>(r#"sample("bad", "samples/kick.wav").overlaps(33)"#)
+            .is_err());
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 1);
+    }
+}

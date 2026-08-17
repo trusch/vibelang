@@ -1,0 +1,726 @@
+{
+  "accepted_base": "9aff9b40db1597364279f9aacf47d436718a031e",
+  "categories": {
+    "cli": {
+      "counts": {
+        "bytes": 3819,
+        "files": 1,
+        "help_snapshots": 5,
+        "top_level_commands": 5
+      },
+      "files": [
+        {
+          "bytes": 3819,
+          "path": "docs/reference/generated/cli-help.txt",
+          "sha256": "a6a430a55575cd8084a55258feb89f4f2c13e99347b996c456ea7fb44f5c5b20"
+        }
+      ],
+      "tree_sha256": "7bc94c2e1a0bdac74e09a69edb651490ee226ee89c10558a8bab5c8716253c1e"
+    },
+    "docs": {
+      "counts": {
+        "bytes": 795046,
+        "files": 11,
+        "lines": 5014,
+        "shell_fences": 4,
+        "vibe_fences": 4
+      },
+      "files": [
+        {
+          "bytes": 3844,
+          "path": "api/README.md",
+          "sha256": "67c3a414ed2fb1c6fca6238f8f3cd5416e3c76ce14a4e7b0c35eb64137ddf724"
+        },
+        {
+          "bytes": 8327,
+          "path": "docs/interfaces/cli-and-config.md",
+          "sha256": "b34fd2ba7f7c3e4b5f3a2be2e269c0cfa6521a74587302db243f59e7203e50b5"
+        },
+        {
+          "bytes": 11851,
+          "path": "docs/interfaces/http-and-websocket.md",
+          "sha256": "3bac0ac4ea82040041a93137af3d4ab94a1efc2977532616db22091d1209f725"
+        },
+        {
+          "bytes": 11919,
+          "path": "docs/interfaces/lsp-and-editors.md",
+          "sha256": "1dcc2da18ab9bc559e0b0e2ab33705a535ab7b9e3abdb1a85695804ea74c9fff"
+        },
+        {
+          "bytes": 4549,
+          "path": "docs/interfaces/wasm.md",
+          "sha256": "3d4897a7b16294af382aee9942972d357a030576f2ee156abcf2522c534b8aeb"
+        },
+        {
+          "bytes": 3601,
+          "path": "docs/reference/README.md",
+          "sha256": "b0b291ac1b81e21c469e7dd78346a6d62308f424b8b8f6f8009f90b51b2682f7"
+        },
+        {
+          "bytes": 23220,
+          "path": "docs/reference/generated/http-routes.md",
+          "sha256": "1faf64ec218f265cecf1164d0b1e271b7da35d9ad990d9b859fb35cfec39cabe"
+        },
+        {
+          "bytes": 406921,
+          "path": "docs/reference/generated/stdlib.md",
+          "sha256": "fe0b99000bd9af158d1a214ed7c19140fbab1eb212ab6914f7226b36e071dff4"
+        },
+        {
+          "bytes": 291498,
+          "path": "docs/reference/generated/ugens.md",
+          "sha256": "17a188b1b13f0135756506ab8a9e35f503e574b3a397d0da52e0ca74338a2c1f"
+        },
+        {
+          "bytes": 7708,
+          "path": "docs/reference/runtime-model.md",
+          "sha256": "7feb47dc5b45fdc2e3144958d4877d82c23871877bf05ae0f37020e8f495a19a"
+        },
+        {
+          "bytes": 21608,
+          "path": "docs/reference/runtime-objects.md",
+          "sha256": "30644171b75f4a4a43d2e08444c32bcfba096ad4fbe4ecbf6410abb6e53d8f6d"
+        }
+      ],
+      "tree_sha256": "8686072c992bea303b09f98785733324b6a95f507cc5725718dfae378f5ce1bb"
+    },
+    "fixtures": {
+      "counts": {
+        "authoring_families": 17,
+        "bytes": 65000,
+        "failure_phases": 33,
+        "files": 31,
+        "negative_defects": 5
+      },
+      "files": [
+        {
+          "bytes": 4532,
+          "path": "api/baselines/authoring-families-v1.json",
+          "sha256": "7dd92a7384db0e1917945504362bf56ae16b72d71d7478e81704e19c6ee8f46b"
+        },
+        {
+          "bytes": 33158,
+          "path": "api/baselines/failure-injection-seams-v1.json",
+          "sha256": "c2214e4e14be0429f7c774e0b5a016e2958074f24e1e10031efd230bca50625a"
+        },
+        {
+          "bytes": 864,
+          "path": "api/baselines/known-defects-v1.json",
+          "sha256": "7c95c7dece5bd9d833449d3c7b4d92a8e24a5741030fba09bc9a059e483ad41c"
+        },
+        {
+          "bytes": 1217,
+          "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot",
+          "sha256": "851044e5562774a2350dc42af790f76a70d1238a438bccfc1f663d41db7e0e4b"
+        },
+        {
+          "bytes": 265,
+          "path": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe",
+          "sha256": "1067f6f67ea308be63e6e75cbf83f6cae3ab2ca2d58d0acdc76b21bbf5932437"
+        },
+        {
+          "bytes": 1398,
+          "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot",
+          "sha256": "c20d9a75cbe06b2d0f9838ddce628a100c2406c2b3cc9f3aff20d4f0aad5995f"
+        },
+        {
+          "bytes": 425,
+          "path": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe",
+          "sha256": "464e72bce1c767eecef7d096877f2ee08b2f9d1ca1330dbbe0183b226367cb30"
+        },
+        {
+          "bytes": 1509,
+          "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot",
+          "sha256": "c345855e3e86c4467e9e98c007e2d83e2a68fa8cad8effc97438cec3a5c5a428"
+        },
+        {
+          "bytes": 933,
+          "path": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe",
+          "sha256": "734625e08348f8ef1a8169e822e214670dbc7e5d400e625ed20fb32cb32ec38f"
+        },
+        {
+          "bytes": 1049,
+          "path": "tests/fixtures/api-unification/v1/golden/04_routes.snapshot",
+          "sha256": "866c4619208ce673f5c28fb57ebb33c11390072dcbd49a36eff6cce95e7bacf5"
+        },
+        {
+          "bytes": 288,
+          "path": "tests/fixtures/api-unification/v1/golden/04_routes.vibe",
+          "sha256": "a8a785fd284e57d1d30b0c38336ea5ce7da437f6957220e3a815146a63f1d47b"
+        },
+        {
+          "bytes": 1073,
+          "path": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot",
+          "sha256": "c9b37f13404d525db34efcd1a3a8d3acbff71fdd604773883d7fdf40c06812c4"
+        },
+        {
+          "bytes": 317,
+          "path": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe",
+          "sha256": "0565d31c43335d4be925f20f46077be3a5df12cd7afa2ed2c5379bbc8f26a00e"
+        },
+        {
+          "bytes": 1084,
+          "path": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot",
+          "sha256": "4447d83764fa9d38d49b2cc08f2bb78cf882272962c0659a7ecfd171cd3831d3"
+        },
+        {
+          "bytes": 422,
+          "path": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.vibe",
+          "sha256": "e8b35302628db7f795dbe94eef7f4f02561b417e112af83e435d45e2326d04d6"
+        },
+        {
+          "bytes": 1251,
+          "path": "tests/fixtures/api-unification/v1/golden/07_midi.snapshot",
+          "sha256": "f92787609349949b9bcf1a4ab41765b491b575601ea61b1e366e579f1407cde3"
+        },
+        {
+          "bytes": 258,
+          "path": "tests/fixtures/api-unification/v1/golden/07_midi.vibe",
+          "sha256": "bd6e060647577956a3f1d81a05a64fd920b6442e5df8d717f12e474aa707a1d6"
+        },
+        {
+          "bytes": 911,
+          "path": "tests/fixtures/api-unification/v1/golden/08_transport.snapshot",
+          "sha256": "8d6fa3bdf7e0881e59f329725097361bb2eca335a816848b5b09149b4d99231e"
+        },
+        {
+          "bytes": 63,
+          "path": "tests/fixtures/api-unification/v1/golden/08_transport.vibe",
+          "sha256": "5dd1f1167d4326104f2df0c28073b9833107f7554ffd8f5331efeaab74b7b3ec"
+        },
+        {
+          "bytes": 1797,
+          "path": "tests/fixtures/api-unification/v1/golden/09_parser_compat.snapshot",
+          "sha256": "013e3cabead9849b44da47db5ca990558df0160c0e8f2ae1d92151db8cfd1526"
+        },
+        {
+          "bytes": 557,
+          "path": "tests/fixtures/api-unification/v1/golden/09_parser_compat.vibe",
+          "sha256": "c570fc984d0e0ec23f30c84948211917038269ec827888c2ce3272e15c28b248"
+        },
+        {
+          "bytes": 877,
+          "path": "tests/fixtures/api-unification/v1/negative/failure-seam-artifact-drift.json",
+          "sha256": "ab2bd3d2e88180bbb482954e2093c8f48925a440d11b6b85510c9e82f26fbd20"
+        },
+        {
+          "bytes": 741,
+          "path": "tests/fixtures/api-unification/v1/negative/failure-seam-source-drift.json",
+          "sha256": "583ce26f0bb5058173add0ba82b37e9f05cd24aad0e38c10e4a6e10f924689ad"
+        },
+        {
+          "bytes": 2547,
+          "path": "tests/fixtures/api-unification/v1/negative/ignored-fields.json",
+          "sha256": "a60a7a691a7086d6a4e7f2f5fa808987ba8959c3b831a6609cdec6f3176ffc12"
+        },
+        {
+          "bytes": 985,
+          "path": "tests/fixtures/api-unification/v1/negative/invalid-ugen-labels.json",
+          "sha256": "2a20a9c4ec674c5bd009a2826e5f4d26a1cdc3619ca7c5479a9d205f73b7645c"
+        },
+        {
+          "bytes": 964,
+          "path": "tests/fixtures/api-unification/v1/negative/m05-metadata-drift.json",
+          "sha256": "d027beaf5963c421499232f9c06932507778e800d30898ea2fae1cdf8462712e"
+        },
+        {
+          "bytes": 771,
+          "path": "tests/fixtures/api-unification/v1/negative/push-pull-diagnostic-mismatch.json",
+          "sha256": "d72c564a646c0f3f0f9be2ebda22f6183c2de32a7e3ea479592bd108817c20cc"
+        },
+        {
+          "bytes": 984,
+          "path": "tests/fixtures/api-unification/v1/negative/semantic-token-mismatch.json",
+          "sha256": "90db9e75f5c697d7b582322ab2272b977a0ab16e2a74fd39d4d06dd2825ae8e9"
+        },
+        {
+          "bytes": 1387,
+          "path": "tests/fixtures/api-unification/v1/negative/stale-commands.json",
+          "sha256": "4e95548b74454feb45ed4878ff6cc29be65bbf9d694d8aefce5565836dd68d27"
+        },
+        {
+          "bytes": 1102,
+          "path": "tests/fixtures/api-unification/v1/negative/stale-success.json",
+          "sha256": "17bfa802961fc852703be7c06eba37c4b8b6a692e824a6e7db2224e6def86413"
+        },
+        {
+          "bytes": 1271,
+          "path": "tests/fixtures/api-unification/v1/negative/wasm-bridge-false-success.json",
+          "sha256": "2f7001dc3302672872e953ac59c905805c260982cb49088b703054d3ad30d9c8"
+        }
+      ],
+      "tree_sha256": "e5d5827dd30426dfc9f1f037a4ca000799973805db6bee3c2c7e4145e80553dd"
+    },
+    "http": {
+      "counts": {
+        "bytes": 98655,
+        "fields": 423,
+        "files": 1,
+        "methods": {
+          "DELETE": 10,
+          "GET": 33,
+          "PATCH": 7,
+          "POST": 49,
+          "PUT": 4
+        },
+        "mutating_routes": 70,
+        "routes": 103,
+        "types": 108
+      },
+      "files": [
+        {
+          "bytes": 98655,
+          "path": "api/http-api-snapshot-v1.json",
+          "sha256": "76949f764c09d24c6abb22ae1f3b9d1e16830f0fcd5a6450e8cce3c164b61055"
+        }
+      ],
+      "tree_sha256": "a3c338c4ad603b81c37abf0db5ddbfaf63f2638ed59c4d964f182d84ad7b44d6"
+    },
+    "manifest": {
+      "counts": {
+        "bytes": 33326377,
+        "entries": 3630,
+        "files": 1,
+        "named_terminals": 26,
+        "overloads": 8439,
+        "properties": 277,
+        "registered_types": 34
+      },
+      "files": [
+        {
+          "bytes": 33326377,
+          "path": "api/public-api-manifest-v1.json",
+          "sha256": "48e5900b562f7487c540662bedeb98ed69972aaa7922d94004e7d9c76b75f67b"
+        }
+      ],
+      "tree_sha256": "a718998edb9c76e017124f34d0817ab686a05a7e5cf2e12541390dbc23bc100b"
+    },
+    "packages": {
+      "counts": {
+        "bytes": 321890,
+        "cargo_packages": [
+          "vibelang-api-manifest",
+          "vibelang-cli",
+          "vibelang-core",
+          "vibelang-dsp",
+          "vibelang-http",
+          "vibelang-keys",
+          "vibelang-lsp",
+          "vibelang-rhai",
+          "vibelang-sfz",
+          "vibelang-std",
+          "vibelang-wasm",
+          "xtask"
+        ],
+        "files": 21,
+        "lockfiles": 4,
+        "node_packages": [
+          "vibelang-landing",
+          "vibelang-vscode",
+          "vibelang-wasm",
+          "vibelang-wasm"
+        ]
+      },
+      "files": [
+        {
+          "bytes": 98167,
+          "path": "Cargo.lock",
+          "sha256": "fff9fb3cd9b1f7d94ca53cf0d959830643b75863fa3be0ea9187fb0d1dd32b5b"
+        },
+        {
+          "bytes": 1006,
+          "path": "Cargo.toml",
+          "sha256": "0546725d640fc56d91e4658f8cbb1d10d4385788a7abd990a1a3808364e9e896"
+        },
+        {
+          "bytes": 321,
+          "path": "crates/vibelang-api-manifest/Cargo.toml",
+          "sha256": "d68c179d958c078fc9ad41daf04957e589ce3d989dd59ce27bb3cc42ae91bb03"
+        },
+        {
+          "bytes": 2272,
+          "path": "crates/vibelang-cli/Cargo.toml",
+          "sha256": "5e2ea7e3c4344ac7d8016382f416847334beeb95ee52edd3d36252f4150b3a74"
+        },
+        {
+          "bytes": 2489,
+          "path": "crates/vibelang-core/Cargo.toml",
+          "sha256": "679e76e048bc0717cddd56092bf550853c7825d5548508e8c5223fea97850085"
+        },
+        {
+          "bytes": 856,
+          "path": "crates/vibelang-dsp/Cargo.toml",
+          "sha256": "d60bc715a6c375fafb2369b42e89217b49aa1edbde434bb72bc5955ab3c6c025"
+        },
+        {
+          "bytes": 1220,
+          "path": "crates/vibelang-http/Cargo.toml",
+          "sha256": "011361d91b50e793657269739f1aa8e00353c21173259052ff05831449c9a351"
+        },
+        {
+          "bytes": 974,
+          "path": "crates/vibelang-keys/Cargo.toml",
+          "sha256": "4949e8cc41aea3c22e6148dc5c27c92a4af6d4c934ac5665873fd9555fc79cc8"
+        },
+        {
+          "bytes": 1492,
+          "path": "crates/vibelang-lsp/Cargo.toml",
+          "sha256": "9f4e3e8548b09846ffdedeb719817edd4d0407231e2d0491b161d1dad93f8a78"
+        },
+        {
+          "bytes": 1942,
+          "path": "crates/vibelang-rhai/Cargo.toml",
+          "sha256": "8890b0cfb18658acdf09425f2d0f101553f701bbcd07182a3a341df6fcaa4a50"
+        },
+        {
+          "bytes": 567,
+          "path": "crates/vibelang-sfz/Cargo.toml",
+          "sha256": "8b003d1babc3620267fb29e77e63a5933c114b01e91fee2432f72efdffc29cbd"
+        },
+        {
+          "bytes": 543,
+          "path": "crates/vibelang-std/Cargo.toml",
+          "sha256": "dcd2285b97fec6b14f00907beb730762e7fc5f1c704a1794b514e7552c0b00de"
+        },
+        {
+          "bytes": 1104,
+          "path": "crates/vibelang-wasm/Cargo.toml",
+          "sha256": "da71120168e74d5e8d53d02556cce230641332ea2b0a6d41346e3762ffc7215b"
+        },
+        {
+          "bytes": 748,
+          "path": "crates/vibelang-wasm/package-lock.json",
+          "sha256": "5f9f11e2a071bd8840744aeb24f8742fd1fdccdf2bd2c8be63d1be8a64162c52"
+        },
+        {
+          "bytes": 608,
+          "path": "crates/vibelang-wasm/package.json",
+          "sha256": "ce7bbd299cb8ebfbe9cf423c3109f76850efc0c117e0ff94f2490a0114129285"
+        },
+        {
+          "bytes": 177729,
+          "path": "landing-page/package-lock.json",
+          "sha256": "1beb8d1af672f35d93c0abc58fb8b585026fe96c4f4409af0351966230517705"
+        },
+        {
+          "bytes": 1088,
+          "path": "landing-page/package.json",
+          "sha256": "142d792a6929d83f7fb19b7475a903f7c3243c33397f368cd01770a43191111a"
+        },
+        {
+          "bytes": 374,
+          "path": "landing-page/src/audio/package.json",
+          "sha256": "47301842fa8ab0cc33e7725a3675d13f117d01b02c37c84417a4a953e5444c31"
+        },
+        {
+          "bytes": 5075,
+          "path": "vscode-extension/package-lock.json",
+          "sha256": "c3e44311686c7713538bf56d40df4f232f8c9603b5901cd66e487d0a317b0a6f"
+        },
+        {
+          "bytes": 22783,
+          "path": "vscode-extension/package.json",
+          "sha256": "d998051e05678a62fbdaf1f6599ba4a9f4891ca047d1b57b46e410b232af7f83"
+        },
+        {
+          "bytes": 532,
+          "path": "xtask/Cargo.toml",
+          "sha256": "e3bb9a2fd50352745bd594e03e9423827e7784bc297bcf05e3144ebe6071e212"
+        }
+      ],
+      "tree_sha256": "5a86b779875d14ba38408c253465686c56b283648b201a52d3ac97b60a9c28c6"
+    },
+    "rhai_editor": {
+      "counts": {
+        "bytes": 1809211,
+        "canonical_ugen_categories": 71,
+        "files": 51,
+        "lsp_rhai_rows": 606,
+        "lsp_ugen_categories": 24,
+        "rhai_projections_equal": true,
+        "rhai_rows": 606,
+        "stdlib_rows": 887,
+        "vscode_ugen_categories": 24
+      },
+      "files": [
+        {
+          "bytes": 379979,
+          "path": "crates/vibelang-lsp/src/data/rhai-api.json",
+          "sha256": "6144c2222a5fe8234d5243ed758382bb5642b1c61136e4d504334990394e62f1"
+        },
+        {
+          "bytes": 16998,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/analysis.json",
+          "sha256": "a1a97765f169b7cb2d0efa2ea7176b220523d6bd882e38a2097fe35c3fa220e6"
+        },
+        {
+          "bytes": 7363,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/bufdelays.json",
+          "sha256": "83141d1d74248e0da7926797c273f5c4a7017ba83febc05d40c3ee2a967946b1"
+        },
+        {
+          "bytes": 14335,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/buffers.json",
+          "sha256": "88a3009d8bbeb27f8695b630856a07604515a3958026ddb23eb3ac5543dac277"
+        },
+        {
+          "bytes": 8158,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/control.json",
+          "sha256": "a7b048f5cb0c1c517c58369348f05d866e95132ef5cb6cf38bdf4158c9e420d4"
+        },
+        {
+          "bytes": 2853,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/conversion.json",
+          "sha256": "be54ca9ed88cd4843df4a96fefdbbe371e85ba2821118b07c5d950a74160d2a2"
+        },
+        {
+          "bytes": 11416,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/delays.json",
+          "sha256": "acc288b8599e1d429529ac70341478bffdcd984fdd2d1d0b30a0c0878faaa78d"
+        },
+        {
+          "bytes": 19202,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/demand.json",
+          "sha256": "fae37fa630d401e0a7010880bdd4de67a77bbc339a12392c490f22d5fc22b64d"
+        },
+        {
+          "bytes": 3512,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/dynamics.json",
+          "sha256": "10b552d0780cad7747aeda85396a8eb9d85d9ab40829dda753406a49742d948c"
+        },
+        {
+          "bytes": 12390,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/envelopes.json",
+          "sha256": "8dd37258f2df12f52c9327bcedaf636427fe6d3b15fc39ba53d7fca70c1e46e3"
+        },
+        {
+          "bytes": 1902,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/fft.json",
+          "sha256": "bc89c190e0ba1260cb05e893f334685ca1067be4dce484b99f209a4a24822ce9"
+        },
+        {
+          "bytes": 33879,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/filters.json",
+          "sha256": "fb6c9ba8d2730822f09673bbcecdff9f4860a225684f122f726f068c5327e0a1"
+        },
+        {
+          "bytes": 7681,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/granular.json",
+          "sha256": "3e18d482ee2f3240d1c05c65c8f2dc459f47eaff8b0f57d51fdd48ecb68fe6c5"
+        },
+        {
+          "bytes": 3681,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/info.json",
+          "sha256": "31629ed18852b68f5b7f6124d1a9daf0e5b6acc53173ae0db5f20b1c928f45f4"
+        },
+        {
+          "bytes": 5579,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/inout.json",
+          "sha256": "29948e801a2a3c8fe7db13ec0526f739c0d25ec562586b6e418aa548890c2830"
+        },
+        {
+          "bytes": 20892,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/math.json",
+          "sha256": "784cca8b30acca518f4d987179d9ad8e96d999582aaea75f0d8d6c8b0d2463b0"
+        },
+        {
+          "bytes": 1573,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/multichannel.json",
+          "sha256": "17d6ab35e7a81273cd6c8dd0b4eaca17f24e1bb68830d7348552cc1d86b66777"
+        },
+        {
+          "bytes": 12184,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/noise.json",
+          "sha256": "0982889a206eba55ed2c3042e6af785ad93d5e5440b9a23131172c1b4d25d5a1"
+        },
+        {
+          "bytes": 35401,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/oscillators.json",
+          "sha256": "cd967d68b7a596e3b0ba86f5f8fa39da65d9995d32ef43b4c8b0149635807b95"
+        },
+        {
+          "bytes": 12152,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/panning.json",
+          "sha256": "d382624ab8aed5f0b93df4698b03a4657bda88ce1852977b41ab29b7af6ae98d"
+        },
+        {
+          "bytes": 3584,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/physical.json",
+          "sha256": "68fb2841f8fec585c58e9eb4effcb117bd281e2fffbbdaf8d9205175af4bcde7"
+        },
+        {
+          "bytes": 1152,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/pitchtime.json",
+          "sha256": "c8d6d7bd963bb856fd4b7cb93a712b9eb7cb677985f79e1a1c9e08fa4deda586"
+        },
+        {
+          "bytes": 5531,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/random.json",
+          "sha256": "da670306ae2e2fcbbf20248b8bbd05fa7af6fecfbd73c0fb2fb74a5fd36dd8fb"
+        },
+        {
+          "bytes": 3553,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/reverb.json",
+          "sha256": "ae63bce91a5ec0bf6b6462cf17d1ebca517c98f153caff6eb54e15c41ff09337"
+        },
+        {
+          "bytes": 18930,
+          "path": "crates/vibelang-lsp/src/data/ugen_manifests/triggers.json",
+          "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
+        },
+        {
+          "bytes": 379979,
+          "path": "vscode-extension/src/data/rhai-api.json",
+          "sha256": "6144c2222a5fe8234d5243ed758382bb5642b1c61136e4d504334990394e62f1"
+        },
+        {
+          "bytes": 521451,
+          "path": "vscode-extension/src/data/stdlib.json",
+          "sha256": "1ec29499a65efac68e06e7bb231ce61f5e3894185aa88e57e42516b0693201c5"
+        },
+        {
+          "bytes": 16998,
+          "path": "vscode-extension/ugen_manifests/analysis.json",
+          "sha256": "a1a97765f169b7cb2d0efa2ea7176b220523d6bd882e38a2097fe35c3fa220e6"
+        },
+        {
+          "bytes": 7363,
+          "path": "vscode-extension/ugen_manifests/bufdelays.json",
+          "sha256": "83141d1d74248e0da7926797c273f5c4a7017ba83febc05d40c3ee2a967946b1"
+        },
+        {
+          "bytes": 14335,
+          "path": "vscode-extension/ugen_manifests/buffers.json",
+          "sha256": "88a3009d8bbeb27f8695b630856a07604515a3958026ddb23eb3ac5543dac277"
+        },
+        {
+          "bytes": 8158,
+          "path": "vscode-extension/ugen_manifests/control.json",
+          "sha256": "a7b048f5cb0c1c517c58369348f05d866e95132ef5cb6cf38bdf4158c9e420d4"
+        },
+        {
+          "bytes": 2853,
+          "path": "vscode-extension/ugen_manifests/conversion.json",
+          "sha256": "be54ca9ed88cd4843df4a96fefdbbe371e85ba2821118b07c5d950a74160d2a2"
+        },
+        {
+          "bytes": 11416,
+          "path": "vscode-extension/ugen_manifests/delays.json",
+          "sha256": "acc288b8599e1d429529ac70341478bffdcd984fdd2d1d0b30a0c0878faaa78d"
+        },
+        {
+          "bytes": 19202,
+          "path": "vscode-extension/ugen_manifests/demand.json",
+          "sha256": "fae37fa630d401e0a7010880bdd4de67a77bbc339a12392c490f22d5fc22b64d"
+        },
+        {
+          "bytes": 3512,
+          "path": "vscode-extension/ugen_manifests/dynamics.json",
+          "sha256": "10b552d0780cad7747aeda85396a8eb9d85d9ab40829dda753406a49742d948c"
+        },
+        {
+          "bytes": 12390,
+          "path": "vscode-extension/ugen_manifests/envelopes.json",
+          "sha256": "8dd37258f2df12f52c9327bcedaf636427fe6d3b15fc39ba53d7fca70c1e46e3"
+        },
+        {
+          "bytes": 1902,
+          "path": "vscode-extension/ugen_manifests/fft.json",
+          "sha256": "bc89c190e0ba1260cb05e893f334685ca1067be4dce484b99f209a4a24822ce9"
+        },
+        {
+          "bytes": 33879,
+          "path": "vscode-extension/ugen_manifests/filters.json",
+          "sha256": "fb6c9ba8d2730822f09673bbcecdff9f4860a225684f122f726f068c5327e0a1"
+        },
+        {
+          "bytes": 7681,
+          "path": "vscode-extension/ugen_manifests/granular.json",
+          "sha256": "3e18d482ee2f3240d1c05c65c8f2dc459f47eaff8b0f57d51fdd48ecb68fe6c5"
+        },
+        {
+          "bytes": 3681,
+          "path": "vscode-extension/ugen_manifests/info.json",
+          "sha256": "31629ed18852b68f5b7f6124d1a9daf0e5b6acc53173ae0db5f20b1c928f45f4"
+        },
+        {
+          "bytes": 5579,
+          "path": "vscode-extension/ugen_manifests/inout.json",
+          "sha256": "29948e801a2a3c8fe7db13ec0526f739c0d25ec562586b6e418aa548890c2830"
+        },
+        {
+          "bytes": 20892,
+          "path": "vscode-extension/ugen_manifests/math.json",
+          "sha256": "784cca8b30acca518f4d987179d9ad8e96d999582aaea75f0d8d6c8b0d2463b0"
+        },
+        {
+          "bytes": 1573,
+          "path": "vscode-extension/ugen_manifests/multichannel.json",
+          "sha256": "17d6ab35e7a81273cd6c8dd0b4eaca17f24e1bb68830d7348552cc1d86b66777"
+        },
+        {
+          "bytes": 12184,
+          "path": "vscode-extension/ugen_manifests/noise.json",
+          "sha256": "0982889a206eba55ed2c3042e6af785ad93d5e5440b9a23131172c1b4d25d5a1"
+        },
+        {
+          "bytes": 35401,
+          "path": "vscode-extension/ugen_manifests/oscillators.json",
+          "sha256": "cd967d68b7a596e3b0ba86f5f8fa39da65d9995d32ef43b4c8b0149635807b95"
+        },
+        {
+          "bytes": 12152,
+          "path": "vscode-extension/ugen_manifests/panning.json",
+          "sha256": "d382624ab8aed5f0b93df4698b03a4657bda88ce1852977b41ab29b7af6ae98d"
+        },
+        {
+          "bytes": 3584,
+          "path": "vscode-extension/ugen_manifests/physical.json",
+          "sha256": "68fb2841f8fec585c58e9eb4effcb117bd281e2fffbbdaf8d9205175af4bcde7"
+        },
+        {
+          "bytes": 1152,
+          "path": "vscode-extension/ugen_manifests/pitchtime.json",
+          "sha256": "c8d6d7bd963bb856fd4b7cb93a712b9eb7cb677985f79e1a1c9e08fa4deda586"
+        },
+        {
+          "bytes": 5531,
+          "path": "vscode-extension/ugen_manifests/random.json",
+          "sha256": "da670306ae2e2fcbbf20248b8bbd05fa7af6fecfbd73c0fb2fb74a5fd36dd8fb"
+        },
+        {
+          "bytes": 3553,
+          "path": "vscode-extension/ugen_manifests/reverb.json",
+          "sha256": "ae63bce91a5ec0bf6b6462cf17d1ebca517c98f153caff6eb54e15c41ff09337"
+        },
+        {
+          "bytes": 18930,
+          "path": "vscode-extension/ugen_manifests/triggers.json",
+          "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
+        }
+      ],
+      "tree_sha256": "638d37c2fa21b710c65c285c82c9ea72429e2faaf4c8a7768c0232289fe04311"
+    },
+    "wasm": {
+      "counts": {
+        "bytes": 3104,
+        "class_methods": 25,
+        "classes": 2,
+        "files": 1,
+        "interfaces": 7,
+        "module_functions": 4
+      },
+      "files": [
+        {
+          "bytes": 3104,
+          "path": "crates/vibelang-wasm/types/index.d.ts",
+          "sha256": "b11f2a098cb016fa48837f7ae54e5c5826c7d224f79ee69d657efcd8a984b112"
+        }
+      ],
+      "tree_sha256": "d4e6f9d40ae0979f9e06a76ea80033a5bbcafb972811c05b7c75579f80437f96"
+    }
+  },
+  "policy": "observed-v1-behavior-not-endorsement",
+  "schema": "https://vibelang.org/schemas/v1-public-artifact-baseline/1",
+  "schema_version": 1
+}

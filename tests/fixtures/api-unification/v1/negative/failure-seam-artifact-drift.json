@@ -1,0 +1,33 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-failure-seam-negative-drift/1",
+  "cases": [
+    {
+      "id": "stale-log-only-outcome",
+      "mutation": {
+        "kind": "set_field",
+        "phase": "create",
+        "field": "current_outcome",
+        "value": "best-effort/log-only and no receipt"
+      },
+      "expected_error": "failure seam semantic catalog drift"
+    },
+    {
+      "id": "missing-running-voice-apply-phase",
+      "mutation": {
+        "kind": "remove_phase",
+        "phase": "trigger_running_voices"
+      },
+      "expected_error": "failure seam semantic catalog drift"
+    },
+    {
+      "id": "false-apply-continuation",
+      "mutation": {
+        "kind": "set_field",
+        "phase": "transport",
+        "field": "continuation",
+        "value": "continue"
+      },
+      "expected_error": "failure seam semantic catalog drift"
+    }
+  ]
+}

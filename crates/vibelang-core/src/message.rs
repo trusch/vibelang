@@ -8,6 +8,7 @@
 //! - Undo/redo functionality
 //! - Deterministic behavior
 
+pub use crate::mutation::MutationContext;
 use crate::state::PatternOwner;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
@@ -390,6 +391,15 @@ pub enum MidiMessage {
         device: crate::types::ids::MidiDeviceId,
     },
 
+    /// Reconcile open PipeWire MIDI inputs against the set of devices
+    /// currently present on the system. Emitted periodically by the MIDI
+    /// hot-plug watcher thread with a fresh device snapshot; the runtime
+    /// opens requested devices that have (re)appeared and closes ones that
+    /// have vanished, so inputs recover from unplug/replug and power-on.
+    ReconcileInputs {
+        present: std::collections::HashSet<crate::types::ids::MidiDeviceId>,
+    },
+
     // =========================================================================
     // Note/CC Output
     // =========================================================================
@@ -521,7 +531,7 @@ pub enum SyncMessage {
     /// The oneshot sender is used to signal completion.
     SyncAndNotify {
         /// Sender to notify when sync is complete.
-        notify: crate::compat::OneshotSender<()>,
+        notify: crate::compat::OneshotSender<std::result::Result<(), String>>,
     },
 }
 
@@ -607,6 +617,144 @@ pub enum Message {
     /// MIDI control messages (feature-gated).
     #[cfg(feature = "midi")]
     Midi(MidiMessage),
+}
+
+/// How one of the 74 v1 runtime message variants participates in mutation
+/// receipt processing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageClass {
+    /// A caller-originated mutation that owns a canonical attempt/revision.
+    ReceiptBearingMutation,
+    /// An internal completion that must retain its parent's mutation context.
+    ReceiptLinkedCompletion,
+    /// Runtime maintenance that is correlated but does not claim a user effect.
+    Internal,
+}
+
+/// Exhaustive classification of the native default-feature v1 message surface.
+///
+/// This is deliberately a static catalog rather than a count derived from
+/// constructed messages, so adding, removing, or silently reclassifying an
+/// enum variant requires an explicit contract update.
+#[cfg(all(not(target_arch = "wasm32"), feature = "midi"))]
+pub const NATIVE_DEFAULT_MESSAGE_CLASSIFICATION: [(&str, MessageClass); 74] = [
+    ("Transport::SetTempo", MessageClass::ReceiptBearingMutation),
+    (
+        "Transport::SetTimeSignature",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    ("Transport::Seek", MessageClass::ReceiptBearingMutation),
+    ("Transport::Start", MessageClass::ReceiptBearingMutation),
+    ("Transport::Stop", MessageClass::ReceiptBearingMutation),
+    ("SynthDef::Load", MessageClass::ReceiptBearingMutation),
+    ("Sample::Load", MessageClass::ReceiptBearingMutation),
+    ("Sample::Free", MessageClass::ReceiptBearingMutation),
+    ("Sfz::Load", MessageClass::ReceiptBearingMutation),
+    ("Sfz::Unload", MessageClass::ReceiptBearingMutation),
+    ("Recording::Start", MessageClass::ReceiptBearingMutation),
+    ("Recording::Stop", MessageClass::ReceiptBearingMutation),
+    ("Recording::Cancel", MessageClass::ReceiptBearingMutation),
+    (
+        "Recording::BufferAllocated",
+        MessageClass::ReceiptLinkedCompletion,
+    ),
+    (
+        "Recording::Completed",
+        MessageClass::ReceiptLinkedCompletion,
+    ),
+    ("Group::Create", MessageClass::ReceiptBearingMutation),
+    ("Group::Delete", MessageClass::ReceiptBearingMutation),
+    ("Group::SetParam", MessageClass::ReceiptBearingMutation),
+    ("Group::Mute", MessageClass::ReceiptBearingMutation),
+    ("Group::Solo", MessageClass::ReceiptBearingMutation),
+    ("Group::Finalize", MessageClass::ReceiptBearingMutation),
+    ("Voice::Create", MessageClass::ReceiptBearingMutation),
+    ("Voice::Delete", MessageClass::ReceiptBearingMutation),
+    ("Voice::Trigger", MessageClass::ReceiptBearingMutation),
+    ("Voice::Stop", MessageClass::ReceiptBearingMutation),
+    ("Voice::NoteOn", MessageClass::ReceiptBearingMutation),
+    ("Voice::NoteOff", MessageClass::ReceiptBearingMutation),
+    ("Voice::Mute", MessageClass::ReceiptBearingMutation),
+    ("Voice::SetParam", MessageClass::ReceiptBearingMutation),
+    ("Pattern::Create", MessageClass::ReceiptBearingMutation),
+    ("Pattern::Delete", MessageClass::ReceiptBearingMutation),
+    ("Pattern::Start", MessageClass::ReceiptBearingMutation),
+    ("Pattern::StartOnGrid", MessageClass::ReceiptBearingMutation),
+    ("Pattern::Stop", MessageClass::ReceiptBearingMutation),
+    ("Pattern::SetParam", MessageClass::ReceiptBearingMutation),
+    ("Melody::Create", MessageClass::ReceiptBearingMutation),
+    ("Melody::Delete", MessageClass::ReceiptBearingMutation),
+    ("Melody::Start", MessageClass::ReceiptBearingMutation),
+    ("Melody::Stop", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Create", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Delete", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Start", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Stop", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Pause", MessageClass::ReceiptBearingMutation),
+    ("Sequence::Resume", MessageClass::ReceiptBearingMutation),
+    ("Effect::Add", MessageClass::ReceiptBearingMutation),
+    ("Effect::Remove", MessageClass::ReceiptBearingMutation),
+    ("Effect::SetParam", MessageClass::ReceiptBearingMutation),
+    ("Fade::Start", MessageClass::ReceiptBearingMutation),
+    ("Fade::Cancel", MessageClass::ReceiptBearingMutation),
+    ("Reload::Apply", MessageClass::ReceiptBearingMutation),
+    ("Reload::ApplyStaged", MessageClass::ReceiptLinkedCompletion),
+    ("Sync::SyncAndNotify", MessageClass::ReceiptBearingMutation),
+    ("Midi::OpenInput", MessageClass::ReceiptBearingMutation),
+    ("Midi::OpenOutput", MessageClass::ReceiptBearingMutation),
+    ("Midi::CloseDevice", MessageClass::ReceiptBearingMutation),
+    ("Midi::ReconcileInputs", MessageClass::Internal),
+    ("Midi::NoteOn", MessageClass::ReceiptBearingMutation),
+    ("Midi::NoteOff", MessageClass::ReceiptBearingMutation),
+    ("Midi::Cc", MessageClass::ReceiptBearingMutation),
+    ("Midi::SendNoteOn", MessageClass::ReceiptBearingMutation),
+    ("Midi::SendNoteOff", MessageClass::ReceiptBearingMutation),
+    ("Midi::SendCC", MessageClass::ReceiptBearingMutation),
+    ("Midi::StartRecording", MessageClass::ReceiptBearingMutation),
+    (
+        "Midi::StartRecordingChannel",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    ("Midi::StopRecording", MessageClass::ReceiptBearingMutation),
+    (
+        "Midi::EnableClockOutput",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    (
+        "Midi::DisableClockOutput",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    ("Midi::SendStart", MessageClass::ReceiptBearingMutation),
+    ("Midi::SendStop", MessageClass::ReceiptBearingMutation),
+    ("Midi::SendContinue", MessageClass::ReceiptBearingMutation),
+    (
+        "Midi::AddKeyboardRoute",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    (
+        "Midi::RemoveKeyboardRoute",
+        MessageClass::ReceiptBearingMutation,
+    ),
+    ("Midi::ClearRoutes", MessageClass::ReceiptBearingMutation),
+];
+
+/// A runtime message paired with the mutation identity that admitted it.
+///
+/// Keeping the envelope outside [`Message`] preserves the exact 74-variant v1
+/// message denominator and all existing message construction call sites while
+/// making context loss at queue, staging, completion, and sync boundaries
+/// impossible inside the runtime.
+#[derive(Clone, Debug)]
+pub struct ContextualMessage {
+    pub context: MutationContext,
+    pub message: Message,
+}
+
+impl ContextualMessage {
+    #[must_use]
+    pub const fn new(context: MutationContext, message: Message) -> Self {
+        Self { context, message }
+    }
 }
 
 impl Message {
@@ -700,6 +848,7 @@ impl Message {
                 MidiMessage::OpenInput { .. } => "Midi::OpenInput",
                 MidiMessage::OpenOutput { .. } => "Midi::OpenOutput",
                 MidiMessage::CloseDevice { .. } => "Midi::CloseDevice",
+                MidiMessage::ReconcileInputs { .. } => "Midi::ReconcileInputs",
                 MidiMessage::NoteOn { .. } => "Midi::NoteOn",
                 MidiMessage::NoteOff { .. } => "Midi::NoteOff",
                 MidiMessage::Cc { .. } => "Midi::Cc",
@@ -719,6 +868,75 @@ impl Message {
                 MidiMessage::ClearRoutes => "Midi::ClearRoutes",
             },
         }
+    }
+
+    /// Canonical receipt classification for this exact message variant.
+    #[must_use]
+    pub fn class(&self) -> MessageClass {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "midi"))]
+        {
+            let name = self.type_name();
+            return NATIVE_DEFAULT_MESSAGE_CLASSIFICATION
+                .iter()
+                .find_map(|(candidate, class)| (*candidate == name).then_some(*class))
+                .unwrap_or_else(|| panic!("native default message {name} is not classified"));
+        }
+        #[cfg(any(target_arch = "wasm32", not(feature = "midi")))]
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Message::Recording(
+                RecordingMessage::BufferAllocated { .. } | RecordingMessage::Completed { .. },
+            ) => MessageClass::ReceiptLinkedCompletion,
+            Message::Reload(reload_msg)
+                if matches!(reload_msg.as_ref(), ReloadMessage::ApplyStaged { .. }) =>
+            {
+                MessageClass::ReceiptLinkedCompletion
+            }
+            #[cfg(feature = "midi")]
+            Message::Midi(MidiMessage::ReconcileInputs { .. }) => MessageClass::Internal,
+            _ => MessageClass::ReceiptBearingMutation,
+        }
+    }
+
+    /// Canonical mutation domain for receipt construction.
+    #[must_use]
+    pub const fn domain(&self) -> crate::mutation::MessageDomain {
+        match self {
+            Message::Transport(_) => crate::mutation::MessageDomain::Transport,
+            Message::SynthDef(_) => crate::mutation::MessageDomain::SynthDef,
+            Message::Sample(_) => crate::mutation::MessageDomain::Sample,
+            Message::Sfz(_) => crate::mutation::MessageDomain::Sfz,
+            #[cfg(not(target_arch = "wasm32"))]
+            Message::Recording(_) => crate::mutation::MessageDomain::Recording,
+            Message::Group(_) => crate::mutation::MessageDomain::Group,
+            Message::Voice(_) => crate::mutation::MessageDomain::Voice,
+            Message::Pattern(_) => crate::mutation::MessageDomain::Pattern,
+            Message::Melody(_) => crate::mutation::MessageDomain::Melody,
+            Message::Sequence(_) => crate::mutation::MessageDomain::Sequence,
+            Message::Effect(_) => crate::mutation::MessageDomain::Effect,
+            Message::Fade(_) => crate::mutation::MessageDomain::Fade,
+            Message::Reload(_) => crate::mutation::MessageDomain::Reload,
+            Message::Sync(_) => crate::mutation::MessageDomain::Sync,
+            #[cfg(feature = "midi")]
+            Message::Midi(_) => crate::mutation::MessageDomain::Midi,
+        }
+    }
+
+    /// Stable operation spelling used by the canonical command identity.
+    #[must_use]
+    pub fn operation(&self) -> &'static str {
+        self.type_name()
+            .split_once("::")
+            .map_or(self.type_name(), |(_, operation)| operation)
+    }
+
+    /// Stable component path used by focused v1 best-effort receipts.
+    #[must_use]
+    pub fn component_path(&self) -> String {
+        format!(
+            "message/{}",
+            self.type_name().replace("::", "/").to_lowercase()
+        )
     }
 }
 
@@ -825,6 +1043,30 @@ impl From<MidiMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "midi"))]
+    #[test]
+    fn native_default_message_classification_is_exact_and_unique() {
+        let mut names = std::collections::HashSet::new();
+        let mut receipt_bearing = 0;
+        let mut linked = 0;
+        let mut internal = 0;
+        for (name, class) in NATIVE_DEFAULT_MESSAGE_CLASSIFICATION {
+            assert!(
+                names.insert(name),
+                "duplicate message classification: {name}"
+            );
+            match class {
+                MessageClass::ReceiptBearingMutation => receipt_bearing += 1,
+                MessageClass::ReceiptLinkedCompletion => linked += 1,
+                MessageClass::Internal => internal += 1,
+            }
+        }
+        assert_eq!(names.len(), 74);
+        assert_eq!(receipt_bearing, 70);
+        assert_eq!(linked, 3);
+        assert_eq!(internal, 1);
+    }
 
     #[test]
     fn test_message_type_name() {

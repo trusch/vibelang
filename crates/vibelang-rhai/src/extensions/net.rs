@@ -47,6 +47,46 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("json_stringify", json_stringify);
 }
 
+fn boundary_error(
+    code: &str,
+    span: std::ops::Range<usize>,
+    expected: &str,
+    token: &str,
+) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "{code} span={}..{} expected={expected} token={token:?}",
+            span.start, span.end
+        )
+        .into(),
+        rhai::Position::NONE,
+    ))
+}
+
+/// Install the complete networking inventory with strict vibe-api 2 boundaries.
+pub(crate) fn register_v2(engine: &mut Engine) {
+    register(engine);
+    engine
+        .register_fn("http_get", http_get_strict)
+        .register_fn("http_get_lines", http_get_lines_strict)
+        .register_fn("http_post", http_post_strict)
+        .register_fn("url_decode", url_decode_strict)
+        .register_fn("parse_url", parse_url_strict)
+        .register_fn("build_query_string", build_query_string_strict)
+        .register_fn("json_parse", json_parse_strict)
+        .register_fn("json_stringify", json_stringify_strict)
+        .register_fn("http_get_json", |url: &str| {
+            let body = http_get_strict(url)?;
+            json_parse_strict(&body)
+        })
+        .register_fn("http_post_json", |url: &str, data: Map| {
+            let json_body = json_stringify_strict(Dynamic::from(data))?;
+            let response =
+                http_request_strict("POST", url, Some((&json_body, "application/json")))?;
+            json_parse_strict(&response)
+        });
+}
+
 // ============================================================================
 // HTTP Client
 // ============================================================================
@@ -89,6 +129,356 @@ fn parse_url_components(url: &str) -> Result<(bool, String, u16, String), Box<Ev
     };
 
     Ok((is_https, host.to_string(), port, path.to_string()))
+}
+
+fn parse_url_components_strict(
+    url: &str,
+) -> Result<(bool, String, u16, String), Box<EvalAltResult>> {
+    if url.trim() != url {
+        return Err(boundary_error(
+            "extension.net.url_whitespace",
+            0..url.len(),
+            "url_without_surrounding_whitespace",
+            url,
+        ));
+    }
+    if let Some((index, character)) = url.char_indices().find(|(_, character)| {
+        !character.is_ascii() || character.is_whitespace() || character.is_control()
+    }) {
+        return Err(boundary_error(
+            "extension.net.url_character",
+            index..index + character.len_utf8(),
+            "ascii_url_without_whitespace_or_control_characters",
+            &url[index..index + character.len_utf8()],
+        ));
+    }
+    if let Some(index) = url.find('#') {
+        return Err(boundary_error(
+            "extension.net.url_fragment",
+            index..url.len(),
+            "url_without_fragment",
+            &url[index..],
+        ));
+    }
+    let (is_https, rest, authority_start) = if let Some(rest) = url.strip_prefix("https://") {
+        (true, rest, "https://".len())
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        (false, rest, "http://".len())
+    } else {
+        let end = match url.find([':', '/', '?', '#']) {
+            Some(end) => end,
+            None => url.len(),
+        };
+        return Err(boundary_error(
+            "extension.net.url_scheme",
+            0..end,
+            "http_or_https_scheme",
+            &url[..end],
+        ));
+    };
+    let authority_end = match rest.find(['/', '?', '#']) {
+        Some(end) => end,
+        None => rest.len(),
+    };
+    let authority = &rest[..authority_end];
+    if authority.is_empty() || authority.chars().any(char::is_whitespace) {
+        return Err(boundary_error(
+            "extension.net.url_host",
+            authority_start..authority_start + authority.len(),
+            "non_empty_host_without_whitespace",
+            authority,
+        ));
+    }
+    if authority.contains('@') || authority.starts_with('[') {
+        return Err(boundary_error(
+            "extension.net.url_authority",
+            authority_start..authority_start + authority.len(),
+            "basic_host_with_optional_u16_port",
+            authority,
+        ));
+    }
+    let (host, port) = if let Some((host, port_text)) = authority.rsplit_once(':') {
+        if host.is_empty() || port_text.is_empty() {
+            return Err(boundary_error(
+                "extension.net.url_port",
+                authority_start + host.len()..authority_start + authority.len(),
+                "u16_port",
+                port_text,
+            ));
+        }
+        let port_start = authority_start + host.len() + 1;
+        let port = port_text.parse::<u16>().map_err(|_| {
+            boundary_error(
+                "extension.net.url_port",
+                port_start..port_start + port_text.len(),
+                "u16_port",
+                port_text,
+            )
+        })?;
+        if port == 0 {
+            return Err(boundary_error(
+                "extension.net.url_port",
+                port_start..port_start + port_text.len(),
+                "port_1..=65535",
+                port_text,
+            ));
+        }
+        (host, port)
+    } else {
+        (authority, if is_https { 443 } else { 80 })
+    };
+    if host.chars().any(|character| {
+        !character.is_ascii_alphanumeric() && !matches!(character, '.' | '-' | '_')
+    }) {
+        return Err(boundary_error(
+            "extension.net.url_host",
+            authority_start..authority_start + host.len(),
+            "ascii_host_name",
+            host,
+        ));
+    }
+    let suffix = &rest[authority_end..];
+    let path = if suffix.is_empty() {
+        "/".to_string()
+    } else if suffix.starts_with('?') || suffix.starts_with('#') {
+        format!("/{suffix}")
+    } else {
+        suffix.to_string()
+    };
+    Ok((is_https, host.to_string(), port, path))
+}
+
+fn http_get_strict(url: &str) -> Result<String, Box<EvalAltResult>> {
+    http_request_strict("GET", url, None)
+}
+
+fn http_get_lines_strict(url: &str) -> Result<Array, Box<EvalAltResult>> {
+    let body = http_get_strict(url)?;
+    Ok(body
+        .lines()
+        .map(|line| Dynamic::from(line.to_string()))
+        .collect())
+}
+
+fn http_post_strict(url: &str, body: &str) -> Result<String, Box<EvalAltResult>> {
+    http_request_strict(
+        "POST",
+        url,
+        Some((body, "application/x-www-form-urlencoded")),
+    )
+}
+
+fn transport_error(
+    code: &str,
+    url: &str,
+    expected: &str,
+    error: impl std::fmt::Display,
+) -> Box<EvalAltResult> {
+    boundary_error(
+        code,
+        0..url.len(),
+        &format!("{expected} error={error}"),
+        url,
+    )
+}
+
+fn http_request_strict(
+    method: &str,
+    url: &str,
+    body: Option<(&str, &str)>,
+) -> Result<String, Box<EvalAltResult>> {
+    let (is_https, host, port, path) = parse_url_components_strict(url)?;
+    if is_https {
+        return Err(boundary_error(
+            "extension.net.https_unsupported",
+            0.."https".len(),
+            "http_url_for_basic_transport",
+            "https",
+        ));
+    }
+
+    let address = format!("{host}:{port}");
+    let mut stream = TcpStream::connect(&address).map_err(|error| {
+        transport_error(
+            "extension.net.connect",
+            url,
+            "reachable_http_endpoint",
+            error,
+        )
+    })?;
+    let timeout = Some(Duration::from_secs(30));
+    stream.set_read_timeout(timeout).map_err(|error| {
+        transport_error(
+            "extension.net.read_timeout",
+            url,
+            "configurable_read_timeout",
+            error,
+        )
+    })?;
+    stream.set_write_timeout(timeout).map_err(|error| {
+        transport_error(
+            "extension.net.write_timeout",
+            url,
+            "configurable_write_timeout",
+            error,
+        )
+    })?;
+
+    let default_port = 80;
+    let host_header = if port == default_port {
+        host.clone()
+    } else {
+        format!("{host}:{port}")
+    };
+    let request = if let Some((body, content_type)) = body {
+        format!(
+            "{method} {path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nUser-Agent: vibelang/1.0\r\n\r\n{body}",
+            body.len()
+        )
+    } else {
+        format!(
+            "{method} {path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nUser-Agent: vibelang/1.0\r\n\r\n"
+        )
+    };
+    stream.write_all(request.as_bytes()).map_err(|error| {
+        transport_error(
+            "extension.net.write_request",
+            url,
+            "complete_http_request",
+            error,
+        )
+    })?;
+
+    let mut reader = BufReader::new(stream);
+    let mut status_line = String::new();
+    let status_bytes = reader.read_line(&mut status_line).map_err(|error| {
+        transport_error(
+            "extension.net.read_status",
+            url,
+            "complete_http_status_line",
+            error,
+        )
+    })?;
+    if status_bytes == 0 {
+        return Err(boundary_error(
+            "extension.net.response_eof",
+            0..url.len(),
+            "http_status_line",
+            url,
+        ));
+    }
+    let mut status_parts = status_line.split_whitespace();
+    let version = status_parts.next().ok_or_else(|| {
+        boundary_error(
+            "extension.net.response_status",
+            0..status_line.len(),
+            "HTTP_version_and_three_digit_status",
+            status_line.trim_end(),
+        )
+    })?;
+    let status = status_parts.next().ok_or_else(|| {
+        boundary_error(
+            "extension.net.response_status",
+            0..status_line.len(),
+            "HTTP_version_and_three_digit_status",
+            status_line.trim_end(),
+        )
+    })?;
+    let status_code = status.parse::<u16>();
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+        || status.len() != 3
+        || !matches!(status_code, Ok(100..=599))
+    {
+        return Err(boundary_error(
+            "extension.net.response_status",
+            0..status_line.len(),
+            "HTTP_1.x_and_three_digit_status",
+            status_line.trim_end(),
+        ));
+    }
+
+    let mut content_length = None;
+    let mut transfer_encoding = None;
+    loop {
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line).map_err(|error| {
+            transport_error(
+                "extension.net.read_header",
+                url,
+                "complete_http_headers",
+                error,
+            )
+        })?;
+        if bytes == 0 {
+            return Err(boundary_error(
+                "extension.net.response_eof",
+                0..url.len(),
+                "header_terminator",
+                url,
+            ));
+        }
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+        let line = line.trim_end_matches(['\r', '\n']);
+        let (name, value) = line.split_once(':').ok_or_else(|| {
+            boundary_error(
+                "extension.net.response_header",
+                0..line.len(),
+                "header_name_colon_value",
+                line,
+            )
+        })?;
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-length") {
+            let length = value.parse::<usize>().map_err(|_| {
+                boundary_error(
+                    "extension.net.content_length",
+                    0..value.len(),
+                    "usize_content_length",
+                    value,
+                )
+            })?;
+            if content_length.replace(length).is_some() {
+                return Err(boundary_error(
+                    "extension.net.content_length",
+                    0..value.len(),
+                    "single_content_length",
+                    value,
+                ));
+            }
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            transfer_encoding = Some(value.to_owned());
+        }
+    }
+    if let Some(encoding) = transfer_encoding {
+        if !encoding.eq_ignore_ascii_case("identity") {
+            return Err(boundary_error(
+                "extension.net.transfer_encoding",
+                0..encoding.len(),
+                "identity_or_content_length_response",
+                &encoding,
+            ));
+        }
+    }
+
+    let mut response = Vec::new();
+    reader.read_to_end(&mut response).map_err(|error| {
+        transport_error("extension.net.read_body", url, "complete_http_body", error)
+    })?;
+    if let Some(expected) = content_length {
+        if response.len() != expected {
+            return Err(boundary_error(
+                "extension.net.body_length",
+                0..url.len(),
+                &format!("exact_content_length_{expected}"),
+                url,
+            ));
+        }
+    }
+    String::from_utf8(response).map_err(|error| {
+        transport_error("extension.net.body_encoding", url, "utf8_http_body", error)
+    })
 }
 
 /// Perform an HTTP GET request.
@@ -301,6 +691,7 @@ pub fn url_encode(s: &str) -> String {
 pub fn url_decode(s: &str) -> String {
     let mut result = Vec::new();
     let mut chars = s.chars().peekable();
+    let mut recovered = false;
 
     while let Some(c) = chars.next() {
         match c {
@@ -313,6 +704,7 @@ pub fn url_decode(s: &str) -> String {
                         continue;
                     }
                 }
+                recovered = true;
                 result.push(b'%');
                 result.extend(hex.as_bytes());
             }
@@ -320,7 +712,73 @@ pub fn url_decode(s: &str) -> String {
         }
     }
 
-    String::from_utf8_lossy(&result).to_string()
+    let decoded = String::from_utf8_lossy(&result);
+    if recovered || matches!(&decoded, std::borrow::Cow::Owned(_)) {
+        log::warn!(
+            "diagnostic.compat.parser_forgiving profile=compat.vibelang.v1 parser=url_decode input={s:?} recovery=legacy_escape_preservation effective_value={decoded:?} replacement=use_percent_followed_by_two_hex_digits"
+        );
+    }
+    decoded.into_owned()
+}
+
+fn url_decode_strict(s: &str) -> Result<String, Box<EvalAltResult>> {
+    fn hex_nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = s.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' => {
+                if index + 2 >= bytes.len() {
+                    return Err(boundary_error(
+                        "extension.net.url_escape",
+                        index..bytes.len(),
+                        "percent_followed_by_two_hex_digits",
+                        &s[index..],
+                    ));
+                }
+                let high = hex_nibble(bytes[index + 1]);
+                let low = hex_nibble(bytes[index + 2]);
+                let byte = high
+                    .zip(low)
+                    .map(|(high, low)| high * 16 + low)
+                    .ok_or_else(|| {
+                        boundary_error(
+                            "extension.net.url_escape",
+                            index..index + 3,
+                            "percent_followed_by_two_hex_digits",
+                            &s[index..],
+                        )
+                    })?;
+                decoded.push(byte);
+                index += 3;
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).map_err(|error| {
+        boundary_error(
+            "extension.net.url_utf8",
+            error.utf8_error().valid_up_to()..s.len(),
+            "valid_utf8_after_percent_decoding",
+            s,
+        )
+    })
 }
 
 /// Parse a URL into its components.
@@ -341,11 +799,34 @@ pub fn parse_url(url: &str) -> Result<Map, Box<EvalAltResult>> {
     result.insert("host".into(), Dynamic::from(host));
     result.insert("port".into(), Dynamic::from(port as i64));
     result.insert("path".into(), Dynamic::from(path_only.to_string()));
-    result.insert(
-        "query".into(),
-        Dynamic::from(query.unwrap_or("").to_string()),
-    );
+    let query = match query {
+        Some(query) => query,
+        None => "",
+    };
+    result.insert("query".into(), Dynamic::from(query.to_string()));
 
+    Ok(result)
+}
+
+fn parse_url_strict(url: &str) -> Result<Map, Box<EvalAltResult>> {
+    let (is_https, host, port, path) = parse_url_components_strict(url)?;
+    let (path_only, query) = match path.find('?') {
+        Some(index) => (&path[..index], Some(&path[index + 1..])),
+        None => (path.as_str(), None),
+    };
+    let mut result = Map::new();
+    result.insert(
+        "scheme".into(),
+        Dynamic::from(if is_https { "https" } else { "http" }),
+    );
+    result.insert("host".into(), Dynamic::from(host));
+    result.insert("port".into(), Dynamic::from(i64::from(port)));
+    result.insert("path".into(), Dynamic::from(path_only.to_string()));
+    let query = match query {
+        Some(query) => query,
+        None => "",
+    };
+    result.insert("query".into(), Dynamic::from(query.to_string()));
     Ok(result)
 }
 
@@ -358,6 +839,79 @@ pub fn build_query_string(params: Map) -> String {
         .join("&")
 }
 
+fn build_query_string_strict(params: Map) -> Result<String, Box<EvalAltResult>> {
+    params
+        .into_iter()
+        .map(|(key, value)| {
+            let value = if value.is_string() {
+                value.into_string().map_err(|value| {
+                    boundary_error(
+                        "extension.net.query_value",
+                        0..key.len(),
+                        "string_integer_finite_float_or_bool",
+                        &value.to_string(),
+                    )
+                })?
+            } else if value.is_int() {
+                value
+                    .as_int()
+                    .map_err(|error| {
+                        boundary_error(
+                            "extension.net.query_value",
+                            0..key.len(),
+                            "integer",
+                            &error.to_string(),
+                        )
+                    })?
+                    .to_string()
+            } else if value.is_float() {
+                let float = value.as_float().map_err(|error| {
+                    boundary_error(
+                        "extension.net.query_value",
+                        0..key.len(),
+                        "finite_float",
+                        &error.to_string(),
+                    )
+                })?;
+                if !float.is_finite() {
+                    return Err(boundary_error(
+                        "extension.net.query_non_finite",
+                        0..key.len(),
+                        "finite_float",
+                        &float.to_string(),
+                    ));
+                }
+                float.to_string()
+            } else if value.is_bool() {
+                value
+                    .as_bool()
+                    .map_err(|error| {
+                        boundary_error(
+                            "extension.net.query_value",
+                            0..key.len(),
+                            "bool",
+                            &error.to_string(),
+                        )
+                    })?
+                    .to_string()
+            } else {
+                return Err(boundary_error(
+                    "extension.net.query_value",
+                    0..key.len(),
+                    "string_integer_finite_float_or_bool",
+                    &value.type_name(),
+                ));
+            };
+            Ok(format!(
+                "{}={}",
+                url_encode(key.as_ref()),
+                url_encode(&value)
+            ))
+        })
+        .collect::<Result<Vec<_>, Box<EvalAltResult>>>()
+        .map(|pairs| pairs.join("&"))
+}
+
 // ============================================================================
 // JSON Utilities (Basic)
 // ============================================================================
@@ -366,6 +920,17 @@ pub fn build_query_string(params: Map) -> String {
 ///
 /// This is a simple JSON parser for basic structures.
 pub fn json_parse(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
+    let canonical_rejection = serde_json::from_str::<serde_json::Value>(json).is_err();
+    let result = json_parse_legacy(json);
+    if canonical_rejection && result.is_ok() {
+        log::warn!(
+            "diagnostic.compat.parser_forgiving profile=compat.vibelang.v1 parser=json input={json:?} recovery=legacy_json_parser effective_value=parsed replacement=use_complete_valid_json"
+        );
+    }
+    result
+}
+
+fn json_parse_legacy(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
     let json = json.trim();
 
     if json.starts_with('{') {
@@ -390,6 +955,78 @@ pub fn json_parse(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
             rhai::Position::NONE,
         )))
     }
+}
+
+fn json_error_offset(json: &str, line: usize, column: usize) -> usize {
+    let line_start = json
+        .split_inclusive('\n')
+        .take(line.saturating_sub(1))
+        .map(str::len)
+        .sum::<usize>();
+    let line_text = match json[line_start..].split('\n').next() {
+        Some(line) => line,
+        None => "",
+    };
+    line_start
+        + line_text
+            .char_indices()
+            .nth(column.saturating_sub(1))
+            .map_or(line_text.len(), |(index, _)| index)
+}
+
+fn serde_to_dynamic(value: serde_json::Value, json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
+    match value {
+        serde_json::Value::Null => Ok(Dynamic::UNIT),
+        serde_json::Value::Bool(value) => Ok(Dynamic::from(value)),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Ok(Dynamic::from(value))
+            } else if let Some(value) = value.as_u64() {
+                i64::try_from(value).map(Dynamic::from).map_err(|_| {
+                    boundary_error(
+                        "extension.net.json.integer_range",
+                        0..json.len(),
+                        "i64",
+                        json,
+                    )
+                })
+            } else {
+                value.as_f64().map(Dynamic::from).ok_or_else(|| {
+                    boundary_error(
+                        "extension.net.json.number",
+                        0..json.len(),
+                        "finite_json_number",
+                        json,
+                    )
+                })
+            }
+        }
+        serde_json::Value::String(value) => Ok(Dynamic::from(value)),
+        serde_json::Value::Array(values) => values
+            .into_iter()
+            .map(|value| serde_to_dynamic(value, json))
+            .collect::<Result<Array, _>>()
+            .map(Dynamic::from),
+        serde_json::Value::Object(values) => values
+            .into_iter()
+            .map(|(key, value)| Ok((key.into(), serde_to_dynamic(value, json)?)))
+            .collect::<Result<Map, Box<EvalAltResult>>>()
+            .map(Dynamic::from),
+    }
+}
+
+fn json_parse_strict(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
+    let value = serde_json::from_str::<serde_json::Value>(json).map_err(|error| {
+        let start = json_error_offset(json, error.line(), error.column());
+        let end = if start < json.len() { start + 1 } else { start };
+        boundary_error(
+            "extension.net.json.invalid",
+            start..end,
+            "complete_valid_json",
+            &json[start..],
+        )
+    })?;
+    serde_to_dynamic(value, json)
 }
 
 fn parse_json_string(s: &str) -> Result<String, Box<EvalAltResult>> {
@@ -539,7 +1176,7 @@ fn parse_json_pair(pair: &str, result: &mut Map) -> Result<(), Box<EvalAltResult
     let value: String = chars[colon_pos + 1..].iter().collect();
 
     let key = parse_json_string(key.trim())?;
-    let value = json_parse(value.trim())?;
+    let value = json_parse_legacy(value.trim())?;
 
     result.insert(key.into(), value);
     Ok(())
@@ -590,7 +1227,7 @@ fn parse_json_array(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
                 '}' | ']' => depth -= 1,
                 ',' if depth == 0 => {
                     let elem: String = chars[start..i].iter().collect();
-                    result.push(json_parse(elem.trim())?);
+                    result.push(json_parse_legacy(elem.trim())?);
                     start = i + 1;
                 }
                 _ => {}
@@ -604,7 +1241,7 @@ fn parse_json_array(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
         let elem: String = chars[start..].iter().collect();
         let elem = elem.trim();
         if !elem.is_empty() {
-            result.push(json_parse(elem)?);
+            result.push(json_parse_legacy(elem)?);
         }
     }
 
@@ -613,7 +1250,74 @@ fn parse_json_array(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
 
 /// Convert a Rhai value to JSON string.
 pub fn json_stringify(value: Dynamic) -> Result<String, Box<EvalAltResult>> {
-    stringify_value(&value)
+    let strict_rejection = dynamic_to_serde(&value, "$").is_err();
+    let result = stringify_value(&value);
+    if strict_rejection && result.is_ok() {
+        log::warn!(
+            "diagnostic.compat.fallback_applied profile=compat.vibelang.v1 function=json_stringify argument=value input_type={} recovery=legacy_non_json_representation effective_value=serialized replacement=use_finite_json_value",
+            value.type_name()
+        );
+    }
+    result
+}
+
+fn dynamic_to_serde(value: &Dynamic, path: &str) -> Result<serde_json::Value, Box<EvalAltResult>> {
+    if value.is_unit() {
+        Ok(serde_json::Value::Null)
+    } else if let Some(value) = value.clone().try_cast::<bool>() {
+        Ok(serde_json::Value::Bool(value))
+    } else if let Some(value) = value.clone().try_cast::<i64>() {
+        Ok(serde_json::Value::Number(value.into()))
+    } else if let Some(value) = value.clone().try_cast::<f64>() {
+        serde_json::Number::from_f64(value)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| {
+                boundary_error(
+                    "extension.net.json.non_finite",
+                    0..path.len(),
+                    "finite_number",
+                    path,
+                )
+            })
+    } else if let Some(value) = value.clone().try_cast::<String>() {
+        Ok(serde_json::Value::String(value))
+    } else if let Some(values) = value.clone().try_cast::<Array>() {
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| dynamic_to_serde(value, &format!("{path}[{index}]")))
+            .collect::<Result<Vec<_>, _>>()
+            .map(serde_json::Value::Array)
+    } else if let Some(values) = value.clone().try_cast::<Map>() {
+        values
+            .iter()
+            .map(|(key, value)| {
+                Ok((
+                    key.to_string(),
+                    dynamic_to_serde(value, &format!("{path}.{key}"))?,
+                ))
+            })
+            .collect::<Result<serde_json::Map<_, _>, Box<EvalAltResult>>>()
+            .map(serde_json::Value::Object)
+    } else {
+        Err(boundary_error(
+            "extension.net.json.unsupported_type",
+            0..path.len(),
+            "json_value",
+            path,
+        ))
+    }
+}
+
+fn json_stringify_strict(value: Dynamic) -> Result<String, Box<EvalAltResult>> {
+    serde_json::to_string(&dynamic_to_serde(&value, "$")?).map_err(|error| {
+        boundary_error(
+            "extension.net.json.serialize",
+            0..1,
+            "serializable_json_value",
+            &error.to_string(),
+        )
+    })
 }
 
 fn json_stringify_map(map: &Map) -> Result<String, Box<EvalAltResult>> {
@@ -682,6 +1386,20 @@ fn escape_json_string(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn strict_local_response(response: &'static [u8]) -> Result<String, Box<EvalAltResult>> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream.write_all(response).unwrap();
+        });
+        let result = http_get_strict(&format!("http://{address}/"));
+        server.join().unwrap();
+        result
+    }
+
     #[test]
     fn test_url_encode() {
         assert_eq!(url_encode("hello world"), "hello+world");
@@ -731,5 +1449,84 @@ mod tests {
         assert_eq!(json_stringify(Dynamic::from(42_i64)).unwrap(), "42");
         assert_eq!(json_stringify(Dynamic::from("hello")).unwrap(), "\"hello\"");
         assert_eq!(json_stringify(Dynamic::from(true)).unwrap(), "true");
+    }
+
+    #[test]
+    fn v2_json_and_url_parsers_consume_complete_input() {
+        assert_eq!(url_decode_strict("a%3Db").unwrap(), "a=b");
+        let parsed = parse_url_strict("http://example.test:8080/path?q=1").unwrap();
+        assert_eq!(
+            parsed["host"].clone().into_string().unwrap(),
+            "example.test"
+        );
+        assert_eq!(parsed["port"].as_int().unwrap(), 8080);
+        assert_eq!(
+            json_parse_strict(r#"{"nested":[1,true,null]}"#)
+                .unwrap()
+                .type_name(),
+            "map"
+        );
+
+        for (error, diagnostic) in [
+            (
+                url_decode_strict("%G0").unwrap_err(),
+                "extension.net.url_escape",
+            ),
+            (
+                json_parse_strict(r#"{"ok": true} trailing"#).unwrap_err(),
+                "extension.net.json.invalid",
+            ),
+            (
+                json_parse_strict("NaN").unwrap_err(),
+                "extension.net.json.invalid",
+            ),
+            (
+                json_stringify_strict(Dynamic::from(f64::NAN)).unwrap_err(),
+                "extension.net.json.non_finite",
+            ),
+            (
+                parse_url_strict("ftp://example.test").unwrap_err(),
+                "extension.net.url_scheme",
+            ),
+            (
+                parse_url_strict("http://example.test:80x/").unwrap_err(),
+                "extension.net.url_port",
+            ),
+            (
+                parse_url_strict("http:///missing").unwrap_err(),
+                "extension.net.url_host",
+            ),
+            (
+                parse_url_strict("http://example.test/a b").unwrap_err(),
+                "extension.net.url_character",
+            ),
+            (
+                parse_url_strict("http://example.test/path#fragment").unwrap_err(),
+                "extension.net.url_fragment",
+            ),
+            (
+                http_get_strict("https://example.test").unwrap_err(),
+                "extension.net.https_unsupported",
+            ),
+        ] {
+            assert!(error.to_string().contains(diagnostic), "{error}");
+        }
+
+        let mut query = Map::new();
+        query.insert("value".into(), Dynamic::from(f64::NAN));
+        let error = build_query_string_strict(query).unwrap_err().to_string();
+        assert!(error.contains("extension.net.query_non_finite"), "{error}");
+    }
+
+    #[test]
+    fn v2_http_transport_rejects_partial_bodies() {
+        assert_eq!(
+            strict_local_response(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").unwrap(),
+            "ok"
+        );
+        let error = strict_local_response(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("extension.net.body_length"), "{error}");
     }
 }

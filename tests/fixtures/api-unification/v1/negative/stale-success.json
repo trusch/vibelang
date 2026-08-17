@@ -1,0 +1,20 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "stale_success",
+  "resolution": "fixed_safety_exception",
+  "expected_current_outcome": "queue_acceptance_is_202_with_a_canonical_receipt_and_legacy_success_is_explicitly_non_applied",
+  "operation_selector": "every method != GET in api/http-api-snapshot-v1.json",
+  "observed_operation_count": 69,
+  "representative_carriers": [
+    "202 MutationHttpResponse with receipt and nested legacy_result",
+    "terminal receipt status with canonical Location and watermark headers",
+    "EvalResponse.success scoped to evaluation_only",
+    "GET /receipts/{attempt_id} canonical observation"
+  ],
+  "source_assertions": [
+    { "path": "crates/vibelang-http/src/lib.rs", "contains": "pub struct MutationHttpResponse" },
+    { "path": "crates/vibelang-http/src/lib.rs", "contains": "StatusCode::ACCEPTED" },
+    { "path": "crates/vibelang-http/src/routes/eval.rs", "contains": "legacy_success_scope: \"evaluation_only\"" },
+    { "path": "crates/vibelang-http/src/routes/eval.rs", "contains": "pub async fn get_receipt" }
+  ]
+}

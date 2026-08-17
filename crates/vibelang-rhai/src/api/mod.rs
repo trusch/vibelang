@@ -32,6 +32,9 @@ pub mod sfz;
 #[cfg(feature = "midi")]
 pub mod midi;
 
+#[cfg(all(test, feature = "midi", not(target_arch = "wasm32")))]
+mod v2_integration;
+
 use rhai::Engine;
 
 /// Register all VibeLang API functions with a Rhai engine.
@@ -80,4 +83,34 @@ pub fn register_api(engine: &mut Engine) {
     // Register MIDI API (feature-gated)
     #[cfg(feature = "midi")]
     midi::register(engine);
+}
+
+/// Install the vibe-api 2 authoring-family surface into a Rhai engine.
+///
+/// Families install in the deterministic M08 order: Group, Voice, Pattern,
+/// Melody, then Sequence. The sequence module also owns the Fade, Effect,
+/// SynthDef, and EffectDef families and layers them over the DSP surface it
+/// installs first, so it must stay last of the M08 block.
+///
+/// The M09 families follow in the deterministic order Sample, Buffer, SFZ,
+/// Record, Route, then MIDI. SFZ and Record require file I/O and are native
+/// only; MIDI follows the crate's `midi` feature exactly like the v1
+/// registration root.
+pub(crate) fn install_v2_api(engine: &mut Engine) {
+    helpers::install_v2(engine);
+    group::install_v2(engine);
+    voice::install_v2(engine);
+    pattern::install_v2(engine);
+    melody::install_v2(engine);
+    sequence::install_v2(engine);
+
+    sample::install_v2(engine);
+    buffer::install_v2(engine);
+    #[cfg(not(target_arch = "wasm32"))]
+    sfz::install_v2(engine);
+    #[cfg(not(target_arch = "wasm32"))]
+    recording::install_v2(engine);
+    route::install_v2(engine);
+    #[cfg(feature = "midi")]
+    midi::install_v2(engine);
 }

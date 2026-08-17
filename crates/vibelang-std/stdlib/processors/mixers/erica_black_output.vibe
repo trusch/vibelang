@@ -5,6 +5,7 @@
 // to separate main balanced and headphone stereo outputs. Input 3 exposes the
 // hardware CV autopan behavior as a signed normalized pan3_cv param.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_black_output_soft(sig, limit_on) {
     let limited = tanh_ar(sig * 1.25) / 1.25;
     let bypass = sig;

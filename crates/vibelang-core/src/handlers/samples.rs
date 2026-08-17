@@ -173,11 +173,26 @@ impl<B: Backend> SamplesHandler<B> {
         let buffer_info = match self.backend.load_buffer(buffer_id, &config.path).await {
             Ok(info) => info,
             Err(e) => {
-                // Nothing references the ID yet — return it to the pool.
-                self.state.write().await.free_buffer_id(buffer_id);
+                // A failed backend round-trip may still have created the
+                // buffer. Reclaim the ID only after the compensating free is
+                // confirmed; otherwise keep it reserved and surface the
+                // cleanup failure with the load error.
+                let cleanup_error = self.backend.free_buffer(buffer_id).await.err();
+                if cleanup_error.is_none() {
+                    self.state.write().await.free_buffer_id(buffer_id);
+                }
+                let reason = match cleanup_error {
+                    Some(cleanup) => format!(
+                        "{}; cleanup free_buffer({}) failed: {}",
+                        e,
+                        buffer_id.raw(),
+                        cleanup
+                    ),
+                    None => e.to_string(),
+                };
                 return Err(Error::SampleLoadFailed {
                     path: config.path,
-                    reason: e.to_string(),
+                    reason,
                 });
             }
         };

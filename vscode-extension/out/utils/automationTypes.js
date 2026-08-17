@@ -18,6 +18,7 @@ exports.generateFadeCode = generateFadeCode;
 exports.parseFadeCode = parseFadeCode;
 exports.generateCurvePath = generateCurvePath;
 exports.generateFilledPath = generateFilledPath;
+const sourceEmitters_1 = require("./sourceEmitters");
 /**
  * Default configuration
  */
@@ -160,66 +161,89 @@ function snapBeatToGrid(beat, gridSize) {
         return beat;
     return Math.round(beat / gridSize) * gridSize;
 }
+function quoteVibeString(value) {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`;
+}
+function automationCurveName(curveType) {
+    switch (curveType) {
+        case 'exponential': return 'exponential';
+        case 'step': return 'step';
+        case 'smooth': return 'smooth';
+        case 'bezier': return 'smooth';
+        default: return 'linear';
+    }
+}
 /**
- * Generate fade() code from automation lane
- * This creates VibeLang code that can be inserted into source files
+ * Generate canonical Fade builders scheduled on a Sequence timeline.
+ * This creates VibeLang code that can be inserted into source files.
  */
 function generateFadeCode(lane) {
     const points = [...lane.points].sort((a, b) => a.beat - b.beat);
     if (points.length < 2)
         return '';
-    const fades = [];
     const target = lane.target;
+    const sequenceName = `automation:${target.type}:${target.name}:${target.param}`;
+    const lines = [
+        sourceEmitters_1.vibe.free('sequence', [sourceEmitters_1.vibe.string(sequenceName)]),
+        `    ${sourceEmitters_1.vibe.member('Sequence', 'loop_beats', [sourceEmitters_1.vibe.f64Fixed(points[points.length - 1].beat, 2)])}`,
+    ];
     for (let i = 0; i < points.length - 1; i++) {
         const p1 = points[i];
         const p2 = points[i + 1];
         const duration = p2.beat - p1.beat;
+        if (duration <= 0)
+            continue;
         // Convert normalized values to actual param values
         const startValue = normalizedToParamValue(p1.value, lane.minValue, lane.maxValue);
         const endValue = normalizedToParamValue(p2.value, lane.minValue, lane.maxValue);
-        // Generate the fade call
-        // Format: fade("target_type", "target_name", "param", start, end, duration, start_beat);
-        let fadeCode;
-        if (target.type === 'group') {
-            fadeCode = `group("${target.name}").fade("${target.param}", ${startValue.toFixed(3)}, ${endValue.toFixed(3)}, ${duration.toFixed(2)});`;
-        }
-        else if (target.type === 'voice') {
-            fadeCode = `voice("${target.name}").fade("${target.param}", ${startValue.toFixed(3)}, ${endValue.toFixed(3)}, ${duration.toFixed(2)});`;
-        }
-        else {
-            fadeCode = `effect("${target.name}").fade("${target.param}", ${startValue.toFixed(3)}, ${endValue.toFixed(3)}, ${duration.toFixed(2)});`;
-        }
-        // Add scheduling comment if not at beat 0
-        if (p1.beat > 0) {
-            fadeCode = `// At beat ${p1.beat.toFixed(2)}:\n${fadeCode}`;
-        }
-        fades.push(fadeCode);
+        const fadeName = `${sequenceName}:${i + 1}`;
+        const targetCall = target.type === 'group'
+            ? sourceEmitters_1.vibe.member('Fade', 'on_group', [sourceEmitters_1.vibe.string(target.name)])
+            : target.type === 'voice'
+                ? sourceEmitters_1.vibe.member('Fade', 'on_voice', [sourceEmitters_1.vibe.string(target.name)])
+                : sourceEmitters_1.vibe.member('Fade', 'on_effect', [sourceEmitters_1.vibe.string(target.name)]);
+        const fade = sourceEmitters_1.vibe.free('fade', [sourceEmitters_1.vibe.string(fadeName)])
+            + targetCall
+            + sourceEmitters_1.vibe.member('Fade', 'param', [sourceEmitters_1.vibe.string(target.param)])
+            + sourceEmitters_1.vibe.member('Fade', 'from', [sourceEmitters_1.vibe.f64Fixed(startValue, 3)])
+            + sourceEmitters_1.vibe.member('Fade', 'to', [sourceEmitters_1.vibe.f64Fixed(endValue, 3)])
+            + sourceEmitters_1.vibe.member('Fade', 'over', [sourceEmitters_1.vibe.f64Fixed(duration, 2)])
+            + sourceEmitters_1.vibe.member('Fade', 'curve', [sourceEmitters_1.vibe.string(automationCurveName(p1.curveType))])
+            + sourceEmitters_1.vibe.member('Fade', 'apply', []);
+        lines.push(`    ${sourceEmitters_1.vibe.member('Sequence', 'clip', [
+            sourceEmitters_1.vibe.rangeF64Fixed(p1.beat, p2.beat, 2),
+            sourceEmitters_1.vibe.expr('Fade', fade),
+        ])}`);
     }
-    return fades.join('\n\n');
+    lines.push(`    ${sourceEmitters_1.vibe.member('Sequence', 'start', [])};`);
+    return lines.join('\n');
 }
 /**
- * Parse existing fade() calls from code to create automation points
+ * Parse canonical Sequence.clip(..., fade(...)) calls into automation points.
  * This is used for bi-directional sync
  */
 function parseFadeCode(code, target) {
     const points = [];
-    // Match fade calls for this target
-    // Format variations:
-    // - group("name").fade("param", start, end, duration)
-    // - voice("name").fade("param", start, end, duration)
-    // - effect("name").fade("param", start, end, duration)
-    const pattern = new RegExp(`${target.type}\\s*\\(\\s*["']${escapeRegex(target.name)}["']\\s*\\)\\s*\\.\\s*fade\\s*\\(\\s*["']${escapeRegex(target.param)}["']\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*\\)`, 'g');
+    const targetMethod = target.type === 'group'
+        ? 'on_group'
+        : target.type === 'voice' ? 'on_voice' : 'on_effect';
+    const number = '(-?[\\d.]+)';
+    const targetLiteral = escapeRegex(quoteVibeString(target.name));
+    const paramLiteral = escapeRegex(quoteVibeString(target.param));
+    const pattern = new RegExp(`\\.clip\\(\\s*${number}\\s*\\.\\.\\s*${number}\\s*,\\s*fade\\([^)]*\\)` +
+        `\\s*\\.${targetMethod}\\(\\s*${targetLiteral}\\s*\\)` +
+        `\\s*\\.param\\(\\s*${paramLiteral}\\s*\\)` +
+        `\\s*\\.from\\(\\s*${number}\\s*\\)` +
+        `\\s*\\.to\\(\\s*${number}\\s*\\)` +
+        `\\s*\\.over\\(\\s*${number}\\s*\\)`, 'gs');
     let match;
-    let currentBeat = 0;
     while ((match = pattern.exec(code)) !== null) {
-        const startValue = parseFloat(match[1]);
-        const endValue = parseFloat(match[2]);
-        const duration = parseFloat(match[3]);
-        // Add start point
-        points.push(createAutomationPoint(currentBeat, startValue, 'smooth'));
-        // Add end point
-        currentBeat += duration;
-        points.push(createAutomationPoint(currentBeat, endValue, 'smooth'));
+        const startBeat = parseFloat(match[1]);
+        const endBeat = parseFloat(match[2]);
+        const startValue = parseFloat(match[3]);
+        const endValue = parseFloat(match[4]);
+        points.push(createAutomationPoint(startBeat, startValue, 'smooth'));
+        points.push(createAutomationPoint(endBeat, endValue, 'smooth'));
     }
     // Remove duplicate points at same beat
     const uniquePoints = [];

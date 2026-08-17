@@ -1,14 +1,14 @@
 /**
  * Type-level smoke test for `crates/vibelang-wasm/types/index.d.ts`.
  *
- * Imports every exported symbol and uses each method/field at least once
- * so that `tsc --noEmit` will fail loudly if the surface drifts from
- * `src/lib.rs`. There is no runtime: the file exists purely to type-check.
+ * Imports every callable exported symbol and uses each method/field at least
+ * once so that `tsc --noEmit` will fail loudly if the surface drifts from
+ * `src/lib.rs`. Module start hooks are intentionally not callable exports.
+ * There is no runtime: the file exists purely to type-check.
  */
 
 import init, {
   initSync,
-  init_panic_hook,
   log,
   version,
   VibelangRuntime,
@@ -27,7 +27,6 @@ declare const wasmBytes: BufferSource;
 
 async function smoke(): Promise<void> {
   // free functions
-  init_panic_hook();
   log("hello");
   const v: string = version();
   void v;

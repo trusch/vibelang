@@ -300,5 +300,493 @@
     "outputs": 1,
     "category": "Demand",
     "functions": []
+  },
+  {
+    "name": "Dibrown",
+    "description": "Demand rate integer brownian motion. Like Dbrown but returns integer values.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 12,
+        "description": "Maximum value"
+      },
+      {
+        "name": "step",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum step for each new value"
+      },
+      {
+        "name": "length",
+        "type": "float",
+        "default": 100000000,
+        "description": "Number of values to generate"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Diwhite",
+    "description": "Demand rate integer white noise. Like Dwhite but returns integer values.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum value"
+      },
+      {
+        "name": "length",
+        "type": "float",
+        "default": 100000000,
+        "description": "Number of values to generate"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dbufrd",
+    "description": "Buffer read demand UGen. Reads values from a buffer at the given index.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer number to read from"
+      },
+      {
+        "name": "phase",
+        "type": "signal",
+        "default": 0,
+        "description": "Index into the buffer"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 1,
+        "description": "When phase exceeds number of frames, loop when set to 1"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dbufwr",
+    "description": "Buffer write demand UGen. Writes values into a buffer at the given index.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Single channel input value to write"
+      },
+      {
+        "name": "bufnum",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer number to write to (single channel buffer)"
+      },
+      {
+        "name": "phase",
+        "type": "signal",
+        "default": 0,
+        "description": "Index into the buffer"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 1,
+        "description": "When phase exceeds number of frames, loop when set to 1"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dconst",
+    "description": "Demand rate analog of Pconst. Outputs values from a child stream until their sum reaches the given total; the last value is truncated to match exactly.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "sum",
+        "type": "signal",
+        "default": 0,
+        "description": "Target sum to reach. Sampled once per reset; cannot be modulated until next reset"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Demand-rate stream providing the output values"
+      },
+      {
+        "name": "tolerance",
+        "type": "float",
+        "default": 0.001,
+        "description": "Stop tolerance: stops when abs(runningsum - sum) <= tolerance"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Ddup",
+    "description": "Demand rate input replicator. Repeats each value from input n times.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "n",
+        "type": "signal",
+        "default": 2,
+        "description": "Number of repeats (can be a demand UGen)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input UGen to replicate values from"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dstutter",
+    "description": "Demand rate input replicator. Deprecated alias retained for backwards compatibility — returns a Ddup. Prefer Ddup.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "n",
+        "type": "signal",
+        "default": 2,
+        "description": "Number of repeats (can be a demand UGen)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input UGen to replicate values from"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dshuf",
+    "description": "Demand rate shuffled sequence. Shuffles the array once and returns its values in that order, repeating the whole shuffled sequence.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "list",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values or other UGens to shuffle"
+      },
+      {
+        "name": "repeats",
+        "type": "float",
+        "default": 1,
+        "description": "Number of times to repeat the shuffled sequence"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dwrand",
+    "description": "Demand rate weighted random sequence. Selects values from list according to a weights array (which should sum to 1.0).",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "list",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values or other UGens"
+      },
+      {
+        "name": "weights",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of selection weights (should sum to 1.0)"
+      },
+      {
+        "name": "repeats",
+        "type": "float",
+        "default": 1,
+        "description": "Number of values to return"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dswitch",
+    "description": "Demand rate generator that embeds different inputs. Unlike Dswitch1, embeds all items of an input demand UGen before consulting the next index.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "list",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values or other UGens"
+      },
+      {
+        "name": "index",
+        "type": "signal",
+        "default": 0,
+        "description": "Which of the inputs to return"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dswitch1",
+    "description": "Demand rate generator for switching between inputs. Returns a single value from the indexed input each time it is called.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "list",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values or other UGens"
+      },
+      {
+        "name": "index",
+        "type": "signal",
+        "default": 0,
+        "description": "Which of the inputs to return"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dreset",
+    "description": "Demand rate reset. Passes through values from a demand UGen, resetting it whenever the reset input crosses from non-positive to positive.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Demand UGen producing values which are passed through"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "When crossing from non-positive to positive, resets the input"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Dpoll",
+    "description": "Print the current output value of a demand rate UGen. For debugging; printing from the server is CPU intensive.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "UGen to poll values from"
+      },
+      {
+        "name": "label",
+        "type": "signal",
+        "default": 0,
+        "description": "Label string id"
+      },
+      {
+        "name": "run",
+        "type": "signal",
+        "default": 1,
+        "description": "Active if 1, inactive if 0; can be a demand UGen"
+      },
+      {
+        "name": "trigid",
+        "type": "float",
+        "default": -1,
+        "description": "Trigger id (used to dispatch /tr OSC messages); -1 disables"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": []
+  },
+  {
+    "name": "Duty",
+    "description": "Demand results from demand rate UGens. Outputs values from a demand-rate level UGen, advancing after each duration value (also from a demand UGen). Reset triggers reset both streams.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "dur",
+        "type": "signal",
+        "default": 1,
+        "description": "Time values; demand UGen or signal — next level is acquired after duration"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger or reset time values; resets the level and duration UGens"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action evaluated when the duration stream ends"
+      },
+      {
+        "name": "level",
+        "type": "signal",
+        "default": 1,
+        "description": "Demand UGen providing the output values"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": [
+      "duty_ar",
+      "duty_kr"
+    ]
+  },
+  {
+    "name": "DemandEnvGen",
+    "description": "Demand rate envelope generator. Plays back break-point envelope contours (levels, times, shapes) supplied by demand UGens. Next values are demanded when each node is reached.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "level",
+        "type": "signal",
+        "default": 0,
+        "description": "Demand UGen returning level values; if it ends, doneAction is evaluated"
+      },
+      {
+        "name": "dur",
+        "type": "signal",
+        "default": 1,
+        "description": "Demand UGen returning time values; if it ends, doneAction is evaluated"
+      },
+      {
+        "name": "shape",
+        "type": "signal",
+        "default": 1,
+        "description": "Segment shape number (see Env): 0 step, 1 linear, 2 exp, 3 sine, 4 welch, 5 custom curve"
+      },
+      {
+        "name": "curve",
+        "type": "signal",
+        "default": 0,
+        "description": "Curve factor when shape is 5"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": ">=1 runs; 0..1 releases at next level; <0 sample-and-hold"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 1,
+        "description": "Crossing from non-positive to positive resets at next level; >1 resets immediately"
+      },
+      {
+        "name": "levelScale",
+        "type": "signal",
+        "default": 1,
+        "description": "Demand UGen returning level scaling values"
+      },
+      {
+        "name": "levelBias",
+        "type": "signal",
+        "default": 0,
+        "description": "Demand UGen returning level offset values"
+      },
+      {
+        "name": "timeScale",
+        "type": "signal",
+        "default": 1,
+        "description": "Demand UGen returning time scaling values"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action evaluated when level or duration stream ends"
+      }
+    ],
+    "outputs": 1,
+    "category": "Demand",
+    "functions": [
+      "demand_env_gen_ar",
+      "demand_env_gen_kr"
+    ]
   }
 ]

@@ -167,9 +167,15 @@ function activate(context) {
     // Always register hover and completion providers - they supplement the LSP
     // (or work standalone if LSP is disabled/fails)
     registerBuiltInLanguageProviders(context);
-    // Document Formatting Providers (not provided by LSP yet)
-    const formattingProvider = vscode.languages.registerDocumentFormattingEditProvider('vibe', new formatter_1.VibelangDocumentFormattingEditProvider(context.extensionPath));
-    context.subscriptions.push(formattingProvider);
+    // Document Formatting Providers.
+    // The LSP provides full-document formatting (documentFormattingProvider),
+    // so the client-side document formatter is only registered as a fallback
+    // when the LSP is disabled. Range and on-type formatting are not provided
+    // by the LSP, so those providers are always registered.
+    if (!lspEnabled) {
+        const formattingProvider = vscode.languages.registerDocumentFormattingEditProvider('vibe', new formatter_1.VibelangDocumentFormattingEditProvider(context.extensionPath));
+        context.subscriptions.push(formattingProvider);
+    }
     const rangeFormattingProvider = vscode.languages.registerDocumentRangeFormattingEditProvider('vibe', new formatter_1.VibelangDocumentRangeFormattingEditProvider(context.extensionPath));
     context.subscriptions.push(rangeFormattingProvider);
     const onTypeFormattingProvider = vscode.languages.registerOnTypeFormattingEditProvider('vibe', new formatter_1.VibelangOnTypeFormattingEditProvider(), '\n', '}');

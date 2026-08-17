@@ -211,8 +211,7 @@
     "name": "TWChoose",
     "description": "Triggered weighted choice from array. Randomly selects from array using probability weights.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -245,6 +244,8 @@
     "functions": [
       "tw_choose_ar",
       "tw_choose_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   }
 ]

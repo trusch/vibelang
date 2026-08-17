@@ -14,6 +14,167 @@
 //!   unparseable it defaults to octave 4 (so `"C"` == `"C4"` == 60).
 //! - Middle-C convention: C4 = 60, C-1 = 0, A4 = 69.
 
+use std::ops::Range;
+
+/// A stable, source-located error from the strict note parser.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error(
+    "{code}: note parse error at bytes {start}..{end}: expected {expected}; offending token {token:?}",
+    start = .span.start,
+    end = .span.end
+)]
+pub struct NoteParseError {
+    pub code: &'static str,
+    pub span: Range<usize>,
+    pub expected: &'static str,
+    pub token: String,
+}
+
+impl NoteParseError {
+    fn new(
+        code: &'static str,
+        span: Range<usize>,
+        expected: &'static str,
+        token: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            span,
+            expected,
+            token: token.into(),
+        }
+    }
+}
+
+fn trimmed_input(name: &str) -> (&str, usize) {
+    let trimmed_start = name.trim_start();
+    let start = name.len() - trimmed_start.len();
+    (trimmed_start.trim_end(), start)
+}
+
+/// Strictly parse a note name to its raw, unclamped MIDI value.
+///
+/// The parser consumes the complete trimmed input. A missing octave keeps the
+/// documented octave-4 default.
+pub fn parse_note_name_raw_strict(name: &str) -> Result<i32, NoteParseError> {
+    let (name, offset) = trimmed_input(name);
+    if name.is_empty() {
+        return Err(NoteParseError::new(
+            "dsp.note.empty",
+            offset..offset,
+            "note letter A-G",
+            "",
+        ));
+    }
+
+    let mut chars = name.char_indices().peekable();
+    let Some((_, letter)) = chars.next() else {
+        return Err(NoteParseError::new(
+            "dsp.note.empty",
+            offset..offset,
+            "note letter A-G",
+            "",
+        ));
+    };
+    let base: i32 = match letter.to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => {
+            return Err(NoteParseError::new(
+                "dsp.note.letter",
+                offset..offset + letter.len_utf8(),
+                "note letter A-G",
+                letter.to_string(),
+            ))
+        }
+    };
+
+    let mut accidental: i32 = 0;
+    let mut octave_start = letter.len_utf8();
+    while let Some(&(index, accidental_char)) = chars.peek() {
+        match accidental_char {
+            '#' | '♯' => {
+                accidental += 1;
+                octave_start = index + accidental_char.len_utf8();
+                chars.next();
+            }
+            'b' | '♭' => {
+                accidental -= 1;
+                octave_start = index + accidental_char.len_utf8();
+                chars.next();
+            }
+            _ => {
+                octave_start = index;
+                break;
+            }
+        }
+    }
+
+    let octave_text = &name[octave_start..];
+    let octave = if octave_text.is_empty() {
+        4
+    } else {
+        let digits = match octave_text
+            .strip_prefix('-')
+            .or_else(|| octave_text.strip_prefix('+'))
+        {
+            Some(digits) => digits,
+            None => octave_text,
+        };
+        if digits.is_empty() {
+            return Err(NoteParseError::new(
+                "dsp.note.octave",
+                offset + octave_start..offset + name.len(),
+                "signed octave digits",
+                octave_text,
+            ));
+        }
+        if let Some((invalid_index, invalid)) = digits
+            .char_indices()
+            .find(|(_, character)| !character.is_ascii_digit())
+        {
+            let sign_len = octave_text.len() - digits.len();
+            let start = offset + octave_start + sign_len + invalid_index;
+            return Err(NoteParseError::new(
+                "dsp.note.trailing",
+                start..start + invalid.len_utf8(),
+                "end of note after signed octave digits",
+                invalid.to_string(),
+            ));
+        }
+        octave_text.parse::<i8>().map_err(|_| {
+            NoteParseError::new(
+                "dsp.note.octave_range",
+                offset + octave_start..offset + name.len(),
+                "signed octave in i8 range",
+                octave_text,
+            )
+        })?
+    };
+
+    Ok((i32::from(octave) + 1) * 12 + base + accidental)
+}
+
+/// Strictly parse a note name into the MIDI range `0..=127`.
+pub fn parse_note_name_strict(name: &str) -> Result<u8, NoteParseError> {
+    let value = parse_note_name_raw_strict(name)?;
+    if !(0..=127).contains(&value) {
+        let (trimmed, offset) = trimmed_input(name);
+        return Err(NoteParseError::new(
+            "dsp.note.range",
+            offset..offset + trimmed.len(),
+            "MIDI note in 0..=127",
+            trimmed,
+        ));
+    }
+    Ok(value as u8)
+}
+
 /// Parse a note name to its raw, unclamped MIDI value.
 ///
 /// Returns the computed value without any range check (e.g. `"B9"` ->
@@ -152,5 +313,39 @@ mod tests {
         assert_eq!(parse_note_name_raw("C4"), Some(60));
         assert_eq!(parse_note_name_raw(""), None);
         assert_eq!(parse_note_name_raw("H4"), None);
+    }
+
+    #[test]
+    fn strict_parser_consumes_full_input_and_reports_spans() {
+        assert_eq!(parse_note_name_strict(" C4 "), Ok(60));
+        assert_eq!(parse_note_name_strict("C"), Ok(60));
+        assert_eq!(parse_note_name_strict("C##4"), Ok(62));
+
+        let trailing = parse_note_name_strict("C4x").unwrap_err();
+        assert_eq!(trailing.code, "dsp.note.trailing");
+        assert_eq!(trailing.span, 2..3);
+        assert_eq!(trailing.token, "x");
+
+        let missing_octave = parse_note_name_strict("Cx").unwrap_err();
+        assert_eq!(missing_octave.code, "dsp.note.trailing");
+        assert_eq!(missing_octave.span, 1..2);
+        assert_eq!(
+            missing_octave.expected,
+            "end of note after signed octave digits"
+        );
+        assert_eq!(missing_octave.token, "x");
+
+        let overflow = parse_note_name_strict("C300").unwrap_err();
+        assert_eq!(overflow.code, "dsp.note.octave_range");
+        assert_eq!(overflow.span, 1..4);
+
+        let uppercase_flat = parse_note_name_strict("CB4").unwrap_err();
+        assert_eq!(uppercase_flat.code, "dsp.note.trailing");
+        assert_eq!(uppercase_flat.span, 1..2);
+        assert_eq!(uppercase_flat.token, "B");
+
+        let range = parse_note_name_strict("G#9").unwrap_err();
+        assert_eq!(range.code, "dsp.note.range");
+        assert_eq!(range.span, 0..3);
     }
 }

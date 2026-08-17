@@ -94,6 +94,30 @@ vibe hello.vibe
 
 Edit the pattern. Save. Hear it change. **That's the vibe.**
 
+### Live Hardware Profiles
+
+Use `--profile` when a rig must not fall back to the CLI's default two inputs
+and two outputs:
+
+```bash
+vibe run --profile rig.toml set.vibe
+```
+
+A script can make that profile mandatory for every invocation by declaring it
+within its first 32 lines. Relative paths resolve beside the script:
+
+```rhai
+// vibe-profile: rig.toml
+```
+
+Profiles declare channel counts, logical input/output names, PipeWire port
+patterns, required or optional user services, PipeWire or MIDI endpoints, and
+whether an optional loss may start in `DEGRADED`. Invalid or conflicting
+configuration is `FAILED`; a missing required dependency/link is `WAITING`.
+Both states exit before script evaluation or Transport Start. `READY`, or
+explicitly permitted `DEGRADED`, prints the verified logical I/O map once before
+the script runs.
+
 <br>
 
 ## 📖 Language Overview
@@ -186,8 +210,8 @@ target.input("in").from(source);
 The standard library ships the first named-input processor catalogue under
 `stdlib/processors/`, following `design-named-input-stdlib-primitive-catalogue`:
 passthrough, lowpass, ring modulation, stereo crossfade, and stereo mixer
-primitives. See the [custom synthdef API](kb/tickets/api-reference/custom-synthdef-api/README.md)
-and [voice API](kb/tickets/api-reference/voice-api/README.md) for the full
+primitives. See the [custom synthesis reference](docs/reference/dsp.md)
+and [runtime-object reference](docs/reference/runtime-objects.md) for the full
 authoring and routing contract.
 
 <br>
@@ -214,7 +238,8 @@ All sounds are plain `.vibe` files — read them, tweak them, learn from them.
 
 - **[Tutorial Course](examples/tutorials/README.md)** — 20 hands-on lessons included in this repo
 - **[vibelang.org](https://vibelang.org)** — Full documentation, tutorials, and examples
-- **[API Reference](https://docs.rs/vibelang-core)** — Rust API documentation
+- **[VibeLang API Reference](docs/README.md)** — `.vibe`, tools, protocols, and generated indexes
+- **[Rust API Reference](https://docs.rs/vibelang-core)** — embedding and crate documentation
 - **[Examples](https://github.com/trusch/vibelang/tree/main/examples)** — Sample projects and tracks
 
 <br>

@@ -21,6 +21,7 @@
 //   pw_cv/pw_cv_amt: bipolar pulse-width CV and 0..1 attenuator.
 //   mix_sine..mix_sub: 0..1 expander mix levels, normalized when sum exceeds 1.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _erica_black_vco2_fold(x) {
     1.0 - abs(wrap_ar(x + 1.0, 0.0, 4.0) - 2.0)
 }

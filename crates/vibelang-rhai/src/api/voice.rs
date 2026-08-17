@@ -3,7 +3,7 @@
 //! Voices are the basic sound-producing units in VibeLang.
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use vibelang_core::traits::VoiceConfig;
 #[cfg(feature = "midi")]
 use vibelang_core::types::MidiDeviceId;
@@ -1001,10 +1001,465 @@ fn available_port_list(ports: &[OutputPort]) -> String {
         .join(", ")
 }
 
+use vibelang_core::candidate::{
+    AuthoringDeclaration, Cancellation, CandidateError, CanonicalF64, Composition,
+    DeclarationOwner, DeclarationPayload, DesiredLifecycle, GroupKind, GroupScope, LifecycleAction,
+    LifecycleMetadata, SfzKind, StartMode, TerminalEffect, VoiceAuthoring, VoiceKind,
+    VoiceSourceAuthoring,
+};
+
+use super::group::GroupRef;
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VoiceRef {
+    base: RefBase,
+}
+
+impl VoiceRef {
+    pub(crate) fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<VoiceKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Start(_) => (TerminalEffect::Start, Cancellation::BeforePlanning),
+            LifecycleAction::Stop => (TerminalEffect::Stop, Cancellation::NotCancellable),
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::SetMuted(_) | LifecycleAction::SetSoloed(_) => {
+                (TerminalEffect::Register, Cancellation::NotCancellable)
+            }
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported VoiceRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn run(self) -> Result<Self, FoundationError> {
+        self.action(
+            LifecycleAction::Start(StartMode::Continuous),
+            "run-continuous",
+        )
+    }
+
+    pub fn stop(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Stop, "stop")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn mute(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetMuted(true), "mute")
+    }
+
+    pub fn unmute(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetMuted(false), "unmute")
+    }
+
+    pub fn solo(self, enabled: bool) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetSoloed(enabled), "solo")
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum VoiceSourceV2 {
+    SynthDef(String),
+    Sfz(RefBase),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VoiceBuilder {
+    base: BuilderBase,
+    group: Option<GroupRef>,
+    source: Option<VoiceSourceV2>,
+    polyphony: u32,
+    gain: f64,
+    params: BTreeMap<String, f64>,
+    muted: bool,
+    soloed: bool,
+}
+
+impl VoiceBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            group: None,
+            source: None,
+            polyphony: 4,
+            gain: 1.0,
+            params: BTreeMap::new(),
+            muted: false,
+            soloed: false,
+        }
+    }
+
+    pub fn group(mut self, group: GroupRef) -> Result<Self, FoundationError> {
+        self.base = self.base.in_group(group.scope()?);
+        self.group = Some(group);
+        Ok(self)
+    }
+
+    pub fn synth(mut self, name: String) -> Result<Self, FoundationError> {
+        if matches!(&self.source, Some(VoiceSourceV2::Sfz(_))) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Voice synthdef and SFZ sources cannot be combined".into(),
+            )
+            .into());
+        }
+        if name.is_empty() {
+            return Err(CandidateError::InvalidAuthoring(
+                "Voice synthdef name must not be empty".into(),
+            )
+            .into());
+        }
+        self.source = Some(VoiceSourceV2::SynthDef(name));
+        Ok(self)
+    }
+
+    pub fn on(mut self, source: RefBase) -> Result<Self, FoundationError> {
+        if matches!(&self.source, Some(VoiceSourceV2::SynthDef(_))) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Voice synthdef and SFZ sources cannot be combined".into(),
+            )
+            .into());
+        }
+        source.typed::<SfzKind>()?;
+        self.source = Some(VoiceSourceV2::Sfz(source));
+        Ok(self)
+    }
+
+    pub fn on_sfz(self, source: RefBase) -> Result<Self, FoundationError> {
+        self.on(source)
+    }
+
+    pub fn poly(mut self, voices: i64) -> Result<Self, FoundationError> {
+        if !(1..=128).contains(&voices) {
+            return Err(CandidateError::InvalidAuthoring(
+                "Voice polyphony must be in 1..=128".into(),
+            )
+            .into());
+        }
+        self.polyphony = voices as u32;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn gain(mut self, value: f64) -> Self {
+        self.gain = value;
+        self
+    }
+
+    pub fn set_param(mut self, name: String, value: f64) -> Result<Self, FoundationError> {
+        self.base = self
+            .base
+            .configured(format!("param.{name}"), value.to_bits().to_be_bytes())?;
+        self.params.insert(name, value);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn muted(mut self, value: bool) -> Self {
+        self.muted = value;
+        self
+    }
+
+    #[must_use]
+    pub fn soloed(mut self, value: bool) -> Self {
+        self.soloed = value;
+        self
+    }
+
+    fn terminal(self, lifecycle: DesiredLifecycle) -> Result<VoiceRef, FoundationError> {
+        let source = self.source.ok_or_else(|| {
+            CandidateError::InvalidAuthoring(
+                "VoiceBuilder needs a synthdef or typed SfzRef before a terminal".into(),
+            )
+        })?;
+        let group = self
+            .group
+            .as_ref()
+            .map(|group| group.base().typed::<GroupKind>())
+            .transpose()?;
+        let source_ir = match &source {
+            VoiceSourceV2::SynthDef(name) => VoiceSourceAuthoring::SynthDef(name.clone()),
+            VoiceSourceV2::Sfz(reference) => {
+                VoiceSourceAuthoring::Sfz(reference.typed::<SfzKind>()?)
+            }
+        };
+        let params = self
+            .params
+            .iter()
+            .map(|(name, value)| Ok((name.clone(), CanonicalF64::new(*value)?)))
+            .collect::<Result<BTreeMap<_, _>, CandidateError>>()?;
+        let declaration = VoiceAuthoring {
+            group,
+            source: source_ir,
+            polyphony: self.polyphony,
+            gain: CanonicalF64::new(self.gain)?,
+            params,
+            muted: self.muted,
+            soloed: self.soloed,
+            lifecycle,
+        };
+        let payload = DeclarationPayload::authoring(AuthoringDeclaration::Voice(declaration))?;
+        let mut references = Vec::new();
+        if let Some(group) = self.group {
+            references.push((group.base().clone(), self.base.source().clone()));
+        }
+        if let VoiceSourceV2::Sfz(reference) = source {
+            references.push((reference, self.base.source().clone()));
+        }
+        let owner = DeclarationOwner::Structural(self.base.source().syntax_key().clone());
+        let metadata = match lifecycle {
+            DesiredLifecycle::Dormant => LifecycleMetadata::register(Composition::Standalone),
+            DesiredLifecycle::Start(_) => LifecycleMetadata::start(Composition::Standalone),
+        };
+        let (fragment, reference) = self.base.fragment(owner, metadata, payload, references)?;
+        foundation::commit_fragment(fragment)?;
+        VoiceRef::new(reference)
+    }
+
+    pub fn apply(self) -> Result<VoiceRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Dormant)
+    }
+
+    pub fn run(self) -> Result<VoiceRef, FoundationError> {
+        self.terminal(DesiredLifecycle::Start(StartMode::Continuous))
+    }
+}
+
+pub(crate) fn voice_builder_v2(name: String) -> Result<VoiceBuilder, Box<EvalAltResult>> {
+    Ok(VoiceBuilder::new(
+        foundation::authoring_builder::<VoiceKind>(&name, GroupScope::root())
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    ))
+}
+
+pub(crate) fn voice_ref_v2(name: String) -> Result<VoiceRef, Box<EvalAltResult>> {
+    let (key, scope) =
+        super::group::split_group_path(&name).map_err(|error| v2_error(error, Position::NONE))?;
+    VoiceRef::new(
+        foundation::authoring_ref::<VoiceKind>(&key, scope)
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| v2_error(error, Position::NONE))
+}
+
+fn v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<VoiceBuilder>("VoiceBuilder")
+        .register_type_with_name::<VoiceRef>("VoiceRef")
+        .register_fn("voice", voice_builder_v2)
+        .register_fn("voice_ref", voice_ref_v2)
+        .register_fn("group", |builder: VoiceBuilder, group: GroupRef| {
+            builder
+                .group(group)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("synth", |builder: VoiceBuilder, name: String| {
+            builder
+                .synth(name)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("on", |builder: VoiceBuilder, source: RefBase| {
+            builder
+                .on(source)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("on_sfz", |builder: VoiceBuilder, source: RefBase| {
+            builder
+                .on_sfz(source)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("poly", |builder: VoiceBuilder, voices: i64| {
+            builder
+                .poly(voices)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("gain", VoiceBuilder::gain)
+        .register_fn(
+            "set_param",
+            |builder: VoiceBuilder, name: String, value: f64| {
+                builder
+                    .set_param(name, value)
+                    .map_err(|error| v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn("muted", VoiceBuilder::muted)
+        .register_fn("soloed", VoiceBuilder::soloed)
+        .register_fn("apply", |builder: VoiceBuilder| {
+            builder
+                .apply()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("run", |builder: VoiceBuilder| {
+            builder
+                .run()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("run", |reference: VoiceRef| {
+            reference
+                .run()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("stop", |reference: VoiceRef| {
+            reference
+                .stop()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("remove", |reference: VoiceRef| {
+            reference
+                .remove()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("mute", |reference: VoiceRef| {
+            reference
+                .mute()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("unmute", |reference: VoiceRef| {
+            reference
+                .unmute()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("solo", |reference: VoiceRef, enabled: bool| {
+            reference
+                .solo(enabled)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("status", |reference: VoiceRef| {
+            reference
+                .status()
+                .map_err(|error| v2_error(error, Position::NONE))
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::context;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"voice-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    #[test]
+    fn v2_voice_factory_configuration_and_sfz_alias_are_pure_and_typed() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let sfz = foundation::authoring_ref::<SfzKind>("kit", GroupScope::root()).unwrap();
+        let canonical = VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .on(sfz.clone())
+        .unwrap();
+        let alias = VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .on_sfz(sfz)
+        .unwrap();
+        let wrong_kind =
+            foundation::authoring_ref::<GroupKind>("band", GroupScope::root()).unwrap();
+
+        assert_eq!(canonical, alias);
+        assert!(matches!(
+            VoiceBuilder::new(
+                foundation::authoring_builder::<VoiceKind>("wrong", GroupScope::root()).unwrap()
+            )
+            .on(wrong_kind),
+            Err(FoundationError::Candidate(
+                CandidateError::WrongRefKind { .. }
+            ))
+        ));
+        assert!(matches!(
+            VoiceBuilder::new(
+                foundation::authoring_builder::<VoiceKind>("mixed", GroupScope::root()).unwrap()
+            )
+            .synth("sine".into())
+            .unwrap()
+            .on(foundation::authoring_ref::<SfzKind>("kit", GroupScope::root()).unwrap()),
+            Err(FoundationError::Candidate(
+                CandidateError::InvalidAuthoring(_)
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+        assert!(candidate.references().is_empty());
+    }
+
+    #[test]
+    fn v2_voice_terminals_and_ref_actions_keep_register_and_start_effects_distinct() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let dormant = VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("lead", GroupScope::root()).unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap()
+        .apply()
+        .unwrap();
+        let running = VoiceBuilder::new(
+            foundation::authoring_builder::<VoiceKind>("drone", GroupScope::root()).unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap()
+        .run()
+        .unwrap();
+        dormant.clone().run().unwrap();
+
+        assert!(matches!(
+            running.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 2);
+        assert_eq!(
+            candidate.declarations()[0].lifecycle().terminal_effect,
+            vibelang_core::candidate::TerminalEffect::Start
+        );
+        assert_eq!(candidate.operations().len(), 1);
+        assert_eq!(
+            candidate.operations()[0].lifecycle().effects,
+            std::collections::BTreeSet::from([vibelang_core::candidate::LifecycleEffect::Start])
+        );
+    }
 
     /// Initialize a script context for testing, run the closure, then clean up.
     fn with_test_context<F: FnOnce()>(f: F) {

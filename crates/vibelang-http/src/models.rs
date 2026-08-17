@@ -4,6 +4,304 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use vibelang_core::mutation::{
+    EventSequence, MutationCapabilities, MutationReceipt, RevisionId, RuntimeEpoch,
+};
+
+pub const HTTP_V2_SCHEMA_VERSION: u16 = 2;
+
+#[derive(Debug, Serialize)]
+pub struct Revisioned<T> {
+    pub schema_version: u16,
+    pub runtime_epoch: RuntimeEpoch,
+    pub event_sequence: Option<EventSequence>,
+    pub last_confirmed_revision: Option<RevisionId>,
+    pub data: T,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HttpErrorEnvelope {
+    pub schema_version: u16,
+    pub operation: String,
+    pub error: HttpErrorDetail,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<MutationReceipt>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HttpErrorDetail {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub supported_values: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HttpCapabilities {
+    pub schema_version: u16,
+    pub runtime_epoch: RuntimeEpoch,
+    pub mutation: MutationCapabilities,
+    pub security: HttpSecurityCapabilities,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HttpSecurityCapabilities {
+    pub mode_id: String,
+    pub degraded: bool,
+    pub reason_ids: Vec<String>,
+    pub authentication_required: bool,
+    pub origin_allowlist_required: bool,
+    pub request_limits_enabled: bool,
+    pub rate_limits_enabled: bool,
+    pub audit_enabled: bool,
+    pub eval_enabled: bool,
+    pub privileged_detail_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HttpCapabilityDetails {
+    pub schema_version: u16,
+    pub runtime_epoch: RuntimeEpoch,
+    pub security: HttpSecurityPolicyDetails,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HttpSecurityPolicyDetails {
+    pub mode_id: String,
+    pub max_body_bytes: usize,
+    pub rate_limit_per_minute: u32,
+    pub max_wait_ms: u64,
+    pub eval_enabled: bool,
+    pub audit_enabled: bool,
+}
+
+// =============================================================================
+// Strict HTTP v2 operation-scoped request DTOs
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2TransportUpdate {
+    pub bpm: Option<f64>,
+    pub time_signature: Option<V2TimeSignature>,
+    pub quantization_beats: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2TimeSignature {
+    pub numerator: u8,
+    pub denominator: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SeekRequest {
+    pub beat: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2GroupUpdate {
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2ParamSet {
+    pub value: f32,
+    pub fade_beats: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2VoiceCreate {
+    pub name: Option<String>,
+    #[serde(alias = "synthdef")]
+    pub synth_name: Option<String>,
+    pub polyphony: Option<u8>,
+    pub gain: Option<f32>,
+    #[serde(alias = "group_id")]
+    pub group_path: Option<String>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+    pub sample: Option<String>,
+    pub sfz: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2VoiceUpdate {
+    pub synth_name: Option<String>,
+    pub polyphony: Option<u8>,
+    pub gain: Option<f32>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2TriggerRequest {
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2NoteOnRequest {
+    pub note: u8,
+    #[serde(default = "default_velocity")]
+    pub velocity: f32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2NoteOffRequest {
+    pub note: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2PatternEvent {
+    pub beat: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<HashMap<String, f32>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2PatternCreate {
+    pub name: String,
+    pub voice_name: String,
+    #[serde(default = "default_loop_beats")]
+    pub loop_beats: f64,
+    #[serde(default)]
+    pub events: Vec<V2PatternEvent>,
+    pub pattern_string: Option<String>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+    #[serde(default)]
+    pub swing: f32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2PatternUpdate {
+    pub events: Option<Vec<V2PatternEvent>>,
+    pub pattern_string: Option<String>,
+    pub loop_beats: Option<f64>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2LoopControlRequest {
+    pub quantize_beats: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2MelodyEvent {
+    pub beat: f64,
+    pub note: String,
+    pub frequency: Option<f64>,
+    pub duration: Option<f64>,
+    pub velocity: Option<f32>,
+    #[serde(default)]
+    pub params: Option<HashMap<String, f32>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2MelodyCreate {
+    pub name: String,
+    pub voice_name: String,
+    #[serde(default = "default_loop_beats")]
+    pub loop_beats: f64,
+    #[serde(default)]
+    pub events: Vec<V2MelodyEvent>,
+    pub melody_string: Option<String>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2MelodyUpdate {
+    pub events: Option<Vec<V2MelodyEvent>>,
+    pub melody_string: Option<String>,
+    pub lanes: Option<Vec<String>>,
+    pub loop_beats: Option<f64>,
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SequenceClip {
+    #[serde(rename = "type")]
+    pub clip_type: String,
+    pub name: String,
+    pub start_beat: f64,
+    pub end_beat: Option<f64>,
+    pub duration_beats: Option<f64>,
+    pub once: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SequenceCreate {
+    pub name: String,
+    #[serde(default = "default_sequence_length")]
+    pub loop_beats: f64,
+    #[serde(default)]
+    pub clips: Vec<V2SequenceClip>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SequenceUpdate {
+    pub loop_beats: Option<f64>,
+    pub clips: Option<Vec<V2SequenceClip>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SequenceStartRequest {
+    #[serde(default)]
+    pub play_once: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2EffectUpdate {
+    #[serde(default)]
+    pub params: HashMap<String, f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2SampleLoad {
+    pub path: String,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V2FadeCreate {
+    pub target_type: FadeTargetType,
+    pub target_name: String,
+    pub param_name: String,
+    pub start_value: Option<f32>,
+    pub target_value: f32,
+    pub duration_beats: f64,
+}
 
 // =============================================================================
 // Source Location (for navigation to code)

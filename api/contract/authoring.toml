@@ -1,0 +1,35 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "authoring"
+
+[[records]]
+target_id = "v1:entry:0002c6e95d407c5a"
+owner = "vibelang-std"
+
+[records.stability]
+level = "stable"
+since = "0.4.0"
+
+[[records]]
+target_id = "v1:entry:51360d5a6e37af91"
+owner = "vibelang-rhai"
+
+[records.stability]
+level = "deprecated"
+since = "0.4.0"
+deprecated_since = "0.4.0"
+replacement_id = "v1:entry:2d93917659ad6e1f"
+reason = "cc32 encodes transport resolution in authoring; map_cc now consumes MIDI 1 and native UMP through one route"
+removal_not_before = "2.0.0"
+
+[[records]]
+target_id = "v1:overload:a19c13f166a0307d"
+owner = "vibelang-rhai"
+
+[records.stability]
+level = "deprecated"
+since = "0.4.0"
+deprecated_since = "0.4.0"
+replacement_id = "v1:entry:2d93917659ad6e1f"
+reason = "compatibility alias into the transport-transparent map_cc registry"
+removal_not_before = "2.0.0"

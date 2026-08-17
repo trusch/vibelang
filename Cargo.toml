@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/vibelang-api-manifest",
     "crates/vibelang-core",
     "crates/vibelang-dsp",
     "crates/vibelang-sfz",
@@ -10,6 +11,7 @@ members = [
     "crates/vibelang-http",
     "crates/vibelang-rhai",
     "crates/vibelang-wasm",
+    "xtask",
 ]
 default-members = ["crates/vibelang-cli"]
 resolver = "2"

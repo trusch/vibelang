@@ -5,7 +5,7 @@
 use rhai::{
     Array, CustomType, Engine, EvalAltResult, FnPtr, NativeCallContext, Position, TypeBuilder,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use vibelang_core::reload::{GroupAliasError, GroupAliasTarget, GroupConfig};
 
 use crate::context;
@@ -271,6 +271,60 @@ impl GroupHandle {
         });
         self
     }
+
+    /// Define the group body with a closure (builder method).
+    ///
+    /// This is the builder equivalent of `define_group("name", || { ... })`.
+    /// The closure executes in the group's context, allowing nested definitions.
+    /// Closure failures propagate rather than being logged: the body builds
+    /// the group's whole graph, so swallowing an error here ships a half-built
+    /// group as silence and lets `vibe run` exit 0 on a broken script.
+    fn body(
+        ctx: NativeCallContext,
+        handle: Self,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let group_id = context::get_or_create_group_id(&handle.path);
+
+        context::with_state(|state| {
+            if let Some(config) = state.groups.get_mut(&group_id) {
+                config.name = handle.name.clone();
+            }
+        });
+
+        let pos = ctx.call_position();
+        let contribution_id = context::begin_body_contribution(
+            group_id,
+            handle.path.clone(),
+            ctx.call_source().map(ToOwned::to_owned),
+            pos.line().map(|line| line as u32),
+            pos.position().map(|column| column as u32),
+        );
+
+        let result = context::with_group_path(&handle.path, || {
+            closure.call_within_context::<rhai::Dynamic>(&ctx, ())
+        });
+        // End the contribution before propagating: the body-contribution stack
+        // must unwind even when the closure failed.
+        context::end_body_contribution(contribution_id);
+
+        // `let _ =` binds the closure's `Dynamic` return, which is #[must_use];
+        // the `?` above it is what propagates the failure.
+        let _ = result.map_err(|e| group_body_error("group body", &handle.name, e))?;
+
+        Ok(handle)
+    }
+
+    /// Register an authoring alias for a canonical group handle.
+    fn alias(
+        ctx: NativeCallContext,
+        handle: Self,
+        alias: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        context::add_group_alias(alias, handle.path.clone())
+            .map_err(|err| alias_error(err, ctx.call_position()))?;
+        Ok(handle)
+    }
 }
 
 fn format_alias_target(target: &GroupAliasTarget) -> String {
@@ -386,63 +440,19 @@ pub fn define_group(
     Ok(GroupHandle::new(full_path))
 }
 
-/// Define the group body with a closure (builder method).
-///
-/// This is the builder equivalent of `define_group("name", || { ... })`.
-/// The closure executes in the group's context, allowing nested definitions.
-fn group_body(
-    ctx: NativeCallContext,
-    handle: GroupHandle,
-    closure: FnPtr,
-) -> Result<GroupHandle, Box<EvalAltResult>> {
-    let group_id = context::get_or_create_group_id(&handle.path);
-
-    context::with_state(|state| {
-        if let Some(config) = state.groups.get_mut(&group_id) {
-            config.name = handle.name.clone();
-        }
-    });
-
-    let pos = ctx.call_position();
-    let contribution_id = context::begin_body_contribution(
-        group_id,
-        handle.path.clone(),
-        ctx.call_source().map(ToOwned::to_owned),
-        pos.line().map(|line| line as u32),
-        pos.position().map(|column| column as u32),
-    );
-
-    let result = context::with_group_path(&handle.path, || {
-        closure.call_within_context::<rhai::Dynamic>(&ctx, ())
-    });
-    // End the contribution before propagating: the body-contribution stack
-    // must unwind even when the closure failed.
-    context::end_body_contribution(contribution_id);
-
-    let _ = result.map_err(|e| group_body_error("group body", &handle.name, e))?;
-
-    Ok(handle)
-}
-
 /// Wrap a failing group-body closure error so the script author sees which
 /// group's body failed, with the underlying error preserved as the message.
+///
+/// The free-standing `group_body`/`group_alias` that lived here upstream are
+/// gone: this branch moved both onto `impl GroupHandle` as `body`/`alias`,
+/// which is what `register_fn` now binds. Only the error wrapper is shared,
+/// by `define_group` and by `GroupHandle::body`.
 fn group_body_error(verb: &str, group_name: &str, err: Box<EvalAltResult>) -> Box<EvalAltResult> {
     let pos = err.position();
     Box::new(EvalAltResult::ErrorRuntime(
         format!("{}('{}'): {}", verb, group_name, err).into(),
         pos,
     ))
-}
-
-/// Register an authoring alias for a canonical group handle.
-fn group_alias(
-    ctx: NativeCallContext,
-    handle: GroupHandle,
-    alias: String,
-) -> Result<GroupHandle, Box<EvalAltResult>> {
-    context::add_group_alias(alias, handle.path.clone())
-        .map_err(|err| alias_error(err, ctx.call_position()))?;
-    Ok(handle)
 }
 
 /// Get a group handle by path.
@@ -481,8 +491,8 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("effect_count", GroupHandle::effect_count);
 
     // Group body and output routing
-    engine.register_fn("body", group_body);
-    engine.register_fn("alias", group_alias);
+    engine.register_fn("body", GroupHandle::body);
+    engine.register_fn("alias", GroupHandle::alias);
     engine.register_fn("output", GroupHandle::output);
     engine.register_fn("output", GroupHandle::output_mono);
 
@@ -491,9 +501,668 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("clear_effects", GroupHandle::clear_effects);
 }
 
+use vibelang_core::candidate::{
+    Cancellation, CandidateError, CandidateFragment, CanonicalF64, Composition, ContributionId,
+    ContributionIr, DeclarationOwner, DeclarationPayload, GroupAuthoring, GroupKind, GroupScope,
+    LifecycleAction, LifecycleMetadata, TerminalEffect,
+};
+
+use crate::foundation::{self, BuilderBase, FoundationError, Observation, RefBase};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupRef {
+    base: RefBase,
+}
+
+impl GroupRef {
+    fn new(base: RefBase) -> Result<Self, FoundationError> {
+        base.typed::<GroupKind>()?;
+        Ok(Self { base })
+    }
+
+    #[must_use]
+    pub fn base(&self) -> &RefBase {
+        &self.base
+    }
+
+    pub(crate) fn scope(&self) -> Result<GroupScope, FoundationError> {
+        let mut components = self
+            .base
+            .address()
+            .group_scope()
+            .components()
+            .iter()
+            .map(|component| component.as_str().to_string())
+            .collect::<Vec<_>>();
+        components.push(self.base.address().key().as_str().to_string());
+        Ok(GroupScope::new(components)?)
+    }
+
+    fn action(self, action: LifecycleAction, role: &str) -> Result<Self, FoundationError> {
+        let (effect, cancellation) = match &action {
+            LifecycleAction::Remove => (TerminalEffect::Cancel, Cancellation::RemoveDeclaration),
+            LifecycleAction::SetMuted(_)
+            | LifecycleAction::SetSoloed(_)
+            | LifecycleAction::RemoveContribution(_) => {
+                (TerminalEffect::Register, Cancellation::NotCancellable)
+            }
+            _ => {
+                return Err(CandidateError::InvalidLifecycle(
+                    "unsupported GroupRef lifecycle action".into(),
+                )
+                .into())
+            }
+        };
+        let source = foundation::operation_source(&self.base, role)?;
+        let base = foundation::commit_action(
+            self.base,
+            LifecycleMetadata::reference(effect, cancellation),
+            action,
+            source,
+        )?;
+        Ok(Self { base })
+    }
+
+    pub fn mute(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetMuted(true), "mute")
+    }
+
+    pub fn unmute(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetMuted(false), "unmute")
+    }
+
+    pub fn solo(self, enabled: bool) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::SetSoloed(enabled), "solo")
+    }
+
+    pub fn remove(self) -> Result<Self, FoundationError> {
+        self.action(LifecycleAction::Remove, "remove")
+    }
+
+    pub fn remove_contribution(self, id: String) -> Result<Self, FoundationError> {
+        let key = vibelang_core::candidate::DeclarationKey::new(id)?;
+        let contribution = ContributionId::new(
+            self.base.address().module().clone(),
+            vibelang_core::candidate::SyntaxKey::Explicit(key),
+        );
+        self.action(
+            LifecycleAction::RemoveContribution(contribution),
+            "remove-contribution",
+        )
+    }
+
+    pub fn status(&self) -> Result<Observation, FoundationError> {
+        foundation::observe(&self.base)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GroupContribution {
+    id: ContributionId,
+    order: Option<i32>,
+    source: vibelang_core::candidate::SourceAnchor,
+    fragment: CandidateFragment,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupBuilder {
+    base: BuilderBase,
+    parent: Option<GroupRef>,
+    gain: f64,
+    muted: bool,
+    soloed: bool,
+    params: BTreeMap<String, f64>,
+    output_channels: Option<(u32, u8)>,
+    contributions: Vec<GroupContribution>,
+}
+
+impl GroupBuilder {
+    #[must_use]
+    pub fn new(base: BuilderBase) -> Self {
+        Self {
+            base,
+            parent: None,
+            gain: 1.0,
+            muted: false,
+            soloed: false,
+            params: BTreeMap::new(),
+            output_channels: None,
+            contributions: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn gain(mut self, value: f64) -> Self {
+        self.gain = value;
+        self
+    }
+
+    #[must_use]
+    pub fn muted(mut self, value: bool) -> Self {
+        self.muted = value;
+        self
+    }
+
+    #[must_use]
+    pub fn soloed(mut self, value: bool) -> Self {
+        self.soloed = value;
+        self
+    }
+
+    pub fn parent(mut self, parent: GroupRef) -> Result<Self, FoundationError> {
+        self.base = self.base.in_group(parent.scope()?);
+        self.parent = Some(parent);
+        Ok(self)
+    }
+
+    pub fn set_param(mut self, name: String, value: f64) -> Result<Self, FoundationError> {
+        self.base = self
+            .base
+            .configured(format!("param.{name}"), value.to_bits().to_be_bytes())?;
+        self.params.insert(name, value);
+        Ok(self)
+    }
+
+    pub fn output(mut self, bus: i64, channels: i64) -> Result<Self, FoundationError> {
+        if !(0..16).contains(&bus) || !matches!(channels, 1 | 2) || bus + channels > 16 {
+            return Err(CandidateError::InvalidAuthoring(
+                "Group output needs bus 0..15 and one or two in-range channels".into(),
+            )
+            .into());
+        }
+        self.output_channels = Some((bus as u32, channels as u8));
+        Ok(self)
+    }
+
+    fn push_contribution(
+        self,
+        id: String,
+        order: Option<i32>,
+        fragment: CandidateFragment,
+    ) -> Result<Self, FoundationError> {
+        let key = vibelang_core::candidate::DeclarationKey::new(id)?;
+        self.push_contribution_with_key(
+            vibelang_core::candidate::SyntaxKey::Explicit(key),
+            order,
+            fragment,
+        )
+    }
+
+    fn push_contribution_with_key(
+        mut self,
+        key: vibelang_core::candidate::SyntaxKey,
+        order: Option<i32>,
+        fragment: CandidateFragment,
+    ) -> Result<Self, FoundationError> {
+        let source = vibelang_core::candidate::SourceAnchor::new(
+            self.base.source().module().clone(),
+            key.clone(),
+            None,
+        );
+        let contribution_id = ContributionId::new(self.base.source().module().clone(), key);
+        if self
+            .contributions
+            .iter()
+            .any(|contribution| contribution.id == contribution_id)
+        {
+            return Err(CandidateError::DuplicateContribution(contribution_id).into());
+        }
+        self.contributions.push(GroupContribution {
+            id: contribution_id,
+            order,
+            source,
+            fragment,
+        });
+        Ok(self)
+    }
+
+    fn capture_body(
+        ctx: NativeCallContext,
+        builder: Self,
+        id: String,
+        order: Option<i32>,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let key = vibelang_core::candidate::DeclarationKey::new(id)
+            .map_err(|error| v2_error(error.into(), ctx.call_position()))?;
+        Self::capture_body_with_key(
+            ctx,
+            builder,
+            vibelang_core::candidate::SyntaxKey::Explicit(key),
+            order,
+            closure,
+        )
+    }
+
+    fn capture_body_with_key(
+        ctx: NativeCallContext,
+        builder: Self,
+        key: vibelang_core::candidate::SyntaxKey,
+        order: Option<i32>,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let contribution_id =
+            ContributionId::new(builder.base.source().module().clone(), key.clone());
+        foundation::begin_fragment(DeclarationOwner::Contribution(contribution_id))
+            .map_err(|error| v2_error(error, ctx.call_position()))?;
+        if let Err(error) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
+            foundation::abort_fragment();
+            return Err(error);
+        }
+        let fragment =
+            foundation::finish_fragment().map_err(|error| v2_error(error, ctx.call_position()))?;
+        builder
+            .push_contribution_with_key(key, order, fragment)
+            .map_err(|error| v2_error(error, ctx.call_position()))
+    }
+
+    fn body(
+        ctx: NativeCallContext,
+        builder: Self,
+        id: String,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        Self::capture_body(ctx, builder, id, None, closure)
+    }
+
+    fn body_ordered(
+        ctx: NativeCallContext,
+        builder: Self,
+        id: String,
+        order: i64,
+        closure: FnPtr,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let position = ctx.call_position();
+        let order = i32::try_from(order).map_err(|_| {
+            v2_error(
+                CandidateError::InvalidAuthoring(
+                    "Group contribution order must fit a signed 32-bit integer".into(),
+                )
+                .into(),
+                position,
+            )
+        })?;
+        Self::capture_body(ctx, builder, id, Some(order), closure)
+    }
+
+    pub fn apply(self) -> Result<GroupRef, FoundationError> {
+        let parent_ref = self.parent.as_ref().map(|parent| parent.base.clone());
+        let parent = self
+            .parent
+            .as_ref()
+            .map(|parent| parent.base.typed::<GroupKind>())
+            .transpose()?;
+        let params = self
+            .params
+            .into_iter()
+            .map(|(name, value)| Ok((name, CanonicalF64::new(value)?)))
+            .collect::<Result<BTreeMap<_, _>, CandidateError>>()?;
+        let declaration = GroupAuthoring {
+            parent,
+            gain: CanonicalF64::new(self.gain)?,
+            muted: self.muted,
+            soloed: self.soloed,
+            params,
+            output_channels: self.output_channels,
+        };
+        let payload = DeclarationPayload::authoring(
+            vibelang_core::candidate::AuthoringDeclaration::Group(declaration),
+        )?;
+        let source = self.base.source().clone();
+        let references = parent_ref
+            .into_iter()
+            .map(|reference| (reference, source.clone()));
+        let (mut fragment, reference) = self.base.fragment(
+            DeclarationOwner::Structural(source.syntax_key().clone()),
+            LifecycleMetadata::register(Composition::Standalone),
+            payload,
+            references,
+        )?;
+        let typed = reference.typed::<GroupKind>()?;
+        for contribution in self.contributions {
+            fragment = fragment.contribution(ContributionIr::new(
+                contribution.id,
+                typed.clone(),
+                contribution.order,
+                contribution.source,
+            ));
+            fragment.extend(contribution.fragment);
+        }
+        foundation::commit_fragment(fragment)?;
+        GroupRef::new(reference)
+    }
+}
+
+pub(crate) fn split_group_path(path: &str) -> Result<(String, GroupScope), FoundationError> {
+    if path.is_empty() || path.split('/').any(str::is_empty) {
+        return Err(FoundationError::Candidate(CandidateError::InvalidAddress(
+            "Group path must be project-relative with no empty components".into(),
+        )));
+    }
+    let mut components = path.split('/').map(ToOwned::to_owned).collect::<Vec<_>>();
+    let key = components.pop().ok_or_else(|| {
+        FoundationError::Candidate(CandidateError::InvalidAddress(
+            "Group path must contain a canonical component".into(),
+        ))
+    })?;
+    Ok((key, GroupScope::new(components)?))
+}
+
+pub(crate) fn group_builder_v2(path: String) -> Result<GroupBuilder, Box<EvalAltResult>> {
+    let (key, scope) = split_group_path(&path).map_err(|error| v2_error(error, Position::NONE))?;
+    let mut builder = GroupBuilder::new(
+        foundation::authoring_builder::<GroupKind>(&key, scope.clone())
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    );
+    if !scope.components().is_empty() {
+        let mut parent_components = scope
+            .components()
+            .iter()
+            .map(|component| component.as_str().to_string())
+            .collect::<Vec<_>>();
+        let parent_key = parent_components.pop().expect("non-empty Group scope");
+        let parent_scope = GroupScope::new(parent_components)
+            .map_err(|error| v2_error(error.into(), Position::NONE))?;
+        let parent = GroupRef::new(
+            foundation::authoring_ref::<GroupKind>(&parent_key, parent_scope)
+                .map_err(|error| v2_error(error, Position::NONE))?,
+        )
+        .map_err(|error| v2_error(error, Position::NONE))?;
+        builder = builder
+            .parent(parent)
+            .map_err(|error| v2_error(error, Position::NONE))?;
+    }
+    Ok(builder)
+}
+
+pub(crate) fn group_ref_v2(path: String) -> Result<GroupRef, Box<EvalAltResult>> {
+    let (key, scope) = split_group_path(&path).map_err(|error| v2_error(error, Position::NONE))?;
+    GroupRef::new(
+        foundation::authoring_ref::<GroupKind>(&key, scope)
+            .map_err(|error| v2_error(error, Position::NONE))?,
+    )
+    .map_err(|error| v2_error(error, Position::NONE))
+}
+
+fn define_group_v2(
+    ctx: NativeCallContext,
+    path: String,
+    closure: FnPtr,
+) -> Result<GroupRef, Box<EvalAltResult>> {
+    let position = ctx.call_position();
+    let syntax_path = path.bytes().map(u32::from).collect::<Vec<_>>();
+    let builder = group_builder_v2(path)?;
+    let contribution_key = vibelang_core::candidate::SyntaxKey::deterministic(
+        builder.base.source().module(),
+        &syntax_path,
+        "define-group-body",
+    )
+    .map_err(|error| v2_error(error.into(), position))?;
+    GroupBuilder::capture_body_with_key(ctx, builder, contribution_key, None, closure)?
+        .apply()
+        .map_err(|error| v2_error(error, position))
+}
+
+fn v2_error(error: FoundationError, position: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        error.to_string().into(),
+        position,
+    ))
+}
+
+pub(crate) fn install_v2(engine: &mut Engine) {
+    let error = |error| v2_error(error, Position::NONE);
+    engine
+        .register_type_with_name::<GroupBuilder>("GroupBuilder")
+        .register_type_with_name::<GroupRef>("GroupRef")
+        .register_fn("group_builder", group_builder_v2)
+        .register_fn("group_ref", group_ref_v2)
+        .register_fn("group", group_ref_v2)
+        .register_fn("define_group", define_group_v2)
+        .register_fn("gain", GroupBuilder::gain)
+        .register_fn("muted", GroupBuilder::muted)
+        .register_fn("soloed", GroupBuilder::soloed)
+        .register_fn("parent", |builder: GroupBuilder, parent: GroupRef| {
+            builder
+                .parent(parent)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn(
+            "set_param",
+            move |builder: GroupBuilder, name: String, value: f64| {
+                builder.set_param(name, value).map_err(error)
+            },
+        )
+        .register_fn(
+            "output",
+            |builder: GroupBuilder, bus: i64, channels: i64| {
+                builder
+                    .output(bus, channels)
+                    .map_err(|error| v2_error(error, Position::NONE))
+            },
+        )
+        .register_fn("body", GroupBuilder::body)
+        .register_fn("body", GroupBuilder::body_ordered)
+        .register_fn("apply", |builder: GroupBuilder| {
+            builder
+                .apply()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("mute", |reference: GroupRef| {
+            reference
+                .mute()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("unmute", |reference: GroupRef| {
+            reference
+                .unmute()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("solo", |reference: GroupRef, enabled: bool| {
+            reference
+                .solo(enabled)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("remove", |reference: GroupRef| {
+            reference
+                .remove()
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("remove_contribution", |reference: GroupRef, id: String| {
+            reference
+                .remove_contribution(id)
+                .map_err(|error| v2_error(error, Position::NONE))
+        })
+        .register_fn("status", |reference: GroupRef| {
+            reference
+                .status()
+                .map_err(|error| v2_error(error, Position::NONE))
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v2_identity() -> vibelang_core::candidate::EvaluationIdentity {
+        vibelang_core::candidate::EvaluationIdentity::new(
+            vibelang_core::candidate::LanguageContract::v2(
+                vibelang_core::candidate::ContractDigest::from_bytes(b"group-v2-test"),
+            ),
+            vibelang_core::candidate::EngineInstanceId::new(),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    fn v2_voice_fragment(name: &str, contribution: &ContributionId) -> CandidateFragment {
+        let builder = crate::api::voice::VoiceBuilder::new(
+            foundation::authoring_builder::<vibelang_core::candidate::VoiceKind>(
+                name,
+                GroupScope::root(),
+            )
+            .unwrap(),
+        )
+        .synth("sine".into())
+        .unwrap();
+        foundation::capture_fragment(DeclarationOwner::Contribution(contribution.clone()), || {
+            builder.apply()
+        })
+        .unwrap()
+        .1
+    }
+
+    #[test]
+    fn v2_group_factories_configuration_and_lookup_alias_are_pure() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+        let alias = engine.eval::<GroupRef>(r#"group("band")"#).unwrap();
+        let canonical = engine.eval::<GroupRef>(r#"group_ref("band")"#).unwrap();
+        let configured = group_builder_v2("band".into())
+            .unwrap()
+            .gain(0.5)
+            .muted(true)
+            .output(2, 2)
+            .unwrap();
+        let nested = group_builder_v2("band/drums".into()).unwrap();
+
+        assert_eq!(alias, canonical);
+        assert_eq!(configured.gain, 0.5);
+        assert_eq!(
+            nested
+                .parent
+                .as_ref()
+                .unwrap()
+                .base()
+                .address()
+                .key()
+                .as_str(),
+            "band"
+        );
+        assert_eq!(nested.base.address().group_scope().to_string(), "band");
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+        assert!(candidate.operations().is_empty());
+    }
+
+    #[test]
+    fn v2_group_paths_reject_noncanonical_empty_components() {
+        for path in ["", "/band", "band/", "band//drums"] {
+            assert!(matches!(
+                split_group_path(path),
+                Err(FoundationError::Candidate(CandidateError::InvalidAddress(
+                    _
+                )))
+            ));
+        }
+    }
+
+    #[test]
+    fn v2_define_group_sugar_assigns_distinct_stable_body_contributions() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let mut engine = Engine::new();
+        install_v2(&mut engine);
+        engine
+            .eval::<GroupRef>(
+                r#"
+                    define_group("band", || {});
+                    define_group("drums", || {})
+                "#,
+            )
+            .unwrap();
+
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert_eq!(candidate.declarations().len(), 2);
+        assert_eq!(candidate.contributions().len(), 2);
+        assert_ne!(
+            candidate.contributions()[0].id(),
+            candidate.contributions()[1].id()
+        );
+        assert_ne!(
+            candidate.contributions()[0].target_group().address(),
+            candidate.contributions()[1].target_group().address()
+        );
+    }
+
+    #[test]
+    fn v2_group_contributions_are_stable_owned_ordered_and_removable() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let module = vibelang_core::candidate::ModulePath::new("main").unwrap();
+        let alpha = ContributionId::new(
+            module.clone(),
+            vibelang_core::candidate::SyntaxKey::Explicit(
+                vibelang_core::candidate::DeclarationKey::new("alpha").unwrap(),
+            ),
+        );
+        let beta = ContributionId::new(
+            module,
+            vibelang_core::candidate::SyntaxKey::Explicit(
+                vibelang_core::candidate::DeclarationKey::new("beta").unwrap(),
+            ),
+        );
+        let builder = GroupBuilder::new(
+            foundation::authoring_builder::<GroupKind>("band", GroupScope::root()).unwrap(),
+        )
+        .push_contribution("alpha".into(), Some(10), v2_voice_fragment("lead", &alpha))
+        .unwrap()
+        .push_contribution("beta".into(), Some(5), v2_voice_fragment("bass", &beta))
+        .unwrap();
+        let group = builder.apply().unwrap();
+
+        assert!(matches!(
+            group.status(),
+            Err(FoundationError::ObservationUnavailable)
+        ));
+        group.remove_contribution("beta".into()).unwrap();
+        let candidate = foundation::finish_evaluation().unwrap();
+
+        assert_eq!(candidate.contributions().len(), 2);
+        assert_eq!(candidate.contributions()[0].id(), &beta);
+        assert_eq!(candidate.contributions()[1].id(), &alpha);
+        assert!(candidate
+            .contributions()
+            .iter()
+            .all(|contribution| contribution.owned_declarations().len() == 1));
+        assert!(candidate.declarations().iter().any(|declaration| {
+            matches!(declaration.owner(), DeclarationOwner::Contribution(id) if id == &alpha)
+        }));
+        assert!(matches!(
+            candidate.operations()[0].action(),
+            LifecycleAction::RemoveContribution(id) if id == &beta
+        ));
+    }
+
+    #[test]
+    fn v2_duplicate_contribution_rejects_without_candidate_residue() {
+        foundation::abort_evaluation();
+        foundation::begin_evaluation(v2_identity()).unwrap();
+        let module = vibelang_core::candidate::ModulePath::new("main").unwrap();
+        let id = ContributionId::new(
+            module,
+            vibelang_core::candidate::SyntaxKey::Explicit(
+                vibelang_core::candidate::DeclarationKey::new("body").unwrap(),
+            ),
+        );
+        let fragment = v2_voice_fragment("lead", &id);
+        let builder = GroupBuilder::new(
+            foundation::authoring_builder::<GroupKind>("band", GroupScope::root()).unwrap(),
+        )
+        .push_contribution("body".into(), None, fragment.clone())
+        .unwrap();
+
+        assert!(matches!(
+            builder.push_contribution("body".into(), None, fragment),
+            Err(FoundationError::Candidate(
+                CandidateError::DuplicateContribution(_)
+            ))
+        ));
+        let candidate = foundation::finish_evaluation().unwrap();
+        assert!(candidate.declarations().is_empty());
+        assert!(candidate.contributions().is_empty());
+    }
 
     // ==================== GroupHandle Constructor Tests ====================
 

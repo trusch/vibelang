@@ -32,6 +32,23 @@ they're general-purpose enough to belong in the shipped library.
 - Single-port stereo synthdefs without an explicit `.output(...)` call
   keep the legacy implicit `("out", 2)` shape and continue to work.
 
+## Script Function Metadata
+
+Every named Rhai `fn` declaration under `stdlib/` must have exactly one
+adjacent doc annotation so the public API manifest can classify it without a
+naming heuristic:
+
+```rhai
+/// @vibelang-api export=public support=supported
+fn chord(root) { /* ... */ }
+
+/// @vibelang-api export=import_callable_internal support=unsupported
+fn _chord_intervals() { /* ... */ }
+```
+
+The leading underscore remains a readability convention only. The annotation
+is authoritative and manifest generation fails when it is missing or invalid.
+
 ## Routing
 
 Named-port routing is documented end-to-end in

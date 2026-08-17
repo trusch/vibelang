@@ -1,0 +1,8 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "http"
+
+[[records]]
+target_id = "v1:field:0000000000000003"
+owner = "vibelang-http"
+consistency = "applied_state"

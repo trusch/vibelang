@@ -7,9 +7,9 @@ use axum::{
 };
 use std::sync::Arc;
 use vibelang_core::{
-    traits::{PatternConfig, Step},
-    types::Beat,
-    PatternId, PatternMessage, PatternOwner, VoiceId,
+    traits::{FadeConfig, FadeTarget, PatternConfig, Step},
+    types::{Beat, Duration},
+    FadeMessage, Message, PatternId, PatternMessage, PatternOwner, VoiceId,
 };
 
 use crate::{
@@ -263,17 +263,25 @@ pub async fn set_pattern_param(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let pattern_id = resolve_pattern_id(&state, &id).await?;
 
-    if let Err(e) = state
-        .send(
-            PatternMessage::SetParam {
-                id: pattern_id,
-                param,
-                value: req.value,
-            }
-            .into(),
-        )
-        .await
-    {
+    let message: Message = if let Some(fade_beats) = req.fade_beats {
+        FadeMessage::Start {
+            config: FadeConfig::new(
+                FadeTarget::Pattern(pattern_id),
+                &param,
+                req.value,
+                Duration::from_beats(fade_beats),
+            ),
+        }
+        .into()
+    } else {
+        PatternMessage::SetParam {
+            id: pattern_id,
+            param,
+            value: req.value,
+        }
+        .into()
+    };
+    if let Err(e) = state.send(message).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!(

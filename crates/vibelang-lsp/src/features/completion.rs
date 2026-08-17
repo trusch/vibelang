@@ -17,7 +17,7 @@ use tower_lsp::lsp_types::{
 };
 
 use crate::analysis::{AnalysisResult, CompletionContext};
-use crate::data::{get_api_docs, get_ugen_completions};
+use crate::data::{get_api_docs, get_api_method_docs, get_ugen_completions, ApiMethodDoc};
 
 /// Get completions for a given context.
 pub fn get_completions(
@@ -50,7 +50,7 @@ fn get_top_level_completions() -> Vec<CompletionItem> {
 
     docs.values()
         .map(|func| CompletionItem {
-            label: func.name.to_string(),
+            label: func.name.clone(),
             kind: Some(CompletionItemKind::FUNCTION),
             label_details: Some(CompletionItemLabelDetails {
                 detail: Some(format!(" {}", func.signature)),
@@ -58,12 +58,16 @@ fn get_top_level_completions() -> Vec<CompletionItem> {
             }),
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!(
-                    "{}\n\n**Example:**\n```rhai\n{}\n```",
-                    func.description, func.example
-                ),
+                value: if func.example.is_empty() {
+                    func.description.clone()
+                } else {
+                    format!(
+                        "{}\n\n**Example:**\n```rhai\n{}\n```",
+                        func.description, func.example
+                    )
+                },
             })),
-            insert_text: Some(get_snippet_for_function(func.name)),
+            insert_text: Some(get_snippet_for_function(&func.name)),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
             ..Default::default()
         })
@@ -92,13 +96,13 @@ fn get_snippet_for_function(name: &str) -> String {
                 .to_string()
         }
         "set_tempo" => "set_tempo($1)$0".to_string(),
-        "set_quantization" => "set_quantization(\"$1\")$0".to_string(),
+        "set_quantization" => "set_quantization(${1:4.0})$0".to_string(),
         "set_time_signature" => "set_time_signature($1, $2)$0".to_string(),
         "db" => "db($1)$0".to_string(),
         "bars" => "bars($1)$0".to_string(),
-        "note" => "note($1, $2)$0".to_string(),
+        "note" => "note(\"${1:C4}\")$0".to_string(),
         "record" => "record(\"$1\")$0".to_string(),
-        "chord" => "chord(\"$1\", \"$2\")$0".to_string(),
+        "chord" => "chord(\"${1:C}\", ${2:4})$0".to_string(),
         "scale" => "scale(\"$1\", \"$2\", $3)$0".to_string(),
         "envelope" => "envelope()$0".to_string(),
         // Filesystem extension (ext-fs)
@@ -380,286 +384,51 @@ fn get_note_pattern_completions() -> Vec<CompletionItem> {
 
 /// Method chain completions based on object type.
 fn get_method_completions(object_type: Option<&str>) -> Vec<CompletionItem> {
-    match object_type {
-        Some("Voice") => get_voice_methods(),
-        Some("Pattern") => get_pattern_methods(),
-        Some("Melody") => get_melody_methods(),
-        Some("Sequence") => get_sequence_methods(),
-        Some("Fx") => get_fx_methods(),
-        Some("Group") => get_group_methods(),
-        Some("Fade") => get_fade_methods(),
-        Some("Sample") => get_sample_methods(),
-        Some("Record") => get_record_methods(),
-        Some("SynthdefBuilder") => get_synthdef_builder_methods(),
-        Some("FxBuilder") => get_fx_builder_methods(),
-        Some("Envelope") => get_envelope_methods(),
-        _ => {
-            // Return common methods
-            let mut methods = get_voice_methods();
-            methods.extend(get_pattern_methods());
-            methods.extend(get_melody_methods());
-            methods
-        }
-    }
+    get_api_method_docs()
+        .iter()
+        .filter(|method| object_type.is_none_or(|receiver| method.receiver == receiver))
+        .map(method_item)
+        .collect()
 }
 
-fn method_item(name: &str, signature: &str, description: &str) -> CompletionItem {
-    method_item_with_snippet(name, signature, description, format!("{}($1)$0", name))
-}
-
-fn method_item_with_snippet(
-    name: &str,
-    signature: &str,
-    description: &str,
-    snippet: String,
-) -> CompletionItem {
+fn method_item(method: &ApiMethodDoc) -> CompletionItem {
     CompletionItem {
-        label: name.to_string(),
+        label: method.name.clone(),
         kind: Some(CompletionItemKind::METHOD),
         label_details: Some(CompletionItemLabelDetails {
-            detail: Some(signature.to_string()),
-            description: None,
+            detail: Some(method.signature.clone()),
+            description: Some(method.receiver.clone()),
         }),
-        detail: Some(description.to_string()),
-        insert_text: Some(snippet),
+        detail: Some(format!(
+            "{} Lifecycle: {}/{} ({}).",
+            method.description,
+            method.lifecycle.phase,
+            method.lifecycle.terminal,
+            method.lifecycle.classification
+        )),
+        insert_text: Some(format!("{}($1)$0", method.name)),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
+        data: Some(serde_json::json!({
+            "source": "public-api-manifest-v1",
+            "receiver": method.receiver,
+            "lifecycle": {
+                "phase": method.lifecycle.phase,
+                "terminal": method.lifecycle.terminal,
+                "classification": method.lifecycle.classification,
+            },
+        })),
         ..Default::default()
     }
-}
-
-fn get_voice_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("synth", "(name: string)", "Set the synthdef to use"),
-        method_item(
-            "on",
-            "(source)",
-            "Set the sound source (synthdef, sample, or SFZ)",
-        ),
-        method_item("poly", "(count: int)", "Set polyphony count"),
-        method_item("gain", "(level: float)", "Set gain level in dB"),
-        method_item(
-            "param",
-            "(name: string, value: float)",
-            "Set a synth parameter",
-        ),
-        method_item("pan", "(value: float)", "Set pan position (-1 to 1)"),
-        method_item("group", "(path: string)", "Assign to a group"),
-        method_item("channel", "(n: int)", "Set MIDI channel (0-15)"),
-        method_item("mute", "()", "Mute the voice"),
-        method_item("unmute", "()", "Unmute the voice"),
-        method_item("solo", "()", "Solo the voice"),
-        method_item("unsolo", "()", "Unsolo the voice"),
-        method_item("apply", "()", "Apply the voice configuration"),
-    ]
-}
-
-fn get_pattern_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("on", "(voice)", "Set the voice to trigger"),
-        method_item(
-            "on_voice",
-            "(voice)",
-            "Set the voice to trigger (by object)",
-        ),
-        method_item("step", "(pattern: string)", "Set step pattern (x/./-)"),
-        method_item(
-            "euclid",
-            "(hits: int, steps: int)",
-            "Generate Euclidean rhythm",
-        ),
-        method_item("len", "(beats: float)", "Set pattern length in beats"),
-        method_item("swing", "(amount: float)", "Set swing amount (0-1)"),
-        method_item(
-            "set_param",
-            "(key: string, value)",
-            "Set per-step parameter",
-        ),
-        method_item("apply", "()", "Register pattern without starting"),
-        method_item("start", "()", "Start pattern playback"),
-        method_item("launch", "()", "Start pattern at next quantization"),
-        method_item("stop", "()", "Stop pattern playback"),
-    ]
-}
-
-fn get_melody_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("on", "(voice)", "Set the voice to play"),
-        method_item("on_voice", "(voice)", "Set the voice to play (by object)"),
-        method_item("notes", "(notes: string)", "Set note sequence"),
-        method_item("scale", "(name: string)", "Set scale for degree notation"),
-        method_item("root", "(note: string)", "Set root note for scale"),
-        method_item("gate", "(duration: float)", "Set default gate duration"),
-        method_item("transpose", "(semitones: int)", "Transpose notes"),
-        method_item("len", "(beats: float)", "Set melody length in beats"),
-        method_item("swing", "(amount: float)", "Set swing amount (0-1)"),
-        method_item("add_note", "(beat, note, vel, dur)", "Add a single note"),
-        method_item("add_chord", "(beat, notes, vel, dur)", "Add a chord"),
-        method_item("apply", "()", "Register melody without starting"),
-        method_item("start", "()", "Start melody playback"),
-        method_item("launch", "()", "Start melody at next quantization"),
-        method_item("stop", "()", "Stop melody playback"),
-    ]
-}
-
-fn get_sequence_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("loop_bars", "(bars: int)", "Set loop length in bars"),
-        method_item("loop_beats", "(beats: int)", "Set loop length in beats"),
-        method_item("clip", "(range, source)", "Add a clip to the sequence"),
-        method_item("clip_once", "(range, source)", "Add a one-shot clip"),
-        method_item(
-            "clip_loops",
-            "(range, source, count)",
-            "Add clip with loop count",
-        ),
-        method_item("apply", "()", "Register sequence without starting"),
-        method_item("start", "()", "Start sequence playback"),
-        method_item("stop", "()", "Stop sequence playback"),
-    ]
-}
-
-fn get_fx_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("synth", "(name: string)", "Set the effect synthdef"),
-        method_item(
-            "param",
-            "(name: string, value: float)",
-            "Set an effect parameter",
-        ),
-        method_item("bypass", "(bypassed: bool)", "Bypass the effect"),
-        method_item("apply", "()", "Apply the effect to the group"),
-    ]
-}
-
-fn get_group_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item(
-            "body",
-            "(closure)",
-            "Evaluate content in this group; repeated bodies append/merge contributions for the same resolved group",
-        ),
-        method_item(
-            "alias",
-            "(name: string)",
-            "Register an alternate group name",
-        ),
-        method_item("gain", "(level: float)", "Set group gain in dB"),
-        method_item("pan", "(value: float)", "Set group pan"),
-        method_item("mute", "()", "Mute the group"),
-        method_item("unmute", "()", "Unmute the group"),
-        method_item("solo", "(bool)", "Solo the group"),
-        method_item("unsolo", "()", "Unsolo the group"),
-        method_item("set_param", "(key: string, value)", "Set group parameter"),
-        method_item("now", "()", "Execute immediately"),
-    ]
-}
-
-fn get_fade_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("on_group", "(name: string)", "Target a group"),
-        method_item("on_voice", "(name: string)", "Target a voice"),
-        method_item("on_effect", "(name: string)", "Target an effect"),
-        method_item("param", "(name: string)", "Parameter to fade"),
-        method_item("from", "(value: float)", "Starting value"),
-        method_item("to", "(value: float)", "Ending value"),
-        method_item(
-            "over",
-            "(duration: string)",
-            "Duration string (e.g., '4bar')",
-        ),
-        method_item("over_bars", "(bars: float)", "Duration in bars"),
-        method_item("over_beats", "(beats: float)", "Duration in beats"),
-        method_item("curve", "(type: string)", "Fade curve type"),
-        method_item("apply", "()", "Register fade without starting"),
-        method_item("start", "()", "Start the fade"),
-    ]
-}
-
-fn get_sample_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("attack", "(seconds: float)", "Envelope attack"),
-        method_item("sustain", "(level: float)", "Envelope sustain level"),
-        method_item("release", "(seconds: float)", "Envelope release"),
-        method_item("amp", "(gain: float)", "Playback amplitude"),
-        method_item("rate", "(multiplier: float)", "Playback rate"),
-        method_item("loop_mode", "(enabled: bool)", "Enable looping"),
-        method_item("offset", "(seconds: float)", "Start offset"),
-        method_item("length", "(seconds: float)", "Playback length"),
-        method_item("warp", "(enabled: bool)", "Enable time-stretch"),
-        method_item("speed", "(value: float)", "Time-stretch speed"),
-        method_item("pitch", "(multiplier: float)", "Pitch shift"),
-        method_item("semitones", "(n: int)", "Pitch shift in semitones"),
-        method_item("warp_to_bpm", "(bpm: float)", "Auto-stretch to BPM"),
-        method_item("slice", "(start, end)", "Play slice only"),
-    ]
-}
-
-fn get_record_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("bars", "(n: int)", "Duration in bars"),
-        method_item("beats", "(n: int)", "Duration in beats"),
-        method_item("seconds", "(n: float)", "Duration in seconds"),
-        method_item("from_group", "(path: string)", "Source group"),
-        method_item("count_in", "(bars: int)", "Count-in bars"),
-        method_item("metronome", "(enabled: bool)", "Enable metronome"),
-        method_item("to_file", "(path: string)", "Output file path"),
-        method_item("channels", "(n: int)", "Channel count"),
-        method_item("immediate", "()", "Start immediately"),
-        method_item("apply", "()", "Start recording"),
-    ]
-}
-
-fn get_synthdef_builder_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("param", "(name: string, default: float)", "Add a parameter"),
-        method_item_with_snippet(
-            "input",
-            "(name: string)",
-            "Declare a mono audio-rate named input",
-            "input(\"$1\")$0".to_string(),
-        ),
-        method_item_with_snippet(
-            "input",
-            "(name: string, channels: int)",
-            "Declare a mono/stereo audio-rate named input; channels must be 1 or 2",
-            "input(\"$1\", ${2:2})$0".to_string(),
-        ),
-        method_item("body", "(closure)", "Set the DSP body"),
-    ]
-}
-
-fn get_fx_builder_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("param", "(name: string, default: float)", "Add a parameter"),
-        method_item(
-            "body",
-            "(closure)",
-            "Set the effect DSP body (receives 'input')",
-        ),
-    ]
-}
-
-fn get_envelope_methods() -> Vec<CompletionItem> {
-    vec![
-        method_item("adsr", "(a, d, s, r)", "ADSR envelope"),
-        method_item("asr", "(a, s, r)", "ASR envelope"),
-        method_item("perc", "(attack, release)", "Percussive envelope"),
-        method_item("triangle", "(dur)", "Triangle envelope"),
-        method_item("gate", "(signal)", "Set gate signal"),
-        method_item("cleanup_on_finish", "()", "Free synth when done"),
-        method_item("time_scale", "(scale: float)", "Scale envelope time"),
-        method_item("level_scale", "(scale: float)", "Scale envelope levels"),
-        method_item("build", "()", "Build the envelope"),
-    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn synthdef_builder_includes_named_input_completions() {
-        let methods = get_synthdef_builder_methods();
+        let methods = get_method_completions(Some("SynthDefBuilderHandle"));
         let input_methods: Vec<_> = methods
             .iter()
             .filter(|item| item.label == "input")
@@ -670,18 +439,149 @@ mod tests {
             item.label_details
                 .as_ref()
                 .and_then(|details| details.detail.as_deref())
-                == Some("(name: string)")
+                .is_some_and(|signature| {
+                    signature
+                        .contains("input(_: vibelang_dsp::api::SynthDefBuilderHandle, _: string)")
+                })
         }));
         assert!(input_methods.iter().any(|item| {
             item.label_details
                 .as_ref()
                 .and_then(|details| details.detail.as_deref())
-                == Some("(name: string, channels: int)")
+                .is_some_and(|signature| {
+                    signature.contains(
+                        "input(_: vibelang_dsp::api::SynthDefBuilderHandle, _: string, _: i64)",
+                    )
+                })
         }));
-        assert!(input_methods.iter().all(|item| {
-            item.detail
-                .as_deref()
-                .is_some_and(|detail| detail.contains("audio-rate"))
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    struct MethodProjection {
+        receiver: String,
+        name: String,
+        signature: String,
+        phase: String,
+        terminal: String,
+        classification: String,
+    }
+
+    fn expected_projection(receiver: Option<&str>) -> Vec<MethodProjection> {
+        let mut expected = get_api_method_docs()
+            .iter()
+            .filter(|method| receiver.is_none_or(|receiver| method.receiver == receiver))
+            .map(|method| MethodProjection {
+                receiver: method.receiver.clone(),
+                name: method.name.clone(),
+                signature: method.signature.clone(),
+                phase: method.lifecycle.phase.clone(),
+                terminal: method.lifecycle.terminal.clone(),
+                classification: method.lifecycle.classification.clone(),
+            })
+            .collect::<Vec<_>>();
+        expected.sort();
+        expected
+    }
+
+    fn active_projection(items: &[CompletionItem]) -> Result<Vec<MethodProjection>, String> {
+        let mut active = items
+            .iter()
+            .map(|item| {
+                let details = item
+                    .label_details
+                    .as_ref()
+                    .ok_or_else(|| format!("{} has no label details", item.label))?;
+                let data = item
+                    .data
+                    .as_ref()
+                    .ok_or_else(|| format!("{} has no manifest data", item.label))?;
+                let lifecycle = data
+                    .get("lifecycle")
+                    .ok_or_else(|| format!("{} has no lifecycle data", item.label))?;
+                let string_field = |value: &serde_json::Value, field: &str| {
+                    value
+                        .get(field)
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                        .ok_or_else(|| format!("{} has no string `{field}`", item.label))
+                };
+                Ok(MethodProjection {
+                    receiver: string_field(data, "receiver")?,
+                    name: item.label.clone(),
+                    signature: details
+                        .detail
+                        .clone()
+                        .ok_or_else(|| format!("{} has no signature", item.label))?,
+                    phase: string_field(lifecycle, "phase")?,
+                    terminal: string_field(lifecycle, "terminal")?,
+                    classification: string_field(lifecycle, "classification")?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        active.sort();
+        Ok(active)
+    }
+
+    fn validate_exact_projection(
+        receiver: Option<&str>,
+        items: &[CompletionItem],
+    ) -> Result<(), String> {
+        let expected = expected_projection(receiver);
+        let active = active_projection(items)?;
+        if active == expected {
+            Ok(())
+        } else {
+            Err(format!(
+                "active MethodChain projection does not exactly match manifest: expected {} rows, got {}",
+                expected.len(),
+                active.len()
+            ))
+        }
+    }
+
+    #[test]
+    fn method_completions_exactly_match_manifest_receiver_overloads_and_lifecycle() {
+        let receivers = get_api_method_docs()
+            .iter()
+            .map(|method| method.receiver.as_str())
+            .collect::<BTreeSet<_>>();
+
+        for receiver in receivers {
+            validate_exact_projection(Some(receiver), &get_method_completions(Some(receiver)))
+                .unwrap();
+        }
+        validate_exact_projection(None, &get_method_completions(None)).unwrap();
+    }
+
+    #[test]
+    fn structural_negative_fixtures_reject_nonexistent_pairs_and_stale_rows() {
+        let seed = get_api_method_docs().first().unwrap();
+        let nonexistent_receiver = format!("{}__fixture", seed.receiver);
+        let nonexistent_name = format!("{}__fixture", seed.name);
+        assert!(get_api_method_docs().iter().all(|method| {
+            method.receiver != nonexistent_receiver || method.name != nonexistent_name
         }));
+        assert!(get_method_completions(Some(&nonexistent_receiver)).is_empty());
+
+        let mut nonexistent_pair = get_method_completions(None);
+        let mut invented = nonexistent_pair.first().unwrap().clone();
+        invented.label.clone_from(&nonexistent_name);
+        invented.data = Some(serde_json::json!({
+            "source": "handwritten-fixture",
+            "receiver": nonexistent_receiver,
+            "lifecycle": {
+                "phase": "fixture",
+                "terminal": "fixture",
+                "classification": "fixture",
+            },
+        }));
+        nonexistent_pair.push(invented);
+        assert!(validate_exact_projection(None, &nonexistent_pair).is_err());
+
+        let mut stale_rows = get_method_completions(Some(&seed.receiver));
+        let mut stale = stale_rows.first().unwrap().clone();
+        stale.label = nonexistent_name;
+        stale_rows.push(stale);
+        assert!(validate_exact_projection(Some(&seed.receiver), &stale_rows).is_err());
     }
 }

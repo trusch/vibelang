@@ -26,10 +26,12 @@
 //   easing_1..easing_4: enum above for interpolation per channel.
 //   kf_N_1..kf_N_8 : eight 0..1 keyframe levels for channel N.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _frames_mask(value, target) {
     1.0 - clip_kr(abs(value - target), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _frames_select8(index, kf1, kf2, kf3, kf4, kf5, kf6, kf7, kf8) {
     let idx = clip_kr(index, 0.0, 7.0);
     let m0 = _frames_mask(idx, 0.0);
@@ -51,6 +53,7 @@ fn _frames_select8(index, kf1, kf2, kf3, kf4, kf5, kf6, kf7, kf8) {
         + m7 * clip_kr(kf8, 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _frames_ease(frac, easing) {
     let t = clip_kr(frac, 0.0, 1.0);
     let curve = clip_kr(round(easing), 0.0, 5.0);
@@ -93,6 +96,7 @@ fn _frames_ease(frac, easing) {
     )
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _frames_interp(pos, easing, kf1, kf2, kf3, kf4, kf5, kf6, kf7, kf8) {
     let scaled = clip_kr(pos, 0.0, 1.0) * 7.0;
     let index = floor(scaled);

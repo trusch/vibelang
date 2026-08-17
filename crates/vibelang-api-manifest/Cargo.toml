@@ -1,0 +1,12 @@
+[package]
+name = "vibelang-api-manifest"
+version = "0.4.0"
+edition = "2021"
+description = "Versioned public API manifest schema for VibeLang"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"

@@ -6,11 +6,13 @@
 //! - Connection state tracking
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use super::events::TimestampedMidiEvent;
 use super::parser::parse_midi_bytes;
 use super::queue::{MidiEventQueue, MidiEventSender};
+use crate::types::MidiDeviceId;
 
 #[cfg(feature = "native")]
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -41,6 +43,123 @@ impl MidiOutputId {
     pub fn new(id: u32) -> Self {
         Self(id)
     }
+}
+
+/// An exact, direction-specific MIDI output endpoint binding.
+///
+/// The stable port name is the identity. `id` is only the output-namespace
+/// index observed when the binding was last resolved and must be refreshed by
+/// exact name before an output is opened or used.
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct MidiOutputEndpoint {
+    pub stable_name: String,
+    pub id: MidiDeviceId,
+}
+
+impl fmt::Display for MidiOutputEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "output[{}] {:?}", self.id.raw(), self.stable_name)
+    }
+}
+
+/// Failure to resolve an exact stable name in the MIDI output namespace.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum MidiOutputResolutionError {
+    #[error("could not enumerate MIDI outputs: {0}")]
+    Enumeration(String),
+    #[error("MIDI output {stable_name:?} is missing; available output endpoints: {available}")]
+    Missing {
+        stable_name: String,
+        available: String,
+    },
+    #[error(
+        "MIDI output {stable_name:?} is ambiguous; exact matches: {matches}; disconnect duplicate ports or choose a unique exact endpoint name"
+    )]
+    Ambiguous {
+        stable_name: String,
+        matches: String,
+    },
+}
+
+/// Resolve one exact stable name against output-namespace candidates.
+///
+/// This intentionally has no substring fallback. Interactive discovery may
+/// use partial matching, but an output action must never silently choose one
+/// of several candidates.
+pub fn resolve_midi_output_endpoint_from(
+    stable_name: &str,
+    candidates: &[(MidiDeviceId, String)],
+) -> Result<MidiOutputEndpoint, MidiOutputResolutionError> {
+    let exact = candidates
+        .iter()
+        .filter(|(_, name)| name == stable_name)
+        .collect::<Vec<_>>();
+
+    if exact.len() == 1 {
+        let (id, name) = exact[0];
+        Ok(MidiOutputEndpoint {
+            stable_name: name.clone(),
+            id: *id,
+        })
+    } else if exact.is_empty() {
+        Err(MidiOutputResolutionError::Missing {
+            stable_name: stable_name.to_string(),
+            available: format_output_candidates(candidates),
+        })
+    } else {
+        Err(MidiOutputResolutionError::Ambiguous {
+            stable_name: stable_name.to_string(),
+            matches: format_output_candidates(
+                &exact
+                    .iter()
+                    .map(|candidate| (candidate.0, candidate.1.clone()))
+                    .collect::<Vec<_>>(),
+            ),
+        })
+    }
+}
+
+fn format_output_candidates(candidates: &[(MidiDeviceId, String)]) -> String {
+    if candidates.is_empty() {
+        return "none".to_string();
+    }
+
+    candidates
+        .iter()
+        .map(|(id, name)| format!("output[{}] {:?}", id.raw(), name))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Resolve an endpoint against the output namespace as it exists now.
+#[cfg(feature = "native")]
+pub fn resolve_midi_output_endpoint(
+    stable_name: &str,
+) -> Result<MidiOutputEndpoint, MidiOutputResolutionError> {
+    let midi_out = MidiOutput::new("vibelang-output-resolve")
+        .map_err(|error| MidiOutputResolutionError::Enumeration(error.to_string()))?;
+    let candidates = midi_out
+        .ports()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, port)| {
+            midi_out
+                .port_name(port)
+                .ok()
+                .map(|name| (MidiDeviceId::new(index as u32), name))
+        })
+        .collect::<Vec<_>>();
+
+    resolve_midi_output_endpoint_from(stable_name, &candidates)
+}
+
+#[cfg(not(feature = "native"))]
+pub fn resolve_midi_output_endpoint(
+    _stable_name: &str,
+) -> Result<MidiOutputEndpoint, MidiOutputResolutionError> {
+    Err(MidiOutputResolutionError::Enumeration(
+        "MIDI output discovery is unavailable on this platform".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -518,5 +637,49 @@ mod tests {
         let manager = MidiDeviceManager::new();
         let queue = manager.event_queue();
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn output_resolution_uses_output_namespace_order_and_exact_name() {
+        // EP-133 is input[0], but deliberately output[1]. Reusing the input
+        // index would redirect transport to MPD232.
+        let input_namespace_id = MidiDeviceId::new(0);
+        let outputs = vec![
+            (MidiDeviceId::new(0), "MPD232".to_string()),
+            (MidiDeviceId::new(1), "EP-133".to_string()),
+        ];
+
+        let endpoint = resolve_midi_output_endpoint_from("EP-133", &outputs).unwrap();
+
+        assert_eq!(endpoint.id, MidiDeviceId::new(1));
+        assert_ne!(endpoint.id, input_namespace_id);
+        assert_eq!(endpoint.stable_name, "EP-133");
+        assert_eq!(endpoint.to_string(), "output[1] \"EP-133\"");
+    }
+
+    #[test]
+    fn missing_output_error_lists_direction_specific_candidates() {
+        let outputs = vec![(MidiDeviceId::new(0), "MPD232".to_string())];
+
+        let error = resolve_midi_output_endpoint_from("EP-133", &outputs).unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("MIDI output \"EP-133\" is missing"));
+        assert!(message.contains("output[0] \"MPD232\""));
+    }
+
+    #[test]
+    fn duplicate_exact_output_names_are_actionably_ambiguous() {
+        let outputs = vec![
+            (MidiDeviceId::new(0), "EP-133".to_string()),
+            (MidiDeviceId::new(2), "EP-133".to_string()),
+        ];
+
+        let error = resolve_midi_output_endpoint_from("EP-133", &outputs).unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("MIDI output \"EP-133\" is ambiguous"));
+        assert!(message.contains("output[0] \"EP-133\""));
+        assert!(message.contains("output[2] \"EP-133\""));
     }
 }

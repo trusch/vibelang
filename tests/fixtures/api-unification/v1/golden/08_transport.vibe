@@ -1,0 +1,3 @@
+set_tempo(137);
+set_time_signature(7, 8);
+set_quantization(0);

@@ -5,11 +5,11 @@
 
 use super::types::{CcRoute, KeyboardRoute, MidiRouting};
 
-use super::types::{Midi2CcRoute, Midi2ControllerType, Midi2KeyboardRoute, Midi2PerNoteRoute};
+use super::types::{Midi2ControllerType, Midi2KeyboardRoute, Midi2PerNoteRoute};
 use crate::compat::RwLock;
 use crate::midi::{
-    CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder, ParameterCurve, VelocityCurve,
-    VelocityMapping,
+    canonical_cc_curve_name, is_pipewire_midi_input_id, CcRouteBuilder, KeyboardRouteBuilder,
+    NoteRouteBuilder, ParameterCurve, VelocityCurve, VelocityMapping,
 };
 use crate::types::ids::MidiDeviceId;
 use crate::types::VoiceId;
@@ -25,7 +25,6 @@ fn parse_velocity_curve(s: &str) -> VelocityCurve {
     VelocityCurve::from_name(s).unwrap_or_default()
 }
 
-/// Parse a parameter curve string back to ParameterCurve.
 fn parse_parameter_curve(s: &str) -> ParameterCurve {
     ParameterCurve::from_name(s).unwrap_or_default()
 }
@@ -101,7 +100,26 @@ impl MidiRoutingManager {
             route.device_id.0,
             route.cc
         );
-        routing.advanced_cc_routes.push(route);
+        let (Some(target), Some(param)) = (route.target, route.target_param) else {
+            tracing::warn!(
+                "Ignored incomplete CC route {} without target or parameter",
+                idx
+            );
+            return idx;
+        };
+        routing
+            .advanced_cc_routes
+            .push(crate::reload::AdvancedMidiCcRoute {
+                device_id: route.device_id,
+                cc: route.cc,
+                channel: route.channel,
+                group: None,
+                curve: route.curve.canonical_name().to_string(),
+                target,
+                param,
+                min: route.range.0,
+                max: route.range.1,
+            });
         idx
     }
 
@@ -138,7 +156,6 @@ impl MidiRoutingManager {
         {
             routing.midi2_keyboard_routes.clear();
             routing.midi2_per_note_routes.clear();
-            routing.midi2_cc_routes.clear();
         }
         tracing::info!("Cleared all MIDI routes");
     }
@@ -308,28 +325,53 @@ impl MidiRoutingManager {
 
     /// Apply advanced CC routes from script state.
     ///
-    /// Clears existing advanced CC routes and rebuilds as CcRouteBuilders.
+    /// Clears and rebuilds the transport-transparent advanced CC registry.
     pub async fn apply_advanced_cc_routes(&self, routes: &[crate::reload::AdvancedMidiCcRoute]) {
         let mut routing = self.routing.write().await;
         routing.advanced_cc_routes.clear();
 
         for route in routes {
-            let mut builder = CcRouteBuilder::new(route.device_id, route.cc);
-            builder.channel = route.channel;
-            builder.curve = parse_parameter_curve(&route.curve);
-            builder.target = Some(route.target.clone());
-            builder.target_param = Some(route.param.clone());
-            builder.range = (route.min, route.max);
+            let mut applied = route.clone();
+            applied.curve = match canonical_cc_curve_name(&route.curve) {
+                Some(curve) => curve.to_string(),
+                None => {
+                    tracing::warn!(
+                        "Unknown MIDI CC curve '{}'; falling back to linear",
+                        route.curve
+                    );
+                    "linear".to_string()
+                }
+            };
+
+            if applied.curve == "logarithmic" && (applied.min <= 0.0 || applied.max <= 0.0) {
+                tracing::warn!(
+                    "MIDI CC logarithmic range ({}, {}) is not positive; falling back to linear",
+                    applied.min,
+                    applied.max
+                );
+            }
+
+            if let Some(group) = applied.group {
+                if !is_pipewire_midi_input_id(applied.device_id) {
+                    tracing::warn!(
+                        "map_cc({}).group({}) on device {} filters by UMP group but this device delivers MIDI 1; the route will never fire",
+                        applied.cc,
+                        group,
+                        applied.device_id.0
+                    );
+                }
+            }
 
             tracing::debug!(
-                "Applied advanced CC route: device={}, cc={}, channel={:?}, target={:?}, param={}",
+                "Applied advanced CC route: device={}, cc={}, group={:?}, channel={:?}, target={:?}, param={}",
                 route.device_id.0,
                 route.cc,
+                route.group,
                 route.channel,
                 route.target,
                 route.param
             );
-            routing.advanced_cc_routes.push(builder);
+            routing.advanced_cc_routes.push(applied);
         }
 
         if !routes.is_empty() {
@@ -462,37 +504,6 @@ impl MidiRoutingManager {
                 "Applied {} MIDI 2.0 per-note routes from script",
                 routes.len()
             );
-        }
-    }
-
-    /// Apply MIDI 2.0 CC routes from script state.
-    pub async fn apply_midi2_cc_routes(&self, routes: &[crate::reload::Midi2CcRoute]) {
-        let mut routing = self.routing.write().await;
-        routing.midi2_cc_routes.clear();
-
-        for route in routes {
-            routing.midi2_cc_routes.push(Midi2CcRoute {
-                device_id: route.device_id,
-                group: route.group,
-                channel: route.channel,
-                cc: route.cc,
-                voice_id: route.voice,
-                param: route.param.clone(),
-                min_value: route.min_value,
-                max_value: route.max_value,
-                curve: route.curve.clone(),
-            });
-            tracing::debug!(
-                "Applied MIDI 2.0 CC route: device={}, cc={}, voice={}, param={}",
-                route.device_id.0,
-                route.cc,
-                route.voice.0,
-                route.param
-            );
-        }
-
-        if !routes.is_empty() {
-            tracing::info!("Applied {} MIDI 2.0 CC routes from script", routes.len());
         }
     }
 }

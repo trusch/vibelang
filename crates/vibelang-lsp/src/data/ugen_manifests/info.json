@@ -121,5 +121,38 @@
     "functions": [
       "num_running_synths_kr"
     ]
+  },
+  {
+    "name": "BlockSize",
+    "description": "Server block size. Returns the number of samples calculated per control period (FULLBUFLENGTH).",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [],
+    "outputs": 1,
+    "category": "Info",
+    "functions": []
+  },
+  {
+    "name": "NodeID",
+    "description": "Returns the synth's own node ID. Useful for self-targeted control bus messages.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [],
+    "outputs": 1,
+    "category": "Info",
+    "functions": []
+  },
+  {
+    "name": "SubsampleOffset",
+    "description": "Sub-sample offset of the synth's start within the current sample. Combined with OffsetOut/DelayC, allows sample-accurate or even sub-sample-accurate scheduling from time-stamped OSC bundles.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [],
+    "outputs": 1,
+    "category": "Info",
+    "functions": []
   }
 ]

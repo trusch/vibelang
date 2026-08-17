@@ -1,0 +1,17 @@
+define_synthdef("baseline_custom")
+    .param("freq", 440.0)
+    .body(|freq| {
+        let sig = sin_osc_ar(freq) * 0.2;
+        [sig, sig]
+    });
+
+define_fx("baseline_effect")
+    .param("mix", 0.5)
+    .body(|input, mix| {
+        [input[0] * mix, input[1] * mix]
+    });
+
+group("Definitions").body(|| {
+    voice("custom_voice").synth("baseline_custom");
+    fx("custom_effect").synth("baseline_effect").apply();
+});

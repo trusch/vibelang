@@ -251,8 +251,7 @@
     "name": "SelectX",
     "description": "Crossfade between multiple inputs. Like Select but with smooth crossfading.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -273,7 +272,9 @@
     "functions": [
       "select_x_ar",
       "select_x_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "Timer",
@@ -295,6 +296,28 @@
     "functions": [
       "timer_ar",
       "timer_kr"
+    ]
+  },
+  {
+    "name": "Slope",
+    "description": "Rate of change of a signal in units per second: (in[i] - in[i-1]) * sample_rate.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal whose slope will be measured"
+      }
+    ],
+    "outputs": 1,
+    "category": "Control",
+    "functions": [
+      "slope_ar",
+      "slope_kr"
     ]
   },
   {

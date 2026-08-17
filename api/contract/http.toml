@@ -1,0 +1,2587 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "http"
+
+# M11 HTTP v2 operation applicability and effectiveness.
+#
+# The strict /v2 projection decodes its operation-scoped DTOs inside the
+# middleware (validate_and_normalize_v2_request / project_v2_response), so no
+# route handler signature references them and the mechanical route graph
+# cannot bind them. Each record below declares, per field, the exact
+# operations that bind the field's type, and for request DTO fields the
+# gate-verified effectiveness semantics (effective vs structured rejection,
+# with the typed problem codes the middleware can emit for that field).
+# Effect id v1:effect:287f24a9d934f2e1 is the canonical mutation-ledger
+# register effect (one attempt receipt + ordered transition event).
+# Records are strictly sorted by target_id (schema requirement).
+
+# Revisioned.last_confirmed_revision — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:00f1a46515a84350"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# HttpCapabilities.runtime_epoch — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:037ff80c993c6976"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpErrorEnvelope.schema_version — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:044934320272d308"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2ParamSet.value
+[[records]]
+target_id = "v1:field:04d8efa3ebde4810"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2VoiceCreate.params
+[[records]]
+target_id = "v1:field:0524ff629e9411f6"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2TransportUpdate.time_signature
+[[records]]
+target_id = "v1:field:06e16d20c986bc36"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:27b207db1a90d637"] # PATCH /transport
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# V2TransportUpdate.bpm
+[[records]]
+target_id = "v1:field:08790dbf33e8575f"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:27b207db1a90d637"] # PATCH /transport
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# V2FadeCreate.target_name
+[[records]]
+target_id = "v1:field:0992b4a401948181"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.fade_target_not_found",
+]
+observable_at = "applied"
+
+# HttpSecurityCapabilities.degraded — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:0a5697d64b2ce9fc"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpErrorDetail.code — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:0da70b25597afe2e"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2MelodyUpdate.events — HTTP Melody replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:0e7558dc1a27efc0"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:47deee1024a555c4"] # PATCH /melodies/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2PatternCreate.swing — consumed only via pattern_string (baked into event beats, stored swing zeroed); structured-rejected when supplied next to explicit events (gate F3)
+[[records]]
+target_id = "v1:field:1813d5d1a0592e5a"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.unsupported_field",
+]
+observable_at = "applied"
+
+# HttpSecurityCapabilities.rate_limits_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:193023a32824d207"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2SequenceUpdate.clips — HTTP Sequence replacement is not yet available as one atomic runtime command
+[[records]]
+target_id = "v1:field:219e790b55718d61"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3124a7d970f575ae"] # PATCH /sequences/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# HttpCapabilityDetails.security — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:23f3dde7c8a191e4"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# HttpSecurityCapabilities.eval_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:25282bcaeaf69b76"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2SequenceClip.once — per-clip one-shot semantics are not implemented
+[[records]]
+target_id = "v1:field:25bb55cc6363bfe2"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2SequenceCreate.clips
+[[records]]
+target_id = "v1:field:266ecb904a31511c"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:520a1a5c455ea29e"] # POST /sequences
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpCapabilityDetails.schema_version — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:2743391d591d1ab2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyCreate.params — top-level Melody parameter precedence is not defined; use events[].params
+[[records]]
+target_id = "v1:field:317e4156e4464178"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# Revisioned.data — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:35717c0727da5906"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2SequenceUpdate.loop_beats — HTTP Sequence replacement is not yet available as one atomic runtime command
+[[records]]
+target_id = "v1:field:3c087db0730f8db6"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3124a7d970f575ae"] # PATCH /sequences/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2TimeSignature.denominator
+[[records]]
+target_id = "v1:field:3fbf889ed9d0c5fb"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:27b207db1a90d637"] # PATCH /transport
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2PatternUpdate.events — HTTP content replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:40b2805d9e36829e"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3cbb3d1d7dcaa7d9"] # PATCH /patterns/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2TransportUpdate.quantization_beats — quantized transport mutation has no scheduler contract
+[[records]]
+target_id = "v1:field:4320f334d389d361"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:27b207db1a90d637"] # PATCH /transport
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# HttpSecurityCapabilities.request_limits_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:4674e6402cde0bb2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpErrorDetail.field — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:4b041b879c867dc1"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2VoiceCreate.gain — normalized into params.amp; conflicting explicit params.amp is rejected
+[[records]]
+target_id = "v1:field:4c7595577522c4b3"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2SampleLoad.id
+[[records]]
+target_id = "v1:field:4cb13e3697d10401"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:9e45a589ec9d4407"] # POST /samples
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpErrorEnvelope.error — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:4d73df09f5bbd6ee"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2MelodyEvent.note
+[[records]]
+target_id = "v1:field:4fd5b9c8d41fae26"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.parse_error",
+]
+observable_at = "applied"
+
+# V2VoiceUpdate.synth_name — live synth replacement requires explicit node-recreation semantics
+[[records]]
+target_id = "v1:field:5052ef0ed1e065d3"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0617330331ffa9ad"] # PATCH /voices/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# HttpSecurityCapabilities.authentication_required — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:539da8718578c7e2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpCapabilityDetails.runtime_epoch — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:56659b27893d7bcc"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyUpdate.melody_string — HTTP Melody replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:56a5585b77d139ff"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:47deee1024a555c4"] # PATCH /melodies/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2MelodyCreate.melody_string
+[[records]]
+target_id = "v1:field:5c20ac3c5e91c912"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.parse_error",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2ParamSet.fade_beats
+[[records]]
+target_id = "v1:field:6078155d85745977"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SequenceCreate.name
+[[records]]
+target_id = "v1:field:625fdbc3a35ce562"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:520a1a5c455ea29e"] # POST /sequences
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2PatternCreate.events
+[[records]]
+target_id = "v1:field:63f7e5d24d14a2ed"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2PatternEvent.beat — effective via POST /patterns; the PATCH events carrier field is itself structured-rejected
+[[records]]
+target_id = "v1:field:6501187795983144"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2FadeCreate.start_value
+[[records]]
+target_id = "v1:field:6921444f5e953a8e"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2FadeCreate.duration_beats
+[[records]]
+target_id = "v1:field:69eeb296cc2cdcf2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2NoteOffRequest.note
+[[records]]
+target_id = "v1:field:6ba118a35b060560"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:178c5f94ca659294"] # POST /voices/{id}/note-off
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2VoiceCreate.group_path
+[[records]]
+target_id = "v1:field:6cdf08d383e1af93"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.group_not_found",
+]
+observable_at = "applied"
+
+# V2MelodyEvent.beat — effective via POST /melodies; the PATCH events carrier field is itself structured-rejected
+[[records]]
+target_id = "v1:field:72429eebaab01ce2"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2PatternCreate.voice_name
+[[records]]
+target_id = "v1:field:748ef64c73b79dc8"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SequenceClip.name
+[[records]]
+target_id = "v1:field:77cd40d248f41e44"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.dependency_ambiguous",
+    "http.error.dependency_not_found",
+]
+observable_at = "applied"
+
+# HttpSecurityCapabilities.origin_allowlist_required — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:7a9f06288dfa621e"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpSecurityPolicyDetails.rate_limit_per_minute — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:7d7e6b312dff1cc7"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyEvent.frequency — note/frequency precedence is not defined
+[[records]]
+target_id = "v1:field:7e1676035c590d9c"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2PatternUpdate.params
+[[records]]
+target_id = "v1:field:815083c8e1430181"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3cbb3d1d7dcaa7d9"] # PATCH /patterns/{id}
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.no_effect",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# V2TriggerRequest.params
+[[records]]
+target_id = "v1:field:827781f8f9adea8b"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:8fd9bca29bb25a68"] # POST /voices/{id}/trigger
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SequenceStartRequest.play_once
+[[records]]
+target_id = "v1:field:833e113d94629790"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:b47f3dda5f2b61af"] # POST /sequences/{id}/start
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = []
+observable_at = "applied"
+
+# V2PatternCreate.params
+[[records]]
+target_id = "v1:field:835b766f89aac0b2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpErrorDetail.message — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:859243f79d037dfe"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2VoiceCreate.sample — voice-source creation is not available through HTTP v2
+[[records]]
+target_id = "v1:field:8725b76514e70852"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2PatternUpdate.loop_beats — HTTP content replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:88958ab8c5b8871b"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3cbb3d1d7dcaa7d9"] # PATCH /patterns/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2MelodyUpdate.loop_beats — HTTP Melody replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:8d0e1df9a703b7ad"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:47deee1024a555c4"] # PATCH /melodies/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2EffectUpdate.params
+[[records]]
+target_id = "v1:field:8d545f1cd5324390"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:5eace6596ac51efa"] # PATCH /effects/{id}
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.no_effect",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# V2MelodyCreate.voice_name
+[[records]]
+target_id = "v1:field:8fbecf93247e6822"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SequenceClip.duration_beats
+[[records]]
+target_id = "v1:field:90aa7369e298f011"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# HttpSecurityPolicyDetails.audit_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:91d3277404c304cd"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# Revisioned.event_sequence — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:9354c149267a626e"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2FadeCreate.param_name
+[[records]]
+target_id = "v1:field:964534102e836fe9"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpCapabilities.mutation — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:969218d0989ead2b"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2VoiceCreate.polyphony
+[[records]]
+target_id = "v1:field:96f779169cf0ae42"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SequenceClip.start_beat
+[[records]]
+target_id = "v1:field:98599b48abb7468e"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# Revisioned.runtime_epoch — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:9929aa1e2e833e70"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2SequenceClip.clip_type — effective via POST /sequences; the PATCH clips carrier field is itself structured-rejected
+[[records]]
+target_id = "v1:field:9af752bdaa30dd9a"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.unsupported_field",
+    "http.error.unsupported_value",
+]
+observable_at = "applied"
+
+# V2MelodyCreate.loop_beats
+[[records]]
+target_id = "v1:field:9afc240c7cceefc2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2NoteOnRequest.velocity
+[[records]]
+target_id = "v1:field:9d1dcb4aca5941fb"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14747b64635583e2"] # POST /voices/{id}/note-on
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpSecurityCapabilities.mode_id — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:9e3a933e6da93763"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpSecurityPolicyDetails.eval_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:9ebd06fc3cfef1c4"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyCreate.name
+[[records]]
+target_id = "v1:field:9f2c871fba9802f1"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2PatternCreate.name
+[[records]]
+target_id = "v1:field:a136b6a4a456918f"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2MelodyUpdate.lanes — HTTP Melody replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:a16034cd23e85748"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:47deee1024a555c4"] # PATCH /melodies/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2SampleLoad.path — remote security modes reject filesystem loading with a typed 403 (gate F1)
+[[records]]
+target_id = "v1:field:a1ee40bd4b71a7cb"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:9e45a589ec9d4407"] # POST /samples
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.capability_unavailable",
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpSecurityPolicyDetails.max_wait_ms — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:a2e094cb0f817ef3"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyEvent.duration
+[[records]]
+target_id = "v1:field:a70b7b739e7b6ae6"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2VoiceUpdate.gain
+[[records]]
+target_id = "v1:field:ad8cc6c1530c7788"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0617330331ffa9ad"] # PATCH /voices/{id}
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2PatternCreate.pattern_string
+[[records]]
+target_id = "v1:field:b69a3d8e5227c25e"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2FadeCreate.target_type
+[[records]]
+target_id = "v1:field:b6fc38735b8ba47a"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.fade_target_not_found",
+]
+observable_at = "applied"
+
+# HttpSecurityCapabilities.privileged_detail_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:b95d44ac7fad2177"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpSecurityCapabilities.audit_enabled — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:bc355d479558e2af"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# HttpSecurityPolicyDetails.mode_id — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:bd7eb218bd6dd66d"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# V2MelodyCreate.events
+[[records]]
+target_id = "v1:field:bff6c74e436a428f"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:43c33eeae44a2414"] # POST /melodies
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# HttpCapabilities.schema_version — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:c07ade8f89c9adfc"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2VoiceCreate.sfz — voice-source creation is not available through HTTP v2
+[[records]]
+target_id = "v1:field:c18c83e683264595"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2MelodyUpdate.params — HTTP Melody replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:c2270dfec88fbb1f"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:47deee1024a555c4"] # PATCH /melodies/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# HttpErrorEnvelope.operation — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:c64c0e6f21893db1"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2FadeCreate.target_value
+[[records]]
+target_id = "v1:field:c75146594184db23"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14e3822bb1c701a3"] # POST /fades
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2MelodyEvent.velocity
+[[records]]
+target_id = "v1:field:c861bd7896220861"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2SeekRequest.beat
+[[records]]
+target_id = "v1:field:c8c62f165c8aa59d"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:c6e48c67186c6042"] # POST /transport/seek
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2PatternCreate.loop_beats
+[[records]]
+target_id = "v1:field:cc99da056b55f920"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:cb0347fc9a2e4a3f"] # POST /patterns
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2LoopControlRequest.quantize_beats — loop scheduling does not expose an HTTP quantization boundary
+[[records]]
+target_id = "v1:field:d27215bcb1d9a48b"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+]
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# TransportUpdate.quantization_beats (v1) — frozen M02 ignored-field debt (PATCH /transport)
+[[records]]
+target_id = "v1:field:d46ad45191e26d81"
+owner = "vibelang-http"
+operation_id = "v1:operation:27b207db1a90d637"
+consistency = "response_snapshot"
+
+[records.effectiveness]
+status = "compatibility_debt"
+effect_ids = []
+error_ids = []
+observable_at = "response_only"
+
+[records.effectiveness.migration]
+owner = "vibelang-http"
+issue = "M11 HTTP v2 effectiveness binding"
+remove_by = "v2 release-ready gate"
+diagnostic_id = "compat.http.ignored_quantization_beats"
+
+# V2SequenceClip.end_beat
+[[records]]
+target_id = "v1:field:d650d5e376bc3651"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+    "http.error.representation_conflict",
+]
+observable_at = "applied"
+
+# V2MelodyEvent.params
+[[records]]
+target_id = "v1:field:d6bc582f86107028"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2GroupUpdate.params
+[[records]]
+target_id = "v1:field:d70b03df3c891cba"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:4b3358ebd2a559fc"] # PATCH /groups/{id}
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.no_effect",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# V2SequenceCreate.loop_beats
+[[records]]
+target_id = "v1:field:d98506c8470e591d"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:520a1a5c455ea29e"] # POST /sequences
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpCapabilities.security — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:e56211e608fe51d2"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2VoiceCreate.name
+[[records]]
+target_id = "v1:field:e91976931558b0d3"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpErrorEnvelope.receipt — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:e9d1d8f7c06a994c"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# HttpSecurityCapabilities.reason_ids — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:ec05dac1a16dece3"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0d4cd6e6a8b2518a"] # GET /capabilities
+
+# V2VoiceUpdate.polyphony — live polyphony replacement requires explicit node-recreation semantics
+[[records]]
+target_id = "v1:field:eea84470dcb5a60b"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0617330331ffa9ad"] # PATCH /voices/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2VoiceUpdate.params
+[[records]]
+target_id = "v1:field:ef8e441de134bd5d"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:0617330331ffa9ad"] # PATCH /voices/{id}
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.no_effect",
+    "http.error.unsupported_combination",
+]
+observable_at = "applied"
+
+# Revisioned.schema_version — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:f097eb14477c1b86"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2PatternUpdate.pattern_string — HTTP content replacement is not yet correlated to a musical swap boundary
+[[records]]
+target_id = "v1:field:f23e11bcaeab7ec5"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:3cbb3d1d7dcaa7d9"] # PATCH /patterns/{id}
+
+[records.effectiveness]
+status = "structured_rejection"
+effect_ids = []
+error_ids = [
+    "http.error.unsupported_field",
+]
+observable_at = "response_only"
+
+# V2TimeSignature.numerator
+[[records]]
+target_id = "v1:field:f292cee4bed1c69c"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:27b207db1a90d637"] # PATCH /transport
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpErrorDetail.reason — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:f4ca21797733dfab"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2NoteOnRequest.note
+[[records]]
+target_id = "v1:field:f632fd1fc3ce1f64"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:14747b64635583e2"] # POST /voices/{id}/note-on
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# HttpSecurityPolicyDetails.max_body_bytes — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:f6e92c7a255bd173"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:ae7ded32af450217"] # GET /capabilities/details
+
+# HttpErrorDetail.supported_values — typed v2 response member (applicability only)
+[[records]]
+target_id = "v1:field:f8a55032038771b2"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:00be3f56a1ad2716", # GET /ws
+    "v1:operation:02117779f9e0c681", # POST /groups/{id}/unmute
+    "v1:operation:0617330331ffa9ad", # PATCH /voices/{id}
+    "v1:operation:078b37799da37b55", # POST /midi/transport/continue
+    "v1:operation:0d4cd6e6a8b2518a", # GET /capabilities
+    "v1:operation:10fb1331eb57d298", # POST /midi/transport/start
+    "v1:operation:146c58a973c4ea55", # POST /fades/effect/{id}
+    "v1:operation:14747b64635583e2", # POST /voices/{id}/note-on
+    "v1:operation:14e3822bb1c701a3", # POST /fades
+    "v1:operation:178c5f94ca659294", # POST /voices/{id}/note-off
+    "v1:operation:1b7b07b92ac276c6", # GET /live
+    "v1:operation:1c7450d981db65a9", # GET /transport
+    "v1:operation:1cbd4c5b32c40fa3", # GET /patterns/{id}
+    "v1:operation:1f164a3677f466fd", # POST /sequences/{id}/pause
+    "v1:operation:2571e9d5be35b66c", # POST /fades/melody/{name}
+    "v1:operation:27b207db1a90d637", # PATCH /transport
+    "v1:operation:2b660ea07742f91d", # POST /voices/{id}/mute
+    "v1:operation:2e17d3bbcad976c9", # PUT /patterns/{id}/params/{param}
+    "v1:operation:2ef71b5b56ae1150", # GET /live/transport
+    "v1:operation:3124a7d970f575ae", # PATCH /sequences/{id}
+    "v1:operation:335a8b257333908e", # POST /groups/{id}/mute
+    "v1:operation:36a2f32ef00f7a3a", # POST /sequences/{id}/resume
+    "v1:operation:3ac0967888eca45c", # POST /midi/record/stop
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:3df290abc2827281", # DELETE /effects/{id}
+    "v1:operation:3fc93291efedb8e2", # POST /fades/voice/{name}
+    "v1:operation:42b51957ef8b50bd", # POST /fades/group/{path}
+    "v1:operation:43c33eeae44a2414", # POST /melodies
+    "v1:operation:44d30311fb17ccac", # POST /voices/{id}/stop
+    "v1:operation:45e91271ccada54d", # DELETE /sequences/{id}
+    "v1:operation:47deee1024a555c4", # PATCH /melodies/{id}
+    "v1:operation:48d61c36aab3a43d", # POST /midi/route/keyboard
+    "v1:operation:48dfbe7678b66232", # GET /live/fades
+    "v1:operation:4903c6f150fe8f63", # POST /midi/clock/disable
+    "v1:operation:499a175ccf60c21c", # GET /melodies
+    "v1:operation:4b3358ebd2a559fc", # PATCH /groups/{id}
+    "v1:operation:4dd4d9f1b254e964", # DELETE /voices/{id}
+    "v1:operation:520a1a5c455ea29e", # POST /sequences
+    "v1:operation:553f2d797f311aa7", # DELETE /midi/routes
+    "v1:operation:557f0e771563a366", # DELETE /samples/{id}
+    "v1:operation:5780123dd2bb58e4", # GET /groups
+    "v1:operation:57ba957feebc8c4e", # POST /midi/clock/enable
+    "v1:operation:57cf213013df8722", # POST /eval
+    "v1:operation:5a4efc86f9255a82", # POST /midi/note/on
+    "v1:operation:5ac92e676c5f7522", # POST /transport/stop
+    "v1:operation:5eace6596ac51efa", # PATCH /effects/{id}
+    "v1:operation:61deba72acda3c64", # POST /midi/cc
+    "v1:operation:630491b7ce677a17", # POST /voices
+    "v1:operation:66ae2a46eef0831a", # GET /groups/{id}
+    "v1:operation:6b3e3cd0790536f8", # POST /midi/record/start
+    "v1:operation:6c36f0770dda3b6b", # DELETE /midi/route/{index}
+    "v1:operation:70cdeafa503d45d9", # GET /midi/devices
+    "v1:operation:73f9c93f78f9a695", # POST /sequences/{id}/stop
+    "v1:operation:76222abdc44fdd47", # POST /melodies/{id}/stop
+    "v1:operation:78a4c0fcef322518", # POST /midi/output/open
+    "v1:operation:79b5bbd83188b2b2", # PUT /effects/{id}/params/{param}
+    "v1:operation:7b943d53c8857974", # POST /patterns/{id}/stop
+    "v1:operation:7d1e4dcbb5c21363", # POST /midi/input/open
+    "v1:operation:85aef1ca87127f8c", # DELETE /patterns/{id}
+    "v1:operation:8946bafa92384e94", # GET /mutation-status
+    "v1:operation:8d8deacd637f7432", # GET /recordings/{id}
+    "v1:operation:8ecf42af60997339", # POST /recordings/{id}/cancel
+    "v1:operation:8f7e2bcb3d263ffb", # GET /fades
+    "v1:operation:8fd9bca29bb25a68", # POST /voices/{id}/trigger
+    "v1:operation:9332970be6d68836", # GET /synthdefs
+    "v1:operation:93f1d198e45d1e5a", # GET /synthdefs/{name}
+    "v1:operation:94539574507138d5", # POST /melodies/{id}/start
+    "v1:operation:96f4cb11f25b9aac", # GET /effects/{id}
+    "v1:operation:99ad2d595a908ab4", # POST /midi/note/off
+    "v1:operation:9aa2847bcf953672", # PUT /groups/{id}/params/{param}
+    "v1:operation:9e45a589ec9d4407", # POST /samples
+    "v1:operation:9fff3bb60c004a51", # PUT /voices/{id}/params/{param}
+    "v1:operation:a065a6f4106327b7", # GET /patterns
+    "v1:operation:ad7cc7d8b364950c", # GET /recordings
+    "v1:operation:ae7ded32af450217", # GET /capabilities/details
+    "v1:operation:b47f3dda5f2b61af", # POST /sequences/{id}/start
+    "v1:operation:b5092b5dd721d3b0", # POST /patterns/{id}/start
+    "v1:operation:c0a18c64f34a1d47", # POST /recordings/{id}/stop
+    "v1:operation:c1dfd765c405a7fb", # GET /samples/{id}
+    "v1:operation:c534ffaecd9298d2", # POST /midi/close
+    "v1:operation:c6e48c67186c6042", # POST /transport/seek
+    "v1:operation:c7a87c5d6ba5b070", # GET /sequences/{id}
+    "v1:operation:c905777901bab230", # POST /groups/{id}/solo
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+    "v1:operation:cbf2a3a429d51e12", # GET /effects
+    "v1:operation:d4fc895506d71306", # GET /sequences
+    "v1:operation:d648deeb4b9dbe9b", # GET /voices/{id}
+    "v1:operation:d90a9d24765d9be2", # GET /melodies/{id}
+    "v1:operation:e5c8443207524c87", # POST /groups/{id}/unsolo
+    "v1:operation:e90332c1095e27a2", # GET /receipt-events
+    "v1:operation:ea35436a714ba35f", # GET /samples
+    "v1:operation:eab5109b05aeac3c", # DELETE /receipts/{attempt_id}
+    "v1:operation:ebf4273487f90c41", # DELETE /melodies/{id}
+    "v1:operation:ec42799e06d386da", # POST /fades/pattern/{name}
+    "v1:operation:ec59e659751384f9", # GET /live/meters
+    "v1:operation:eef5f3c402deff7e", # POST /voices/{id}/unmute
+    "v1:operation:ef55ec2c5a69ccb4", # DELETE /fades
+    "v1:operation:f53d5db7ab6dc057", # GET /receipts/{attempt_id}
+    "v1:operation:f91ea0c6e45be3bc", # GET /midi/routes
+    "v1:operation:f9f4c9bd574a1a22", # POST /transport/start
+    "v1:operation:fe8185f876f18a7c", # POST /midi/transport/stop
+    "v1:operation:feeb9ca2e0c7f27f", # GET /voices
+]
+
+# V2PatternEvent.params
+[[records]]
+target_id = "v1:field:fb7c069a8ea33396"
+owner = "vibelang-http"
+operation_ids = [
+    "v1:operation:3cbb3d1d7dcaa7d9", # PATCH /patterns/{id}
+    "v1:operation:cb0347fc9a2e4a3f", # POST /patterns
+]
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"
+
+# V2VoiceCreate.synth_name
+[[records]]
+target_id = "v1:field:fc263194ccf38330"
+owner = "vibelang-http"
+operation_ids = ["v1:operation:630491b7ce677a17"] # POST /voices
+
+[records.effectiveness]
+status = "effective"
+effect_ids = [
+    "v1:effect:287f24a9d934f2e1",
+]
+error_ids = [
+    "http.error.invalid_value",
+]
+observable_at = "applied"

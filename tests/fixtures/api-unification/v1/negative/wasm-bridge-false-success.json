@@ -1,0 +1,22 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "wasm_bridge_false_success",
+  "resolution": "fixed_safety_exception",
+  "expected_current_outcome": "ExecutionResult_success_is_evaluation_only_and_known_bridge_or_dispatch_failure_is_structured_non_success",
+  "cases": [
+    "missing globalThis bridge is structured non-success",
+    "bridge invocation uses the discovered globalThis object",
+    "bridge resolved value is awaited",
+    "bridge rejection is structured non-success",
+    "reload dispatch failure is structured non-success",
+    "execute before initialization is structured non-success"
+  ],
+  "source_assertions": [
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "legacy_success_scope: \"evaluation_only\"" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "runtime_not_initialized" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "synthdef_bridge_failed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "reload_dispatch_failed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "globalThis.vibelangBridge is not installed" },
+    { "path": "crates/vibelang-wasm/src/lib.rs", "contains": "JsFuture::from(js_sys::Promise::resolve(&pending))" }
+  ]
+}

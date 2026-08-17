@@ -289,8 +289,7 @@
     "name": "PMOsc",
     "description": "Phase modulation oscillator. Implements phase modulation synthesis with a carrier and modulator.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -323,7 +322,9 @@
     "functions": [
       "pm_osc_ar",
       "pm_osc_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "FSinOsc",
@@ -351,34 +352,6 @@
     "functions": [
       "f_sin_osc_ar",
       "f_sin_osc_kr"
-    ]
-  },
-  {
-    "name": "Triangle",
-    "description": "Band-limited triangle wave oscillator.",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "inputs": [
-      {
-        "name": "freq",
-        "type": "float",
-        "default": 440,
-        "description": "Frequency in Hertz"
-      },
-      {
-        "name": "phase",
-        "type": "float",
-        "default": 0,
-        "description": "Phase offset from 0 to 1"
-      }
-    ],
-    "outputs": 1,
-    "category": "Oscillators",
-    "functions": [
-      "triangle_ar",
-      "triangle_kr"
     ]
   },
   {
@@ -885,6 +858,616 @@
     "functions": [
       "gendy3_ar",
       "gendy3_kr"
+    ]
+  },
+  {
+    "name": "Osc",
+    "description": "Interpolating wavetable oscillator. Linear interpolating wavetable lookup oscillator with frequency and phase modulation inputs. Buffer must be in wavetable format with size a power of 2.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the wavetable"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      },
+      {
+        "name": "phase",
+        "type": "float",
+        "default": 0,
+        "description": "Phase offset or modulator in radians (range +-8pi)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "osc_ar",
+      "osc_kr"
+    ]
+  },
+  {
+    "name": "OscN",
+    "description": "Noninterpolating wavetable oscillator. Noninterpolating wavetable lookup oscillator with frequency and phase modulation inputs. Buffer should NOT be in wavetable format; size must be a power of 2.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the raw signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      },
+      {
+        "name": "phase",
+        "type": "float",
+        "default": 0,
+        "description": "Phase offset or modulator in radians"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "osc_n_ar",
+      "osc_n_kr"
+    ]
+  },
+  {
+    "name": "Shaper",
+    "description": "Wave shaper. Performs waveshaping on the input signal by indexing into a wavetable-format buffer that contains the transfer function (typically generated from Chebyshev polynomials).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the transfer function in wavetable format"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal to be waveshaped"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "shaper_ar",
+      "shaper_kr"
+    ]
+  },
+  {
+    "name": "Index",
+    "description": "Index into a table with a signal. The input signal value is truncated to an integer and used as an index into the buffer. Out-of-range values are clipped to the valid range.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the lookup table"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal used as the lookup index"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "index_ar",
+      "index_kr"
+    ]
+  },
+  {
+    "name": "IndexL",
+    "description": "Index into a table with a signal, linearly interpolated. Out-of-range index values are clipped to the valid range.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the lookup table"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal used as the lookup index (fractional part used for linear interpolation)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "index_l_ar",
+      "index_l_kr"
+    ]
+  },
+  {
+    "name": "IndexInBetween",
+    "description": "Finds the lowest point in the buffer at which the input signal lies in-between the two values, and returns the (fractional) index. Complement of IndexL.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the lookup table"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal whose position in the buffer values is to be found"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "index_in_between_ar",
+      "index_in_between_kr"
+    ]
+  },
+  {
+    "name": "DegreeToKey",
+    "description": "Convert signal to modal pitch. The input value is truncated to an integer and used as an index into an octave-repeating table of note values. Indices wrap around the table and shift octaves accordingly.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the steps for each scale degree"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal (scale degree)"
+      },
+      {
+        "name": "octave",
+        "type": "float",
+        "default": 12,
+        "description": "Number of steps per octave in the scale"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "degree_to_key_ar",
+      "degree_to_key_kr"
+    ]
+  },
+  {
+    "name": "DetectIndex",
+    "description": "Search a buffer for a value. Linearly searches a buffer for a value (float equality) and returns the index of the first occurrence, or -1 if not found. A search is performed whenever the input signal changes.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index to search"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal — the value to search for"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "detect_index_ar",
+      "detect_index_kr"
+    ]
+  },
+  {
+    "name": "FoldIndex",
+    "description": "Index into a table with a signal. The input signal value is truncated to an integer and used as an index into the buffer. Out-of-range index values are folded into the valid range.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the lookup table"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal used as the lookup index"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "fold_index_ar",
+      "fold_index_kr"
+    ]
+  },
+  {
+    "name": "WrapIndex",
+    "description": "Index into a table with a signal. The input signal value is truncated to an integer and used as an index into the buffer. Out-of-range index values are wrapped cyclically to the valid range.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index containing the lookup table"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "The input signal used as the lookup index"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "wrap_index_ar",
+      "wrap_index_kr"
+    ]
+  },
+  {
+    "name": "TWindex",
+    "description": "Triggered weighted index. When triggered, returns a random index based on an array of probabilities. By default the probabilities should sum to 1.0; with normalize=1 the UGen normalizes them at runtime (less efficient).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal — a trigger occurs when the signal goes from non-positive to positive"
+      },
+      {
+        "name": "array",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of probabilities (control rate only)"
+      },
+      {
+        "name": "normalize",
+        "type": "float",
+        "default": 0,
+        "description": "If 1, normalize the probability values at runtime (control rate only)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "t_windex_ar",
+      "t_windex_kr"
+    ]
+  },
+  {
+    "name": "PSinGrain",
+    "description": "Very fast sine grain with a parabolic envelope. Generates a fixed-frequency sine grain of a given duration and amplitude using a fast algorithm.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz (must be a scalar)"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 0.2,
+        "description": "Grain duration in seconds"
+      },
+      {
+        "name": "amp",
+        "type": "float",
+        "default": 0.1,
+        "description": "Grain amplitude"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "p_sin_grain_ar"
+    ]
+  },
+  {
+    "name": "Vibrato",
+    "description": "Slow frequency modulation around a fundamental, with optional onset delay and noise on rate/depth. Models singer/string-instrument vibrato.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Fundamental frequency in Hertz. At ar, must be a UGen (e.g. DC.ar), not a constant"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 6,
+        "description": "Vibrato rate in Hertz (speed of wobble)"
+      },
+      {
+        "name": "depth",
+        "type": "float",
+        "default": 0.02,
+        "description": "Vibrato depth as a proportion of the fundamental (0.02 = 2%)"
+      },
+      {
+        "name": "delay",
+        "type": "float",
+        "default": 0,
+        "description": "Delay in seconds before vibrato is established"
+      },
+      {
+        "name": "onset",
+        "type": "float",
+        "default": 0,
+        "description": "Transition time in seconds from no vibrato to full vibrato after the delay"
+      },
+      {
+        "name": "rateVariation",
+        "type": "float",
+        "default": 0.04,
+        "description": "Noise on the rate as a proportion of the rate; updates once per vibrato cycle"
+      },
+      {
+        "name": "depthVariation",
+        "type": "float",
+        "default": 0.1,
+        "description": "Noise on the depth as a proportion of the depth; updates once per vibrato cycle"
+      },
+      {
+        "name": "iphase",
+        "type": "float",
+        "default": 0,
+        "description": "Initial phase of vibrato modulation"
+      },
+      {
+        "name": "trig",
+        "type": "float",
+        "default": 0,
+        "description": "Restart vibrato when trig transitions from <=0 to >0"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "vibrato_ar",
+      "vibrato_kr"
+    ]
+  },
+  {
+    "name": "AmpComp",
+    "description": "Basic psychoacoustic amplitude compensation. Returns (root/freq)^exp so higher frequencies (perceived as louder) are attenuated.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 261.6256,
+        "description": "Input frequency value. For freq == root, output is 1.0"
+      },
+      {
+        "name": "root",
+        "type": "float",
+        "default": 261.6256,
+        "description": "Root frequency relative to which the curve is calculated (usually the lowest freq)"
+      },
+      {
+        "name": "exp",
+        "type": "float",
+        "default": 0.3333,
+        "description": "Exponent: how steep the curve falls off as freq rises"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "amp_comp_ar",
+      "amp_comp_kr",
+      "amp_comp_ir"
+    ]
+  },
+  {
+    "name": "AmpCompA",
+    "description": "Psychoacoustic amplitude compensation using the ANSI A-weighting (Fletcher-Munson) curve. Only valid at standardized amplitude.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1000,
+        "description": "Input frequency value. For freq == root, output is rootAmp"
+      },
+      {
+        "name": "root",
+        "type": "float",
+        "default": 0,
+        "description": "Root frequency relative to which the curve is calculated. Non-modulatable"
+      },
+      {
+        "name": "minAmp",
+        "type": "float",
+        "default": 0.32,
+        "description": "Amplitude at the minimum point of the curve (around 2512 Hz). Non-modulatable"
+      },
+      {
+        "name": "rootAmp",
+        "type": "float",
+        "default": 1,
+        "description": "Amplitude at the root frequency. Non-modulatable"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "amp_comp_a_ar",
+      "amp_comp_a_kr",
+      "amp_comp_a_ir"
+    ]
+  },
+  {
+    "name": "ModDif",
+    "description": "Minimum difference of two values in modulo arithmetics. Returns the shorter of the two arc distances on a circle. Useful for wraparound math.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "x",
+        "type": "float",
+        "default": 0,
+        "description": "First input value"
+      },
+      {
+        "name": "y",
+        "type": "float",
+        "default": 0,
+        "description": "Second input value"
+      },
+      {
+        "name": "mod",
+        "type": "float",
+        "default": 1,
+        "description": "Modulo (maximum value, double the maximal difference)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "functions": [
+      "mod_dif_ar",
+      "mod_dif_kr",
+      "mod_dif_ir"
+    ]
+  },
+  {
+    "name": "Unwrap",
+    "description": "Phase-unwrap helper. Adds offsets of (hi-lo) when the input crosses a wrap boundary so a wrapping signal becomes monotonic across cycles.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to unwrap"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower wrap boundary"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper wrap boundary"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "functions": [
+      "unwrap_ar",
+      "unwrap_kr"
+    ]
+  },
+  {
+    "name": "LFCub",
+    "description": "Sine-like low frequency oscillator made of two cubic pieces. Smoother than LFPar.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      },
+      {
+        "name": "iphase",
+        "type": "float",
+        "default": 0,
+        "description": "Initial phase offset from 0 to 2"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "lf_cub_ar",
+      "lf_cub_kr"
     ]
   }
 ]

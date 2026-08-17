@@ -67,34 +67,15 @@ fn get_line_hints(
 fn get_parameter_hints(line_num: u32, line: &str, api_docs: &[ApiFunctionDoc]) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
-    // Common VibeLang functions with their parameter names
-    let param_info: Vec<(&str, Vec<&str>)> = vec![
-        ("voice", vec!["name", "synthdef"]),
-        ("pattern", vec!["name", "notation"]),
-        ("melody", vec!["name", "notation"]),
-        ("sequence", vec!["name", "patterns"]),
-        ("define_group", vec!["name", "body"]),
-        ("set_tempo", vec!["bpm"]),
-        ("set_time_signature", vec!["numerator", "denominator"]),
-        ("load_sample", vec!["name", "path"]),
-        ("load_sfz", vec!["name", "path"]),
-        ("define_synthdef", vec!["name", "body"]),
-        ("define_fx", vec!["name", "body"]),
-        ("at_bar", vec!["bar", "action"]),
-        ("every", vec!["beats", "action"]),
-        ("after", vec!["beats", "action"]),
-        ("fade_in", vec!["duration"]),
-        ("fade_out", vec!["duration"]),
-        ("midi_out", vec!["device", "channel"]),
-        ("midi_in", vec!["device"]),
-    ];
-
-    // Also add from API docs (parameters is (name, type, desc) tuple)
-    let mut all_params: Vec<(&str, Vec<&str>)> = param_info;
+    let mut all_params: Vec<(&str, Vec<&str>)> = Vec::new();
     for doc in api_docs {
-        let params: Vec<&str> = doc.parameters.iter().map(|(n, _t, _d)| *n).collect();
+        let params: Vec<&str> = doc
+            .parameters
+            .iter()
+            .map(|(name, _param_type, _description)| name.as_str())
+            .collect();
         if !params.is_empty() {
-            all_params.push((doc.name, params));
+            all_params.push((doc.name.as_str(), params));
         }
     }
 

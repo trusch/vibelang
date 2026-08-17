@@ -1,0 +1,21 @@
+let defaulted_note = note("C");
+let invalid_integer = to_int("12x");
+let truncated_integer = to_int(12.5);
+let fallback_degree = scale_degree("C", "major", 0);
+let clamped_chord = chord("G", 9);
+
+if defaulted_note != 60 {
+    throw "v1 note recovery changed";
+}
+if invalid_integer != () {
+    throw "v1 integer fallback changed";
+}
+if truncated_integer != 12 {
+    throw "v1 integer truncation changed";
+}
+if fallback_degree != 60 {
+    throw "v1 scale-degree fallback changed";
+}
+if clamped_chord != [127, 127, 127] {
+    throw "v1 chord clamp changed";
+}

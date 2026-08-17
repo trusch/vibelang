@@ -8,6 +8,242 @@ use super::graph::*;
 use super::rhainodes::NodeRef;
 use rhai::{Array, Dynamic};
 
+pub(crate) const V1_UGEN_COMPAT_DIAGNOSTIC_ID: &str = "diagnostic.compat.dsp_ugen_recovery";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenAdapterProfile {
+    V1Compatibility,
+    V2Strict,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenNumericRange {
+    FiniteUnbounded,
+    FiniteNonnegative,
+    FinitePositive,
+    IntegerUnbounded,
+    IntegerNonnegative,
+}
+
+pub(crate) struct UgenInputSpec<'a> {
+    name: &'static str,
+    range: UgenNumericRange,
+    value: &'a Dynamic,
+}
+
+impl<'a> UgenInputSpec<'a> {
+    pub(crate) const fn new(
+        name: &'static str,
+        range: UgenNumericRange,
+        value: &'a Dynamic,
+    ) -> Self {
+        Self { name, range, value }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UgenDefaultSource {
+    Manifest,
+    #[allow(dead_code)]
+    LegacyZero,
+}
+
+pub(crate) struct UgenOmittedInput {
+    name: &'static str,
+    default: f64,
+    source: UgenDefaultSource,
+}
+
+impl UgenOmittedInput {
+    pub(crate) const fn new(name: &'static str, default: f64, source: UgenDefaultSource) -> Self {
+        Self {
+            name,
+            default,
+            source,
+        }
+    }
+}
+
+pub(crate) struct AdaptedUgenCall {
+    recovered: Vec<Dynamic>,
+}
+
+impl AdaptedUgenCall {
+    pub(crate) fn recovered(&self, index: usize) -> Result<&Dynamic> {
+        self.recovered.get(index).ok_or_else(|| {
+            SynthDefError::ValidationError(format!(
+                "dsp.ugen.adapter.internal: recovered input index {index} is unavailable"
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UgenCompatibilityDiagnostic {
+    function: &'static str,
+    arguments: Vec<String>,
+    reasons: Vec<&'static str>,
+}
+
+impl std::fmt::Display for UgenCompatibilityDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} profile=compat.vibelang.v1 function={} arguments={} reasons={} recovery=legacy_effective_values replacement=supply_explicit_finite_in_range_arguments",
+            V1_UGEN_COMPAT_DIAGNOSTIC_ID,
+            self.function,
+            self.arguments.join(","),
+            self.reasons.join(",")
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UgenNumericViolation {
+    argument: String,
+    diagnostic_id: &'static str,
+    expected: &'static str,
+}
+
+pub(crate) fn adapt_ugen_call(
+    profile: UgenAdapterProfile,
+    function: &'static str,
+    inputs: &[UgenInputSpec<'_>],
+    omitted: &[UgenOmittedInput],
+) -> Result<AdaptedUgenCall> {
+    let mut violations = Vec::new();
+    for input in inputs {
+        validate_ugen_numeric(input.name, input.range, input.value, &mut violations);
+    }
+
+    if profile == UgenAdapterProfile::V2Strict {
+        if let Some(violation) = violations.first() {
+            return Err(SynthDefError::InvalidUgenArgument {
+                diagnostic_id: violation.diagnostic_id,
+                ugen: function.into(),
+                arg: violation.argument.clone(),
+                expected: violation.expected,
+            });
+        }
+        if let Some(input) = omitted.first() {
+            return Err(SynthDefError::OmittedUgenArgument {
+                ugen: function.into(),
+                arg: input.name.into(),
+            });
+        }
+        return Ok(AdaptedUgenCall {
+            recovered: Vec::new(),
+        });
+    }
+
+    if !violations.is_empty() || !omitted.is_empty() {
+        let mut arguments = Vec::new();
+        let mut reasons = Vec::new();
+        for violation in &violations {
+            if !arguments.contains(&violation.argument) {
+                arguments.push(violation.argument.clone());
+            }
+            if !reasons.contains(&violation.diagnostic_id) {
+                reasons.push(violation.diagnostic_id);
+            }
+        }
+        for input in omitted {
+            if !arguments.iter().any(|argument| argument == input.name) {
+                arguments.push(input.name.into());
+            }
+            let reason = match input.source {
+                UgenDefaultSource::Manifest => "dsp.ugen.argument.omitted_manifest_default",
+                UgenDefaultSource::LegacyZero => "dsp.ugen.argument.omitted_legacy_zero",
+            };
+            if !reasons.contains(&reason) {
+                reasons.push(reason);
+            }
+        }
+        log::warn!(
+            target: "vibelang::compat",
+            "{}",
+            UgenCompatibilityDiagnostic {
+                function,
+                arguments,
+                reasons,
+            }
+        );
+    }
+
+    Ok(AdaptedUgenCall {
+        recovered: omitted
+            .iter()
+            .map(|input| Dynamic::from(input.default))
+            .collect(),
+    })
+}
+
+fn validate_ugen_numeric(
+    argument: &str,
+    range: UgenNumericRange,
+    value: &Dynamic,
+    violations: &mut Vec<UgenNumericViolation>,
+) {
+    if let Some(array) = value.clone().try_cast::<Array>() {
+        for (index, value) in array.iter().enumerate() {
+            validate_ugen_numeric(&format!("{argument}[{index}]"), range, value, violations);
+        }
+    } else if let Some(value) = value.clone().try_cast::<f64>() {
+        validate_ugen_f64(argument, range, value, violations);
+    } else if let Some(value) = value.clone().try_cast::<i64>() {
+        validate_ugen_f64(argument, range, value as f64, violations);
+    } else if let Some(value) = value.clone().try_cast::<i32>() {
+        validate_ugen_f64(argument, range, value as f64, violations);
+    }
+}
+
+fn validate_ugen_f64(
+    argument: &str,
+    range: UgenNumericRange,
+    value: f64,
+    violations: &mut Vec<UgenNumericViolation>,
+) {
+    let violation = if !value.is_finite() {
+        Some(("dsp.ugen.numeric.non_finite", "must be finite"))
+    } else if value < f32::MIN as f64
+        || value > f32::MAX as f64
+        || (value != 0.0 && (value as f32) == 0.0)
+    {
+        Some((
+            "dsp.ugen.numeric.out_of_f32_range",
+            "must be representable as a finite non-underflowing f32",
+        ))
+    } else {
+        match range {
+            UgenNumericRange::FinitePositive if value <= 0.0 => {
+                Some(("dsp.ugen.numeric.below_range", "must be greater than zero"))
+            }
+            UgenNumericRange::FiniteNonnegative | UgenNumericRange::IntegerNonnegative
+                if value < 0.0 =>
+            {
+                Some((
+                    "dsp.ugen.numeric.below_range",
+                    "must be greater than or equal to zero",
+                ))
+            }
+            UgenNumericRange::IntegerUnbounded | UgenNumericRange::IntegerNonnegative
+                if value.fract() != 0.0 =>
+            {
+                Some(("dsp.ugen.numeric.not_integral", "must be an integer"))
+            }
+            _ => None,
+        }
+    };
+
+    if let Some((diagnostic_id, expected)) = violation {
+        violations.push(UgenNumericViolation {
+            argument: argument.into(),
+            diagnostic_id,
+            expected,
+        });
+    }
+}
+
 /// Convert a Rhai value to an Input (either parameter NodeRef or constant).
 pub fn dynamic_to_input(value: &Dynamic) -> Result<Input> {
     if let Some(node) = value.clone().try_cast::<NodeRef>() {
@@ -61,6 +297,40 @@ fn dynamic_to_f64(value: &Dynamic) -> Result<f64> {
     }
 }
 
+fn finite_graph_value(value: f64, field: &str) -> Result<f32> {
+    if !value.is_finite()
+        || value < f64::from(f32::MIN)
+        || value > f64::from(f32::MAX)
+        || (value != 0.0 && (value as f32) == 0.0)
+    {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.numeric.invalid: {field} must be finite and representable as f32, got {value}"
+        )));
+    }
+    Ok(value as f32)
+}
+
+fn nonnegative_integer_graph_value(value: f64, field: &str, code: &str) -> Result<f32> {
+    const MAX_CONTIGUOUS_F32_INTEGER: f64 = 16_777_216.0;
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 {
+        return Err(SynthDefError::ValidationError(format!(
+            "{code}: {field} must be a finite non-negative integer, got {value}"
+        )));
+    }
+    if value > MAX_CONTIGUOUS_F32_INTEGER {
+        return Err(SynthDefError::ValidationError(format!(
+            "{code}: {field} must be in 0..={MAX_CONTIGUOUS_F32_INTEGER} for exact graph indexing, got {value}"
+        )));
+    }
+    let converted = finite_graph_value(value, field)?;
+    if f64::from(converted) != value {
+        return Err(SynthDefError::ValidationError(format!(
+            "{code}: {field} must be exactly representable in the synth graph, got {value}"
+        )));
+    }
+    Ok(converted)
+}
+
 pub fn dynamic_to_shape_count(value: &Dynamic) -> Result<u32> {
     let count = dynamic_to_f64(value)?;
     if !count.is_finite() || count.fract() != 0.0 || count < 1.0 || count > i16::MAX as f64 {
@@ -71,6 +341,30 @@ pub fn dynamic_to_shape_count(value: &Dynamic) -> Result<u32> {
         )));
     }
     Ok(count as u32)
+}
+
+fn validate_in_ar_call(
+    profile: UgenAdapterProfile,
+    bus: &Dynamic,
+    num_channels: &Dynamic,
+) -> Result<()> {
+    adapt_ugen_call(
+        profile,
+        "in_ar",
+        &[
+            UgenInputSpec::new("bus", UgenNumericRange::IntegerNonnegative, bus),
+            UgenInputSpec::new(
+                "numChannels",
+                UgenNumericRange::IntegerUnbounded,
+                num_channels,
+            ),
+        ],
+        &[],
+    )?;
+    if profile == UgenAdapterProfile::V2Strict {
+        dynamic_to_shape_count(num_channels)?;
+    }
+    Ok(())
 }
 
 fn add_constant_input(builder: &mut GraphBuilderInner, value: f32) -> Input {
@@ -138,45 +432,52 @@ fn mix_inputs_as_node(
     builder: &mut GraphBuilderInner,
     inputs: Vec<Input>,
     target_rate: Rate,
-) -> NodeRef {
+) -> Result<NodeRef> {
     let mut iter = inputs.into_iter();
-    let first = iter
-        .next()
-        .expect("mix_inputs_as_node requires at least one input");
+    let first = iter.next().ok_or(SynthDefError::InvalidBodyReturn)?;
     let mut result = input_to_node(builder, first, target_rate);
 
     for input in iter {
         result = add_binary_op(builder, result.to_input(), input, 0);
     }
 
-    coerce_node_to_rate(builder, result, target_rate)
+    Ok(coerce_node_to_rate(builder, result, target_rate))
 }
 
 fn first_last_inputs(value: &Dynamic) -> Result<(Input, Input)> {
     let inputs = dynamic_to_signal_inputs(value)?;
-    let first = inputs.first().expect("non-empty signal input").clone();
-    let last = inputs.last().expect("non-empty signal input").clone();
+    let first = inputs
+        .first()
+        .ok_or(SynthDefError::InvalidBodyReturn)?
+        .clone();
+    let last = inputs
+        .last()
+        .ok_or(SynthDefError::InvalidBodyReturn)?
+        .clone();
     Ok((first, last))
 }
 
-fn level_compensation(rate: Rate, channel_count: usize, level_comp: &Dynamic) -> f32 {
+fn level_compensation(rate: Rate, channel_count: usize, level_comp: &Dynamic) -> Result<f32> {
     if let Some(enabled) = level_comp.clone().try_cast::<bool>() {
         if !enabled {
-            return 1.0;
+            return Ok(1.0);
         }
-        return match rate {
+        return Ok(match rate {
             Rate::Audio => (channel_count as f32).powf(-0.5),
             Rate::Control | Rate::Scalar => (channel_count as f32).powf(-1.0),
-        };
+        });
     }
 
-    let exponent = dynamic_to_f64(level_comp)
-        .map(|v| v.clamp(0.0, 1.0))
-        .unwrap_or(1.0);
+    let exponent = dynamic_to_f64(level_comp)?;
+    if !exponent.is_finite() || !(0.0..=1.0).contains(&exponent) {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.splay.level_comp: levelComp must be bool or finite in 0..=1, got {exponent}"
+        )));
+    }
     if exponent == 0.0 {
-        1.0
+        Ok(1.0)
     } else {
-        (channel_count as f32).powf(-(exponent as f32))
+        Ok((channel_count as f32).powf(-(exponent as f32)))
     }
 }
 
@@ -297,7 +598,7 @@ pub fn greyhole_pseudo(
 /// Lower `Mix.ar` / `Mix.kr` to a normal add tree and rate coercion.
 pub fn mix_pseudo(rate: Rate, array: &Dynamic) -> Result<Dynamic> {
     let inputs = dynamic_to_signal_inputs(array)?;
-    let node = with_builder(|builder| mix_inputs_as_node(builder, inputs, rate))?;
+    let node = with_builder(|builder| mix_inputs_as_node(builder, inputs, rate))??;
     Ok(Dynamic::from(node))
 }
 
@@ -316,7 +617,7 @@ pub fn splay_pseudo(
     let center = dynamic_to_input(center)?;
     let pan_count = inputs.len();
     let n = pan_count.max(2);
-    let compensation = level_compensation(rate, n, level_comp);
+    let compensation = level_compensation(rate, n, level_comp)?;
 
     let channels = with_builder(|builder| {
         let level = scaled_level_input(builder, level, compensation);
@@ -341,15 +642,15 @@ pub fn splay_pseudo(
             right.push(NodeRef::new_with_output(pan.id(), 1).to_input());
         }
 
-        let left = mix_inputs_as_node(builder, left, rate);
-        let right = mix_inputs_as_node(builder, right, rate);
+        let left = mix_inputs_as_node(builder, left, rate)?;
+        let right = mix_inputs_as_node(builder, right, rate)?;
         let left = add_binary_op(builder, left.to_input(), level.clone(), 2);
         let right = add_binary_op(builder, right.to_input(), level, 2);
         let mut result = Array::new();
         result.push(Dynamic::from(left));
         result.push(Dynamic::from(right));
-        result
-    })?;
+        Ok::<Array, SynthDefError>(result)
+    })??;
 
     Ok(Dynamic::from(channels))
 }
@@ -366,12 +667,7 @@ pub fn splay_az_pseudo(
     orientation: &Dynamic,
     level_comp: &Dynamic,
 ) -> Result<Dynamic> {
-    let output_count = dynamic_to_f64(num_chans)? as u32;
-    if output_count == 0 {
-        return Err(SynthDefError::ValidationError(
-            "splay_az numChans must be positive".to_string(),
-        ));
-    }
+    let output_count = dynamic_to_shape_count(num_chans)?;
 
     let inputs = dynamic_to_signal_inputs(in_array)?;
     let spread = dynamic_to_input(spread)?;
@@ -380,7 +676,7 @@ pub fn splay_az_pseudo(
     let center = dynamic_to_input(center)?;
     let orientation = dynamic_to_input(orientation)?;
     let pan_count = inputs.len().max(1);
-    let compensation = level_compensation(rate, pan_count, level_comp);
+    let compensation = level_compensation(rate, pan_count, level_comp)?;
 
     let channels = with_builder(|builder| {
         let level = scaled_level_input(builder, level, compensation);
@@ -424,10 +720,10 @@ pub fn splay_az_pseudo(
 
         let mut result = Array::new();
         for column in columns {
-            result.push(Dynamic::from(mix_inputs_as_node(builder, column, rate)));
+            result.push(Dynamic::from(mix_inputs_as_node(builder, column, rate)?));
         }
-        result
-    })?;
+        Ok::<Array, SynthDefError>(result)
+    })??;
 
     Ok(Dynamic::from(channels))
 }
@@ -456,9 +752,9 @@ pub fn mix(signals: Array) -> Result<NodeRef> {
 
 /// Expose individual outputs from a multi-output UGen as separate NodeRefs.
 pub fn channels(signal: NodeRef, count: i64) -> Result<Array> {
-    if count <= 0 {
+    if !(1..=i64::from(i16::MAX)).contains(&count) {
         return Err(SynthDefError::ValidationError(
-            "channels() count must be positive".to_string(),
+            "dsp.helper.channels.count: count must be in 1..=32767".to_string(),
         ));
     }
 
@@ -480,9 +776,9 @@ pub fn channels(signal: NodeRef, count: i64) -> Result<Array> {
 
 /// Get a specific output from a multi-output UGen.
 pub fn channel(signal: NodeRef, index: i64) -> Result<NodeRef> {
-    if index < 0 {
+    if !(0..i64::from(i16::MAX)).contains(&index) {
         return Err(SynthDefError::ValidationError(
-            "channel() index must be non-negative".to_string(),
+            "dsp.helper.channel.index: index must be in 0..=32766".to_string(),
         ));
     }
 
@@ -497,6 +793,12 @@ pub fn channel(signal: NodeRef, index: i64) -> Result<NodeRef> {
 
 /// Generate a detune spread array for supersaw/unison effects.
 pub fn detune_spread(voices: i64, amount: f64) -> Result<Array> {
+    if !(2..=i64::from(i16::MAX)).contains(&voices) {
+        return Err(SynthDefError::ValidationError(
+            "dsp.helper.detune.voices: voices must be in 2..=32767".to_string(),
+        ));
+    }
+    finite_graph_value(amount, "detune_spread amount")?;
     let mut result = Array::new();
     let half_voices = (voices as f64 - 1.0) / 2.0;
 
@@ -539,6 +841,11 @@ pub fn amp_to_db(amp: f64) -> f64 {
 
 /// Duplicate a signal N times into an array.
 pub fn dup(signal: NodeRef, count: i64) -> Result<Array> {
+    if !(0..=i64::from(i16::MAX)).contains(&count) {
+        return Err(SynthDefError::ValidationError(
+            "dsp.helper.dup.count: count must be in 0..=32767".to_string(),
+        ));
+    }
     let mut result = Array::new();
     for _ in 0..count {
         result.push(Dynamic::from(signal));
@@ -554,6 +861,33 @@ pub fn array_zip(arr1: Array, arr2: Array) -> Array {
         .collect()
 }
 
+fn array_zip_strict(arr1: Array, arr2: Array) -> Result<Array> {
+    if arr1.len() != arr2.len() {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.zip.length: expected equal array lengths, got {} and {}",
+            arr1.len(),
+            arr2.len()
+        )));
+    }
+    Ok(array_zip(arr1, arr2))
+}
+
+fn clamp_strict(value: f64, min: f64, max: f64) -> Result<f64> {
+    for (field, input) in [("value", value), ("min", min), ("max", max)] {
+        if !input.is_finite() {
+            return Err(SynthDefError::ValidationError(format!(
+                "dsp.helper.clamp.non_finite: {field} must be finite, got {input}"
+            )));
+        }
+    }
+    if min > max {
+        return Err(SynthDefError::ValidationError(format!(
+            "dsp.helper.clamp.range_order: expected min <= max, got {min}..{max}"
+        )));
+    }
+    Ok(value.clamp(min, max))
+}
+
 /// Envelope specification (like SuperCollider's Env class).
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -566,28 +900,65 @@ pub struct Env {
 impl Env {
     /// Create a new envelope specification.
     pub fn new(levels: Array, times: Array, curve: f64) -> Result<Self> {
+        if levels.len() < 2 || times.len() + 1 != levels.len() {
+            return Err(SynthDefError::ValidationError(format!(
+                "dsp.helper.env.shape: expected at least two levels and levels.len()-1 times, got {} levels and {} times",
+                levels.len(),
+                times.len()
+            )));
+        }
         let levels_vec: Vec<f32> = levels
             .iter()
-            .map(|v| v.clone().try_cast::<f64>().unwrap_or(0.0) as f32)
-            .collect();
+            .enumerate()
+            .map(|(index, value)| {
+                let value = value.clone().try_cast::<f64>().ok_or_else(|| {
+                    SynthDefError::ValidationError(format!(
+                        "dsp.helper.env.level_type: level at index {index} must be numeric, got {}",
+                        value.type_name()
+                    ))
+                })?;
+                finite_graph_value(value, &format!("Env level at index {index}"))
+            })
+            .collect::<Result<_>>()?;
         let times_vec: Vec<EnvGenParam> = times
             .iter()
-            .map(|v| {
+            .enumerate()
+            .map(|(index, v)| {
                 if let Some(node) = v.clone().try_cast::<NodeRef>() {
                     Ok(EnvGenParam::Node(node))
                 } else if let Some(f) = v.clone().try_cast::<f64>() {
-                    Ok(EnvGenParam::Constant(f))
+                    if !f.is_finite() || f < 0.0 {
+                        Err(SynthDefError::ValidationError(format!(
+                            "dsp.helper.env.time: time at index {index} must be finite and non-negative, got {f}"
+                        )))
+                    } else {
+                        finite_graph_value(f, &format!("Env time at index {index}"))?;
+                        Ok(EnvGenParam::Constant(f))
+                    }
                 } else if let Some(i) = v.clone().try_cast::<i64>() {
-                    Ok(EnvGenParam::Constant(i as f64))
+                    if i < 0 {
+                        Err(SynthDefError::ValidationError(format!(
+                            "dsp.helper.env.time: time at index {index} must be non-negative, got {i}"
+                        )))
+                    } else {
+                        let value = i as f64;
+                        nonnegative_integer_graph_value(
+                            value,
+                            &format!("Env time at index {index}"),
+                            "dsp.helper.env.time",
+                        )?;
+                        Ok(EnvGenParam::Constant(value))
+                    }
                 } else {
-                    Err(SynthDefError::ValidationError(
-                        "Env time must be a number or control source".to_string(),
-                    ))
+                    Err(SynthDefError::ValidationError(format!(
+                        "dsp.helper.env.time_type: time at index {index} must be a number or control source, got {}",
+                        v.type_name()
+                    )))
                 }
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let curve_val = curve as f32;
+        let curve_val = finite_graph_value(curve, "Env curve")?;
         let curves_vec = vec![curve_val; times_vec.len()];
 
         Ok(Env {
@@ -1307,7 +1678,7 @@ pub fn envelope() -> EnvelopeBuilder {
 /// `SoundIn` is sclang-only and does not exist as a server-side UGen; we
 /// emit the same expansion the SC class library does.
 pub fn sound_in(num_channels: f64) -> Result<Array> {
-    let num_ch = num_channels as u32;
+    let num_ch = dynamic_to_shape_count(&Dynamic::from(num_channels))?;
     let in_node = with_builder(|builder| {
         let num_outs = builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
         builder.add_node(
@@ -1334,13 +1705,18 @@ pub fn sound_in(num_channels: f64) -> Result<Array> {
 /// `channel` after the synth is running has no effect — but it's fine for
 /// per-instance selection via `set_param` at instantiation.
 pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
+    let channel = nonnegative_integer_graph_value(
+        channel,
+        "sound_in_channel channel",
+        "dsp.helper.sound_in.channel",
+    )?;
     with_builder(|builder| {
         let num_outs = builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
-        builder.add_constant(channel as f32);
+        builder.add_constant(channel);
         let bus = builder.add_node(
             "BinaryOpUGen".to_string(),
             Rate::Scalar,
-            vec![num_outs.to_input(), Input::Constant(channel as f32)],
+            vec![num_outs.to_input(), Input::Constant(channel)],
             1,
             0,
         );
@@ -1369,11 +1745,12 @@ pub fn sound_in_channel_n(channel: NodeRef) -> Result<NodeRef> {
 /// Note: SuperCollider's In UGen only takes the bus as an input.
 /// The number of channels is determined by the output count, not by an input parameter.
 pub fn in_ar(bus: f64, num_channels: f64) -> Result<Array> {
-    let num_ch = num_channels as u32;
+    let bus = nonnegative_integer_graph_value(bus, "in_ar bus", "dsp.helper.in_ar.bus")?;
+    let num_ch = dynamic_to_shape_count(&Dynamic::from(num_channels))?;
     let node_ref = with_builder(|builder| {
-        builder.add_constant(bus as f32);
+        builder.add_constant(bus);
         // Only pass bus as input - num_channels is determined by output count
-        let inputs = vec![Input::Constant(bus as f32)];
+        let inputs = vec![Input::Constant(bus)];
         builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
     })?;
 
@@ -1390,7 +1767,7 @@ pub fn in_ar(bus: f64, num_channels: f64) -> Result<Array> {
 /// Note: SuperCollider's In UGen only takes the bus as an input.
 /// The number of channels is determined by the output count, not by an input parameter.
 pub fn in_ar_n(bus: NodeRef, num_channels: f64) -> Result<Array> {
-    let num_ch = num_channels as u32;
+    let num_ch = dynamic_to_shape_count(&Dynamic::from(num_channels))?;
     let node_ref = with_builder(|builder| {
         // Only pass bus as input - num_channels is determined by output count
         let inputs = vec![bus.to_input()];
@@ -1407,7 +1784,15 @@ pub fn in_ar_n(bus: NodeRef, num_channels: f64) -> Result<Array> {
 
 /// Write to an audio bus, replacing contents.
 pub fn replace_out_ar(bus: f64, channels: Array) -> Result<NodeRef> {
-    let mut inputs = vec![Input::Constant(bus as f32)];
+    let bus = nonnegative_integer_graph_value(
+        bus,
+        "replace_out_ar bus",
+        "dsp.helper.replace_out_ar.bus",
+    )?;
+    if channels.is_empty() {
+        return Err(SynthDefError::InvalidBodyReturn);
+    }
+    let mut inputs = vec![Input::Constant(bus)];
 
     for ch in channels.iter() {
         if let Some(node_ref) = ch.clone().try_cast::<NodeRef>() {
@@ -1418,13 +1803,16 @@ pub fn replace_out_ar(bus: f64, channels: Array) -> Result<NodeRef> {
     }
 
     with_builder(|builder| {
-        builder.add_constant(bus as f32);
+        builder.add_constant(bus);
         builder.add_node("ReplaceOut".to_string(), Rate::Audio, inputs, 0, 0)
     })
 }
 
 /// Write to an audio bus (NodeRef version).
 pub fn replace_out_ar_n(bus: NodeRef, channels: Array) -> Result<NodeRef> {
+    if channels.is_empty() {
+        return Err(SynthDefError::InvalidBodyReturn);
+    }
     let mut inputs = vec![bus.to_input()];
 
     for ch in channels.iter() {
@@ -1440,6 +1828,10 @@ pub fn replace_out_ar_n(bus: NodeRef, channels: Array) -> Result<NodeRef> {
 
 /// Register all helper functions with the Rhai engine.
 pub fn register_helpers(engine: &mut rhai::Engine) {
+    register_helpers_for_profile(engine, UgenAdapterProfile::V1Compatibility);
+}
+
+pub(crate) fn register_helpers_for_profile(engine: &mut rhai::Engine, profile: UgenAdapterProfile) {
     // Register Env type
     engine.register_type::<Env>().register_fn(
         "Env",
@@ -1469,46 +1861,66 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("env_triangle", |duration: f64| Env::triangle(duration));
 
     // Bus I/O
-    engine.register_fn("in_ar", |bus: f64, num_channels: f64| {
-        in_ar(bus, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: f64, num_channels: f64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: f64, num_channels: i64| {
-        in_ar(bus, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: f64, num_channels: i64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus, num_channels as f64).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: i64, num_channels: f64| {
-        in_ar(bus as f64, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: i64, num_channels: f64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus as f64, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: i64, num_channels: i64| {
-        in_ar(bus as f64, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: i64, num_channels: i64| {
+        validate_in_ar_call(profile, &Dynamic::from(bus), &Dynamic::from(num_channels))
+            .map_err(synthdef_error_to_eval)?;
+        in_ar(bus as f64, num_channels as f64).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: f64| {
-        in_ar_n(bus, num_channels).unwrap()
+    engine.register_fn("in_ar", move |bus: NodeRef, num_channels: f64| {
+        validate_in_ar_call(
+            profile,
+            &Dynamic::from(bus.clone()),
+            &Dynamic::from(num_channels),
+        )
+        .map_err(synthdef_error_to_eval)?;
+        in_ar_n(bus, num_channels).map_err(synthdef_error_to_eval)
     });
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: i64| {
-        in_ar_n(bus, num_channels as f64).unwrap()
+    engine.register_fn("in_ar", move |bus: NodeRef, num_channels: i64| {
+        validate_in_ar_call(
+            profile,
+            &Dynamic::from(bus.clone()),
+            &Dynamic::from(num_channels),
+        )
+        .map_err(synthdef_error_to_eval)?;
+        in_ar_n(bus, num_channels as f64).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("replace_out_ar", |bus: f64, channels: Array| {
-        replace_out_ar(bus, channels).unwrap()
+        replace_out_ar(bus, channels).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("replace_out_ar", |bus: NodeRef, channels: Array| {
-        replace_out_ar_n(bus, channels).unwrap()
+        replace_out_ar_n(bus, channels).map_err(synthdef_error_to_eval)
     });
 
     // Hardware audio input (line-in, microphone)
     engine.register_fn("sound_in", |num_channels: f64| {
-        sound_in(num_channels).unwrap()
+        sound_in(num_channels).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in", |num_channels: i64| {
-        sound_in(num_channels as f64).unwrap()
+        sound_in(num_channels as f64).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in_channel", |channel: f64| {
-        sound_in_channel(channel).unwrap()
+        sound_in_channel(channel).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in_channel", |channel: i64| {
-        sound_in_channel(channel as f64).unwrap()
+        sound_in_channel(channel as f64).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in_channel", |channel: NodeRef| {
-        sound_in_channel_n(channel).unwrap()
+        sound_in_channel_n(channel).map_err(synthdef_error_to_eval)
     });
 
     // `sound_in_ar` is the manifest-style alias for `sound_in_channel`.
@@ -1516,37 +1928,50 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     // because SoundIn is a sclang pseudo-UGen; the SC server only knows
     // In + NumOutputBuses, which is what these helpers emit.
     engine.register_fn("sound_in_ar", |channel: f64| {
-        sound_in_channel(channel).unwrap()
+        sound_in_channel(channel).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in_ar", |channel: i64| {
-        sound_in_channel(channel as f64).unwrap()
+        sound_in_channel(channel as f64).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("sound_in_ar", |channel: NodeRef| {
-        sound_in_channel_n(channel).unwrap()
+        sound_in_channel_n(channel).map_err(synthdef_error_to_eval)
     });
     // Allow zero-arg call: `sound_in_ar()` reads channel 0.
-    engine.register_fn("sound_in_ar", || sound_in_channel(0.0).unwrap());
+    engine.register_fn("sound_in_ar", || {
+        sound_in_channel(0.0).map_err(synthdef_error_to_eval)
+    });
 
     // Mix and utilities
-    engine.register_fn("mix", |arr: Array| mix(arr).unwrap());
-    engine.register_fn("sum", |arr: Array| mix(arr).unwrap()); // Alias for mix
-    engine.register_fn("dup", |sig: NodeRef, count: i64| dup(sig, count).unwrap());
+    engine.register_fn("mix", |arr: Array| mix(arr).map_err(synthdef_error_to_eval));
+    engine.register_fn("sum", |arr: Array| mix(arr).map_err(synthdef_error_to_eval)); // Alias for mix
+    engine.register_fn("dup", |sig: NodeRef, count: i64| {
+        dup(sig, count).map_err(synthdef_error_to_eval)
+    });
     engine.register_fn("channels", |sig: NodeRef, count: i64| {
-        channels(sig, count).unwrap()
+        channels(sig, count).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("channel", |sig: NodeRef, index: i64| {
-        channel(sig, index).unwrap()
+        channel(sig, index).map_err(synthdef_error_to_eval)
     });
     engine.register_fn("detune_spread", |voices: i64, amount: f64| {
-        detune_spread(voices, amount).unwrap()
+        detune_spread(voices, amount).map_err(synthdef_error_to_eval)
     });
 
     // Array utilities
-    engine.register_fn("zip", array_zip);
+    match profile {
+        UgenAdapterProfile::V1Compatibility => {
+            engine.register_fn("zip", array_zip);
+        }
+        UgenAdapterProfile::V2Strict => {
+            engine.register_fn("zip", |arr1: Array, arr2: Array| {
+                array_zip_strict(arr1, arr2).map_err(synthdef_error_to_eval)
+            });
+        }
+    }
 
     // Envelopes
     engine.register_fn("env_gen", |gate: NodeRef, done: i64| {
-        env_gen(gate, done).unwrap()
+        env_gen(gate, done).map_err(synthdef_error_to_eval)
     });
 
     // EnvGen builder
@@ -1622,7 +2047,8 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
          level_bias: f64,
          time_scale: f64,
          done_action: f64| {
-            env_gen_with_env(env, gate, level_scale, level_bias, time_scale, done_action).unwrap()
+            env_gen_with_env(env, gate, level_scale, level_bias, time_scale, done_action)
+                .map_err(synthdef_error_to_eval)
         },
     );
     engine.register_fn(
@@ -1633,7 +2059,8 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
          level_bias: NodeRef,
          time_scale: NodeRef,
          done_action: NodeRef| {
-            env_gen_with_env_n(env, gate, level_scale, level_bias, time_scale, done_action).unwrap()
+            env_gen_with_env_n(env, gate, level_scale, level_bias, time_scale, done_action)
+                .map_err(synthdef_error_to_eval)
         },
     );
 
@@ -1651,23 +2078,49 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("round", |val: f64| val.round());
     engine.register_fn("min", |a: f64, b: f64| a.min(b));
     engine.register_fn("max", |a: f64, b: f64| a.max(b));
-    engine.register_fn("clamp", |val: f64, lo: f64, hi: f64| val.clamp(lo, hi));
+    match profile {
+        UgenAdapterProfile::V1Compatibility => {
+            engine.register_fn("clamp", |value: f64, min: f64, max: f64| {
+                value.clamp(min, max)
+            });
+        }
+        UgenAdapterProfile::V2Strict => {
+            engine.register_fn("clamp", |value: f64, min: f64, max: f64| {
+                clamp_strict(value, min, max).map_err(synthdef_error_to_eval)
+            });
+        }
+    }
 
-    // DC offset generator
-    engine.register_fn("dc_ar", |val: f64| {
-        with_builder(|builder| {
-            builder.add_constant(val as f32);
-            let inputs = vec![Input::Constant(val as f32)];
-            builder.add_node("DC".to_string(), Rate::Audio, inputs, 1, 0)
-        })
-        .unwrap()
-    });
-    engine.register_fn("dc_kr", |val: f64| {
-        with_builder(|builder| {
-            builder.add_constant(val as f32);
-            let inputs = vec![Input::Constant(val as f32)];
-            builder.add_node("DC".to_string(), Rate::Control, inputs, 1, 0)
-        })
-        .unwrap()
-    });
+    if profile == UgenAdapterProfile::V1Compatibility {
+        engine.register_fn("dc_ar", move |value: f64| {
+            let value = Dynamic::from(value);
+            adapt_ugen_call(
+                profile,
+                "dc_ar",
+                &[UgenInputSpec::new(
+                    "in",
+                    UgenNumericRange::FiniteUnbounded,
+                    &value,
+                )],
+                &[],
+            )
+            .map_err(synthdef_error_to_eval)?;
+            crate::ugens::dc_ar(&value).map_err(synthdef_error_to_eval)
+        });
+        engine.register_fn("dc_kr", move |value: f64| {
+            let value = Dynamic::from(value);
+            adapt_ugen_call(
+                profile,
+                "dc_kr",
+                &[UgenInputSpec::new(
+                    "in",
+                    UgenNumericRange::FiniteUnbounded,
+                    &value,
+                )],
+                &[],
+            )
+            .map_err(synthdef_error_to_eval)?;
+            crate::ugens::dc_kr(&value).map_err(synthdef_error_to_eval)
+        });
+    }
 }

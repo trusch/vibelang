@@ -20,6 +20,7 @@
 // Outputs: sine (clean fundamental), sub (saw at 0.5×freq, only in SAO),
 // odd / even (partial banks split as on hardware).
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _spectraphon_write_mag(k, chain, f0_analyze, focus, mag_buf, active) {
     let bin_per_hz = 2048.0 / 44100.0;
     let mag_scale = 0.001953125;
@@ -32,6 +33,7 @@ fn _spectraphon_write_mag(k, chain, f0_analyze, focus, mag_buf, active) {
     buf_wr_kr(mag, mag_buf, k - 1.0, 0);
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _spectraphon_mag_norm(mag_buf) {
     let k = 1.0;
     let mag_sum = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);

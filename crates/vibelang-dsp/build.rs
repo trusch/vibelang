@@ -2,60 +2,17 @@
 //!
 //! Generates UGen wrapper functions from JSON manifests.
 
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize)]
-struct UGenManifest {
-    name: String,
-    description: String,
-    rates: Vec<String>,
-    inputs: Vec<UGenInput>,
-    outputs: u32,
-    category: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    functions: Option<Vec<String>>,
-    /// Server-side UGen class to emit, defaults to `name`. Used to expose
-    /// BinaryOpUGen / UnaryOpUGen variants under friendlier names (e.g. an
-    /// entry named "Hypot" emits `BinaryOpUGen` with `special_index = 23`).
-    #[serde(default)]
-    ugen_class: Option<String>,
-    /// Special index passed to the server (operator selector for
-    /// BinaryOpUGen / UnaryOpUGen). Defaults to 0.
-    #[serde(default)]
-    special_index: Option<i16>,
-    /// Public argument whose value is UGen shape metadata rather than a
-    /// runtime server input. The generated wrapper keeps this argument in the
-    /// Rhai signature, removes it from the encoded input list, and uses it for
-    /// both `num_outputs` and `special_index`.
-    #[serde(default)]
-    channel_count_input: Option<String>,
-    /// True when the manifest name is an sclang-side helper, alias, or wrapper
-    /// that must not be emitted as a literal server UGen name.
-    #[serde(default)]
-    pseudo: bool,
-    /// SuperCollider plugin package required for this literal server UGen.
-    #[serde(default)]
-    requires_plugin: Option<String>,
-    /// Rationale for entries kept as documentation/unavailable stubs.
-    #[serde(default)]
-    unavailable_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UGenInput {
-    name: String,
-    #[serde(rename = "type")]
-    ty: String,
-    #[serde(default)]
-    default: Option<serde_json::Value>,
-    description: String,
-}
+mod build_support;
+use build_support::{
+    has_array_overload, positional_arity_max, runtime_rate_rust, to_snake_case, ugen_numeric_range,
+    UGenInput, UGenManifest, MAX_DYNAMIC_PARAMETERS,
+};
 
 // `demand` is the SuperCollider demand-rate (used by Dseq, Dser, Dwhite, …).
 // `builder` flags documentation-only fluent-API entries (e.g. `envelope`).
@@ -347,6 +304,12 @@ fn validate(file: &Path, ugen: &UGenManifest) -> Result<(), String> {
                 ugen.name, inp.name
             ));
         }
+        if !is_builder_only && inp.default.as_ref().is_some_and(|value| !value.is_number()) {
+            return Err(format!(
+                "UGen '{}' input '{}' has a non-numeric runtime default",
+                ugen.name, inp.name
+            ));
+        }
     }
 
     if ugen.description.is_empty() {
@@ -438,34 +401,29 @@ fn main() {
     writeln!(f, "use crate::graph::*;").unwrap();
     writeln!(f, "use crate::helpers;").unwrap();
     writeln!(f, "use rhai::Dynamic;\n").unwrap();
-
     // Generate one function per UGen rate (snake_case_ar, snake_case_kr, etc.)
     for ugen in &manifest {
         let name = &ugen.name;
         let rates = &ugen.rates;
-
         // Skip documentation-only entries (like fluent builder API docs)
         let has_only_builder_rate = rates.iter().all(|r| r == "builder");
         if has_only_builder_rate {
             continue;
         }
-
         let description = ugen.description.as_str();
         let inputs = &ugen.inputs;
         let outputs = ugen.outputs as i64;
         let category = ugen.category.as_str();
         let channel_count_input = ugen.channel_count_input.as_deref();
-
         let snake_name = to_snake_case(name);
 
         // Generate one function for each rate
         for rate_str in rates {
-            let rate_enum = match rate_str.as_str() {
-                "ar" => "Rate::Audio",
-                "kr" => "Rate::Control",
-                "ir" => "Rate::Scalar",
-                _ => "Rate::Audio",
-            };
+            if build_support::is_quarantined_rate(rate_str) || rate_str == "builder" {
+                continue;
+            }
+            let rate_enum = runtime_rate_rust(rate_str)
+                .unwrap_or_else(|| panic!("validated runtime rate has no encoding: {rate_str}"));
 
             let func_name = format!("{}_{}", snake_name, rate_str);
 
@@ -685,10 +643,37 @@ fn main() {
     }
 
     // Generate registration function
-    writeln!(f, "/// Register all generated UGens with the Rhai engine.").unwrap();
+    writeln!(
+        f,
+        "/// Register generated UGens with v1 compatibility recovery."
+    )
+    .unwrap();
     writeln!(
         f,
         "pub fn register_generated_ugens(engine: &mut rhai::Engine) {{"
+    )
+    .unwrap();
+    writeln!(
+        f,
+        "    register_generated_ugens_for_profile(engine, helpers::UgenAdapterProfile::V1Compatibility);"
+    )
+    .unwrap();
+    writeln!(f, "}}\n").unwrap();
+    writeln!(f, "/// Register generated UGens with strict v2 adapters.").unwrap();
+    writeln!(
+        f,
+        "pub fn register_generated_ugens_v2(engine: &mut rhai::Engine) {{"
+    )
+    .unwrap();
+    writeln!(
+        f,
+        "    register_generated_ugens_for_profile(engine, helpers::UgenAdapterProfile::V2Strict);"
+    )
+    .unwrap();
+    writeln!(f, "}}\n").unwrap();
+    writeln!(
+        f,
+        "pub(crate) fn register_generated_ugens_for_profile(engine: &mut rhai::Engine, profile: helpers::UgenAdapterProfile) {{"
     )
     .unwrap();
 
@@ -706,6 +691,9 @@ fn main() {
         let snake_name = to_snake_case(name);
 
         for rate_str in rates {
+            if build_support::is_quarantined_rate(rate_str) || rate_str == "builder" {
+                continue;
+            }
             let func_name = format!("{}_{}", snake_name, rate_str);
 
             // Register per-arity overloads so default arguments work for
@@ -717,82 +705,157 @@ fn main() {
             // falls back to a single `rhai::Array` parameter, validated and
             // unpacked inside the closure. See `kb/synthdef-arity-limits-plan.md`
             // §3.1.
-            let positional_max = inputs.len().min(20);
+            let positional_max = positional_arity_max(inputs.len());
             for arity in 0..=positional_max {
                 let mut closure_params = Vec::new();
                 let mut call_args = Vec::new();
+                let mut provided_specs = Vec::new();
+                let mut omitted_specs = Vec::new();
+                let mut recovered_names = Vec::new();
+                let mut concrete_params = Vec::new();
+                let mut compatibility_params = Vec::new();
 
-                for input in inputs.iter().take(arity) {
+                for (index, input) in inputs.iter().take(arity).enumerate() {
                     let escaped_name = param_to_snake_case(&input.name);
-                    closure_params.push(format!("{}: Dynamic", escaped_name));
+                    compatibility_params.push(format!("{}: Dynamic", escaped_name));
+                    if index < MAX_DYNAMIC_PARAMETERS {
+                        closure_params.push(format!("{}: Dynamic", escaped_name));
+                    } else {
+                        closure_params.push(format!("{}: f64", escaped_name));
+                        concrete_params.push(escaped_name.clone());
+                    }
                     call_args.push(format!("&{}", escaped_name));
+                    let range = ugen_numeric_range(&func_name, input)
+                        .expect("generated UGen input must have a numeric range");
+                    provided_specs.push(format!(
+                        "helpers::UgenInputSpec::new(\"{}\", helpers::UgenNumericRange::{}, &{})",
+                        input.name,
+                        range.rust_variant(),
+                        escaped_name
+                    ));
                 }
 
-                for input in inputs.iter().skip(arity) {
-                    let default_val = input
-                        .default
-                        .as_ref()
-                        .and_then(|v| {
-                            if v.is_f64() {
-                                v.as_f64()
-                            } else if v.is_i64() {
-                                v.as_i64().map(|n| n as f64)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or(0.0);
-                    call_args.push(format!("&Dynamic::from({}f64)", default_val));
+                for (index, input) in inputs.iter().skip(arity).enumerate() {
+                    let (default, source) = match numeric_default_literal(input) {
+                        Some(default) => (default, "Manifest"),
+                        None => ("0.0f64".to_string(), "LegacyZero"),
+                    };
+                    omitted_specs.push(format!(
+                        "helpers::UgenOmittedInput::new(\"{}\", {}, helpers::UgenDefaultSource::{})",
+                        input.name, default, source
+                    ));
+                    let recovered_name = format!("__vibelang_omitted_{}", index);
+                    call_args.push(recovered_name.clone());
+                    recovered_names.push(recovered_name);
                 }
 
-                if !closure_params.is_empty() {
-                    writeln!(f, "    engine.register_fn(").unwrap();
-                    writeln!(f, "        \"{}\",", func_name).unwrap();
-                    writeln!(f, "        |{}| {{", closure_params.join(", ")).unwrap();
+                if arity > MAX_DYNAMIC_PARAMETERS {
+                    writeln!(f, "    match profile {{").unwrap();
                     writeln!(
                         f,
-                        "            {}({}).unwrap()",
-                        func_name,
-                        call_args.join(", ")
+                        "        helpers::UgenAdapterProfile::V1Compatibility => {{"
                     )
                     .unwrap();
-                    writeln!(f, "        }}").unwrap();
-                    writeln!(f, "    );").unwrap();
+                    write_positional_registration(
+                        &mut f,
+                        "            ",
+                        &func_name,
+                        &compatibility_params,
+                        &[],
+                        &provided_specs,
+                        &omitted_specs,
+                        &recovered_names,
+                        &call_args,
+                    );
+                    writeln!(
+                        f,
+                        "        }}\n        helpers::UgenAdapterProfile::V2Strict => {{"
+                    )
+                    .unwrap();
+                    write_positional_registration(
+                        &mut f,
+                        "            ",
+                        &func_name,
+                        &closure_params,
+                        &concrete_params,
+                        &provided_specs,
+                        &omitted_specs,
+                        &recovered_names,
+                        &call_args,
+                    );
+                    writeln!(f, "        }}\n    }}").unwrap();
                 } else {
-                    writeln!(
-                        f,
-                        "    engine.register_fn(\"{}\", || {}({}).unwrap());",
-                        func_name,
-                        func_name,
-                        call_args.join(", ")
-                    )
-                    .unwrap();
+                    write_positional_registration(
+                        &mut f,
+                        "    ",
+                        &func_name,
+                        &closure_params,
+                        &concrete_params,
+                        &provided_specs,
+                        &omitted_specs,
+                        &recovered_names,
+                        &call_args,
+                    );
                 }
             }
 
-            if inputs.len() > 20 {
+            if has_array_overload(inputs.len()) {
                 let arity = inputs.len();
                 writeln!(f, "    engine.register_raw_fn(").unwrap();
                 writeln!(f, "        \"{}\",", func_name).unwrap();
                 writeln!(f, "        &[std::any::TypeId::of::<rhai::Array>()],").unwrap();
-                writeln!(f, "        |_ctx, args: &mut [&mut Dynamic]| {{").unwrap();
+                writeln!(f, "        move |_ctx, args: &mut [&mut Dynamic]| {{").unwrap();
                 writeln!(
                     f,
-                    "            let array: rhai::Array = std::mem::take(args[0]).cast();"
+                    "            let argument = args.first_mut().ok_or_else(|| ugen_error_to_eval(SynthDefError::WrongArity {{ ugen: \"{}\".into(), expected: 1, got: 0 }}))?;",
+                    func_name
+                )
+                .unwrap();
+                writeln!(
+                    f,
+                    "            let array = std::mem::take(*argument).try_cast::<rhai::Array>().ok_or_else(|| ugen_error_to_eval(SynthDefError::WrongType {{ ugen: \"{}\".into(), arg: \"arguments\".into(), expected: \"Array\".into() }}))?;",
+                    func_name
                 )
                 .unwrap();
                 writeln!(f, "            if array.len() != {} {{", arity).unwrap();
                 writeln!(
                     f,
-                    "                return Err(format!(\"{} expects array of length {}, got {{}}\", array.len()).into());",
-                    func_name, arity
+                    "                return Err(ugen_error_to_eval(SynthDefError::WrongArity {{ ugen: \"{}\".into(), expected: {}, got: array.len() }}));",
+                    func_name, arity,
                 )
                 .unwrap();
                 writeln!(f, "            }}").unwrap();
-                let call_args: Vec<String> = (0..arity).map(|i| format!("&array[{}]", i)).collect();
+                let mut call_args = Vec::new();
+                let mut provided_specs = Vec::new();
+                for (index, input) in inputs.iter().enumerate() {
+                    let argument = format!("__vibelang_array_{}", index);
+                    writeln!(
+                        f,
+                        "            let {} = array.get({}).ok_or_else(|| ugen_error_to_eval(SynthDefError::WrongArity {{ ugen: \"{}\".into(), expected: {}, got: array.len() }}))?;",
+                        argument, index, func_name, arity
+                    )
+                    .unwrap();
+                    let range = ugen_numeric_range(&func_name, input)
+                        .expect("generated UGen input must have a numeric range");
+                    provided_specs.push(format!(
+                        "helpers::UgenInputSpec::new(\"{}\", helpers::UgenNumericRange::{}, {})",
+                        input.name,
+                        range.rust_variant(),
+                        argument
+                    ));
+                    call_args.push(argument);
+                }
+                write_adapter_invocation(
+                    &mut f,
+                    "            ",
+                    &func_name,
+                    &provided_specs,
+                    &[],
+                    &[],
+                );
                 writeln!(
                     f,
-                    "            Ok({}({}).unwrap())",
+                    "            {}({}).map_err(ugen_error_to_eval)",
                     func_name,
                     call_args.join(", ")
                 )
@@ -806,28 +869,79 @@ fn main() {
     writeln!(f, "}}").unwrap();
 }
 
-fn to_snake_case(s: &str) -> String {
-    if s == "DC" {
-        return "dc".to_string();
+fn numeric_default_literal(input: &UGenInput) -> Option<String> {
+    input.default.as_ref().map(|value| format!("{value}f64"))
+}
+
+fn write_positional_registration(
+    file: &mut File,
+    indent: &str,
+    function: &str,
+    closure_params: &[String],
+    concrete_params: &[String],
+    provided: &[String],
+    omitted: &[String],
+    recovered: &[String],
+    call_args: &[String],
+) {
+    let argument_indent = format!("{indent}    ");
+    let body_indent = format!("{indent}        ");
+    writeln!(file, "{indent}engine.register_fn(").unwrap();
+    writeln!(file, "{argument_indent}\"{function}\",").unwrap();
+    if closure_params.is_empty() {
+        writeln!(file, "{argument_indent}move || {{").unwrap();
+    } else {
+        writeln!(
+            file,
+            "{argument_indent}move |{}| {{",
+            closure_params.join(", ")
+        )
+        .unwrap();
     }
-    let mut result = String::new();
-    let chars: Vec<char> = s.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                let prev = chars[i - 1];
-                let prev_lower = prev.is_lowercase();
-                let next_lower = chars.get(i + 1).map(|c| c.is_lowercase()).unwrap_or(false);
-                if (prev_lower || next_lower) && prev != '_' {
-                    result.push('_');
-                }
-            }
-            result.push(c.to_lowercase().next().unwrap());
-        } else {
-            result.push(c);
-        }
+    for parameter in concrete_params {
+        writeln!(
+            file,
+            "{body_indent}let {parameter} = Dynamic::from({parameter});"
+        )
+        .unwrap();
     }
-    result
+    write_adapter_invocation(file, &body_indent, function, provided, omitted, recovered);
+    writeln!(
+        file,
+        "{body_indent}{function}({}).map_err(ugen_error_to_eval)",
+        call_args.join(", ")
+    )
+    .unwrap();
+    writeln!(file, "{argument_indent}}}").unwrap();
+    writeln!(file, "{indent});").unwrap();
+}
+
+fn write_adapter_invocation(
+    file: &mut File,
+    indent: &str,
+    function: &str,
+    provided: &[String],
+    omitted: &[String],
+    recovered: &[String],
+) {
+    writeln!(
+        file,
+        "{indent}let __vibelang_ugen_call = helpers::adapt_ugen_call("
+    )
+    .unwrap();
+    writeln!(file, "{indent}    profile,").unwrap();
+    writeln!(file, "{indent}    \"{}\",", function).unwrap();
+    writeln!(file, "{indent}    &[{}],", provided.join(", ")).unwrap();
+    writeln!(file, "{indent}    &[{}],", omitted.join(", ")).unwrap();
+    writeln!(file, "{indent}).map_err(ugen_error_to_eval)?;").unwrap();
+    for (index, recovered) in recovered.iter().enumerate() {
+        writeln!(
+            file,
+            "{indent}let {} = __vibelang_ugen_call.recovered({}).map_err(ugen_error_to_eval)?;",
+            recovered, index,
+        )
+        .unwrap();
+    }
 }
 
 fn pseudo_lowering_expr(func_name: &str, rate_str: &str) -> Option<&'static str> {

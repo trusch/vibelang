@@ -43,15 +43,30 @@ use crate::message::MidiMessage;
 use crate::message::RecordingMessage;
 use crate::message::ReloadMessage;
 use crate::message::{
-    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,
-    SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage, TransportMessage,
-    VoiceMessage,
+    ContextualMessage, EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message,
+    MessageClass, PatternMessage, SampleMessage, SequenceMessage, SfzMessage, SyncMessage,
+    SynthDefMessage, TransportMessage, VoiceMessage,
 };
 #[cfg(feature = "midi")]
-use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+use crate::midi::{
+    resolve_midi_output_endpoint, MidiOutputEndpoint, QueuedMidiEvent, ScheduledMidiEvent,
+};
+use crate::mutation::{
+    Applied, Atomicity, CommitPhase, ComponentOutcome, ComponentState, Confirmation, Diagnostic,
+    DiagnosticSeverity, EffectiveAt, EventQueryResult, FailurePhase, LedgerConfig, LiveState,
+    MutationContext, MutationEventSink, MutationKind, MutationLedger, MutationReceipt,
+    MutationReplySink, MutationSource, Partial, PlannedComponent, ReceiptState, Rejected,
+    RequestMaterial, RollbackState, Submission, SubmissionResult, SupersessionPolicy,
+    TerminalOutcome, Timestamp,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::native_generation::{AppliedGeneration, NativeGenerationCoordinator};
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+use crate::native_generation::{GenerationOutcome, NativeGenerationPlan};
 use crate::reload;
 #[cfg(feature = "midi")]
 use crate::reload::MidiOutputMessage;
+use crate::resource_manager::ResourceManager;
 use crate::state::{State, VoiceRole};
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
@@ -65,6 +80,7 @@ use crate::transport_snapshot::TransportSnapshot;
 use crate::types::VoiceId;
 use crate::{Error, Result};
 use std::sync::Arc;
+use std::time::SystemTime;
 use vibelang_dsp::OutputPort;
 
 #[cfg(feature = "midi")]
@@ -102,10 +118,30 @@ pub struct Runtime<B: Backend> {
     state: Arc<RwLock<State>>,
 
     /// Message sender (cloned for handles).
-    tx: Sender<Message>,
+    tx: Sender<ContextualMessage>,
 
     /// Message receiver.
-    rx: Receiver<Message>,
+    rx: Receiver<ContextualMessage>,
+
+    /// Canonical receipt ledger shared with every runtime handle.
+    mutation_ledger: MutationLedger,
+
+    /// Explicit v1 best-effort continuation acknowledgement state.
+    mutation_policy: Arc<parking_lot::Mutex<MutationPolicy>>,
+
+    /// Runtime-local physical generation authority used by native v2 plans.
+    /// V1 handlers remain intentionally unmigrated until their family tickets.
+    resource_manager: ResourceManager,
+
+    /// Serialized native graph-generation authority. Holding this async mutex
+    /// spans staging through restoration/commit so one runtime cannot admit
+    /// overlapping generation switches.
+    #[cfg(not(target_arch = "wasm32"))]
+    native_generation_coordinator: tokio::sync::Mutex<NativeGenerationCoordinator>,
+
+    /// Native backend barrier currently running off-task. Messages admitted
+    /// after it remain deferred until the barrier terminalizes or times out.
+    async_mutation_in_flight: Arc<parking_lot::Mutex<Option<crate::mutation::AttemptId>>>,
 
     /// Transport state snapshot for lock-free sharing with background threads.
     /// Used by MIDI clock thread and modulator polling thread.
@@ -119,24 +155,28 @@ pub struct Runtime<B: Backend> {
     #[cfg(feature = "midi")]
     clock_thread_started: bool,
 
+    /// Apply-time exact-name output mappings used by MIDI clock and transport.
+    #[cfg(feature = "midi")]
+    midi_output_endpoints: std::collections::HashMap<String, MidiOutputEndpoint>,
+
     /// True while a reload's expensive buffer loads (samples, SFZ) are
-    /// being staged on a side task. While set, incoming reloads queue in
-    /// [`Self::pending_reloads`] and `SyncAndNotify` barriers defer to
-    /// [`Self::deferred_sync_notifies`].
+    /// being staged on a side task. While set, later contextual mutations
+    /// wait in [`Self::deferred_mutations`] until the linked completion has
+    /// terminalized the earlier revision.
     #[cfg(not(target_arch = "wasm32"))]
     reload_staging_in_flight: bool,
 
     /// Reload requests that arrived while a staging was in flight, in
     /// arrival order. Applied strictly in order once staging completes.
     #[cfg(not(target_arch = "wasm32"))]
-    pending_reloads: std::collections::VecDeque<reload::ScriptState>,
+    pending_reloads: std::collections::VecDeque<PendingReload>,
 
-    /// `SyncAndNotify` senders that arrived while a reload was staging.
-    /// Notified (after a backend sync) once all queued reloads applied, so
-    /// `RuntimeHandle::sync_and_wait` keeps its "everything sent before me
-    /// has been fully processed" barrier semantics.
+    /// Ordered work accepted behind an off-task reload or backend barrier.
+    /// V1-compatible independent handlers may execute immediately, but their
+    /// success receipt waits for lower revisions; reload and sync work waits
+    /// in full. Both forms retain admission order here.
     #[cfg(not(target_arch = "wasm32"))]
-    deferred_sync_notifies: Vec<crate::compat::OneshotSender<()>>,
+    deferred_mutations: std::collections::VecDeque<DeferredMutation>,
 
     // =========================================================================
     // Feature Handlers
@@ -165,6 +205,37 @@ pub struct Runtime<B: Backend> {
 
     #[cfg(feature = "midi")]
     midi: MidiHandler<B>,
+
+    /// Legacy MIDI callback/hotplug ingress, promoted into contextual runtime
+    /// messages at the start of each tick.
+    #[cfg(feature = "midi")]
+    midi_runtime_rx: Receiver<Message>,
+}
+
+#[derive(Debug, Default)]
+struct MutationPolicy {
+    acknowledged_fence: Option<crate::mutation::AttemptId>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingReload {
+    state: reload::ScriptState,
+    context: MutationContext,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+enum DeferredMutation {
+    Execute(ContextualMessage),
+    Complete(DeferredCompletion),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct DeferredCompletion {
+    context: MutationContext,
+    component_path: String,
+    action: String,
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +269,81 @@ impl ReloadStagingPlan {
     fn is_empty(&self) -> bool {
         self.samples.is_empty() && self.sfz.is_empty()
     }
+}
+
+const RELOAD_PHASE_COMPONENTS: [(&str, &str); 16] = [
+    ("reload/transport", "apply_changes"),
+    ("reload/stop_deleted", "stop"),
+    ("reload/delete_entities", "delete"),
+    ("reload/midi_devices", "open"),
+    ("reload/create_entities", "create"),
+    ("reload/update_entities", "update"),
+    ("reload/output_routes", "finalize"),
+    ("reload/input_routes", "finalize"),
+    ("reload/effects", "apply"),
+    ("reload/groups", "finalize"),
+    ("reload/fades", "apply"),
+    ("reload/patterns", "reconcile_playback"),
+    ("reload/voices", "reconcile_running"),
+    ("reload/param_routes", "finalize"),
+    ("reload/midi_routes", "apply"),
+    ("reload/staged_assets", "discard_leftovers"),
+];
+
+#[derive(Debug)]
+struct ReloadPhaseFailure {
+    code: &'static str,
+    message: String,
+}
+
+impl ReloadPhaseFailure {
+    fn new(code: &'static str, error: impl std::fmt::Display) -> Self {
+        Self {
+            code,
+            message: error.to_string(),
+        }
+    }
+}
+
+fn record_reload_result<T, E: std::fmt::Display>(
+    failures: &mut Vec<ReloadPhaseFailure>,
+    code: &'static str,
+    result: std::result::Result<T, E>,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            failures.push(ReloadPhaseFailure::new(code, error));
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ReloadPhaseOutcome {
+    path: &'static str,
+    action: &'static str,
+    failures: Vec<ReloadPhaseFailure>,
+    started: bool,
+}
+
+impl ReloadPhaseOutcome {
+    fn pending(path: &'static str, action: &'static str) -> Self {
+        Self {
+            path,
+            action,
+            failures: Vec::new(),
+            started: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ReloadExecution {
+    result: Result<()>,
+    failures: Vec<ReloadPhaseFailure>,
+    staging: Vec<reload::StagedAssetOutcome>,
+    phases: Vec<ReloadPhaseOutcome>,
 }
 
 /// Default value a group param falls back to when removed from the script.
@@ -256,14 +402,33 @@ impl<B: Backend> Runtime<B> {
     }
 
     fn new_with_state(backend: B, state: State) -> Self {
-        let (tx, rx) = channel(1024);
+        Self::new_with_state_and_channel_capacity(backend, state, 1024)
+    }
+
+    #[cfg(test)]
+    fn new_with_channel_capacity(backend: B, capacity: usize) -> Self {
+        Self::new_with_state_and_channel_capacity(backend, State::default(), capacity)
+    }
+
+    fn new_with_state_and_channel_capacity(backend: B, state: State, capacity: usize) -> Self {
+        let (tx, rx) = channel(capacity);
         let backend = Arc::new(backend);
         let state = Arc::new(RwLock::new(state));
         let transport_snapshot = Arc::new(TransportSnapshot::new());
+        let mutation_ledger = MutationLedger::new(LedgerConfig::default())
+            .expect("default mutation ledger configuration must initialize");
+        let mutation_policy = Arc::new(parking_lot::Mutex::new(MutationPolicy::default()));
+        let resource_manager = ResourceManager::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        let native_generation_coordinator =
+            tokio::sync::Mutex::new(NativeGenerationCoordinator::default());
+        let async_mutation_in_flight = Arc::new(parking_lot::Mutex::new(None));
 
         // Create MIDI handler first so we can share output channels with voices
         #[cfg(feature = "midi")]
-        let midi = MidiHandler::new(backend.clone(), state.clone(), tx.clone());
+        let (midi_runtime_tx, midi_runtime_rx) = channel(1024);
+        #[cfg(feature = "midi")]
+        let midi = MidiHandler::new(backend.clone(), state.clone(), midi_runtime_tx);
 
         // Create voices handler and connect MIDI outputs
         let mut voices_handler = VoicesHandler::new(backend.clone(), state.clone());
@@ -276,6 +441,12 @@ impl<B: Backend> Runtime<B> {
             state: state.clone(),
             tx,
             rx,
+            mutation_ledger,
+            mutation_policy,
+            resource_manager,
+            #[cfg(not(target_arch = "wasm32"))]
+            native_generation_coordinator,
+            async_mutation_in_flight,
             transport_snapshot,
             transport: TransportHandler::new(backend.clone(), state.clone()),
             groups: GroupsHandler::new(backend.clone(), state.clone()),
@@ -294,6 +465,10 @@ impl<B: Backend> Runtime<B> {
             #[cfg(feature = "midi")]
             midi,
             #[cfg(feature = "midi")]
+            midi_runtime_rx,
+            #[cfg(feature = "midi")]
+            midi_output_endpoints: std::collections::HashMap::new(),
+            #[cfg(feature = "midi")]
             tick_count: 0,
             #[cfg(feature = "midi")]
             clock_thread_started: false,
@@ -302,7 +477,7 @@ impl<B: Backend> Runtime<B> {
             #[cfg(not(target_arch = "wasm32"))]
             pending_reloads: std::collections::VecDeque::new(),
             #[cfg(not(target_arch = "wasm32"))]
-            deferred_sync_notifies: Vec::new(),
+            deferred_mutations: std::collections::VecDeque::new(),
         }
     }
 
@@ -312,6 +487,9 @@ impl<B: Backend> Runtime<B> {
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle {
             tx: self.tx.clone(),
+            ledger: self.mutation_ledger.clone(),
+            policy: self.mutation_policy.clone(),
+            async_mutation_in_flight: self.async_mutation_in_flight.clone(),
         }
     }
 
@@ -319,10 +497,7 @@ impl<B: Backend> Runtime<B> {
     ///
     /// Equivalent to `runtime.handle().send(msg).await`.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx
-            .send_async(msg)
-            .await
-            .map_err(|_| Error::ChannelClosed)
+        self.handle().send(msg).await
     }
 
     /// Get the transport snapshot for sharing with background threads.
@@ -331,6 +506,24 @@ impl<B: Backend> Runtime<B> {
     /// (beat position, tempo, playing status).
     pub fn transport_snapshot(&self) -> Arc<TransportSnapshot> {
         Arc::clone(&self.transport_snapshot)
+    }
+
+    /// Return this runtime's generation-aware Sample, Buffer, and SFZ
+    /// resource authority.
+    #[must_use]
+    pub fn resource_manager(&self) -> ResourceManager {
+        self.resource_manager.clone()
+    }
+
+    /// Return the graph generation whose activation and local commit were
+    /// both confirmed, if this runtime has committed one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn active_native_generation(&self) -> Option<AppliedGeneration> {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .active()
+            .cloned()
     }
 
     /// Run the main loop until the channel is closed.
@@ -350,11 +543,15 @@ impl<B: Backend> Runtime<B> {
             self.midi
                 .start_clock_thread(Arc::clone(&self.transport_snapshot));
             self.clock_thread_started = true;
+            // Watch for MIDI devices appearing/disappearing so inputs recover
+            // from unplug/replug and power-on-after-start.
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+            self.midi.start_input_hotplug_watcher();
         }
 
         loop {
             // Process available messages
-            while let Some(msg) = self.rx.try_recv_compat() {
+            while let Some(msg) = self.try_next_contextual_message() {
                 if let Err(e) = self.handle_message(msg).await {
                     tracing::warn!("Message handling error: {}", e);
                 }
@@ -374,9 +571,13 @@ impl<B: Backend> Runtime<B> {
                     // Channel closed, exit
                     tracing::info!("Runtime channel closed, shutting down");
 
-                    // Stop MIDI clock thread
+                    // Stop MIDI clock thread + hot-plug watcher
                     #[cfg(feature = "midi")]
-                    self.midi.stop_clock_thread();
+                    {
+                        self.midi.stop_clock_thread();
+                        #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+                        self.midi.stop_input_hotplug_watcher();
+                    }
 
                     break;
                 }
@@ -396,11 +597,16 @@ impl<B: Backend> Runtime<B> {
         if !self.clock_thread_started {
             self.midi
                 .start_clock_thread(Arc::clone(&self.transport_snapshot));
+            // Same first-tick guard starts the input hot-plug watcher, so the
+            // CLI (which drives the runtime via tick(), not run()) gets device
+            // recovery too.
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+            self.midi.start_input_hotplug_watcher();
             self.clock_thread_started = true;
         }
 
         // Process all pending messages
-        while let Some(msg) = self.rx.try_recv_compat() {
+        while let Some(msg) = self.try_next_contextual_message() {
             if let Err(e) = self.handle_message(msg).await {
                 tracing::warn!("Message handling error: {}", e);
             }
@@ -412,6 +618,13 @@ impl<B: Backend> Runtime<B> {
 
     /// Internal tick for handlers.
     async fn tick_internal(&mut self) {
+        #[cfg(feature = "midi")]
+        while let Some(message) = self.midi_runtime_rx.try_recv_compat() {
+            if let Err(error) = self.dispatch_message(message).await {
+                tracing::warn!("MIDI runtime maintenance failed: {}", error);
+            }
+        }
+
         let now = Instant::now();
 
         // Tick transport (updates current beat from clock)
@@ -469,8 +682,192 @@ impl<B: Backend> Runtime<B> {
         }
     }
 
-    /// Handle a single message.
-    async fn handle_message(&mut self, msg: Message) -> Result<()> {
+    /// Handle one context-bearing message and publish its canonical outcome.
+    async fn handle_message(&mut self, envelope: ContextualMessage) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if (self.reload_staging_in_flight || self.async_mutation_in_flight.lock().is_some())
+            && !matches!(
+                &envelope.message,
+                Message::Reload(reload)
+                    if matches!(reload.as_ref(), ReloadMessage::ApplyStaged { .. })
+            )
+        {
+            return self.handle_during_async_boundary(envelope).await;
+        }
+        let ContextualMessage { context, message } = envelope;
+        let receipt = self
+            .mutation_ledger
+            .receipt(context.attempt_id())
+            .map_err(mutation_ledger_error)?;
+        if matches!(receipt.state, ReceiptState::Evaluating { .. }) {
+            return Err(Error::MutationLedger(
+                "runtime received a mutation before queue admission completed".into(),
+            ));
+        }
+        let context = if let Some(revision) = receipt.revision {
+            context
+                .with_revision(revision)
+                .map_err(Error::MutationLedger)?
+        } else {
+            context
+        };
+        if receipt.state.is_terminal() {
+            return Ok(());
+        }
+        if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+            if matches!(
+                &message,
+                Message::Reload(reload)
+                    if matches!(reload.as_ref(), ReloadMessage::ApplyStaged { .. })
+            ) {
+                let Message::Reload(reload) = message else {
+                    unreachable!("the staged reload match above was exact");
+                };
+                let ReloadMessage::ApplyStaged { assets, .. } = *reload else {
+                    unreachable!("the staged reload match above was exact");
+                };
+                return self.finish_fenced_staged_reload(context, assets).await;
+            }
+            reject_contextual_admission(
+                &self.mutation_ledger,
+                &context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                SystemTime::now(),
+            )?;
+            if let Message::Sync(SyncMessage::SyncAndNotify { notify }) = message {
+                let _ = notify.send(Err("runtime_fenced".into()));
+            }
+            return Ok(());
+        }
+
+        match message {
+            Message::Reload(reload) => self.handle_reload_message(*reload, context).await,
+            Message::Sync(sync) => self.handle_sync_message(sync, context).await,
+            message => {
+                let component_path = message.component_path();
+                let action = message.operation().to_lowercase();
+                self.begin_contextual_work(&context, &component_path, &action)?;
+                let result = self.dispatch_message(message).await;
+                self.finish_contextual_work(
+                    &context,
+                    &component_path,
+                    &action,
+                    result.as_ref().err(),
+                    Confirmation::RuntimeCommit,
+                )?;
+                result
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn handle_during_async_boundary(&mut self, envelope: ContextualMessage) -> Result<()> {
+        if matches!(&envelope.message, Message::Reload(_) | Message::Sync(_)) {
+            self.deferred_mutations
+                .push_back(DeferredMutation::Execute(envelope));
+            return Ok(());
+        }
+
+        let ContextualMessage { context, message } = envelope;
+        let receipt = self
+            .mutation_ledger
+            .receipt(context.attempt_id())
+            .map_err(mutation_ledger_error)?;
+        if matches!(receipt.state, ReceiptState::Evaluating { .. }) {
+            return Err(Error::MutationLedger(
+                "runtime received a mutation before queue admission completed".into(),
+            ));
+        }
+        let context = if let Some(revision) = receipt.revision {
+            context
+                .with_revision(revision)
+                .map_err(Error::MutationLedger)?
+        } else {
+            context
+        };
+        if receipt.state.is_terminal() {
+            return Ok(());
+        }
+        if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+            reject_contextual_admission(
+                &self.mutation_ledger,
+                &context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                SystemTime::now(),
+            )?;
+            return Ok(());
+        }
+
+        let component_path = message.component_path();
+        let action = message.operation().to_lowercase();
+        self.begin_concurrent_contextual_work(&context, &component_path, &action)?;
+        let result = self.dispatch_message(message).await;
+        if let Err(error) = &result {
+            finish_contextual_receipt(
+                &self.mutation_ledger,
+                &context,
+                &component_path,
+                &action,
+                Some(WorkFailure {
+                    code: error_code(error),
+                    message: error.to_string(),
+                    definitely_no_effect: error_is_pre_effect(error),
+                    phase: FailurePhase::Reconcile,
+                }),
+                Confirmation::RuntimeCommit,
+            )?;
+        } else {
+            self.deferred_mutations
+                .push_back(DeferredMutation::Complete(DeferredCompletion {
+                    context,
+                    component_path,
+                    action,
+                }));
+        }
+        result
+    }
+
+    fn try_next_contextual_message(&mut self) -> Option<ContextualMessage> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.reload_staging_in_flight && self.async_mutation_in_flight.lock().is_none() {
+            loop {
+                match self.deferred_mutations.pop_front() {
+                    Some(DeferredMutation::Execute(message)) => return Some(message),
+                    Some(DeferredMutation::Complete(completion)) => {
+                        if let Err(error) = self.finish_deferred_completion(completion) {
+                            tracing::error!(
+                                "Failed to publish deferred v1 mutation completion: {}",
+                                error
+                            );
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }
+        self.rx.try_recv_compat()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn finish_deferred_completion(&self, completion: DeferredCompletion) -> Result<()> {
+        if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+            finish_deferred_effect_after_fence(&self.mutation_ledger, &completion)?;
+        } else {
+            self.finish_contextual_work(
+                &completion.context,
+                &completion.component_path,
+                &completion.action,
+                None,
+                Confirmation::RuntimeCommit,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Dispatch a non-reload, non-sync message to its existing v1 handler.
+    async fn dispatch_message(&mut self, msg: Message) -> Result<()> {
         tracing::trace!("Handling message: {}", msg.type_name());
 
         match msg {
@@ -591,73 +988,10 @@ impl<B: Backend> Runtime<B> {
             // Reload - apply new script state. On native, expensive buffer
             // loads (samples, SFZ) are staged on a side task first so the
             // tick loop keeps running; the apply itself stays on this task.
-            Message::Reload(reload_msg) => match *reload_msg {
-                ReloadMessage::Apply { state: new_state } => {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        self.pending_reloads.push_back(new_state);
-                        self.advance_reload_queue().await;
-                        Ok(())
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        self.apply_reload(new_state).await
-                    }
-                }
-                ReloadMessage::ApplyStaged { state, assets } => {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        self.reload_staging_in_flight = false;
-                        let result = self.apply_reload_with_assets(state, assets).await;
-                        self.advance_reload_queue().await;
-                        result
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        self.apply_reload_with_assets(state, assets).await
-                    }
-                }
-            },
+            Message::Reload(_) => unreachable!("reload messages use handle_reload_message"),
 
             // Sync - synchronize with backend and notify caller
-            Message::Sync(sync_msg) => match sync_msg {
-                SyncMessage::SyncAndNotify { notify } => {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        if self.reload_staging_in_flight || !self.pending_reloads.is_empty() {
-                            // A reload sent before this sync is still staging
-                            // off-task. Defer the notification until it has
-                            // applied so the sync keeps its barrier meaning.
-                            tracing::debug!("Sync request deferred until staged reload applies");
-                            self.deferred_sync_notifies.push(notify);
-                            return Ok(());
-                        }
-                        // The backend /sync round-trip can block for up to
-                        // its internal timeout (~5s against a wedged
-                        // scsynth). Wait on a side task so ticks keep
-                        // running; the caller is notified when it completes.
-                        tracing::info!("Processing sync request, syncing with backend...");
-                        let backend = self.backend.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = backend.sync().await {
-                                tracing::warn!("Backend sync failed: {:?}", e);
-                            }
-                            tracing::info!("Backend sync complete, notifying caller");
-                            let _ = notify.send(());
-                        });
-                        Ok(())
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        tracing::info!("Processing sync request, syncing with backend...");
-                        let result = self.backend.sync().await;
-                        tracing::info!("Backend sync complete, notifying caller");
-                        // Send notification regardless of sync result
-                        let _ = notify.send(());
-                        result.map_err(Error::backend)
-                    }
-                }
-            },
+            Message::Sync(_) => unreachable!("sync messages use handle_sync_message"),
 
             // MIDI - send to external devices
             #[cfg(feature = "midi")]
@@ -666,6 +1000,10 @@ impl<B: Backend> Runtime<B> {
                 MidiMessage::OpenInput { device } => self.midi.open_input(device).await,
                 MidiMessage::OpenOutput { device } => self.midi.open_output(device).await,
                 MidiMessage::CloseDevice { device } => self.midi.close(device).await,
+                MidiMessage::ReconcileInputs { present } => {
+                    self.midi.reconcile_pipewire_inputs(present).await;
+                    Ok(())
+                }
 
                 // Note/CC output
                 MidiMessage::NoteOn {
@@ -719,8 +1057,7 @@ impl<B: Backend> Runtime<B> {
                 MidiMessage::StopRecording { device } => {
                     // Stop recording and discard the recording
                     // The HTTP API will need to use a different approach with shared state
-                    let _ = self.midi.stop_recording(device).await;
-                    Ok(())
+                    self.midi.stop_recording(device).await.map(|_| ())
                 }
 
                 // Clock output
@@ -798,6 +1135,345 @@ impl<B: Backend> Runtime<B> {
         }
     }
 
+    fn begin_contextual_work(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+    ) -> Result<()> {
+        self.begin_contextual_work_inner(context, component_path, action, false)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn begin_concurrent_contextual_work(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+    ) -> Result<()> {
+        self.begin_contextual_work_inner(context, component_path, action, true)
+    }
+
+    fn begin_contextual_work_inner(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+        allow_pending_predecessor: bool,
+    ) -> Result<()> {
+        let now = SystemTime::now();
+        let planned = vec![PlannedComponent {
+            path: component_path.into(),
+            action: action.into(),
+        }];
+        let planning = if allow_pending_predecessor {
+            self.mutation_ledger
+                .begin_concurrent_planning(context.attempt_id(), planned, now)
+        } else {
+            self.mutation_ledger
+                .begin_planning(context.attempt_id(), planned, now)
+        }
+        .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(&self.mutation_ledger, context, &planning, now);
+        let committing = self
+            .mutation_ledger
+            .transition(
+                context.attempt_id(),
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(
+            &self.mutation_ledger,
+            context,
+            &committing,
+            SystemTime::now(),
+        );
+        Ok(())
+    }
+
+    fn finish_contextual_work(
+        &self,
+        context: &MutationContext,
+        component_path: &str,
+        action: &str,
+        error: Option<&Error>,
+        confirmation: Confirmation,
+    ) -> Result<MutationReceipt> {
+        finish_contextual_receipt(
+            &self.mutation_ledger,
+            context,
+            component_path,
+            action,
+            error.map(|error| WorkFailure {
+                code: error_code(error),
+                message: error.to_string(),
+                definitely_no_effect: error_is_pre_effect(error),
+                phase: FailurePhase::Reconcile,
+            }),
+            confirmation,
+        )
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn begin_reload_work(&self, context: &MutationContext, plan: &ReloadStagingPlan) -> Result<()> {
+        let mut planned =
+            Vec::with_capacity(RELOAD_PHASE_COMPONENTS.len() + plan.samples.len() + plan.sfz.len());
+        planned.extend(plan.samples.iter().map(|(id, _)| PlannedComponent {
+            path: format!("reload/staging/sample/{}", id.raw()),
+            action: "load".into(),
+        }));
+        planned.extend(plan.sfz.iter().map(|(id, _)| PlannedComponent {
+            path: format!("reload/staging/sfz/{}", id.raw()),
+            action: "load".into(),
+        }));
+        planned.extend(
+            RELOAD_PHASE_COMPONENTS
+                .iter()
+                .map(|(path, action)| PlannedComponent {
+                    path: (*path).into(),
+                    action: (*action).into(),
+                }),
+        );
+        self.begin_contextual_components(context, planned, !plan.is_empty())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn begin_reload_work(&self, context: &MutationContext) -> Result<()> {
+        let planned = RELOAD_PHASE_COMPONENTS
+            .iter()
+            .map(|(path, action)| PlannedComponent {
+                path: (*path).into(),
+                action: (*action).into(),
+            })
+            .collect();
+        self.begin_contextual_components(context, planned, false)
+    }
+
+    fn begin_contextual_components(
+        &self,
+        context: &MutationContext,
+        planned: Vec<PlannedComponent>,
+        staging: bool,
+    ) -> Result<()> {
+        let now = SystemTime::now();
+        let total = u32::try_from(planned.len().saturating_sub(RELOAD_PHASE_COMPONENTS.len()))
+            .unwrap_or(u32::MAX);
+        let planning = self
+            .mutation_ledger
+            .begin_planning(context.attempt_id(), planned, now)
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(&self.mutation_ledger, context, &planning, now);
+        let state = if staging {
+            ReceiptState::Staging {
+                completed: 0,
+                total,
+            }
+        } else {
+            ReceiptState::Committing {
+                phase: CommitPhase::Reconcile,
+            }
+        };
+        let transitioned = self
+            .mutation_ledger
+            .transition(context.attempt_id(), state, SystemTime::now())
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(
+            &self.mutation_ledger,
+            context,
+            &transitioned,
+            SystemTime::now(),
+        );
+        Ok(())
+    }
+
+    fn enter_reload_commit(&self, context: &MutationContext) -> Result<()> {
+        let committing = self
+            .mutation_ledger
+            .transition(
+                context.attempt_id(),
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(
+            &self.mutation_ledger,
+            context,
+            &committing,
+            SystemTime::now(),
+        );
+        Ok(())
+    }
+
+    fn finish_reload_work(
+        &self,
+        context: &MutationContext,
+        execution: &ReloadExecution,
+    ) -> Result<MutationReceipt> {
+        finish_reload_receipt(&self.mutation_ledger, context, execution)
+    }
+
+    async fn handle_reload_message(
+        &mut self,
+        message: ReloadMessage,
+        context: MutationContext,
+    ) -> Result<()> {
+        match message {
+            ReloadMessage::Apply { state } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.pending_reloads
+                        .push_back(PendingReload { state, context });
+                    self.advance_reload_queue().await;
+                    Ok(())
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    self.begin_reload_work(&context)?;
+                    let execution = self
+                        .apply_reload_execution(state, reload::StagedReloadAssets::default())
+                        .await;
+                    self.finish_reload_work(&context, &execution)?;
+                    execution.result
+                }
+            }
+            ReloadMessage::ApplyStaged { state, assets } => {
+                if mutation_is_fenced(&self.mutation_ledger, &self.mutation_policy) {
+                    return self.finish_fenced_staged_reload(context, assets).await;
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.reload_staging_in_flight = false;
+                    self.enter_reload_commit(&context)?;
+                    let execution = self.apply_reload_execution(state, assets).await;
+                    self.finish_reload_work(&context, &execution)?;
+                    self.advance_reload_queue().await;
+                    execution.result
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let execution = self.apply_reload_execution(state, assets).await;
+                    self.finish_reload_work(&context, &execution)?;
+                    execution.result
+                }
+            }
+        }
+    }
+
+    async fn finish_fenced_staged_reload(
+        &mut self,
+        context: MutationContext,
+        mut assets: reload::StagedReloadAssets,
+    ) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.reload_staging_in_flight = false;
+        }
+        let staging = std::mem::take(&mut assets.outcomes);
+        let cleanup = self.discard_staged_leftovers(assets).await;
+        let mut phases = RELOAD_PHASE_COMPONENTS
+            .iter()
+            .map(|(path, action)| ReloadPhaseOutcome::pending(path, action))
+            .collect::<Vec<_>>();
+        let cleanup_phase = phases
+            .last_mut()
+            .expect("reload phase table always contains staged asset cleanup");
+        cleanup_phase.started = true;
+        cleanup_phase.failures = cleanup;
+        let execution = ReloadExecution {
+            result: Err(Error::RuntimeFenced(
+                "staged reload reached apply after the runtime became fenced".into(),
+            )),
+            failures: vec![ReloadPhaseFailure::new(
+                "reload_apply_fenced",
+                "staged assets were loaded but apply was skipped because the runtime is fenced",
+            )],
+            staging,
+            phases,
+        };
+        self.finish_reload_work(&context, &execution)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.advance_reload_queue().await;
+        execution.result
+    }
+
+    async fn handle_sync_message(
+        &mut self,
+        message: SyncMessage,
+        context: MutationContext,
+    ) -> Result<()> {
+        const COMPONENT: &str = "sync/backend_barrier";
+        const ACTION: &str = "sync_and_wait";
+        self.begin_contextual_work(&context, COMPONENT, ACTION)?;
+        let SyncMessage::SyncAndNotify { notify } = message;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let attempt_id = context.attempt_id();
+            *self.async_mutation_in_flight.lock() = Some(attempt_id);
+            let backend = self.backend.clone();
+            let ledger = self.mutation_ledger.clone();
+            let async_mutation_in_flight = self.async_mutation_in_flight.clone();
+            tokio::spawn(async move {
+                let result = backend.sync().await;
+                let failure = result.as_ref().err().map(|error| WorkFailure {
+                    code: "backend_sync_failed",
+                    message: error.to_string(),
+                    definitely_no_effect: false,
+                    phase: FailurePhase::BackendBarrier,
+                });
+                let receipt_result = finish_contextual_receipt(
+                    &ledger,
+                    &context,
+                    COMPONENT,
+                    ACTION,
+                    failure,
+                    Confirmation::BackendBarrier {
+                        backend: "runtime".into(),
+                        token: attempt_id.to_string(),
+                    },
+                );
+                let response = match result {
+                    Ok(()) => receipt_result
+                        .map(|_| ())
+                        .map_err(|error| error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                };
+                clear_async_mutation(&async_mutation_in_flight, attempt_id);
+                let _ = notify.send(response);
+            });
+            Ok(())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let result = self.backend.sync().await;
+            let failure = result.as_ref().err().map(|error| WorkFailure {
+                code: "backend_sync_failed",
+                message: error.to_string(),
+                definitely_no_effect: false,
+                phase: FailurePhase::BackendBarrier,
+            });
+            finish_contextual_receipt(
+                &self.mutation_ledger,
+                &context,
+                COMPONENT,
+                ACTION,
+                failure,
+                Confirmation::BackendBarrier {
+                    backend: "runtime".into(),
+                    token: context.attempt_id().to_string(),
+                },
+            )?;
+            notify
+                .send(result.map_err(|error| error.to_string()))
+                .map_err(|_| Error::ChannelClosed)?;
+            Ok(())
+        }
+    }
+
     /// Get read-only access to the state.
     pub fn state(&self) -> &Arc<RwLock<State>> {
         &self.state
@@ -832,7 +1508,7 @@ impl<B: Backend> Runtime<B> {
 
         // Sync with backend to ensure all synthdefs are loaded before continuing
         tracing::debug!("Syncing with backend after loading builtins");
-        let _ = self.backend.sync().await;
+        self.backend.sync().await.map_err(Error::backend)?;
 
         Ok(())
     }
@@ -965,6 +1641,13 @@ impl<B: Backend> Runtime<B> {
         current.synthdef != new.synthdef
             || current.group != new.group
             || current.sfz_instrument != new.sfz_instrument
+    }
+
+    #[cfg(test)]
+    async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
+        self.apply_reload_execution(new_state, reload::StagedReloadAssets::default())
+            .await
+            .result
     }
 
     async fn structurally_recreated_voice_ids(
@@ -1171,13 +1854,13 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         pending: &[PendingVoicePortReconcile],
         effective_routes: &mut RouteMap,
-    ) -> bool {
+    ) -> Vec<ReloadPhaseFailure> {
         if pending.is_empty() {
-            return false;
+            return Vec::new();
         }
 
         let mut state = self.state.write().await;
-        let mut changed = false;
+        let mut failures = Vec::new();
 
         for reconcile in pending {
             let outcome = match reload::reconcile_voice_ports_from(
@@ -1196,12 +1879,14 @@ impl<B: Backend> Runtime<B> {
                         reconcile.voice_id,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_voice_port_reconcile_failed",
+                        e,
+                    ));
                     continue;
                 }
             };
-            if !outcome.diff.is_unchanged() {
-                changed = true;
-            }
+            let _ = outcome.diff.is_unchanged();
 
             if let Some(group) = state
                 .voices
@@ -1219,7 +1904,7 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        changed
+        failures
     }
 
     async fn apply_voice_roles(&self, roles: &std::collections::HashMap<VoiceId, VoiceRole>) {
@@ -1242,27 +1927,52 @@ impl<B: Backend> Runtime<B> {
     /// reload applies immediately on this task; otherwise the loads are
     /// staged on a side task and the loop stops — the staged apply arrives
     /// later as [`ReloadMessage::ApplyStaged`], which re-enters this queue.
-    /// Once the queue drains with no staging in flight, deferred
-    /// `SyncAndNotify` barriers are released.
+    /// Once the queue drains with no staging in flight, deferred contextual
+    /// messages resume in their original admission order.
     #[cfg(not(target_arch = "wasm32"))]
     async fn advance_reload_queue(&mut self) {
         while !self.reload_staging_in_flight {
             let Some(next) = self.pending_reloads.pop_front() else {
                 break;
             };
-            let plan = self.reload_staging_plan(&next).await;
+            let plan = self.reload_staging_plan(&next.state).await;
+            if let Err(error) = self.begin_reload_work(&next.context, &plan) {
+                tracing::error!("Reload planning receipt transition failed: {}", error);
+                if let Err(terminal_error) = finish_contextual_receipt(
+                    &self.mutation_ledger,
+                    &next.context,
+                    "reload/planning",
+                    "plan",
+                    Some(WorkFailure {
+                        code: "reload_planning_failed",
+                        message: error.to_string(),
+                        definitely_no_effect: true,
+                        phase: FailurePhase::Reconcile,
+                    }),
+                    Confirmation::RuntimeCommit,
+                ) {
+                    tracing::error!(
+                        "Reload planning failure could not be terminalized: {}",
+                        terminal_error
+                    );
+                }
+                continue;
+            }
             if plan.is_empty() {
                 // Nothing expensive to load — apply directly (the path every
                 // sample-free reload takes, preserving single-tick applies).
-                if let Err(e) = self.apply_reload(next).await {
+                let execution = self
+                    .apply_reload_execution(next.state, reload::StagedReloadAssets::default())
+                    .await;
+                if let Err(error) = self.finish_reload_work(&next.context, &execution) {
+                    tracing::error!("Reload receipt transition failed: {}", error);
+                }
+                if let Err(e) = execution.result {
                     tracing::warn!("Reload apply failed: {}", e);
                 }
             } else {
-                self.spawn_reload_staging(next, plan);
+                self.spawn_reload_staging(next.state, plan, next.context);
             }
-        }
-        if !self.reload_staging_in_flight {
-            self.drain_deferred_sync_notifies();
         }
     }
 
@@ -1313,7 +2023,12 @@ impl<B: Backend> Runtime<B> {
     /// itself (cheap state mutation + OSC sends) still runs on the runtime
     /// task, atomically with respect to ticks.
     #[cfg(not(target_arch = "wasm32"))]
-    fn spawn_reload_staging(&mut self, new_state: reload::ScriptState, plan: ReloadStagingPlan) {
+    fn spawn_reload_staging(
+        &mut self,
+        new_state: reload::ScriptState,
+        plan: ReloadStagingPlan,
+        context: MutationContext,
+    ) {
         tracing::debug!(
             "Reload: staging {} sample(s) and {} SFZ instrument(s) off-task",
             plan.samples.len(),
@@ -1322,7 +2037,10 @@ impl<B: Backend> Runtime<B> {
         self.reload_staging_in_flight = true;
         let samples_handler = SamplesHandler::new(self.backend.clone(), self.state.clone());
         let sfz_handler = SfzHandler::new(self.backend.clone(), self.state.clone());
+        let backend = self.backend.clone();
+        let state = self.state.clone();
         let tx = self.tx.clone();
+        let ledger = self.mutation_ledger.clone();
         tokio::spawn(async move {
             let mut assets = reload::StagedReloadAssets::default();
 
@@ -1332,17 +2050,40 @@ impl<B: Backend> Runtime<B> {
             let loads = plan.samples.into_iter().map(|(id, config)| {
                 let handler = &samples_handler;
                 async move {
+                    let path = format!("reload/staging/sample/{}", id.raw());
                     match handler.stage_load(id, config).await {
-                        Ok(info) => Some((id, info)),
+                        Ok(info) => (
+                            id,
+                            Some(info),
+                            reload::StagedAssetOutcome {
+                                path,
+                                action: "load".into(),
+                                failure: None,
+                            },
+                        ),
                         Err(e) => {
                             tracing::error!("Reload: staging sample {:?} failed: {}", id, e);
-                            None
+                            (
+                                id,
+                                None,
+                                reload::StagedAssetOutcome {
+                                    path,
+                                    action: "load".into(),
+                                    failure: Some(reload::StagedAssetFailure {
+                                        code: error_code(&e),
+                                        message: e.to_string(),
+                                    }),
+                                },
+                            )
                         }
                     }
                 }
             });
-            for (id, info) in futures::future::join_all(loads).await.into_iter().flatten() {
-                assets.samples.insert(id, info);
+            for (id, info, outcome) in futures::future::join_all(loads).await {
+                if let Some(info) = info {
+                    assets.samples.insert(id, info);
+                }
+                assets.outcomes.push(outcome);
             }
 
             // SFZ instruments load sequentially: each allocates many buffer
@@ -1352,95 +2093,108 @@ impl<B: Backend> Runtime<B> {
                 match sfz_handler.stage_load(id, &path).await {
                     Ok(instrument) => {
                         assets.sfz.insert(id, instrument);
+                        assets.outcomes.push(reload::StagedAssetOutcome {
+                            path: format!("reload/staging/sfz/{}", id.raw()),
+                            action: "load".into(),
+                            failure: None,
+                        });
                     }
                     Err(e) => {
                         tracing::error!("Reload: staging SFZ instrument {:?} failed: {}", id, e);
+                        assets.outcomes.push(reload::StagedAssetOutcome {
+                            path: format!("reload/staging/sfz/{}", id.raw()),
+                            action: "load".into(),
+                            failure: Some(reload::StagedAssetFailure {
+                                code: error_code(&e),
+                                message: e.to_string(),
+                            }),
+                        });
                     }
                 }
             }
 
-            let msg = Message::Reload(Box::new(ReloadMessage::ApplyStaged {
-                state: new_state,
-                assets,
-            }));
-            if tx.send_async(msg).await.is_err() {
+            let completed = u32::try_from(assets.outcomes.len()).unwrap_or(u32::MAX);
+            if let Ok(staging) = ledger.transition(
+                context.attempt_id(),
+                ReceiptState::Staging {
+                    completed,
+                    total: completed,
+                },
+                SystemTime::now(),
+            ) {
+                publish_mutation_transition(&ledger, &context, &staging, SystemTime::now());
+            }
+
+            let msg = ContextualMessage::new(
+                context,
+                Message::Reload(Box::new(ReloadMessage::ApplyStaged {
+                    state: new_state,
+                    assets,
+                })),
+            );
+            if let Err(error) = tx.send_async(msg).await {
                 tracing::warn!("Reload: runtime channel closed before staged reload could apply");
+                let ContextualMessage { context, message } = error.0;
+                let Message::Reload(reload) = message else {
+                    return;
+                };
+                let ReloadMessage::ApplyStaged { assets, .. } = *reload else {
+                    return;
+                };
+                let mut assets = assets;
+                let staging = std::mem::take(&mut assets.outcomes);
+                let cleanup = discard_staged_reload_assets(&backend, &state, assets).await;
+                if let Err(error) = finish_lost_staged_reload(&ledger, &context, staging, cleanup) {
+                    tracing::error!("Failed to record lost staged reload: {}", error);
+                }
             }
         });
     }
 
-    /// Releases deferred `SyncAndNotify` barriers on a side task.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn drain_deferred_sync_notifies(&mut self) {
-        if self.deferred_sync_notifies.is_empty() {
-            return;
-        }
-        let notifies = std::mem::take(&mut self.deferred_sync_notifies);
-        let backend = self.backend.clone();
-        tokio::spawn(async move {
-            if let Err(e) = backend.sync().await {
-                tracing::warn!("Backend sync failed: {:?}", e);
-            }
-            for notify in notifies {
-                let _ = notify.send(());
-            }
-        });
-    }
-
-    async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
-        self.apply_reload_with_assets(new_state, reload::StagedReloadAssets::default())
-            .await
-    }
-
-    /// Applies a reload, consuming pre-staged buffer assets where the diff
-    /// wants them. Any staged asset the apply did not consume (state drifted
-    /// between staging and apply) has its buffers freed afterwards.
-    async fn apply_reload_with_assets(
+    async fn apply_reload_execution(
         &mut self,
         new_state: reload::ScriptState,
         mut staged: reload::StagedReloadAssets,
-    ) -> Result<()> {
-        let result = self.apply_reload_inner(new_state, &mut staged).await;
-        self.discard_staged_leftovers(staged).await;
-        result
+    ) -> ReloadExecution {
+        let staging = std::mem::take(&mut staged.outcomes);
+        let mut execution = self.apply_reload_inner(new_state, &mut staged).await;
+        let cleanup = self.discard_staged_leftovers(staged).await;
+        let cleanup_phase = execution
+            .phases
+            .last_mut()
+            .expect("reload phase table always contains staged asset cleanup");
+        cleanup_phase.started = true;
+        cleanup_phase.failures = cleanup;
+        execution.staging = staging;
+        execution
     }
 
     /// Frees buffers held by staged assets that were not consumed by the
     /// apply phases.
-    async fn discard_staged_leftovers(&mut self, staged: reload::StagedReloadAssets) {
-        if staged.is_empty() {
-            return;
-        }
-        let mut buffer_ids: Vec<crate::types::BufferId> =
-            staged.samples.values().map(|info| info.buffer_id).collect();
-        for instrument in staged.sfz.values() {
-            let unique: std::collections::HashSet<crate::types::BufferId> =
-                instrument.regions.iter().map(|r| r.buffer_id).collect();
-            buffer_ids.extend(unique);
-        }
-        tracing::debug!(
-            "Reload: freeing {} staged buffer(s) the apply did not consume",
-            buffer_ids.len()
-        );
-        {
-            let mut state = self.state.write().await;
-            for id in &buffer_ids {
-                state.free_buffer_id(*id);
-            }
-        }
-        for id in buffer_ids {
-            if let Err(e) = self.backend.free_buffer(id).await {
-                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
-            }
-        }
+    async fn discard_staged_leftovers(
+        &mut self,
+        staged: reload::StagedReloadAssets,
+    ) -> Vec<ReloadPhaseFailure> {
+        discard_staged_reload_assets(&self.backend, &self.state, staged).await
     }
 
     async fn apply_reload_inner(
         &mut self,
         new_state: reload::ScriptState,
         staged: &mut reload::StagedReloadAssets,
-    ) -> Result<()> {
-        let (diff, input_routes) = self.build_reload_diff(&new_state).await;
+    ) -> ReloadExecution {
+        let mut execution = ReloadExecution {
+            result: Ok(()),
+            failures: Vec::new(),
+            staging: Vec::new(),
+            phases: RELOAD_PHASE_COMPONENTS
+                .iter()
+                .map(|(path, action)| ReloadPhaseOutcome::pending(path, action))
+                .collect(),
+        };
+        let (diff, input_routes, port_reconcile_failures) =
+            self.build_reload_diff(&new_state).await;
+        execution.phases[6].failures = port_reconcile_failures;
 
         // If no changes, return early - patterns continue playing seamlessly.
         if !diff.has_changes() {
@@ -1451,7 +2205,10 @@ impl<B: Backend> Runtime<B> {
             // seeds removal tracking for subsequent reloads.
             self.snapshot_script_config(new_state).await;
             tracing::debug!("Reload: no changes detected, playback continues");
-            return Ok(());
+            for phase in &mut execution.phases[..RELOAD_PHASE_COMPONENTS.len() - 1] {
+                phase.started = true;
+            }
+            return execution;
         }
 
         tracing::info!("Reload: applying changes");
@@ -1470,43 +2227,99 @@ impl<B: Backend> Runtime<B> {
             )
             .await;
 
-        self.phase_apply_transport_changes(&diff).await?;
+        execution.phases[0].started = true;
+        if let Err(error) = self.phase_apply_transport_changes(&diff).await {
+            execution.phases[0]
+                .failures
+                .push(ReloadPhaseFailure::new("reload_transport_failed", &error));
+            execution.result = Err(error);
+            return execution;
+        }
         self.phase_quiesce_and_drain_schedulers(&diff, &structurally_recreated_voices)
             .await;
-        self.phase_stop_deleted_entities(&diff).await;
+        execution.phases[1].started = true;
+        execution.phases[1].failures = self.phase_stop_deleted_entities(&diff).await;
+
         // Replacement parents must exist before same-ID voices move out of
-        // groups that this reload is about to destroy.
-        self.phase_create_groups(&diff).await;
-        self.phase_recreate_structural_voices(&diff, &structurally_recreated_voices)
+        // groups that this reload is about to destroy. Structural effects
+        // likewise detach before their old parent groups are reclaimed.
+        execution.phases[4].started = true;
+        execution.phases[4].failures = self.phase_create_groups(&diff).await;
+        execution.phases[5].started = true;
+        execution.phases[5].failures = self
+            .phase_recreate_structural_voices(&diff, &structurally_recreated_voices)
             .await;
-        self.phase_remove_structural_effects(&structurally_recreated_effects)
+        execution.phases[8].started = true;
+        execution.phases[8].failures = self
+            .phase_remove_structural_effects(&structurally_recreated_effects)
             .await;
-        self.phase_delete_entities(&diff, group_teardown_grace)
+
+        execution.phases[2].started = true;
+        execution.phases[2].failures = self
+            .phase_delete_entities(&diff, group_teardown_grace)
             .await;
-        if !self.phase_open_midi_devices(&new_state).await? {
-            return Ok(());
+        execution.phases[3].started = true;
+        let (midi_device_failures, continue_apply) = self.phase_open_midi_devices(&new_state).await;
+        execution.phases[3].failures = midi_device_failures;
+        if !continue_apply {
+            return execution;
         }
-        self.phase_create_entities(&diff, &new_state, staged).await;
-        self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)
-            .await;
-        self.phase_finalize_output_routes(&diff).await?;
-        self.phase_finalize_input_routes(&input_routes).await?;
-        self.phase_apply_effects(&diff, &new_state).await;
-        self.phase_finalize_groups(&diff).await;
-        self.phase_apply_fades(&diff, &new_state).await;
-        self.phase_start_running_patterns(&diff, &new_state).await;
-        self.phase_trigger_running_voices(&new_state).await;
-        self.phase_finalize_param_routes(&diff, &new_state).await?;
-        self.phase_apply_midi_routes(&new_state).await;
+        execution.phases[4]
+            .failures
+            .extend(self.phase_create_entities(&diff, &new_state, staged).await);
+        execution.phases[5].failures.extend(
+            self.phase_update_entities(&diff, &new_state, &structurally_recreated_voices)
+                .await,
+        );
+        execution.phases[6].started = true;
+        if let Err(error) = self.phase_finalize_output_routes(&diff).await {
+            execution.phases[6].failures.push(ReloadPhaseFailure::new(
+                "reload_output_routes_failed",
+                &error,
+            ));
+            execution.result = Err(error);
+            return execution;
+        }
+        execution.phases[7].started = true;
+        if let Err(error) = self.phase_finalize_input_routes(&input_routes).await {
+            execution.phases[7].failures.push(ReloadPhaseFailure::new(
+                "reload_input_routes_failed",
+                &error,
+            ));
+            execution.result = Err(error);
+            return execution;
+        }
+        execution.phases[8]
+            .failures
+            .extend(self.phase_apply_effects(&diff, &new_state).await);
+        execution.phases[9].started = true;
+        execution.phases[9].failures = self.phase_finalize_groups(&diff).await;
+        execution.phases[10].started = true;
+        execution.phases[10].failures = self.phase_apply_fades(&diff, &new_state).await;
+        execution.phases[11].started = true;
+        execution.phases[11].failures = self.phase_start_running_patterns(&diff, &new_state).await;
+        execution.phases[12].started = true;
+        execution.phases[12].failures = self.phase_trigger_running_voices(&new_state).await;
+        execution.phases[13].started = true;
+        if let Err(error) = self.phase_finalize_param_routes(&diff, &new_state).await {
+            execution.phases[13].failures.push(ReloadPhaseFailure::new(
+                "reload_param_routes_failed",
+                &error,
+            ));
+            execution.result = Err(error);
+            return execution;
+        }
+        execution.phases[14].started = true;
+        execution.phases[14].failures = self.phase_apply_midi_routes(&new_state).await;
 
         // Snapshot the script-declared config for the next reload's diff.
-        // Written only after every phase succeeded: an aborted reload (route
-        // finalize error, MIDI open failure) keeps the previous snapshot,
-        // matching how `current_routes` is only advanced on success.
+        // Written only after the best-effort phase sequence completes. An
+        // aborting route or MIDI-channel failure keeps the previous snapshot,
+        // matching how `current_routes` advances only on route success.
         self.snapshot_script_config(new_state).await;
 
         tracing::info!("Reload: complete");
-        Ok(())
+        execution
     }
 
     /// Records the script-declared config maps for the next reload's diff.
@@ -1558,7 +2371,7 @@ impl<B: Backend> Runtime<B> {
     async fn build_reload_diff(
         &mut self,
         new_state: &reload::ScriptState,
-    ) -> (reload::ReloadDiff, InputRouteMap) {
+    ) -> (reload::ReloadDiff, InputRouteMap, Vec<ReloadPhaseFailure>) {
         let pending_port_reconciles = self.pending_voice_port_reconciles(&new_state).await;
         // Calculate diff
         let mut diff = {
@@ -1649,11 +2462,12 @@ impl<B: Backend> Runtime<B> {
         for voice_id in &structurally_recreated_voices {
             route_base.retain(|(id, _), _| id != voice_id);
         }
-        self.apply_voice_port_reconciles(
-            &pending_port_reconciles,
-            &mut diff.effective_output_routes,
-        )
-        .await;
+        let port_reconcile_failures = self
+            .apply_voice_port_reconciles(
+                &pending_port_reconciles,
+                &mut diff.effective_output_routes,
+            )
+            .await;
         diff.output_routes = reload::diff_routes(&route_base, &diff.effective_output_routes);
         diff.input_routes = {
             let state = self.state.read().await;
@@ -1663,7 +2477,7 @@ impl<B: Backend> Runtime<B> {
         {
             diff.midi_routes_changed = self.midi.script_routes_changed(new_state);
         }
-        (diff, input_routes)
+        (diff, input_routes, port_reconcile_failures)
     }
 
     /// Applies tempo and time signature changes before entity reconciliation.
@@ -1791,7 +2605,8 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         ids: &[VoiceId],
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         for id in ids {
             let Some(config) = diff.voices.updated.get(id) else {
                 continue;
@@ -1800,26 +2615,40 @@ impl<B: Backend> Runtime<B> {
                 "Reload: recreating voice {:?} before old-parent teardown",
                 id
             );
-            if let Err(e) = self.voices.recreate(*id, config.clone()).await {
-                tracing::error!("Reload: failed to recreate voice {:?}: {}", id, e);
-            }
+            record_reload_result(
+                &mut failures,
+                "reload_voice_recreate_failed",
+                self.voices.recreate(*id, config.clone()).await,
+            );
         }
+        failures
     }
 
-    async fn phase_remove_structural_effects(&mut self, ids: &[crate::types::EffectId]) {
+    async fn phase_remove_structural_effects(
+        &mut self,
+        ids: &[crate::types::EffectId],
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         for id in ids {
             tracing::debug!(
                 "Reload: detaching effect {:?} before old-parent teardown",
                 id
             );
-            if let Err(e) = self.effects.remove(*id).await {
-                tracing::warn!("Reload: failed to detach effect {:?}: {}", id, e);
-            }
+            record_reload_result(
+                &mut failures,
+                "reload_effect_recreate_remove_failed",
+                self.effects.remove(*id).await,
+            );
         }
+        failures
     }
 
     /// Stops or cancels runtime activity for entities that are about to be removed or restarted.
-    async fn phase_stop_deleted_entities(&mut self, diff: &reload::ReloadDiff) {
+    async fn phase_stop_deleted_entities(
+        &mut self,
+        diff: &reload::ReloadDiff,
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // NOTE: We NO LONGER stop patterns/melodies that are being updated.
         // Instead, we queue content swaps during entity updates for seamless hot reload.
 
@@ -1831,7 +2660,11 @@ impl<B: Backend> Runtime<B> {
             };
             if let Some(config) = config_opt {
                 tracing::debug!("Reload: cancelling deleted fade {:?}", id);
-                let _ = self.fades.cancel(&config.target, &config.param).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_fade_cancel_failed",
+                    self.fades.cancel(&config.target, &config.param).await,
+                );
             }
         }
 
@@ -1843,28 +2676,49 @@ impl<B: Backend> Runtime<B> {
             };
             if let Some(config) = config_opt {
                 tracing::debug!("Reload: cancelling updated fade {:?}", id);
-                let _ = self.fades.cancel(&config.target, &config.param).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_fade_cancel_failed",
+                    self.fades.cancel(&config.target, &config.param).await,
+                );
             }
         }
 
         // Stop patterns that will be deleted (NOT updated - those continue playing)
         for id in &diff.patterns.deleted {
-            let _ = self.patterns.stop(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_pattern_stop_failed",
+                self.patterns.stop(*id).await,
+            );
         }
 
         // Stop melodies that will be deleted (NOT updated - those continue playing)
         for id in &diff.melodies.deleted {
-            let _ = self.melodies.stop(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_melody_stop_failed",
+                self.melodies.stop(*id).await,
+            );
         }
 
         // Stop sequences that will be deleted or updated
         // (Sequences still use delete/create cycle for now)
         for id in &diff.sequences.deleted {
-            let _ = self.sequences.stop(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_stop_failed",
+                self.sequences.stop(*id).await,
+            );
         }
         for id in diff.sequences.updated.keys() {
-            let _ = self.sequences.stop(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_stop_failed",
+                self.sequences.stop(*id).await,
+            );
         }
+        failures
     }
 
     /// Removes deleted runtime entities and frees script-owned resources.
@@ -1872,11 +2726,16 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         group_teardown_grace: crate::compat::Duration,
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Delete effects (they depend on groups)
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
-            let _ = self.effects.remove(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_effect_delete_failed",
+                self.effects.remove(*id).await,
+            );
         }
 
         // Delete fades from tracking state
@@ -1891,19 +2750,31 @@ impl<B: Backend> Runtime<B> {
         // Delete patterns
         for id in &diff.patterns.deleted {
             tracing::debug!("Reload: deleting pattern {:?}", id);
-            let _ = self.patterns.delete(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_pattern_delete_failed",
+                self.patterns.delete(*id).await,
+            );
         }
 
         // Delete melodies
         for id in &diff.melodies.deleted {
             tracing::debug!("Reload: deleting melody {:?}", id);
-            let _ = self.melodies.delete(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_melody_delete_failed",
+                self.melodies.delete(*id).await,
+            );
         }
 
         // Delete sequences
         for id in &diff.sequences.deleted {
             tracing::debug!("Reload: deleting sequence {:?}", id);
-            let _ = self.sequences.delete(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_delete_failed",
+                self.sequences.delete(*id).await,
+            );
         }
 
         // Delete voices (before groups they belong to). Graceful: sounding
@@ -1911,7 +2782,11 @@ impl<B: Backend> Runtime<B> {
         // node IDs, route mixers, and buses are reclaimed after the grace.
         for id in &diff.voices.deleted {
             tracing::debug!("Reload: deleting voice {:?}", id);
-            let _ = self.voices.graceful_delete(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_voice_delete_failed",
+                self.voices.graceful_delete(*id).await,
+            );
         }
 
         // Delete groups in correct order (children first). The backend free
@@ -1923,16 +2798,23 @@ impl<B: Backend> Runtime<B> {
         };
         for id in ordered_group_deletions {
             tracing::debug!("Reload: deleting group {:?}", id);
-            let _ = self
-                .groups
-                .delete_with_grace(id, group_teardown_grace)
-                .await;
+            record_reload_result(
+                &mut failures,
+                "reload_group_delete_failed",
+                self.groups
+                    .delete_with_grace(id, group_teardown_grace)
+                    .await,
+            );
         }
 
         // Delete samples
         for id in &diff.samples.deleted {
             tracing::debug!("Reload: deleting sample {:?}", id);
-            let _ = self.samples.unload(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sample_delete_failed",
+                self.samples.unload(*id).await,
+            );
         }
 
         // Free script-allocated buffers that disappeared from the script.
@@ -1942,6 +2824,7 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: freeing script buffer {:?}", id);
             if let Err(e) = self.backend.free_buffer(*id).await {
                 tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_buffer_delete_failed", e));
             }
             self.state.write().await.buffers.remove(id);
         }
@@ -1949,6 +2832,7 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: freeing script buffer {:?} for resize", id);
             if let Err(e) = self.backend.free_buffer(*id).await {
                 tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_buffer_resize_failed", e));
             }
             self.state.write().await.buffers.remove(id);
         }
@@ -1956,20 +2840,36 @@ impl<B: Backend> Runtime<B> {
         // Delete SFZ instruments
         for id in &diff.sfz.deleted {
             tracing::debug!("Reload: deleting SFZ instrument {:?}", id);
-            let _ = self.sfz.unload(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sfz_delete_failed",
+                self.sfz.unload(*id).await,
+            );
             self.state.write().await.sfz_instruments.remove(id);
         }
 
         // Delete updated SFZ instruments (will be recreated when entities are created)
         for (id, _) in &diff.sfz.updated {
             tracing::debug!("Reload: deleting SFZ instrument {:?} for update", id);
-            let _ = self.sfz.unload(*id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sfz_update_delete_failed",
+                self.sfz.unload(*id).await,
+            );
             self.state.write().await.sfz_instruments.remove(id);
         }
+        failures
     }
 
     /// Opens MIDI devices and dispatches immediate MIDI output messages before voices are created.
-    async fn phase_open_midi_devices(&mut self, new_state: &reload::ScriptState) -> Result<bool> {
+    async fn phase_open_midi_devices(
+        &mut self,
+        new_state: &reload::ScriptState,
+    ) -> (Vec<ReloadPhaseFailure>, bool) {
+        #[cfg(feature = "midi")]
+        let mut failures = Vec::new();
+        #[cfg(not(feature = "midi"))]
+        let failures = Vec::new();
         #[cfg(not(feature = "midi"))]
         let _ = new_state;
         #[cfg(feature = "midi")]
@@ -1987,6 +2887,11 @@ impl<B: Backend> Runtime<B> {
             // randomised per process; without sorting the order in which we
             // grab ALSA/JACK MIDI ports — and any error reporting tied to the
             // first/second device — would flicker reload-to-reload.
+            // Record the script's requested inputs so the hot-plug watcher
+            // reopens exactly these (and stops reopening ones removed from the
+            // script) as devices come and go.
+            self.midi.set_requested_inputs(&new_state.midi_inputs);
+
             let mut midi_input_ids: Vec<_> = new_state.midi_inputs.iter().copied().collect();
             midi_input_ids.sort_by_key(|id| id.raw());
             for device_id in midi_input_ids
@@ -1996,16 +2901,68 @@ impl<B: Backend> Runtime<B> {
                 tracing::debug!("Reload: opening MIDI input {:?}", device_id);
                 if let Err(e) = self.midi.open_input(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI input {:?}: {}", device_id, e);
+                    failures.push(ReloadPhaseFailure::new("reload_midi_input_open_failed", e));
                 }
             }
 
-            // Open MIDI outputs (sorted, see Story 4 note above)
+            // Open numeric MIDI outputs used by voices and direct note/CC
+            // methods (sorted, see Story 4 note above).
             let mut midi_output_ids: Vec<_> = new_state.midi_outputs.iter().copied().collect();
             midi_output_ids.sort_by_key(|id| id.raw());
             for device_id in &midi_output_ids {
                 tracing::debug!("Reload: opening MIDI output {:?}", device_id);
                 if let Err(e) = self.midi.open_output(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI output {:?}: {}", device_id, e);
+                    failures.push(ReloadPhaseFailure::new("reload_midi_output_open_failed", e));
+                }
+            }
+
+            // Clock and realtime transport retain exact output names. Resolve
+            // them again at apply time so enumeration reorder between script
+            // evaluation and reload cannot redirect a send.
+            self.midi_output_endpoints.clear();
+            let mut stable_endpoints = new_state
+                .midi_output_endpoints
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            stable_endpoints.sort_by(|left, right| left.stable_name.cmp(&right.stable_name));
+            for requested in stable_endpoints {
+                match resolve_midi_output_endpoint(&requested.stable_name) {
+                    Ok(resolved) => match self.midi.open_output(resolved.id).await {
+                        Ok(()) => {
+                            tracing::info!(
+                                "MIDI readiness: output endpoint {:?} -> {} (ONLINE)",
+                                requested.stable_name,
+                                resolved
+                            );
+                            self.midi_output_endpoints
+                                .insert(requested.stable_name, resolved);
+                        }
+                        Err(error) => {
+                            tracing::error!(
+                                "MIDI readiness: output endpoint {:?} -> output[{}] (FAILED: {}); no clock or transport message will be sent",
+                                requested.stable_name,
+                                resolved.id.raw(),
+                                error
+                            );
+                            failures.push(ReloadPhaseFailure::new(
+                                "reload_midi_endpoint_open_failed",
+                                error,
+                            ));
+                        }
+                    },
+                    Err(error) => {
+                        tracing::error!(
+                            "MIDI readiness: output endpoint {:?} is UNRESOLVED: {}; no clock or transport message will be sent",
+                            requested.stable_name,
+                            error
+                        );
+                        failures.push(ReloadPhaseFailure::new(
+                            "reload_midi_endpoint_unresolved",
+                            error,
+                        ));
+                    }
                 }
             }
 
@@ -2018,7 +2975,18 @@ impl<B: Backend> Runtime<B> {
                 // Track per-device transport state to avoid re-sending on reload.
                 for msg in &new_state.midi_output_messages {
                     match msg {
-                        MidiOutputMessage::Start { device_id } => {
+                        MidiOutputMessage::Start { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Start output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             let transport_playing = self.state.read().await.playing;
                             if transport_playing {
                                 tracing::trace!(
@@ -2027,16 +2995,31 @@ impl<B: Backend> Runtime<B> {
                                 );
                             } else {
                                 tracing::debug!("Reload: sending MIDI Start to {:?}", device_id);
-                                if let Err(e) = self.midi.send_start(*device_id).await {
+                                if let Err(e) = self.midi.send_start(device_id).await {
                                     tracing::warn!(
                                         "Reload: failed to send MIDI Start to {:?}: {}",
                                         device_id,
                                         e
                                     );
+                                    failures.push(ReloadPhaseFailure::new(
+                                        "reload_midi_start_failed",
+                                        e,
+                                    ));
                                 }
                             }
                         }
-                        MidiOutputMessage::Stop { device_id } => {
+                        MidiOutputMessage::Stop { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Stop output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             let transport_playing = self.state.read().await.playing;
                             if !transport_playing {
                                 tracing::trace!(
@@ -2045,23 +3028,42 @@ impl<B: Backend> Runtime<B> {
                                 );
                             } else {
                                 tracing::debug!("Reload: sending MIDI Stop to {:?}", device_id);
-                                if let Err(e) = self.midi.send_stop(*device_id).await {
+                                if let Err(e) = self.midi.send_stop(device_id).await {
                                     tracing::warn!(
                                         "Reload: failed to send MIDI Stop to {:?}: {}",
                                         device_id,
                                         e
                                     );
+                                    failures.push(ReloadPhaseFailure::new(
+                                        "reload_midi_stop_failed",
+                                        e,
+                                    ));
                                 }
                             }
                         }
-                        MidiOutputMessage::Continue { device_id } => {
+                        MidiOutputMessage::Continue { endpoint } => {
+                            let Some(device_id) = self
+                                .midi_output_endpoints
+                                .get(&endpoint.stable_name)
+                                .map(|resolved| resolved.id)
+                            else {
+                                tracing::error!(
+                                    "Reload: MIDI Continue output endpoint {:?} is not ONLINE; sending nothing",
+                                    endpoint.stable_name
+                                );
+                                continue;
+                            };
                             tracing::debug!("Reload: sending MIDI Continue to {:?}", device_id);
-                            if let Err(e) = self.midi.send_continue(*device_id).await {
+                            if let Err(e) = self.midi.send_continue(device_id).await {
                                 tracing::warn!(
                                     "Reload: failed to send MIDI Continue to {:?}: {}",
                                     device_id,
                                     e
                                 );
+                                failures.push(ReloadPhaseFailure::new(
+                                    "reload_midi_continue_failed",
+                                    e,
+                                ));
                             }
                         }
                         _ => {} // Other messages handled below
@@ -2072,7 +3074,11 @@ impl<B: Backend> Runtime<B> {
                 let output_channels = self.midi.output_channels();
                 let Ok(channels) = output_channels.lock() else {
                     tracing::warn!("MIDI output channels mutex poisoned, skipping output");
-                    return Ok(false);
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_midi_output_channels_unavailable",
+                        "MIDI output channels mutex was poisoned",
+                    ));
+                    return (failures, false);
                 };
 
                 for msg in &new_state.midi_output_messages {
@@ -2162,19 +3168,28 @@ impl<B: Backend> Runtime<B> {
                                 device_id,
                                 e
                             );
+                            failures.push(ReloadPhaseFailure::new(
+                                "reload_midi_output_queue_failed",
+                                e,
+                            ));
                         }
                     } else {
                         tracing::warn!("Reload: no output channel for MIDI device {:?}", device_id);
+                        failures.push(ReloadPhaseFailure::new(
+                            "reload_midi_output_channel_missing",
+                            format!("no output channel for MIDI device {device_id:?}"),
+                        ));
                     }
                 }
             }
         }
-        Ok(true)
+        (failures, true)
     }
 
     /// Creates replacement parent groups before any same-ID voice is moved
     /// out of an old group that this reload will destroy.
-    async fn phase_create_groups(&mut self, diff: &reload::ReloadDiff) {
+    async fn phase_create_groups(&mut self, diff: &reload::ReloadDiff) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         let ordered_group_creations = reload::order_group_creations(&diff.groups.created);
         for id in ordered_group_creations {
             if let Some(config) = diff.groups.created.get(&id) {
@@ -2186,6 +3201,7 @@ impl<B: Backend> Runtime<B> {
                         config.name,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new("reload_group_create_failed", e));
                     continue;
                 }
                 for (param, value) in &config.params {
@@ -2198,6 +3214,7 @@ impl<B: Backend> Runtime<B> {
                             config.name,
                             e
                         );
+                        failures.push(ReloadPhaseFailure::new("reload_group_param_failed", e));
                     }
                 }
                 if config.muted {
@@ -2208,6 +3225,7 @@ impl<B: Backend> Runtime<B> {
                             config.name,
                             e
                         );
+                        failures.push(ReloadPhaseFailure::new("reload_group_mute_failed", e));
                     }
                 }
                 if config.soloed {
@@ -2218,6 +3236,7 @@ impl<B: Backend> Runtime<B> {
                             config.name,
                             e
                         );
+                        failures.push(ReloadPhaseFailure::new("reload_group_solo_failed", e));
                     }
                 }
                 if config.output_bus.is_some() {
@@ -2231,8 +3250,14 @@ impl<B: Backend> Runtime<B> {
         }
 
         if !diff.groups.created.is_empty() {
-            self.sync_with_retry("after group creation").await;
+            if !self.sync_with_retry("after group creation").await {
+                failures.push(ReloadPhaseFailure::new(
+                    "reload_group_sync_failed",
+                    "backend sync failed or timed out after group creation",
+                ));
+            }
         }
+        failures
     }
 
     /// Creates new samples, buffers, voices, patterns, melodies, sequences, and SFZ instruments.
@@ -2241,7 +3266,8 @@ impl<B: Backend> Runtime<B> {
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
         staged: &mut reload::StagedReloadAssets,
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Publish new samples first (other entities may depend on them),
         // and swap UPDATED samples (path or source mtime changed) to their
         // freshly loaded buffers. On native these were already loaded
@@ -2295,7 +3321,9 @@ impl<B: Backend> Runtime<B> {
                     tracing::debug!("Reload: loading sample {:?}", id);
                     self.samples.load(id, config)
                 });
-                let _ = futures::future::join_all(loads).await;
+                for result in futures::future::join_all(loads).await {
+                    record_reload_result(&mut failures, "reload_sample_create_failed", result);
+                }
             }
         }
 
@@ -2332,6 +3360,7 @@ impl<B: Backend> Runtime<B> {
                         config.channels,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new("reload_buffer_create_failed", e));
                 }
             }
         }
@@ -2363,6 +3392,7 @@ impl<B: Backend> Runtime<B> {
                     );
                     if let Err(e) = self.sfz.load(*id, &config.path).await {
                         tracing::error!("Reload: failed to load SFZ instrument {:?}: {}", id, e);
+                        failures.push(ReloadPhaseFailure::new("reload_sfz_create_failed", e));
                     }
                 }
             }
@@ -2389,6 +3419,7 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: creating voice {:?}", id);
             if let Err(e) = self.voices.create(id, config.clone()).await {
                 tracing::error!("Reload: failed to create voice {:?}: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_voice_create_failed", e));
             }
         }
 
@@ -2397,6 +3428,7 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: creating pattern {:?}", id);
             if let Err(e) = self.patterns.create(*id, config.clone()).await {
                 tracing::error!("Reload: failed to create pattern {:?}: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_pattern_create_failed", e));
             }
         }
 
@@ -2405,6 +3437,7 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: creating melody {:?}", id);
             if let Err(e) = self.melodies.create(*id, config.clone()).await {
                 tracing::error!("Reload: failed to create melody {:?}: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_melody_create_failed", e));
             }
         }
 
@@ -2413,12 +3446,14 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: creating sequence {:?}", id);
             if let Err(e) = self.sequences.create(*id, config.clone()).await {
                 tracing::error!("Reload: failed to create sequence {:?}: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_sequence_create_failed", e));
             }
         }
 
         // NOTE: Effect creation is deferred until after routes finalize
         // so that effect synths sit in SC tree order *after* the route mixers
         // that sum voice ports onto the group's audio bus.
+        failures
     }
 
     /// Applies in-place updates and structural recreations for existing groups, voices, patterns, melodies, and sequences.
@@ -2427,7 +3462,8 @@ impl<B: Backend> Runtime<B> {
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
         structurally_recreated_voices: &[VoiceId],
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Update groups (params and mute/solo, parent changes not supported during reload).
         //
         // Story 4: sort by `GroupId::raw()` for deterministic apply order. The
@@ -2492,6 +3528,10 @@ impl<B: Backend> Runtime<B> {
                         new_config.name,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_group_param_update_failed",
+                        e,
+                    ));
                 }
             }
             if track_removals {
@@ -2519,6 +3559,10 @@ impl<B: Backend> Runtime<B> {
                                     new_config.name,
                                     e
                                 );
+                                failures.push(ReloadPhaseFailure::new(
+                                    "reload_group_param_reset_failed",
+                                    e,
+                                ));
                             }
                         }
                         None => {
@@ -2552,6 +3596,10 @@ impl<B: Backend> Runtime<B> {
                         new_config.name,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_group_mute_update_failed",
+                        e,
+                    ));
                 }
             }
             if cur_soloed != new_config.soloed {
@@ -2568,6 +3616,10 @@ impl<B: Backend> Runtime<B> {
                         new_config.name,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_group_solo_update_failed",
+                        e,
+                    ));
                 }
             }
 
@@ -2610,8 +3662,13 @@ impl<B: Backend> Runtime<B> {
                 }
             };
             if let Some(node) = teardown_link_node {
-                let _ = self.backend.free_node(node).await;
-                self.state.write().await.free_node_id(node);
+                match self.backend.free_node(node).await {
+                    Ok(()) => self.state.write().await.free_node_id(node),
+                    Err(error) => failures.push(ReloadPhaseFailure::new(
+                        "reload_group_link_teardown_failed",
+                        error,
+                    )),
+                }
             }
         }
 
@@ -2682,7 +3739,11 @@ impl<B: Backend> Runtime<B> {
                 // Spawn-before-release: the new voice is materialized first,
                 // then the old sounding nodes are gate-released so their
                 // tail overlaps the new sound instead of leaving a gap.
-                let _ = self.voices.recreate(*id, new_config.clone()).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_voice_recreate_failed",
+                    self.voices.recreate(*id, new_config.clone()).await,
+                );
             } else {
                 // Only params/config changed - update them without recreating the synth
                 tracing::debug!(
@@ -2704,7 +3765,11 @@ impl<B: Backend> Runtime<B> {
                 };
                 let param_diff = reload::ParamDiff::diff(&old_params, &new_config.params);
                 for (param, value) in param_diff.added.iter().chain(param_diff.changed.iter()) {
-                    let _ = self.voices.set_param(*id, param, *value).await;
+                    record_reload_result(
+                        &mut failures,
+                        "reload_voice_param_update_failed",
+                        self.voices.set_param(*id, param, *value).await,
+                    );
                 }
                 if track_removals && !param_diff.removed.is_empty() {
                     // Reset removed script params to the synthdef's declared
@@ -2726,7 +3791,11 @@ impl<B: Backend> Runtime<B> {
                                     param,
                                     default
                                 );
-                                let _ = self.voices.set_param(*id, param, *default).await;
+                                record_reload_result(
+                                    &mut failures,
+                                    "reload_voice_param_reset_failed",
+                                    self.voices.set_param(*id, param, *default).await,
+                                );
                             }
                             None => {
                                 tracing::warn!(
@@ -2773,10 +3842,13 @@ impl<B: Backend> Runtime<B> {
                 // voice-allocation pool (NoteOff for notes that no longer fit).
                 #[cfg(feature = "midi")]
                 if polyphony_changed {
-                    let _ = self
-                        .voices
-                        .resize_midi_pool(*id, new_config.polyphony as usize)
-                        .await;
+                    record_reload_result(
+                        &mut failures,
+                        "reload_voice_midi_pool_resize_failed",
+                        self.voices
+                            .resize_midi_pool(*id, new_config.polyphony as usize)
+                            .await,
+                    );
                 }
             }
         }
@@ -2855,8 +3927,16 @@ impl<B: Backend> Runtime<B> {
                     .unwrap_or((false, false))
             };
             // Recreate with new config
-            let _ = self.sequences.delete(*id).await;
-            let _ = self.sequences.create(*id, config.clone()).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_update_delete_failed",
+                self.sequences.delete(*id).await,
+            );
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_update_create_failed",
+                self.sequences.create(*id, config.clone()).await,
+            );
             // Restore playback state - sync position to current beat to avoid re-triggering clips
             if was_playing {
                 let mut state = self.state.write().await;
@@ -2885,6 +3965,7 @@ impl<B: Backend> Runtime<B> {
         // NOTE: Effect updates are deferred until after routes finalize,
         // alongside effect creation, so freshly-(re)spawned effect synths sit
         // *after* the route mixers in SC tree order.
+        failures
     }
 
     /// Materializes output route mixers and advances the current route snapshot.
@@ -2944,7 +4025,8 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Effects must be inserted into the SC tree *after* the route mixers
         // emitted by output route finalization so that an effect's `In.ar(group_audio_bus)`
         // sees the post-sum signal that routes have just deposited there.
@@ -2980,6 +4062,7 @@ impl<B: Backend> Runtime<B> {
                 .await
             {
                 tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
+                failures.push(ReloadPhaseFailure::new("reload_effect_create_failed", e));
             }
         }
 
@@ -3001,7 +4084,7 @@ impl<B: Backend> Runtime<B> {
                 continue;
             };
             // Get current effect state to compare
-            let (needs_recreate, old_script_params) = {
+            let (needs_recreate, old_script_params, current_exists) = {
                 let state = self.state.read().await;
                 if let Some(current_effect) = state.effects.get(&id) {
                     // Recreate if synthdef or group changed, or if the
@@ -3015,10 +4098,11 @@ impl<B: Backend> Runtime<B> {
                                 &new_config.synthdef,
                             ),
                         state.script_effect_params.get(&id).cloned(),
+                        true,
                     )
                 } else {
                     // Effect not found - shouldn't happen, but recreate to be safe
-                    (true, None)
+                    (true, None, false)
                 }
             };
 
@@ -3029,7 +4113,13 @@ impl<B: Backend> Runtime<B> {
                     new_config.synthdef,
                     new_config.params.len()
                 );
-                let _ = self.effects.remove(id).await;
+                if current_exists {
+                    record_reload_result(
+                        &mut failures,
+                        "reload_effect_recreate_remove_failed",
+                        self.effects.remove(id).await,
+                    );
+                }
                 if let Err(e) = self
                     .effects
                     .add(
@@ -3041,6 +4131,7 @@ impl<B: Backend> Runtime<B> {
                     .await
                 {
                     tracing::error!("Reload: failed to recreate effect {:?}: {}", id, e);
+                    failures.push(ReloadPhaseFailure::new("reload_effect_recreate_failed", e));
                 }
             } else {
                 // Only params changed - update them without recreating the synth
@@ -3064,7 +4155,11 @@ impl<B: Backend> Runtime<B> {
                 };
                 let param_diff = reload::ParamDiff::diff(&old_params, &new_config.params);
                 for (param, value) in param_diff.added.iter().chain(param_diff.changed.iter()) {
-                    let _ = self.effects.set_param(id, param, *value).await;
+                    record_reload_result(
+                        &mut failures,
+                        "reload_effect_param_update_failed",
+                        self.effects.set_param(id, param, *value).await,
+                    );
                 }
                 if track_removals && !param_diff.removed.is_empty() {
                     // Reset removed script params to the effect's declared
@@ -3087,7 +4182,11 @@ impl<B: Backend> Runtime<B> {
                                     param,
                                     default
                                 );
-                                let _ = self.effects.set_param(id, param, *default).await;
+                                record_reload_result(
+                                    &mut failures,
+                                    "reload_effect_param_reset_failed",
+                                    self.effects.set_param(id, param, *default).await,
+                                );
                             }
                             None => {
                                 tracing::warn!(
@@ -3118,7 +4217,8 @@ impl<B: Backend> Runtime<B> {
         // (reverb tails, delay lines) survives. This also repairs the
         // recreate path above, which re-attaches an updated effect at the
         // chain tail.
-        self.reconcile_effect_chain_order(new_state).await;
+        failures.extend(self.reconcile_effect_chain_order(new_state).await);
+        failures
     }
 
     /// Moves live effect nodes into script-declared chain order via
@@ -3129,7 +4229,11 @@ impl<B: Backend> Runtime<B> {
     /// already sits between the mixers and the link synth, and each
     /// `/n_before` targets another effect node in the same window, so the
     /// moves cannot cross either boundary.
-    async fn reconcile_effect_chain_order(&mut self, new_state: &reload::ScriptState) {
+    async fn reconcile_effect_chain_order(
+        &mut self,
+        new_state: &reload::ScriptState,
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Compute moves under the state lock; dispatch after release.
         let mut moves: Vec<(crate::types::NodeId, crate::types::NodeId)> = Vec::new();
         {
@@ -3195,22 +4299,38 @@ impl<B: Backend> Runtime<B> {
                     before,
                     e
                 );
+                failures.push(ReloadPhaseFailure::new("reload_effect_reorder_failed", e));
             }
         }
+        failures
     }
 
     /// Finalizes changed groups so link synths exist with the current routing configuration.
-    async fn phase_finalize_groups(&mut self, diff: &reload::ReloadDiff) {
+    async fn phase_finalize_groups(
+        &mut self,
+        diff: &reload::ReloadDiff,
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Finalize groups if any were created or updated — ensures link synths exist
         // and are properly configured. This handles group renames where the old group
         // is deleted and a new one is created.
         if !diff.groups.created.is_empty() || !diff.groups.updated.is_empty() {
             tracing::debug!("Reload: finalizing groups");
-            let _ = self.groups.finalize().await;
+            record_reload_result(
+                &mut failures,
+                "reload_group_finalize_failed",
+                self.groups.finalize().await,
+            );
 
             // Brief sync to let link synths be created (non-blocking, quick timeout)
-            self.sync_with_retry("after finalize").await;
+            if !self.sync_with_retry("after finalize").await {
+                failures.push(ReloadPhaseFailure::new(
+                    "reload_group_finalize_sync_failed",
+                    "backend sync failed or timed out after group finalize",
+                ));
+            }
         }
+        failures
     }
 
     /// Starts created and updated stateful fades and processes legacy pending fades.
@@ -3218,7 +4338,8 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // Stateful fades participate in the diff system: unchanged fades are
         // not re-fired. Only new or updated fades are started.
         // =========================================================================
@@ -3237,6 +4358,7 @@ impl<B: Backend> Runtime<B> {
                 );
                 if let Err(e) = self.fades.fade(config.clone()).await {
                     tracing::error!("Reload: failed to start fade {:?}: {}", id, e);
+                    failures.push(ReloadPhaseFailure::new("reload_fade_start_failed", e));
                 }
                 // Track in runtime state for future diffing
                 let mut state = self.state.write().await;
@@ -3258,6 +4380,7 @@ impl<B: Backend> Runtime<B> {
                 );
                 if let Err(e) = self.fades.fade(config.clone()).await {
                     tracing::error!("Reload: failed to restart fade {:?}: {}", id, e);
+                    failures.push(ReloadPhaseFailure::new("reload_fade_restart_failed", e));
                 }
                 // Update tracking state
                 let mut state = self.state.write().await;
@@ -3286,9 +4409,14 @@ impl<B: Backend> Runtime<B> {
                 );
                 if let Err(e) = self.fades.fade(fade_config.clone()).await {
                     tracing::error!("Reload: failed to start legacy fade: {}", e);
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_legacy_fade_start_failed",
+                        e,
+                    ));
                 }
             }
         }
+        failures
     }
 
     /// Starts or stops pattern, melody, and sequence playback requested by the script state.
@@ -3296,7 +4424,8 @@ impl<B: Backend> Runtime<B> {
         &mut self,
         diff: &reload::ReloadDiff,
         new_state: &reload::ScriptState,
-    ) {
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // First, stop patterns/melodies/sequences that were playing but are no longer
         // in the playing_* sets. This handles the case where user changes start() to stop().
         //
@@ -3328,7 +4457,11 @@ impl<B: Backend> Runtime<B> {
                 "Reload: stopping pattern {:?} (no longer in playing_patterns and was changed)",
                 id
             );
-            let _ = self.patterns.stop(id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_pattern_stop_failed",
+                self.patterns.stop(id).await,
+            );
         }
 
         let melodies_to_stop: Vec<crate::types::MelodyId> = {
@@ -3366,7 +4499,11 @@ impl<B: Backend> Runtime<B> {
                 "Reload: stopping melody {:?} (no longer in playing_melodies and was changed)",
                 id
             );
-            let _ = self.melodies.stop(id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_melody_stop_failed",
+                self.melodies.stop(id).await,
+            );
         }
 
         let sequences_to_stop: Vec<crate::types::SequenceId> = {
@@ -3388,7 +4525,11 @@ impl<B: Backend> Runtime<B> {
                 "Reload: stopping sequence {:?} (no longer in playing_sequences and was changed)",
                 id
             );
-            let _ = self.sequences.stop(id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_sequence_stop_failed",
+                self.sequences.stop(id).await,
+            );
         }
 
         // Start patterns that should be playing (only if not already playing).
@@ -3405,7 +4546,11 @@ impl<B: Backend> Runtime<B> {
             };
             if should_start {
                 tracing::debug!("Reload: starting pattern {:?} on the song grid", id);
-                let _ = self.patterns.start_on_grid(*id).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_pattern_start_failed",
+                    self.patterns.start_on_grid(*id).await,
+                );
             }
         }
 
@@ -3450,7 +4595,11 @@ impl<B: Backend> Runtime<B> {
                 // `current_beat % length` with the scheduling watermark at
                 // `current_beat` — identical phase to a cold boot, no burst,
                 // no epsilon hacks.
-                let _ = self.melodies.start(*id).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_melody_start_failed",
+                    self.melodies.start(*id).await,
+                );
             }
         }
 
@@ -3470,7 +4619,11 @@ impl<B: Backend> Runtime<B> {
             if should_start {
                 tracing::debug!("Reload: starting sequence {:?}", id);
                 // Default to looping for sequences started via script
-                let _ = self.sequences.start(*id, true).await;
+                record_reload_result(
+                    &mut failures,
+                    "reload_sequence_start_failed",
+                    self.sequences.start(*id, true).await,
+                );
                 // Sync position to current beat + epsilon to avoid re-triggering past clips
                 // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
                 let mut state = self.state.write().await;
@@ -3492,10 +4645,15 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+        failures
     }
 
     /// Stops removed running voices and triggers newly requested continuous voices.
-    async fn phase_trigger_running_voices(&mut self, new_state: &reload::ScriptState) {
+    async fn phase_trigger_running_voices(
+        &mut self,
+        new_state: &reload::ScriptState,
+    ) -> Vec<ReloadPhaseFailure> {
+        let mut failures = Vec::new();
         // First, stop voices that were running but are no longer in running_voices
         // This handles the case where .run() is removed from a voice
         let voices_to_stop: Vec<crate::types::VoiceId> = {
@@ -3516,7 +4674,11 @@ impl<B: Backend> Runtime<B> {
                 "Reload: stopping voice {:?} (no longer in running_voices)",
                 voice_id
             );
-            let _ = self.voices.stop(voice_id).await;
+            record_reload_result(
+                &mut failures,
+                "reload_voice_stop_failed",
+                self.voices.stop(voice_id).await,
+            );
         }
 
         // Then, trigger voices that should be running
@@ -3539,9 +4701,11 @@ impl<B: Backend> Runtime<B> {
                         voice_id,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new("reload_voice_trigger_failed", e));
                 }
             }
         }
+        failures
     }
 
     /// Materializes parameter routes after their source and target nodes exist.
@@ -3589,7 +4753,14 @@ impl<B: Backend> Runtime<B> {
     }
 
     /// Applies MIDI routing and clock-output requests from the script state.
-    async fn phase_apply_midi_routes(&mut self, new_state: &reload::ScriptState) {
+    async fn phase_apply_midi_routes(
+        &mut self,
+        new_state: &reload::ScriptState,
+    ) -> Vec<ReloadPhaseFailure> {
+        #[cfg(feature = "midi")]
+        let mut failures = Vec::new();
+        #[cfg(not(feature = "midi"))]
+        let failures = Vec::new();
         #[cfg(not(feature = "midi"))]
         let _ = new_state;
         #[cfg(feature = "midi")]
@@ -3619,43 +4790,541 @@ impl<B: Backend> Runtime<B> {
             self.midi
                 .apply_midi2_per_note_routes(&new_state.midi2_per_note_routes)
                 .await;
-            self.midi
-                .apply_midi2_cc_routes(&new_state.midi2_cc_routes)
-                .await;
 
             // Reconcile looper instances against the new config list.
             self.midi.reconcile_loopers(&new_state.loopers).await;
 
             // Apply MIDI clock output requests
             for clock_req in &new_state.midi_clock_outputs {
+                let Some(device_id) = self
+                    .midi_output_endpoints
+                    .get(&clock_req.endpoint.stable_name)
+                    .map(|resolved| resolved.id)
+                else {
+                    tracing::error!(
+                        "Reload: clock output endpoint {:?} is not ONLINE; sending nothing",
+                        clock_req.endpoint.stable_name
+                    );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_midi_clock_endpoint_offline",
+                        format!(
+                            "MIDI clock output endpoint {:?} is not online",
+                            clock_req.endpoint.stable_name
+                        ),
+                    ));
+                    continue;
+                };
                 tracing::debug!(
-                    "Reload: {} MIDI clock output for device {:?}",
+                    "Reload: {} MIDI clock output for {}",
                     if clock_req.enabled {
                         "enabling"
                     } else {
                         "disabling"
                     },
-                    clock_req.device_id
+                    clock_req.endpoint
                 );
                 if clock_req.enabled {
-                    if let Err(e) = self.midi.enable_clock_output(clock_req.device_id).await {
+                    if let Err(e) = self.midi.enable_clock_output(device_id).await {
                         tracing::error!(
-                            "Reload: failed to enable clock output for device {:?}: {}",
-                            clock_req.device_id,
+                            "Reload: failed to enable clock output for {}: {}",
+                            clock_req.endpoint,
                             e
                         );
+                        failures.push(ReloadPhaseFailure::new(
+                            "reload_midi_clock_enable_failed",
+                            e,
+                        ));
                     }
-                } else if let Err(e) = self.midi.disable_clock_output(clock_req.device_id).await {
+                } else if let Err(e) = self.midi.disable_clock_output(device_id).await {
                     tracing::error!(
-                        "Reload: failed to disable clock output for device {:?}: {}",
-                        clock_req.device_id,
+                        "Reload: failed to disable clock output for {}: {}",
+                        clock_req.endpoint,
                         e
                     );
+                    failures.push(ReloadPhaseFailure::new(
+                        "reload_midi_clock_disable_failed",
+                        e,
+                    ));
                 }
             }
 
             self.midi.mark_script_routes_applied(new_state).await;
         }
+        failures
+    }
+}
+
+async fn discard_staged_reload_assets<B: Backend>(
+    backend: &Arc<B>,
+    state: &Arc<RwLock<State>>,
+    staged: reload::StagedReloadAssets,
+) -> Vec<ReloadPhaseFailure> {
+    let mut failures = Vec::new();
+    if staged.is_empty() {
+        return failures;
+    }
+    let mut buffer_ids: Vec<crate::types::BufferId> =
+        staged.samples.values().map(|info| info.buffer_id).collect();
+    for instrument in staged.sfz.values() {
+        buffer_ids.extend(instrument.regions.iter().map(|region| region.buffer_id));
+    }
+    buffer_ids.sort_by_key(|id| id.raw());
+    buffer_ids.dedup();
+    tracing::debug!(
+        "Reload: freeing {} staged buffer(s) the apply did not consume",
+        buffer_ids.len()
+    );
+    for id in buffer_ids {
+        match backend.free_buffer(id).await {
+            Ok(()) => state.write().await.free_buffer_id(id),
+            Err(error) => {
+                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, error);
+                failures.push(ReloadPhaseFailure::new(
+                    "staged_asset_cleanup_failed",
+                    format!("free_buffer({}) failed: {}", id.raw(), error),
+                ));
+            }
+        }
+    }
+    failures
+}
+
+struct WorkFailure {
+    code: &'static str,
+    message: String,
+    definitely_no_effect: bool,
+    phase: FailurePhase,
+}
+
+fn finish_contextual_receipt(
+    ledger: &MutationLedger,
+    context: &MutationContext,
+    component_path: &str,
+    action: &str,
+    failure: Option<WorkFailure>,
+    confirmation: Confirmation,
+) -> Result<MutationReceipt> {
+    let current = ledger
+        .receipt(context.attempt_id())
+        .map_err(mutation_ledger_error)?;
+    let previous = current.previous_confirmed_revision;
+    let state = match failure {
+        None => {
+            let effective_at = EffectiveAt {
+                observed_at: Timestamp::from_system_time(SystemTime::now()),
+                musical_beat: None,
+                backend_time_seconds: None,
+            };
+            ReceiptState::Terminal(TerminalOutcome::Applied(Applied {
+                effective_at: effective_at.clone(),
+                confirmations: vec![confirmation.clone()],
+                components: vec![ComponentOutcome {
+                    path: component_path.into(),
+                    action: action.into(),
+                    state: ComponentState::Applied,
+                    effective_at: Some(effective_at),
+                    confirmation: Some(confirmation),
+                    diagnostic: None,
+                }],
+                audible_tail_until: None,
+            }))
+        }
+        Some(failure) if failure.definitely_no_effect => {
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                phase: failure.phase,
+                code: failure.code.into(),
+                message: failure.message,
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: previous,
+            }))
+        }
+        Some(failure) => ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: failure.phase,
+            code: failure.code.into(),
+            components: vec![ComponentOutcome {
+                path: component_path.into(),
+                action: action.into(),
+                state: ComponentState::Uncertain,
+                effective_at: None,
+                confirmation: None,
+                diagnostic: Some(Diagnostic {
+                    severity: DiagnosticSeverity::Error,
+                    code: failure.code.into(),
+                    message: failure.message,
+                    component_path: Some(component_path.into()),
+                    source_span: None,
+                }),
+            }],
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: previous,
+        })),
+    };
+    let now = SystemTime::now();
+    let receipt = ledger
+        .transition(context.attempt_id(), state, now)
+        .map_err(mutation_ledger_error)?;
+    publish_mutation_transition(ledger, context, &receipt, now);
+    Ok(receipt)
+}
+
+fn finish_reload_receipt(
+    ledger: &MutationLedger,
+    context: &MutationContext,
+    execution: &ReloadExecution,
+) -> Result<MutationReceipt> {
+    let now = SystemTime::now();
+    let effective_at = EffectiveAt {
+        observed_at: Timestamp::from_system_time(now),
+        musical_beat: None,
+        backend_time_seconds: None,
+    };
+    let mut components = Vec::with_capacity(execution.staging.len() + execution.phases.len());
+    let mut diagnostics = execution
+        .failures
+        .iter()
+        .map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: None,
+            source_span: None,
+        })
+        .collect::<Vec<_>>();
+    for staged in &execution.staging {
+        let diagnostic = staged.failure.as_ref().map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(staged.path.clone()),
+            source_span: None,
+        });
+        if let Some(diagnostic) = &diagnostic {
+            diagnostics.push(diagnostic.clone());
+        }
+        components.push(ComponentOutcome {
+            path: staged.path.clone(),
+            action: staged.action.clone(),
+            state: if staged.failure.is_some() {
+                ComponentState::Uncertain
+            } else {
+                ComponentState::Applied
+            },
+            effective_at: staged.failure.is_none().then(|| effective_at.clone()),
+            confirmation: staged
+                .failure
+                .is_none()
+                .then_some(Confirmation::RuntimeCommit),
+            diagnostic,
+        });
+    }
+    for phase in &execution.phases {
+        let failure = phase.failures.first();
+        let diagnostic = failure.map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(phase.path.into()),
+            source_span: None,
+        });
+        diagnostics.extend(phase.failures.iter().map(|failure| Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            code: failure.code.into(),
+            message: failure.message.clone(),
+            component_path: Some(phase.path.into()),
+            source_span: None,
+        }));
+        components.push(ComponentOutcome {
+            path: phase.path.into(),
+            action: phase.action.into(),
+            state: if !phase.started {
+                ComponentState::NotStarted
+            } else if failure.is_some() {
+                ComponentState::Uncertain
+            } else {
+                ComponentState::Applied
+            },
+            effective_at: (phase.started && failure.is_none()).then(|| effective_at.clone()),
+            confirmation: (phase.started && failure.is_none())
+                .then_some(Confirmation::RuntimeCommit),
+            diagnostic,
+        });
+    }
+    let first_failure = diagnostics
+        .first()
+        .map(|diagnostic| diagnostic.code.clone());
+    let current = ledger
+        .receipt(context.attempt_id())
+        .map_err(mutation_ledger_error)?;
+    let state = if let Some(code) = first_failure {
+        ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::Reconcile,
+            code,
+            components,
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: current.previous_confirmed_revision,
+        }))
+    } else {
+        ReceiptState::Terminal(TerminalOutcome::Applied(Applied {
+            effective_at,
+            confirmations: vec![Confirmation::RuntimeCommit],
+            components,
+            audible_tail_until: None,
+        }))
+    };
+    let receipt = ledger
+        .transition_with_diagnostics(context.attempt_id(), state, diagnostics, now)
+        .map_err(mutation_ledger_error)?;
+    publish_mutation_transition(ledger, context, &receipt, now);
+    Ok(receipt)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn finish_lost_staged_reload(
+    ledger: &MutationLedger,
+    context: &MutationContext,
+    staging: Vec<reload::StagedAssetOutcome>,
+    cleanup: Vec<ReloadPhaseFailure>,
+) -> Result<MutationReceipt> {
+    let mut execution = ReloadExecution {
+        result: Err(Error::ChannelClosed),
+        failures: vec![ReloadPhaseFailure {
+            code: "staging_completion_lost",
+            message: "the runtime queue closed before staged assets could be applied".into(),
+        }],
+        staging,
+        phases: RELOAD_PHASE_COMPONENTS
+            .iter()
+            .map(|(path, action)| ReloadPhaseOutcome::pending(path, action))
+            .collect(),
+    };
+    execution.phases[15].started = true;
+    execution.phases[15].failures = cleanup;
+    finish_reload_receipt(ledger, context, &execution)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn finish_deferred_effect_after_fence(
+    ledger: &MutationLedger,
+    completion: &DeferredCompletion,
+) -> Result<MutationReceipt> {
+    let now = SystemTime::now();
+    let effective_at = EffectiveAt {
+        observed_at: Timestamp::from_system_time(now),
+        musical_beat: None,
+        backend_time_seconds: None,
+    };
+    let current = ledger
+        .receipt(completion.context.attempt_id())
+        .map_err(mutation_ledger_error)?;
+    let receipt = ledger
+        .transition(
+            completion.context.attempt_id(),
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+                phase: FailurePhase::Reconcile,
+                code: "effect_completed_after_runtime_fence".into(),
+                components: vec![ComponentOutcome {
+                    path: completion.component_path.clone(),
+                    action: completion.action.clone(),
+                    state: ComponentState::Applied,
+                    effective_at: Some(effective_at),
+                    confirmation: Some(Confirmation::RuntimeCommit),
+                    diagnostic: Some(Diagnostic {
+                        severity: DiagnosticSeverity::Error,
+                        code: "effect_completed_after_runtime_fence".into(),
+                        message: "the v1 effect completed while a lower revision became partial"
+                            .into(),
+                        component_path: Some(completion.component_path.clone()),
+                        source_span: None,
+                    }),
+                }],
+                rollback: RollbackState::Uncertain,
+                fenced: true,
+                last_confirmed_revision: current.previous_confirmed_revision,
+            })),
+            now,
+        )
+        .map_err(mutation_ledger_error)?;
+    publish_mutation_transition(ledger, &completion.context, &receipt, now);
+    Ok(receipt)
+}
+
+fn error_code(error: &Error) -> &'static str {
+    match error {
+        Error::Backend(_) => "backend_rejected",
+        Error::BackendNotReady => "backend_not_ready",
+        Error::SynthDefNotFound(_) => "synthdef_not_found",
+        Error::SynthDefRejected { .. } => "synthdef_rejected",
+        Error::SynthDefPreflightFailed { .. } => "synthdef_preflight_failed",
+        Error::SampleNotFound(_) => "sample_not_found",
+        Error::SampleLoadFailed { .. } => "sample_load_failed",
+        Error::SfzNotFound(_) => "sfz_not_found",
+        Error::SfzLoadFailed { .. } => "sfz_load_failed",
+        Error::RecordingNotFound(_) => "recording_not_found",
+        Error::RecordingAlreadyExists(_) => "recording_already_exists",
+        Error::GroupNotFound(_) => "group_not_found",
+        Error::VoiceNotFound(_) => "voice_not_found",
+        Error::PatternNotFound(_) => "pattern_not_found",
+        Error::MelodyNotFound(_) => "melody_not_found",
+        Error::SequenceNotFound(_) => "sequence_not_found",
+        Error::EffectNotFound(_) => "effect_not_found",
+        Error::GroupExists(_) => "group_exists",
+        Error::VoiceExists(_) => "voice_exists",
+        Error::PatternExists(_) => "pattern_exists",
+        Error::MelodyExists(_) => "melody_exists",
+        Error::SequenceExists(_) => "sequence_exists",
+        Error::EffectExists(_) => "effect_exists",
+        Error::InvalidParam { .. } => "invalid_parameter",
+        Error::InvalidConfig(_) => "invalid_configuration",
+        Error::IdsExhausted(_) => "resource_ids_exhausted",
+        Error::ChannelClosed => "queue_closed",
+        Error::ChannelFull => "queue_full",
+        Error::SyncTimeout => "sync_timeout",
+        Error::AcknowledgementLost => "acknowledgement_lost",
+        Error::MutationLedger(_) => "mutation_ledger_error",
+        Error::RuntimeFenced(_) => "runtime_fenced",
+        #[cfg(feature = "midi")]
+        Error::MidiDeviceNotFound(_) => "midi_device_not_found",
+        #[cfg(feature = "midi")]
+        Error::MidiError(_) => "midi_error",
+    }
+}
+
+fn error_is_pre_effect(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::BackendNotReady
+            | Error::SynthDefNotFound(_)
+            | Error::SampleNotFound(_)
+            | Error::SfzNotFound(_)
+            | Error::RecordingNotFound(_)
+            | Error::RecordingAlreadyExists(_)
+            | Error::GroupNotFound(_)
+            | Error::VoiceNotFound(_)
+            | Error::PatternNotFound(_)
+            | Error::MelodyNotFound(_)
+            | Error::SequenceNotFound(_)
+            | Error::EffectNotFound(_)
+            | Error::GroupExists(_)
+            | Error::VoiceExists(_)
+            | Error::PatternExists(_)
+            | Error::MelodyExists(_)
+            | Error::SequenceExists(_)
+            | Error::EffectExists(_)
+            | Error::InvalidParam { .. }
+            | Error::InvalidConfig(_)
+            | Error::ChannelClosed
+            | Error::ChannelFull
+            | Error::SyncTimeout
+            | Error::AcknowledgementLost
+            | Error::RuntimeFenced(_)
+    )
+}
+
+/// One canonical carrier attempt allocated before evaluation or bridge work.
+#[derive(Debug)]
+pub struct MutationAttempt {
+    context: MutationContext,
+    receipt: MutationReceipt,
+    active: bool,
+    pre_admission_effects: Vec<ComponentOutcome>,
+}
+
+impl MutationAttempt {
+    #[must_use]
+    pub fn receipt(&self) -> &MutationReceipt {
+        &self.receipt
+    }
+
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        self.active
+    }
+
+    pub fn record_uncertain_effect(
+        &mut self,
+        path: impl Into<String>,
+        action: impl Into<String>,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<()> {
+        let path = path.into();
+        let code = code.into();
+        let message = message.into();
+        self.record_effect(ComponentOutcome {
+            path: path.clone(),
+            action: action.into(),
+            state: ComponentState::Uncertain,
+            effective_at: None,
+            confirmation: None,
+            diagnostic: Some(Diagnostic {
+                severity: DiagnosticSeverity::Error,
+                code,
+                message,
+                component_path: Some(path),
+                source_span: None,
+            }),
+        })
+    }
+
+    pub fn record_applied_effect(
+        &mut self,
+        path: impl Into<String>,
+        action: impl Into<String>,
+        confirmation: Confirmation,
+    ) -> Result<()> {
+        self.record_effect(ComponentOutcome {
+            path: path.into(),
+            action: action.into(),
+            state: ComponentState::Applied,
+            effective_at: None,
+            confirmation: Some(confirmation),
+            diagnostic: None,
+        })
+    }
+
+    fn record_effect(&mut self, effect: ComponentOutcome) -> Result<()> {
+        if !self.active {
+            return Err(Error::InvalidConfig(
+                "cannot record an effect on a completed mutation attempt".into(),
+            ));
+        }
+        if self
+            .pre_admission_effects
+            .iter()
+            .any(|current| current.path == effect.path)
+        {
+            return Err(Error::InvalidConfig(format!(
+                "pre-admission effect path '{}' is already recorded",
+                effect.path
+            )));
+        }
+        self.pre_admission_effects.push(effect);
+        Ok(())
+    }
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+impl Runtime<crate::backends::ScsynthBackend> {
+    /// Execute one deterministic inactive-generation plan against this
+    /// runtime's graph coordinator, resource authority, and scsynth adapter.
+    pub async fn execute_native_generation(&self, plan: NativeGenerationPlan) -> GenerationOutcome {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .execute(plan, &self.resource_manager, self.backend.as_ref())
+            .await
+    }
+
+    /// Revisit resource generations whose reader claims delayed their
+    /// post-commit release, retaining quarantine on any uncertain free.
+    pub async fn reap_native_resources(&self) -> crate::native_generation::CleanupHealth {
+        self.native_generation_coordinator
+            .lock()
+            .await
+            .reap_retired_resources(&self.resource_manager, self.backend.as_ref())
+            .await
     }
 }
 
@@ -3664,7 +5333,51 @@ impl<B: Backend> Runtime<B> {
 /// Handles are cheap to clone and can be shared across threads.
 #[derive(Clone)]
 pub struct RuntimeHandle {
-    tx: Sender<Message>,
+    tx: Sender<ContextualMessage>,
+    ledger: MutationLedger,
+    policy: Arc<parking_lot::Mutex<MutationPolicy>>,
+    async_mutation_in_flight: Arc<parking_lot::Mutex<Option<crate::mutation::AttemptId>>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QueueAdmissionFailure {
+    Full,
+    Closed,
+}
+
+impl QueueAdmissionFailure {
+    const fn code(self) -> &'static str {
+        match self {
+            Self::Full => "queue_full",
+            Self::Closed => "queue_closed",
+        }
+    }
+
+    const fn message(self) -> &'static str {
+        match self {
+            Self::Full => "the runtime mutation queue is full",
+            Self::Closed => "the runtime mutation queue is closed",
+        }
+    }
+
+    const fn error(self) -> Error {
+        match self {
+            Self::Full => Error::ChannelFull,
+            Self::Closed => Error::ChannelClosed,
+        }
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn classify_wasm_queue_error<T>(
+    error: &futures::channel::mpsc::TrySendError<T>,
+) -> QueueAdmissionFailure {
+    if error.is_full() {
+        QueueAdmissionFailure::Full
+    } else {
+        debug_assert!(error.is_disconnected());
+        QueueAdmissionFailure::Closed
+    }
 }
 
 impl RuntimeHandle {
@@ -3672,10 +5385,211 @@ impl RuntimeHandle {
     ///
     /// Returns an error if the runtime has been dropped.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx
-            .send_async(msg)
+        let submission = self.legacy_submission(&msg)?;
+        let receipt = self.submit(msg, submission).await?;
+        self.ensure_legacy_admitted(&receipt)
+    }
+
+    /// Submit a message through the canonical v1 best-effort receipt ledger.
+    ///
+    /// The returned receipt is `accepted` (pending) after queue admission. It
+    /// is never a terminal success claim. Runtime handling publishes later
+    /// transitions through the supplied sinks.
+    pub async fn submit(&self, msg: Message, submission: Submission) -> Result<MutationReceipt> {
+        self.submit_with_sinks(
+            msg,
+            submission,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        )
+        .await
+    }
+
+    /// Submit with caller-owned receipt and event sinks.
+    pub async fn submit_with_sinks(
+        &self,
+        msg: Message,
+        submission: Submission,
+        reply_sink: MutationReplySink,
+        event_sink: MutationEventSink,
+    ) -> Result<MutationReceipt> {
+        self.ensure_receipt_bearing(&msg)?;
+        let attempt = self.begin_attempt(submission, reply_sink, event_sink)?;
+        self.submit_attempt(msg, attempt).await
+    }
+
+    /// Allocate and publish the one canonical attempt that owns carrier
+    /// evaluation, eager effects, and eventual runtime submission.
+    pub fn begin_attempt(
+        &self,
+        submission: Submission,
+        reply_sink: MutationReplySink,
+        event_sink: MutationEventSink,
+    ) -> Result<MutationAttempt> {
+        let now = SystemTime::now();
+        let submitted = self
+            .ledger
+            .submit(submission, now)
+            .map_err(mutation_ledger_error)?;
+        let receipt = submitted.receipt().clone();
+        let context = MutationContext::new(
+            receipt.attempt_id,
+            receipt.runtime_epoch,
+            receipt.request.idempotency_key_present,
+            reply_sink,
+            event_sink,
+        );
+        publish_mutation_transition(&self.ledger, &context, &receipt, now);
+        let mut attempt = MutationAttempt {
+            context,
+            receipt,
+            active: matches!(submitted, SubmissionResult::New(_)),
+            pre_admission_effects: Vec::new(),
+        };
+        if attempt.active && self.is_fenced() {
+            attempt.receipt = self.reject_before_admission(
+                &attempt.context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                now,
+            )?;
+            attempt.active = false;
+        }
+        Ok(attempt)
+    }
+
+    /// Finish a carrier attempt before queue admission. An effect-free failure
+    /// is rejected; any recorded eager or bridge effect is a fenced Partial.
+    pub fn finish_attempt_failure(
+        &self,
+        mut attempt: MutationAttempt,
+        phase: FailurePhase,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<MutationReceipt> {
+        if !attempt.active {
+            return self
+                .ledger
+                .receipt(attempt.context.attempt_id())
+                .map_err(mutation_ledger_error);
+        }
+        let code = code.into();
+        let message = message.into();
+        let previous = attempt.receipt.previous_confirmed_revision;
+        let state = if attempt.pre_admission_effects.is_empty() {
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                phase,
+                code: code.clone(),
+                message: message.clone(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: previous,
+            }))
+        } else {
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+                phase,
+                code: code.clone(),
+                components: std::mem::take(&mut attempt.pre_admission_effects),
+                rollback: RollbackState::Unavailable,
+                fenced: true,
+                last_confirmed_revision: previous,
+            }))
+        };
+        let now = SystemTime::now();
+        let receipt = self
+            .ledger
+            .transition_with_diagnostics(
+                attempt.context.attempt_id(),
+                state,
+                vec![Diagnostic {
+                    severity: DiagnosticSeverity::Error,
+                    code,
+                    message,
+                    component_path: None,
+                    source_span: None,
+                }],
+                now,
+            )
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(&self.ledger, &attempt.context, &receipt, now);
+        Ok(receipt)
+    }
+
+    /// Submit an already allocated carrier attempt without creating another
+    /// attempt or revision.
+    pub async fn submit_attempt(
+        &self,
+        msg: Message,
+        attempt: MutationAttempt,
+    ) -> Result<MutationReceipt> {
+        if let Err(error) = self.ensure_receipt_bearing(&msg) {
+            self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
+                error_code(&error),
+                error.to_string(),
+            )?;
+            return Err(error);
+        }
+        if !attempt.active {
+            return self
+                .ledger
+                .receipt(attempt.context.attempt_id())
+                .map_err(mutation_ledger_error);
+        }
+        if self.is_fenced() {
+            return self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+            );
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let tx = self.tx.clone();
+            let permit = match tx.reserve().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    self.finish_attempt_failure(
+                        attempt,
+                        FailurePhase::Admission,
+                        "queue_closed",
+                        "the runtime mutation queue is closed",
+                    )?;
+                    return Err(Error::ChannelClosed);
+                }
+            };
+            if self.is_fenced() {
+                return self.finish_attempt_failure(
+                    attempt,
+                    FailurePhase::Admission,
+                    "runtime_fenced",
+                    "a partial or unknown mutation must be acknowledged before continuing",
+                );
+            }
+            let accepted = self.accept_after_queue_admission(&attempt.context)?;
+            if matches!(accepted.state, ReceiptState::Accepted { .. }) {
+                permit.send(ContextualMessage::new(attempt.context, msg));
+            }
+            return Ok(accepted);
+        }
+        #[cfg(target_arch = "wasm32")]
+        if self
+            .tx
+            .send_async(ContextualMessage::new(attempt.context.clone(), msg))
             .await
-            .map_err(|_| Error::ChannelClosed)
+            .is_err()
+        {
+            self.finish_attempt_failure(
+                attempt,
+                FailurePhase::Admission,
+                "queue_closed",
+                "the runtime mutation queue is closed",
+            )?;
+            return Err(Error::ChannelClosed);
+        }
+        #[cfg(target_arch = "wasm32")]
+        self.accept_after_queue_admission(&attempt.context)
     }
 
     /// Try to send a message without waiting.
@@ -3683,7 +5597,9 @@ impl RuntimeHandle {
     /// Returns an error if the channel is full or closed.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn try_send(&self, msg: Message) -> Result<()> {
-        self.tx.try_send(msg).map_err(|_| Error::ChannelClosed)
+        let submission = self.legacy_submission(&msg)?;
+        let receipt = self.try_submit(msg, submission)?;
+        self.ensure_legacy_admitted(&receipt)
     }
 
     /// Try to send a message without waiting.
@@ -3691,12 +5607,86 @@ impl RuntimeHandle {
     /// Returns an error if the channel is full or closed.
     #[cfg(target_arch = "wasm32")]
     pub fn try_send(&self, msg: Message) -> Result<()> {
-        use futures::Sink;
-        let mut tx = self.tx.clone();
-        // In WASM, try_send is not directly available, but we can use start_send
-        std::pin::Pin::new(&mut tx)
-            .start_send(msg)
-            .map_err(|_| Error::ChannelClosed)
+        let submission = self.legacy_submission(&msg)?;
+        let receipt = self.try_submit(msg, submission)?;
+        self.ensure_legacy_admitted(&receipt)
+    }
+
+    /// Non-blocking receipt-bearing admission with distinct full/closed truth.
+    pub fn try_submit(&self, msg: Message, submission: Submission) -> Result<MutationReceipt> {
+        self.ensure_receipt_bearing(&msg)?;
+        let now = SystemTime::now();
+        let submitted = self
+            .ledger
+            .submit(submission, now)
+            .map_err(mutation_ledger_error)?;
+        let receipt = submitted.receipt().clone();
+        let context = MutationContext::new(
+            receipt.attempt_id,
+            receipt.runtime_epoch,
+            receipt.request.idempotency_key_present,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        );
+        publish_mutation_transition(&self.ledger, &context, &receipt, now);
+        match submitted {
+            SubmissionResult::Rejected(_) | SubmissionResult::Replayed(_) => return Ok(receipt),
+            SubmissionResult::New(_) => {}
+        }
+        if self.is_fenced() {
+            return self.reject_before_admission(
+                &context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                now,
+            );
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let tx = self.tx.clone();
+            let permit = match tx.try_reserve() {
+                Ok(permit) => permit,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    return self.fail_queue_admission(
+                        &context,
+                        QueueAdmissionFailure::Full,
+                        SystemTime::now(),
+                    );
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    return self.fail_queue_admission(
+                        &context,
+                        QueueAdmissionFailure::Closed,
+                        SystemTime::now(),
+                    );
+                }
+            };
+            if self.is_fenced() {
+                return self.reject_before_admission(
+                    &context,
+                    "runtime_fenced",
+                    "a partial or unknown mutation must be acknowledged before continuing",
+                    SystemTime::now(),
+                );
+            }
+            let accepted = self.accept_after_queue_admission(&context)?;
+            if matches!(accepted.state, ReceiptState::Accepted { .. }) {
+                permit.send(ContextualMessage::new(context, msg));
+            }
+            Ok(accepted)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut tx = self.tx.clone();
+            match tx.try_send(ContextualMessage::new(context.clone(), msg)) {
+                Ok(()) => self.accept_after_queue_admission(&context),
+                Err(error) => self.fail_queue_admission(
+                    &context,
+                    classify_wasm_queue_error(&error),
+                    SystemTime::now(),
+                ),
+            }
+        }
     }
 
     /// Send a message, blocking the current thread until it's queued.
@@ -3707,7 +5697,61 @@ impl RuntimeHandle {
     /// Returns an error if the channel is closed.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn blocking_send(&self, msg: Message) -> Result<()> {
-        self.tx.blocking_send(msg).map_err(|_| Error::ChannelClosed)
+        self.ensure_receipt_bearing(&msg)?;
+        let submission = self.legacy_submission(&msg)?;
+        let now = SystemTime::now();
+        let submitted = self
+            .ledger
+            .submit(submission, now)
+            .map_err(mutation_ledger_error)?;
+        let receipt = submitted.receipt().clone();
+        let context = MutationContext::new(
+            receipt.attempt_id,
+            receipt.runtime_epoch,
+            receipt.request.idempotency_key_present,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        );
+        publish_mutation_transition(&self.ledger, &context, &receipt, now);
+        if !matches!(submitted, SubmissionResult::New(_)) {
+            return Ok(());
+        }
+        if self.is_fenced() {
+            self.reject_before_admission(
+                &context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                now,
+            )?;
+            return Err(Error::RuntimeFenced(receipt.attempt_id.to_string()));
+        }
+        let tx = self.tx.clone();
+        let permit = match futures::executor::block_on(tx.reserve()) {
+            Ok(permit) => permit,
+            Err(_) => {
+                self.reject_before_admission(
+                    &context,
+                    "queue_closed",
+                    "the runtime mutation queue is closed",
+                    SystemTime::now(),
+                )?;
+                return Err(Error::ChannelClosed);
+            }
+        };
+        if self.is_fenced() {
+            self.reject_before_admission(
+                &context,
+                "runtime_fenced",
+                "a partial or unknown mutation must be acknowledged before continuing",
+                SystemTime::now(),
+            )?;
+            return Err(Error::RuntimeFenced(receipt.attempt_id.to_string()));
+        }
+        let accepted = self.accept_after_queue_admission(&context)?;
+        if matches!(accepted.state, ReceiptState::Accepted { .. }) {
+            permit.send(ContextualMessage::new(context, msg));
+        }
+        Ok(())
     }
 
     /// Send a sync message and wait for the backend to complete all pending operations.
@@ -3718,10 +5762,374 @@ impl RuntimeHandle {
     ///
     /// Use this after queueing synthdefs to ensure they're loaded before creating synths.
     pub async fn sync_and_wait(&self) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            return self.sync_and_wait_timeout(Duration::from_secs(30)).await;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let (tx, rx) = crate::compat::oneshot();
+            self.send(Message::Sync(SyncMessage::SyncAndNotify { notify: tx }))
+                .await?;
+            rx.await
+                .map_err(|_| Error::ChannelClosed)?
+                .map_err(Error::backend_msg)
+        }
+    }
+
+    /// Result-bearing backend barrier with an explicit native deadline.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn sync_and_wait_timeout(&self, deadline: Duration) -> Result<()> {
         let (tx, rx) = crate::compat::oneshot();
-        self.send(Message::Sync(SyncMessage::SyncAndNotify { notify: tx }))
-            .await?;
-        rx.await.map_err(|_| Error::ChannelClosed)
+        let message = Message::Sync(SyncMessage::SyncAndNotify { notify: tx });
+        let submission = self.legacy_submission(&message)?;
+        let receipt = self.submit(message, submission).await?;
+        self.ensure_legacy_admitted(&receipt)?;
+        match timeout(deadline, rx).await {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(message))) => {
+                let latest = self.mutation_receipt(receipt.attempt_id)?;
+                if matches!(
+                    &latest.state,
+                    ReceiptState::Terminal(TerminalOutcome::Rejected(rejected))
+                        if rejected.code == "runtime_fenced"
+                ) {
+                    Err(Error::RuntimeFenced(receipt.attempt_id.to_string()))
+                } else {
+                    Err(Error::backend_msg(message))
+                }
+            }
+            Ok(Err(_)) => {
+                self.finish_incomplete_sync(
+                    receipt.attempt_id,
+                    "acknowledgement_lost",
+                    "the backend barrier completed without delivering its acknowledgement",
+                )?;
+                Err(Error::AcknowledgementLost)
+            }
+            Err(_) => {
+                self.finish_incomplete_sync(
+                    receipt.attempt_id,
+                    "sync_timeout",
+                    "the backend barrier did not complete before its deadline",
+                )?;
+                Err(Error::SyncTimeout)
+            }
+        }
+    }
+
+    /// Read the latest canonical receipt for an attempt.
+    pub fn mutation_receipt(
+        &self,
+        attempt_id: crate::mutation::AttemptId,
+    ) -> Result<MutationReceipt> {
+        self.ledger
+            .receipt(attempt_id)
+            .map_err(mutation_ledger_error)
+    }
+
+    /// Read the current mutation/fence status.
+    #[must_use]
+    pub fn mutation_status(&self) -> crate::mutation::RuntimeMutationStatus {
+        self.ledger.status(SystemTime::now())
+    }
+
+    /// Request cancellation of a pending mutation attempt.
+    pub fn cancel_mutation(
+        &self,
+        attempt_id: crate::mutation::AttemptId,
+    ) -> crate::mutation::CancelResult {
+        self.ledger.cancel(attempt_id, SystemTime::now())
+    }
+
+    /// Describe mutation receipt, ordering, and confirmation capabilities.
+    #[must_use]
+    pub fn mutation_capabilities(&self) -> crate::mutation::MutationCapabilities {
+        self.ledger.capabilities()
+    }
+
+    /// Read retained receipt transitions after an event sequence.
+    #[must_use]
+    pub fn mutation_events_after(
+        &self,
+        epoch: crate::mutation::RuntimeEpoch,
+        after: Option<crate::mutation::EventSequence>,
+    ) -> crate::mutation::EventQueryResult {
+        self.ledger.events_after(epoch, after, SystemTime::now())
+    }
+
+    /// Explicitly acknowledge the current fenced partial and permit continued
+    /// v1 best-effort mutation. A later partial establishes a new fence.
+    pub fn continue_best_effort(&self, partial_attempt: crate::mutation::AttemptId) -> Result<()> {
+        let receipt = self
+            .ledger
+            .receipt(partial_attempt)
+            .map_err(mutation_ledger_error)?;
+        let is_fenced_partial = matches!(
+            &receipt.state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        );
+        let status_matches = match self.ledger.status(SystemTime::now()).live_state {
+            LiveState::Partial { revision, fenced } => fenced && receipt.revision == Some(revision),
+            LiveState::PreAdmissionPartial { attempt_id, fenced } => {
+                fenced && attempt_id == partial_attempt
+            }
+            LiveState::Clean | LiveState::Unknown { .. } => false,
+        };
+        if !is_fenced_partial || !status_matches {
+            return Err(Error::InvalidConfig(
+                "continue_best_effort requires the current fenced partial receipt".into(),
+            ));
+        }
+        self.policy.lock().acknowledged_fence = Some(partial_attempt);
+        Ok(())
+    }
+
+    fn legacy_submission(&self, msg: &Message) -> Result<Submission> {
+        let semantic = serde_json::json!({ "message_type": msg.type_name() });
+        Ok(Submission {
+            kind: MutationKind::Command {
+                domain: msg.domain(),
+                operation: msg.operation().to_lowercase(),
+            },
+            source: MutationSource::Rhai {
+                engine_id: "compat.vibelang.v1.runtime_handle".into(),
+            },
+            caller_namespace: "compat.vibelang.v1.local".into(),
+            idempotency_key: None,
+            require_idempotency_key: false,
+            retry_epoch: Some(self.ledger.runtime_epoch()),
+            expected_revision: None,
+            atomicity: Atomicity::BestEffort,
+            supersession: SupersessionPolicy::Fifo,
+            material: RequestMaterial::from_values(semantic, None),
+        })
+    }
+
+    fn ensure_receipt_bearing(&self, msg: &Message) -> Result<()> {
+        match msg.class() {
+            MessageClass::ReceiptBearingMutation => Ok(()),
+            MessageClass::ReceiptLinkedCompletion => Err(Error::InvalidConfig(format!(
+                "{} is an internal completion and must retain its parent mutation context",
+                msg.type_name()
+            ))),
+            MessageClass::Internal => Err(Error::InvalidConfig(format!(
+                "{} is runtime maintenance and cannot create a mutation receipt",
+                msg.type_name()
+            ))),
+        }
+    }
+
+    fn ensure_legacy_admitted(&self, receipt: &MutationReceipt) -> Result<()> {
+        match &receipt.state {
+            ReceiptState::Accepted { .. } => Ok(()),
+            ReceiptState::Terminal(TerminalOutcome::Rejected(rejected))
+                if rejected.code == "runtime_fenced" =>
+            {
+                Err(Error::RuntimeFenced(receipt.attempt_id.to_string()))
+            }
+            ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) => {
+                Err(Error::MutationLedger(format!(
+                    "mutation rejected during admission: {}",
+                    rejected.code
+                )))
+            }
+            state => Err(Error::MutationLedger(format!(
+                "legacy mutation did not reach queue admission: {state:?}"
+            ))),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn finish_incomplete_sync(
+        &self,
+        attempt_id: crate::mutation::AttemptId,
+        code: &'static str,
+        message: &'static str,
+    ) -> Result<()> {
+        clear_async_mutation(&self.async_mutation_in_flight, attempt_id);
+        let receipt = self
+            .ledger
+            .receipt(attempt_id)
+            .map_err(mutation_ledger_error)?;
+        if receipt.state.is_terminal() {
+            return Ok(());
+        }
+        let context = MutationContext::new(
+            receipt.attempt_id,
+            receipt.runtime_epoch,
+            receipt.request.idempotency_key_present,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        );
+        let context = match receipt.revision {
+            Some(revision) => context
+                .with_revision(revision)
+                .map_err(Error::MutationLedger)?,
+            None => context,
+        };
+        match finish_contextual_receipt(
+            &self.ledger,
+            &context,
+            "sync/backend_barrier",
+            "sync_and_wait",
+            Some(WorkFailure {
+                code,
+                message: message.into(),
+                definitely_no_effect: false,
+                phase: FailurePhase::BackendBarrier,
+            }),
+            Confirmation::BackendBarrier {
+                backend: "runtime".into(),
+                token: attempt_id.to_string(),
+            },
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                let latest = self
+                    .ledger
+                    .receipt(attempt_id)
+                    .map_err(mutation_ledger_error)?;
+                if latest.state.is_terminal() {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    fn accept_after_queue_admission(&self, context: &MutationContext) -> Result<MutationReceipt> {
+        let now = SystemTime::now();
+        let receipt = self
+            .ledger
+            .accept(context.attempt_id(), None, now)
+            .map_err(mutation_ledger_error)?;
+        publish_mutation_transition(&self.ledger, context, &receipt, now);
+        Ok(receipt)
+    }
+
+    fn reject_before_admission(
+        &self,
+        context: &MutationContext,
+        code: &str,
+        message: &str,
+        now: SystemTime,
+    ) -> Result<MutationReceipt> {
+        reject_contextual_admission(&self.ledger, context, code, message, now)
+    }
+
+    fn fail_queue_admission(
+        &self,
+        context: &MutationContext,
+        failure: QueueAdmissionFailure,
+        now: SystemTime,
+    ) -> Result<MutationReceipt> {
+        self.reject_before_admission(context, failure.code(), failure.message(), now)?;
+        Err(failure.error())
+    }
+
+    fn is_fenced(&self) -> bool {
+        mutation_is_fenced(&self.ledger, &self.policy)
+    }
+}
+
+fn reject_contextual_admission(
+    ledger: &MutationLedger,
+    context: &MutationContext,
+    code: &str,
+    message: &str,
+    now: SystemTime,
+) -> Result<MutationReceipt> {
+    let previous = ledger
+        .receipt(context.attempt_id())
+        .map_err(mutation_ledger_error)?
+        .previous_confirmed_revision;
+    let receipt = ledger
+        .transition(
+            context.attempt_id(),
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected {
+                phase: FailurePhase::Admission,
+                code: code.into(),
+                message: message.into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: previous,
+            })),
+            now,
+        )
+        .map_err(mutation_ledger_error)?;
+    publish_mutation_transition(ledger, context, &receipt, now);
+    Ok(receipt)
+}
+
+fn mutation_is_fenced(
+    ledger: &MutationLedger,
+    policy: &parking_lot::Mutex<MutationPolicy>,
+) -> bool {
+    let status = ledger.status(SystemTime::now());
+    let fenced = match status.live_state {
+        LiveState::Partial { fenced, .. }
+        | LiveState::PreAdmissionPartial { fenced, .. }
+        | LiveState::Unknown { fenced, .. } => fenced,
+        LiveState::Clean => false,
+    };
+    if !fenced {
+        return false;
+    }
+    let acknowledged = policy.lock().acknowledged_fence;
+    acknowledged.is_none_or(|attempt_id| {
+        let Ok(receipt) = ledger.receipt(attempt_id) else {
+            return true;
+        };
+        match status.live_state {
+            LiveState::Partial { revision, fenced } => {
+                !fenced || receipt.revision != Some(revision)
+            }
+            LiveState::PreAdmissionPartial {
+                attempt_id: current,
+                fenced,
+            } => !fenced || current != attempt_id,
+            LiveState::Unknown { .. } => true,
+            LiveState::Clean => false,
+        }
+    })
+}
+
+fn clear_async_mutation(
+    in_flight: &parking_lot::Mutex<Option<crate::mutation::AttemptId>>,
+    attempt_id: crate::mutation::AttemptId,
+) {
+    let mut current = in_flight.lock();
+    if *current == Some(attempt_id) {
+        *current = None;
+    }
+}
+
+fn mutation_ledger_error(error: crate::mutation::LedgerError) -> Error {
+    Error::MutationLedger(error.to_string())
+}
+
+fn publish_mutation_transition(
+    ledger: &MutationLedger,
+    context: &MutationContext,
+    receipt: &MutationReceipt,
+    now: SystemTime,
+) {
+    context.reply(receipt.clone());
+    let after = receipt
+        .event_sequence
+        .get()
+        .checked_sub(1)
+        .and_then(|sequence| crate::mutation::EventSequence::new(sequence).ok());
+    if let EventQueryResult::Events { events } =
+        ledger.events_after(receipt.runtime_epoch, after, now)
+    {
+        if let Some(event) = events
+            .into_iter()
+            .find(|event| event.event_sequence == receipt.event_sequence)
+        {
+            context.event(event);
+        }
     }
 }
 
@@ -3732,7 +6140,8 @@ mod tests {
     use crate::handlers::RouteDest;
     use crate::reload::ParamRouteKind;
     use crate::state::GroupState;
-    use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
+    use crate::traits::SampleConfig;
+    use crate::types::{Beat, BufferId, BusId, GroupId, NodeId, ParamMap, SampleId, VoiceId};
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::sync::{Arc, Mutex};
@@ -5084,6 +7493,14 @@ mod tests {
         /// node N after free+respawn" even when the ID pool recycles a freed
         /// id back into the next create.
         events: std::sync::Mutex<Vec<BackendEvent>>,
+        fail_create_group: std::sync::atomic::AtomicBool,
+        load_buffer_log: std::sync::Mutex<Vec<BufferId>>,
+        free_buffer_log: std::sync::Mutex<Vec<BufferId>>,
+        load_mode: std::sync::atomic::AtomicU8,
+        loads_started: std::sync::atomic::AtomicU32,
+        load_release: tokio::sync::Notify,
+        sync_mode: std::sync::atomic::AtomicU8,
+        sync_release: tokio::sync::Notify,
         faithful_graph: Option<Arc<std::sync::Mutex<FaithfulGraph>>>,
         ended_nodes: std::sync::Mutex<HashSet<NodeId>>,
     }
@@ -5132,6 +7549,14 @@ mod tests {
                 free_node_log: std::sync::Mutex::new(Vec::new()),
                 map_param_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
+                fail_create_group: std::sync::atomic::AtomicBool::new(false),
+                load_buffer_log: std::sync::Mutex::new(Vec::new()),
+                free_buffer_log: std::sync::Mutex::new(Vec::new()),
+                load_mode: std::sync::atomic::AtomicU8::new(0),
+                loads_started: std::sync::atomic::AtomicU32::new(0),
+                load_release: tokio::sync::Notify::new(),
+                sync_mode: std::sync::atomic::AtomicU8::new(0),
+                sync_release: tokio::sync::Notify::new(),
                 faithful_graph: None,
                 ended_nodes: std::sync::Mutex::new(HashSet::new()),
             }
@@ -5447,6 +7872,12 @@ mod tests {
             target: NodeId,
             action: AddAction,
         ) -> std::result::Result<(), Self::Error> {
+            if self
+                .fail_create_group
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(MockError);
+            }
             self.execute_due();
             self.ended_nodes.lock().unwrap().remove(&node);
             if let Some(graph) = &self.faithful_graph {
@@ -5543,9 +7974,18 @@ mod tests {
 
         async fn load_buffer(
             &self,
-            _id: BufferId,
+            id: BufferId,
             _path: &Path,
         ) -> std::result::Result<BufferInfo, Self::Error> {
+            self.load_buffer_log.lock().unwrap().push(id);
+            self.loads_started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            match self.load_mode.load(std::sync::atomic::Ordering::SeqCst) {
+                0 => {}
+                1 => return Err(MockError),
+                2 => self.load_release.notified().await,
+                mode => panic!("unsupported test load mode {mode}"),
+            }
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -5574,7 +8014,8 @@ mod tests {
             Ok(())
         }
 
-        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+        async fn free_buffer(&self, id: BufferId) -> std::result::Result<(), Self::Error> {
+            self.free_buffer_log.lock().unwrap().push(id);
             Ok(())
         }
 
@@ -5584,7 +8025,16 @@ mod tests {
 
         async fn sync(&self) -> std::result::Result<(), Self::Error> {
             self.execute_due();
-            Ok(())
+            match self.sync_mode.load(std::sync::atomic::Ordering::SeqCst) {
+                0 => Ok(()),
+                1 => Err(MockError),
+                2 => std::future::pending().await,
+                3 => {
+                    self.sync_release.notified().await;
+                    Ok(())
+                }
+                mode => panic!("unsupported test sync mode {mode}"),
+            }
         }
     }
 
@@ -9351,5 +11801,1242 @@ mod tests {
             rx.try_recv().is_err(),
             "a single keyboard note should produce exactly one device event"
         );
+    }
+
+    fn disable_test_midi_threads<B: Backend>(runtime: &mut Runtime<B>) {
+        #[cfg(feature = "midi")]
+        {
+            runtime.clock_thread_started = true;
+        }
+    }
+
+    #[tokio::test]
+    async fn receipt_submission_returns_accepted_before_runtime_work_and_preserves_context() {
+        let mut runtime = Runtime::new(MockBackend);
+        disable_test_midi_threads(&mut runtime);
+        let handle = runtime.handle();
+        let replies = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let events = Arc::new(Mutex::new(Vec::<crate::mutation::ReceiptEvent>::new()));
+        let reply_capture = replies.clone();
+        let event_capture = events.clone();
+        let message = Message::Transport(TransportMessage::SetTempo { bpm: 137.0 });
+        let submission = handle.legacy_submission(&message).unwrap();
+
+        let accepted = handle
+            .submit_with_sinks(
+                message,
+                submission,
+                MutationReplySink::new(move |receipt| {
+                    reply_capture.lock().unwrap().push(receipt);
+                }),
+                MutationEventSink::new(move |event| {
+                    event_capture.lock().unwrap().push(event);
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(accepted.state, ReceiptState::Accepted { .. }));
+        assert_eq!(
+            handle.mutation_receipt(accepted.attempt_id).unwrap().state,
+            accepted.state
+        );
+        runtime.tick().await;
+
+        let replies = replies.lock().unwrap().clone();
+        assert_eq!(replies.len(), 5);
+        assert!(matches!(replies[0].state, ReceiptState::Evaluating { .. }));
+        assert!(matches!(replies[1].state, ReceiptState::Accepted { .. }));
+        assert!(matches!(replies[2].state, ReceiptState::Planning));
+        assert!(matches!(replies[3].state, ReceiptState::Committing { .. }));
+        assert!(matches!(
+            replies[4].state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        assert!(replies
+            .iter()
+            .all(|receipt| receipt.attempt_id == accepted.attempt_id));
+        assert!(replies[1..]
+            .iter()
+            .all(|receipt| receipt.revision == accepted.revision));
+        let events = events.lock().unwrap().clone();
+        assert_eq!(events.len(), replies.len());
+        assert!(events
+            .iter()
+            .all(|event| event.receipt.attempt_id == accepted.attempt_id));
+    }
+
+    #[tokio::test]
+    async fn preallocated_attempt_submits_one_identity_and_one_revision() {
+        let mut runtime = Runtime::new(MockBackend);
+        disable_test_midi_threads(&mut runtime);
+        let handle = runtime.handle();
+        let replies = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let reply_capture = Arc::clone(&replies);
+        let message = Message::Transport(TransportMessage::SetTempo { bpm: 139.0 });
+        let submission = handle.legacy_submission(&message).unwrap();
+        let attempt = handle
+            .begin_attempt(
+                submission,
+                MutationReplySink::new(move |receipt| {
+                    reply_capture.lock().unwrap().push(receipt);
+                }),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+
+        assert!(attempt.is_active());
+        assert!(attempt.receipt().revision.is_none());
+        let accepted = handle.submit_attempt(message, attempt).await.unwrap();
+        assert_eq!(accepted.attempt_id, attempt_id);
+        let revision = accepted
+            .revision
+            .expect("queue admission allocates revision");
+
+        runtime.tick().await;
+        let terminal = handle.mutation_receipt(attempt_id).unwrap();
+        assert!(matches!(
+            terminal.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        assert_eq!(terminal.revision, Some(revision));
+        let replies = replies.lock().unwrap();
+        assert!(replies
+            .iter()
+            .all(|receipt| receipt.attempt_id == attempt_id));
+        assert!(replies
+            .iter()
+            .filter_map(|receipt| receipt.revision)
+            .all(|current| current == revision));
+    }
+
+    #[test]
+    fn preallocated_effect_free_failure_is_rejected_without_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+
+        let receipt = handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Parse,
+                "script_parse_failed",
+                "unexpected token at line 1",
+            )
+            .unwrap();
+
+        assert_eq!(receipt.attempt_id, attempt_id);
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = receipt.state else {
+            panic!("effect-free carrier failure must be rejected");
+        };
+        assert_eq!(rejected.phase, FailurePhase::Parse);
+        assert_eq!(rejected.code, "script_parse_failed");
+        assert_eq!(rejected.message, "unexpected token at line 1");
+    }
+
+    #[test]
+    fn preallocated_eager_effect_failure_is_fenced_partial_without_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let mut attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        attempt
+            .record_uncertain_effect(
+                "carrier/evaluation",
+                "evaluate",
+                "extension_effect_uncertain",
+                "an eager extension ran before the script failed",
+            )
+            .unwrap();
+
+        let receipt = handle
+            .finish_attempt_failure(
+                attempt,
+                FailurePhase::Evaluate,
+                "script_evaluation_failed",
+                "script aborted",
+            )
+            .unwrap();
+
+        assert_eq!(receipt.attempt_id, attempt_id);
+        assert!(receipt.revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("failure after an eager effect must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.phase, FailurePhase::Evaluate);
+        assert_eq!(partial.code, "script_evaluation_failed");
+        assert_eq!(partial.components.len(), 1);
+        assert_eq!(partial.components[0].path, "carrier/evaluation");
+        assert_eq!(partial.components[0].state, ComponentState::Uncertain);
+    }
+
+    #[tokio::test]
+    async fn preallocated_effectful_queue_failure_retains_partial_receipt() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Transport(TransportMessage::Start);
+        let mut attempt = handle
+            .begin_attempt(
+                handle.legacy_submission(&message).unwrap(),
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .unwrap();
+        let attempt_id = attempt.receipt().attempt_id;
+        attempt
+            .record_applied_effect(
+                "carrier/bridge/synthdef/test",
+                "load",
+                Confirmation::ExternalAcknowledgment {
+                    system: "test_bridge".into(),
+                    token: "test".into(),
+                },
+            )
+            .unwrap();
+        drop(runtime);
+
+        assert!(matches!(
+            handle.submit_attempt(message, attempt).await,
+            Err(Error::ChannelClosed)
+        ));
+        let receipt = handle.mutation_receipt(attempt_id).unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("queue failure after bridge delivery must remain partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.code, "queue_closed");
+        assert_eq!(partial.components[0].state, ComponentState::Applied);
+    }
+
+    #[tokio::test]
+    async fn queue_full_and_closed_are_distinct_and_never_allocate_failed_revision() {
+        let runtime = Runtime::new_with_channel_capacity(MockBackend, 1);
+        let handle = runtime.handle();
+        let first = Message::Transport(TransportMessage::Start);
+        let first_receipt = handle
+            .try_submit(first.clone(), handle.legacy_submission(&first).unwrap())
+            .unwrap();
+        assert!(matches!(first_receipt.state, ReceiptState::Accepted { .. }));
+        let accepted_through = handle.mutation_status().accepted_through;
+
+        let full = Message::Transport(TransportMessage::Stop);
+        assert!(matches!(
+            handle.try_submit(full.clone(), handle.legacy_submission(&full).unwrap()),
+            Err(Error::ChannelFull)
+        ));
+        assert_eq!(handle.mutation_status().accepted_through, accepted_through);
+
+        let closed_runtime = Runtime::new_with_channel_capacity(MockBackend, 1);
+        let closed_handle = closed_runtime.handle();
+        drop(closed_runtime);
+        let closed_replies = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let reply_capture = closed_replies.clone();
+        let closed = Message::Transport(TransportMessage::Start);
+        let closed_submission = closed_handle.legacy_submission(&closed).unwrap();
+        assert!(matches!(
+            closed_handle
+                .submit_with_sinks(
+                    closed,
+                    closed_submission,
+                    MutationReplySink::new(move |receipt| {
+                        reply_capture.lock().unwrap().push(receipt);
+                    }),
+                    MutationEventSink::default(),
+                )
+                .await,
+            Err(Error::ChannelClosed)
+        ));
+        assert_eq!(closed_handle.mutation_status().accepted_through, None);
+        let closed_replies = closed_replies.lock().unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) =
+            &closed_replies.last().unwrap().state
+        else {
+            panic!("closed queue must publish a rejected receipt");
+        };
+        assert_eq!(rejected.code, "queue_closed");
+    }
+
+    #[test]
+    fn wasm_queue_faults_publish_distinct_canonical_codes_and_errors() {
+        let (mut full_tx, _full_rx) = futures::channel::mpsc::channel(0);
+        full_tx.try_send(()).unwrap();
+        let full = classify_wasm_queue_error(&full_tx.try_send(()).unwrap_err());
+
+        let (mut closed_tx, closed_rx) = futures::channel::mpsc::channel(0);
+        drop(closed_rx);
+        let closed = classify_wasm_queue_error(&closed_tx.try_send(()).unwrap_err());
+
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        for (failure, expected_code, expected_message) in [
+            (full, "queue_full", "the runtime mutation queue is full"),
+            (
+                closed,
+                "queue_closed",
+                "the runtime mutation queue is closed",
+            ),
+        ] {
+            let message = Message::Transport(TransportMessage::Start);
+            let attempt = handle
+                .begin_attempt(
+                    handle.legacy_submission(&message).unwrap(),
+                    MutationReplySink::default(),
+                    MutationEventSink::default(),
+                )
+                .unwrap();
+            let attempt_id = attempt.receipt().attempt_id;
+            let context = attempt.context.clone();
+
+            let error = handle
+                .fail_queue_admission(&context, failure, SystemTime::now())
+                .unwrap_err();
+            match failure {
+                QueueAdmissionFailure::Full => assert!(matches!(error, Error::ChannelFull)),
+                QueueAdmissionFailure::Closed => assert!(matches!(error, Error::ChannelClosed)),
+            }
+
+            let receipt = handle.mutation_receipt(attempt_id).unwrap();
+            assert_eq!(receipt.attempt_id, attempt_id);
+            assert!(receipt.revision.is_none());
+            let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = receipt.state else {
+                panic!("WASM queue admission failure must be rejected");
+            };
+            assert_eq!(rejected.phase, FailurePhase::Admission);
+            assert_eq!(rejected.code, expected_code);
+            assert_eq!(rejected.message, expected_message);
+        }
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn internal_and_linked_messages_cannot_create_public_receipts() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let internal = Message::Midi(MidiMessage::ReconcileInputs {
+            present: std::collections::HashSet::new(),
+        });
+        assert!(matches!(
+            handle.try_send(internal),
+            Err(Error::InvalidConfig(_))
+        ));
+        let linked = Message::Reload(Box::new(ReloadMessage::ApplyStaged {
+            state: reload::ScriptState::new(),
+            assets: reload::StagedReloadAssets::default(),
+        }));
+        assert!(matches!(
+            handle.try_send(linked),
+            Err(Error::InvalidConfig(_))
+        ));
+        assert_eq!(handle.mutation_status().accepted_through, None);
+    }
+
+    #[tokio::test]
+    async fn handler_failures_reject_pre_effect_or_fence_uncertain_backend_effects() {
+        let mut pre_effect_runtime = Runtime::new(MockBackend);
+        disable_test_midi_threads(&mut pre_effect_runtime);
+        let pre_effect_handle = pre_effect_runtime.handle();
+        let missing = Message::Group(GroupMessage::Delete {
+            id: GroupId::new(404),
+        });
+        let missing_receipt = pre_effect_handle
+            .submit(
+                missing.clone(),
+                pre_effect_handle.legacy_submission(&missing).unwrap(),
+            )
+            .await
+            .unwrap();
+        pre_effect_runtime.tick().await;
+        let missing_receipt = pre_effect_handle
+            .mutation_receipt(missing_receipt.attempt_id)
+            .unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = missing_receipt.state
+        else {
+            panic!("missing group must be rejected before effect");
+        };
+        assert_eq!(rejected.code, "group_not_found");
+        assert!(matches!(
+            pre_effect_handle.mutation_status().live_state,
+            LiveState::Clean
+        ));
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "faulted".into(),
+            parent: None,
+        });
+        let accepted = handle
+            .submit(create.clone(), handle.legacy_submission(&create).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        let partial = handle.mutation_receipt(accepted.attempt_id).unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial_outcome)) = &partial.state
+        else {
+            panic!("backend create failure must be partial");
+        };
+        assert!(partial_outcome.fenced);
+        assert_eq!(partial_outcome.code, "backend_rejected");
+
+        let blocked = Message::Transport(TransportMessage::Start);
+        let blocked = handle
+            .submit(blocked.clone(), handle.legacy_submission(&blocked).unwrap())
+            .await
+            .unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) = blocked.state else {
+            panic!("mutation while fenced must be rejected");
+        };
+        assert_eq!(rejected.code, "runtime_fenced");
+        let legacy_blocked = Message::Transport(TransportMessage::Stop);
+        assert!(matches!(
+            handle.try_send(legacy_blocked),
+            Err(Error::RuntimeFenced(_))
+        ));
+        let legacy_blocked = Message::Transport(TransportMessage::Start);
+        assert!(matches!(
+            handle.send(legacy_blocked).await,
+            Err(Error::RuntimeFenced(_))
+        ));
+
+        handle.continue_best_effort(partial.attempt_id).unwrap();
+        runtime
+            .backend
+            .fail_create_group
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let resumed = Message::Transport(TransportMessage::SetTempo { bpm: 123.0 });
+        let resumed = handle
+            .submit(resumed.clone(), handle.legacy_submission(&resumed).unwrap())
+            .await
+            .unwrap();
+        assert!(matches!(resumed.state, ReceiptState::Accepted { .. }));
+        runtime.tick().await;
+        assert!(matches!(
+            handle.mutation_receipt(resumed.attempt_id).unwrap().state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn lower_boundary_applied_then_higher_partial_preserves_newer_fence() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .sync_mode
+            .store(3, std::sync::atomic::Ordering::SeqCst);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let sync_waiter = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        let lower_attempt = wait_for_one_pending(&handle).await;
+        runtime.tick().await;
+
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "faulted".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit(create.clone(), handle.legacy_submission(&create).unwrap())
+            .await
+            .unwrap();
+
+        runtime.backend.sync_release.notify_one();
+        sync_waiter.await.unwrap().unwrap();
+        let lower = handle.mutation_receipt(lower_attempt).unwrap();
+        assert!(matches!(
+            lower.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        runtime.tick().await;
+
+        let higher = handle.mutation_receipt(higher.attempt_id).unwrap();
+        assert!(matches!(
+            higher.state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, lower.revision);
+        assert_eq!(
+            status.live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn higher_partial_then_lower_boundary_applied_requires_exact_acknowledgement() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .sync_mode
+            .store(3, std::sync::atomic::Ordering::SeqCst);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let sync_waiter = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        let lower_attempt = wait_for_one_pending(&handle).await;
+        runtime.tick().await;
+
+        let transitions = Arc::new(Mutex::new(Vec::<MutationReceipt>::new()));
+        let transition_capture = transitions.clone();
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "faulted".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit_with_sinks(
+                create.clone(),
+                handle.legacy_submission(&create).unwrap(),
+                MutationReplySink::new(move |receipt| {
+                    transition_capture.lock().unwrap().push(receipt);
+                }),
+                MutationEventSink::default(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let transitions = transitions.lock().unwrap().clone();
+        assert_eq!(transitions.len(), 5);
+        assert!(matches!(
+            transitions[0].state,
+            ReceiptState::Evaluating { .. }
+        ));
+        assert!(matches!(
+            transitions[1].state,
+            ReceiptState::Accepted { .. }
+        ));
+        assert!(matches!(transitions[2].state, ReceiptState::Planning));
+        assert!(matches!(
+            transitions[3].state,
+            ReceiptState::Committing {
+                phase: CommitPhase::Reconcile
+            }
+        ));
+        assert!(matches!(
+            transitions[4].state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+
+        runtime.backend.sync_release.notify_one();
+        sync_waiter.await.unwrap().unwrap();
+        let lower = handle.mutation_receipt(lower_attempt).unwrap();
+        assert!(matches!(
+            lower.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, lower.revision);
+        assert_eq!(
+            status.live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+
+        let blocked = Message::Transport(TransportMessage::Start);
+        let blocked = handle
+            .submit(blocked.clone(), handle.legacy_submission(&blocked).unwrap())
+            .await
+            .unwrap();
+        assert!(matches!(
+            blocked.state,
+            ReceiptState::Terminal(TerminalOutcome::Rejected(Rejected { ref code, .. }))
+                if code == "runtime_fenced"
+        ));
+
+        handle.continue_best_effort(higher.attempt_id).unwrap();
+        runtime
+            .backend
+            .fail_create_group
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let resumed = Message::Transport(TransportMessage::SetTempo { bpm: 123.0 });
+        let resumed = handle
+            .submit(resumed.clone(), handle.legacy_submission(&resumed).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        let resumed = handle.mutation_receipt(resumed.attempt_id).unwrap();
+        assert!(matches!(
+            resumed.state,
+            ReceiptState::Terminal(TerminalOutcome::Applied(_))
+        ));
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, resumed.revision);
+        assert_eq!(status.live_state, LiveState::Clean);
+    }
+
+    #[tokio::test]
+    async fn older_applied_completion_cannot_regress_confirmed_revision() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let lower_message = Message::Transport(TransportMessage::SetTempo { bpm: 120.0 });
+        let higher_message = Message::Transport(TransportMessage::Start);
+        let lower = handle
+            .submit(
+                lower_message.clone(),
+                handle.legacy_submission(&lower_message).unwrap(),
+            )
+            .await
+            .unwrap();
+        let higher = handle
+            .submit(
+                higher_message.clone(),
+                handle.legacy_submission(&higher_message).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let lower_path = lower_message.component_path();
+        let lower_action = lower_message.operation().to_lowercase();
+        let higher_path = higher_message.component_path();
+        let higher_action = higher_message.operation().to_lowercase();
+        handle
+            .ledger
+            .begin_planning(
+                lower.attempt_id,
+                vec![PlannedComponent {
+                    path: lower_path.clone(),
+                    action: lower_action.clone(),
+                }],
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                lower.attempt_id,
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .begin_concurrent_planning(
+                higher.attempt_id,
+                vec![PlannedComponent {
+                    path: higher_path.clone(),
+                    action: higher_action.clone(),
+                }],
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                higher.attempt_id,
+                ReceiptState::Committing {
+                    phase: CommitPhase::Reconcile,
+                },
+                SystemTime::now(),
+            )
+            .unwrap();
+
+        let applied = |path: String, action: String| {
+            let effective_at = EffectiveAt {
+                observed_at: Timestamp::from_system_time(SystemTime::now()),
+                musical_beat: None,
+                backend_time_seconds: None,
+            };
+            ReceiptState::Terminal(TerminalOutcome::Applied(Applied {
+                effective_at: effective_at.clone(),
+                confirmations: vec![Confirmation::RuntimeCommit],
+                components: vec![ComponentOutcome {
+                    path,
+                    action,
+                    state: ComponentState::Applied,
+                    effective_at: Some(effective_at),
+                    confirmation: Some(Confirmation::RuntimeCommit),
+                    diagnostic: None,
+                }],
+                audible_tail_until: None,
+            }))
+        };
+        handle
+            .ledger
+            .transition(
+                higher.attempt_id,
+                applied(higher_path, higher_action),
+                SystemTime::now(),
+            )
+            .unwrap();
+        handle
+            .ledger
+            .transition(
+                lower.attempt_id,
+                applied(lower_path, lower_action),
+                SystemTime::now(),
+            )
+            .unwrap();
+
+        let status = handle.mutation_status();
+        assert_eq!(status.last_confirmed_revision, higher.revision);
+        assert_eq!(status.live_state, LiveState::Clean);
+    }
+
+    #[tokio::test]
+    async fn every_reload_phase_failure_has_direct_fenced_partial_receipt_coverage() {
+        for (failed_index, &(failed_path, failed_action)) in
+            RELOAD_PHASE_COMPONENTS.iter().enumerate()
+        {
+            let runtime = Runtime::new(MockBackend);
+            let handle = runtime.handle();
+            let message = Message::Reload(Box::new(ReloadMessage::Apply {
+                state: reload::ScriptState::new(),
+            }));
+            let accepted = handle
+                .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+                .await
+                .unwrap();
+            let context = MutationContext::new(
+                accepted.attempt_id,
+                accepted.runtime_epoch,
+                accepted.request.idempotency_key_present,
+                MutationReplySink::default(),
+                MutationEventSink::default(),
+            )
+            .with_revision(accepted.revision.unwrap())
+            .unwrap();
+            runtime
+                .begin_contextual_components(
+                    &context,
+                    RELOAD_PHASE_COMPONENTS
+                        .iter()
+                        .map(|(path, action)| PlannedComponent {
+                            path: (*path).into(),
+                            action: (*action).into(),
+                        })
+                        .collect(),
+                    false,
+                )
+                .unwrap();
+            let mut execution = ReloadExecution {
+                result: Ok(()),
+                failures: Vec::new(),
+                staging: Vec::new(),
+                phases: RELOAD_PHASE_COMPONENTS
+                    .iter()
+                    .map(|(path, action)| ReloadPhaseOutcome {
+                        path,
+                        action,
+                        failures: Vec::new(),
+                        started: true,
+                    })
+                    .collect(),
+            };
+            execution.phases[failed_index]
+                .failures
+                .push(ReloadPhaseFailure::new(
+                    "injected_reload_phase_failure",
+                    failed_path,
+                ));
+
+            let receipt = runtime.finish_reload_work(&context, &execution).unwrap();
+            let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+                panic!("{failed_path} failure must produce a partial receipt");
+            };
+            assert!(partial.fenced, "{failed_path} failure must fence");
+            assert_eq!(partial.code, "injected_reload_phase_failure");
+            assert_eq!(partial.components.len(), RELOAD_PHASE_COMPONENTS.len());
+            let failed = &partial.components[failed_index];
+            assert_eq!(failed.path, failed_path);
+            assert_eq!(failed.action, failed_action);
+            assert_eq!(failed.state, ComponentState::Uncertain);
+            assert_eq!(
+                failed.diagnostic.as_ref().unwrap().code,
+                "injected_reload_phase_failure"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reload_failure_reports_exact_phase_components_and_fences() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let mut state = reload::ScriptState::new();
+        state.add_group(GroupId::new(1), reload::GroupConfig::default());
+        let reload = Message::Reload(Box::new(ReloadMessage::Apply { state }));
+        let accepted = handle
+            .submit(reload.clone(), handle.legacy_submission(&reload).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        let receipt = handle.mutation_receipt(accepted.attempt_id).unwrap();
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("reload backend failure must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.components.len(), RELOAD_PHASE_COMPONENTS.len());
+        for (component, (path, action)) in partial.components.iter().zip(RELOAD_PHASE_COMPONENTS) {
+            assert_eq!(component.path, path);
+            assert_eq!(component.action, action);
+        }
+        let create = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/create_entities")
+            .unwrap();
+        assert_eq!(create.state, ComponentState::Uncertain);
+        assert_eq!(
+            create.diagnostic.as_ref().unwrap().code,
+            "reload_group_create_failed"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sample_reload_message(ids: &[u32]) -> Message {
+        let mut state = reload::ScriptState::new();
+        for id in ids {
+            state.add_sample(
+                SampleId::new(*id),
+                SampleConfig::new(format!("/test/sample_{id}.wav")),
+            );
+        }
+        Message::Reload(Box::new(ReloadMessage::Apply { state }))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn tick_until_receipt_terminal<B: Backend>(
+        runtime: &mut Runtime<B>,
+        handle: &RuntimeHandle,
+        attempt_id: crate::mutation::AttemptId,
+    ) -> MutationReceipt {
+        for _ in 0..1000 {
+            runtime.tick().await;
+            let receipt = handle.mutation_receipt(attempt_id).unwrap();
+            if receipt.state.is_terminal() {
+                return receipt;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("mutation receipt did not become terminal");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn wait_for_staged_loads(runtime: &mut Runtime<RecordingBackend>, expected: u32) {
+        for _ in 0..1000 {
+            runtime.tick().await;
+            if runtime
+                .backend
+                .loads_started
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == expected
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("staging did not start {expected} buffer load(s)");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn direct_staging_load_failure_preserves_its_code_and_cleanup() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let message = sample_reload_message(&[7]);
+        let accepted = handle
+            .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+            .await
+            .unwrap();
+
+        let receipt = tick_until_receipt_terminal(&mut runtime, &handle, accepted.attempt_id).await;
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a direct staging load failure must be partial");
+        };
+        assert_eq!(partial.code, "sample_load_failed");
+        assert_eq!(
+            receipt
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.as_str())
+                .collect::<Vec<_>>(),
+            vec!["sample_load_failed", "reload_sample_create_failed"]
+        );
+        let staging = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staging/sample/7")
+            .unwrap();
+        assert_eq!(staging.state, ComponentState::Uncertain);
+        assert_eq!(
+            staging.diagnostic.as_ref().unwrap().code,
+            "sample_load_failed"
+        );
+        let loads = runtime.backend.load_buffer_log.lock().unwrap().clone();
+        let frees = runtime.backend.free_buffer_log.lock().unwrap().clone();
+        assert_eq!(
+            loads.len(),
+            2,
+            "apply retries a failed staged sample inline"
+        );
+        assert_eq!(
+            frees, loads,
+            "each failed load's buffer ID must be reclaimed"
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_receipt_preserves_multiple_failures_in_one_phase() {
+        let runtime = Runtime::new(MockBackend);
+        let handle = runtime.handle();
+        let message = Message::Reload(Box::new(ReloadMessage::Apply {
+            state: reload::ScriptState::new(),
+        }));
+        let accepted = handle
+            .submit(message.clone(), handle.legacy_submission(&message).unwrap())
+            .await
+            .unwrap();
+        let context = MutationContext::new(
+            accepted.attempt_id,
+            accepted.runtime_epoch,
+            accepted.request.idempotency_key_present,
+            MutationReplySink::default(),
+            MutationEventSink::default(),
+        )
+        .with_revision(accepted.revision.unwrap())
+        .unwrap();
+        runtime
+            .begin_contextual_components(
+                &context,
+                RELOAD_PHASE_COMPONENTS
+                    .iter()
+                    .map(|(path, action)| PlannedComponent {
+                        path: (*path).into(),
+                        action: (*action).into(),
+                    })
+                    .collect(),
+                false,
+            )
+            .unwrap();
+        let mut execution = ReloadExecution {
+            result: Ok(()),
+            failures: Vec::new(),
+            staging: Vec::new(),
+            phases: RELOAD_PHASE_COMPONENTS
+                .iter()
+                .map(|(path, action)| ReloadPhaseOutcome {
+                    path,
+                    action,
+                    failures: Vec::new(),
+                    started: true,
+                })
+                .collect(),
+        };
+        execution.phases[4].failures = vec![
+            ReloadPhaseFailure::new("first_handler_failure", "first failure"),
+            ReloadPhaseFailure::new("second_handler_failure", "second failure"),
+        ];
+
+        let receipt = runtime.finish_reload_work(&context, &execution).unwrap();
+        assert_eq!(
+            receipt
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.message.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("first_handler_failure", "first failure"),
+                ("second_handler_failure", "second failure"),
+            ]
+        );
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = receipt.state else {
+            panic!("multiple phase failures must produce a partial receipt");
+        };
+        let create = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/create_entities")
+            .unwrap();
+        assert_eq!(create.diagnostic.as_ref().unwrap().message, "first failure");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn staged_apply_after_newer_fence_is_truthful_partial() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(2, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let reload = sample_reload_message(&[11]);
+        let lower = handle
+            .submit(reload.clone(), handle.legacy_submission(&reload).unwrap())
+            .await
+            .unwrap();
+        wait_for_staged_loads(&mut runtime, 1).await;
+
+        runtime
+            .backend
+            .fail_create_group
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let create = Message::Group(GroupMessage::Create {
+            id: GroupId::new(1),
+            name: "newer-fence".into(),
+            parent: None,
+        });
+        let higher = handle
+            .submit(create.clone(), handle.legacy_submission(&create).unwrap())
+            .await
+            .unwrap();
+        runtime.tick().await;
+        assert!(matches!(
+            handle.mutation_receipt(higher.attempt_id).unwrap().state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial { fenced: true, .. }))
+        ));
+
+        runtime.backend.load_release.notify_waiters();
+        let receipt = tick_until_receipt_terminal(&mut runtime, &handle, lower.attempt_id).await;
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a fenced staged apply must remain partial, never rejected");
+        };
+        assert_eq!(partial.code, "reload_apply_fenced");
+        assert_eq!(receipt.diagnostics[0].code, "reload_apply_fenced");
+        let staging = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staging/sample/11")
+            .unwrap();
+        assert_eq!(staging.state, ComponentState::Applied);
+        for component in partial
+            .components
+            .iter()
+            .filter(|component| component.path != "reload/staged_assets")
+            .filter(|component| !component.path.starts_with("reload/staging/"))
+        {
+            assert_eq!(component.state, ComponentState::NotStarted);
+        }
+        let cleanup = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staged_assets")
+            .unwrap();
+        assert_eq!(cleanup.state, ComponentState::Applied);
+        assert!(runtime.state.read().await.samples.is_empty());
+        assert_eq!(
+            *runtime.backend.free_buffer_log.lock().unwrap(),
+            *runtime.backend.load_buffer_log.lock().unwrap()
+        );
+        assert_eq!(
+            handle.mutation_status().live_state,
+            LiveState::Partial {
+                revision: higher.revision.unwrap(),
+                fenced: true,
+            }
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn lost_staged_apply_frees_every_buffer_in_deterministic_order() {
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut runtime);
+        runtime
+            .backend
+            .load_mode
+            .store(2, std::sync::atomic::Ordering::SeqCst);
+        let handle = runtime.handle();
+        let reload = sample_reload_message(&[30, 10, 20]);
+        let accepted = handle
+            .submit(reload.clone(), handle.legacy_submission(&reload).unwrap())
+            .await
+            .unwrap();
+        wait_for_staged_loads(&mut runtime, 3).await;
+        let backend = runtime.backend.clone();
+        let state = runtime.state.clone();
+        backend.load_release.notify_waiters();
+        drop(runtime);
+
+        let mut terminal = None;
+        for _ in 0..1000 {
+            let receipt = handle.mutation_receipt(accepted.attempt_id).unwrap();
+            if receipt.state.is_terminal() {
+                terminal = Some(receipt);
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        let receipt = terminal.expect("lost staged reload receipt did not become terminal");
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) = &receipt.state else {
+            panic!("a staged apply lost with the runtime queue must be partial");
+        };
+        assert_eq!(partial.code, "staging_completion_lost");
+        let loaded = backend.load_buffer_log.lock().unwrap().clone();
+        let freed = backend.free_buffer_log.lock().unwrap().clone();
+        let mut expected = loaded.clone();
+        expected.sort_by_key(|id| id.raw());
+        expected.dedup();
+        assert_eq!(freed, expected);
+        assert_eq!(freed.len(), 3);
+        let reclaimed = {
+            let mut state = state.write().await;
+            let reclaimed = (0..3)
+                .map(|_| state.alloc_buffer_id().unwrap())
+                .collect::<Vec<_>>();
+            for id in &reclaimed {
+                state.free_buffer_id(*id);
+            }
+            reclaimed
+        };
+        assert_eq!(reclaimed, expected);
+        let cleanup = partial
+            .components
+            .iter()
+            .find(|component| component.path == "reload/staged_assets")
+            .unwrap();
+        assert_eq!(cleanup.state, ComponentState::Applied);
+        assert!(cleanup.diagnostic.is_none());
+    }
+
+    async fn wait_for_one_pending(handle: &RuntimeHandle) -> crate::mutation::AttemptId {
+        for _ in 0..100 {
+            if let Some(pending) = handle.mutation_status().pending.first() {
+                return pending.attempt_id;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("mutation was not admitted");
+    }
+
+    #[tokio::test]
+    async fn sync_and_wait_reports_backend_failure_timeout_and_ack_loss() {
+        let mut failed_runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut failed_runtime);
+        failed_runtime
+            .backend
+            .sync_mode
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        let failed_handle = failed_runtime.handle();
+        let failed_waiter = {
+            let handle = failed_handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        wait_for_one_pending(&failed_handle).await;
+        let after_failed_sync = Message::Transport(TransportMessage::SetTempo { bpm: 111.0 });
+        let after_failed_sync = failed_handle
+            .submit(
+                after_failed_sync.clone(),
+                failed_handle.legacy_submission(&after_failed_sync).unwrap(),
+            )
+            .await
+            .unwrap();
+        failed_runtime.tick().await;
+        assert!(matches!(
+            failed_waiter.await.unwrap(),
+            Err(Error::Backend(_))
+        ));
+        assert!(matches!(
+            failed_handle.mutation_status().live_state,
+            LiveState::Partial { fenced: true, .. }
+        ));
+        failed_runtime.tick().await;
+        let after_failed_sync = failed_handle
+            .mutation_receipt(after_failed_sync.attempt_id)
+            .unwrap();
+        assert!(matches!(
+            after_failed_sync.state,
+            ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+                ref code,
+                fenced: true,
+                ..
+            })) if code == "effect_completed_after_runtime_fence"
+        ));
+
+        let mut timeout_runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut timeout_runtime);
+        timeout_runtime
+            .backend
+            .sync_mode
+            .store(2, std::sync::atomic::Ordering::SeqCst);
+        let timeout_handle = timeout_runtime.handle();
+        let timeout_waiter = {
+            let handle = timeout_handle.clone();
+            tokio::spawn(async move {
+                handle
+                    .sync_and_wait_timeout(Duration::from_millis(10))
+                    .await
+            })
+        };
+        wait_for_one_pending(&timeout_handle).await;
+        timeout(Duration::from_millis(100), timeout_runtime.tick())
+            .await
+            .expect("a native backend barrier must not block the runtime tick");
+        assert!(matches!(
+            timeout_waiter.await.unwrap(),
+            Err(Error::SyncTimeout)
+        ));
+        assert!(matches!(
+            timeout_handle.mutation_status().live_state,
+            LiveState::Partial { fenced: true, .. }
+        ));
+
+        let mut ack_runtime = Runtime::new(RecordingBackend::new());
+        disable_test_midi_threads(&mut ack_runtime);
+        let ack_handle = ack_runtime.handle();
+        let ack_waiter = {
+            let handle = ack_handle.clone();
+            tokio::spawn(async move { handle.sync_and_wait_timeout(Duration::from_secs(1)).await })
+        };
+        let ack_attempt = wait_for_one_pending(&ack_handle).await;
+        let _ = ack_handle.ledger.cancel(ack_attempt, SystemTime::now());
+        ack_runtime.tick().await;
+        assert!(matches!(
+            ack_waiter.await.unwrap(),
+            Err(Error::AcknowledgementLost)
+        ));
     }
 }

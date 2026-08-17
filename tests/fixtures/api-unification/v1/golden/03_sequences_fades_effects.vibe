@@ -1,0 +1,20 @@
+group("Arrangement").body(|| {
+    let v = voice("sequence_voice").synth("baseline_sequence").apply();
+    let orphan_pattern = pattern("orphan_pattern").on(v).step("x...");
+    let implicit_melody = melody("implicit_melody").on(v).notes("C4 E4");
+    let orphan_sequence = sequence("orphan_sequence").loop_bars(1);
+
+    sequence("arrangement")
+        .loop_bars(2)
+        .clip(0..bars(1), orphan_pattern)
+        .clip(bars(1)..bars(2), implicit_melody)
+        .clip(0..bars(1), orphan_sequence)
+        .apply();
+
+    fade("inert_fade").on_group("Arrangement").param("amp").to(0.5).over(4.0).apply();
+    fade("started_fade").on_group("Arrangement").param("amp").from(0.125).to(0.75).over(3.0).curve("ease_in").start();
+    fade("now_fade").on_group("Arrangement").param("amp").from(0.25).to(1.0).over(1.5).curve("step").now();
+
+    fx("room").synth("baseline_room").apply();
+    fx("echo").synth("baseline_echo").apply();
+});

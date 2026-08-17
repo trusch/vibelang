@@ -114,9 +114,14 @@
 
 // Core modules
 mod backend;
+pub mod candidate;
 mod clock;
 pub mod compat;
 mod error;
+pub mod mutation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_generation;
+pub mod resource_manager;
 mod runtime;
 mod state;
 mod transport_snapshot;
@@ -124,6 +129,7 @@ mod transport_snapshot;
 // Public modules
 pub mod audio;
 pub mod backends;
+pub mod capabilities;
 pub mod handlers;
 pub mod message;
 pub mod reload;
@@ -138,14 +144,19 @@ pub mod midi;
 // Re-exports for convenience
 pub use audio::{AudioConnector, AudioError, PortDirection, PortMatcher};
 pub use backend::{AddAction, Backend, BufferInfo};
+pub use candidate::{Candidate, CandidateDraft};
 pub use error::{Error, Result, SynthDefRejection};
+pub use mutation::{MutationContext, MutationLedger};
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_generation::{NativeGenerationCoordinator, NativeGenerationPlanner};
+pub use resource_manager::ResourceManager;
 
 pub use message::{
     EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,
     ReloadMessage, SampleMessage, SequenceMessage, SyncMessage, SynthDefMessage, TransportMessage,
     VoiceMessage,
 };
-pub use runtime::{Runtime, RuntimeHandle};
+pub use runtime::{MutationAttempt, Runtime, RuntimeHandle};
 pub use state::{
     ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternOwner, PatternState,
     SequenceState, SfzInstrumentState, SfzRegionState, State, VoiceRole, VoiceState,

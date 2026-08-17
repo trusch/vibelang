@@ -11,44 +11,71 @@ import "stdlib/theory/core.vibe" as core;
 // ============================================================================
 
 // Major scale and modes
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _major_intervals() { return [0, 2, 4, 5, 7, 9, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _dorian_intervals() { return [0, 2, 3, 5, 7, 9, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _phrygian_intervals() { return [0, 1, 3, 5, 7, 8, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _lydian_intervals() { return [0, 2, 4, 6, 7, 9, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _mixolydian_intervals() { return [0, 2, 4, 5, 7, 9, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _aeolian_intervals() { return [0, 2, 3, 5, 7, 8, 10]; }  // Natural minor
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _locrian_intervals() { return [0, 1, 3, 5, 6, 8, 10]; }
 
 // Minor scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _harmonic_minor_intervals() { return [0, 2, 3, 5, 7, 8, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _melodic_minor_intervals() { return [0, 2, 3, 5, 7, 9, 11]; }
 
 // Pentatonic scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _major_pentatonic_intervals() { return [0, 2, 4, 7, 9]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _minor_pentatonic_intervals() { return [0, 3, 5, 7, 10]; }
 
 // Blues scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _blues_major_intervals() { return [0, 2, 3, 4, 7, 9]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _blues_minor_intervals() { return [0, 3, 5, 6, 7, 10]; }
 
 // Other scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _whole_tone_intervals() { return [0, 2, 4, 6, 8, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _diminished_intervals() { return [0, 2, 3, 5, 6, 8, 9, 11]; }  // Half-whole
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _diminished_whole_half_intervals() { return [0, 1, 3, 4, 6, 7, 9, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _chromatic_intervals() { return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; }
 
 // Exotic scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _harmonic_major_intervals() { return [0, 2, 4, 5, 7, 8, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _double_harmonic_intervals() { return [0, 1, 4, 5, 7, 8, 11]; }  // Byzantine
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _phrygian_dominant_intervals() { return [0, 1, 4, 5, 7, 8, 10]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _hungarian_minor_intervals() { return [0, 2, 3, 6, 7, 8, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _neapolitan_major_intervals() { return [0, 1, 3, 5, 7, 9, 11]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _neapolitan_minor_intervals() { return [0, 1, 3, 5, 7, 8, 11]; }
 
 // World scales
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _japanese_intervals() { return [0, 1, 5, 7, 8]; }  // In scale
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _hirajoshi_intervals() { return [0, 2, 3, 7, 8]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _pelog_intervals() { return [0, 1, 3, 7, 8]; }
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _arabic_intervals() { return [0, 2, 4, 5, 6, 8, 10]; }
 
 // ============================================================================
@@ -56,10 +83,12 @@ fn _arabic_intervals() { return [0, 2, 4, 5, 6, 8, 10]; }
 // ============================================================================
 
 // Generate scale from root note, intervals, and number of octaves
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _generate_scale(root, intervals) {
     _generate_scale_ex(root, intervals, 8, 4)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _generate_scale_ex(root, intervals, num_notes, start_octave) {
     let notes = [];
     let current_note = core::set_octave(root, start_octave);
@@ -99,74 +128,92 @@ fn _generate_scale_ex(root, intervals, num_notes, start_octave) {
 // Major Scale and Modes
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn major_scale(root) {
     major_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn major_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _major_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn ionian_scale(root) {
     ionian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn ionian_scale_ex(root, octave, num_notes) {
     return major_scale_ex(root, octave, num_notes);  // Same as major
 }
 
+/// @vibelang-api export=public support=supported
 fn dorian_scale(root) {
     dorian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn dorian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _dorian_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn phrygian_scale(root) {
     phrygian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn phrygian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _phrygian_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn lydian_scale(root) {
     lydian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn lydian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _lydian_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn mixolydian_scale(root) {
     mixolydian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn mixolydian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _mixolydian_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn aeolian_scale(root) {
     aeolian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn aeolian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _aeolian_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn natural_minor_scale(root) {
     natural_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn natural_minor_scale_ex(root, octave, num_notes) {
     return aeolian_scale_ex(root, octave, num_notes);  // Same as aeolian
 }
 
+/// @vibelang-api export=public support=supported
 fn locrian_scale(root) {
     locrian_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn locrian_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _locrian_intervals(), num_notes, octave);
 }
@@ -175,26 +222,32 @@ fn locrian_scale_ex(root, octave, num_notes) {
 // Minor Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn minor_scale(root) {
     minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn minor_scale_ex(root, octave, num_notes) {
     return natural_minor_scale_ex(root, octave, num_notes);
 }
 
+/// @vibelang-api export=public support=supported
 fn harmonic_minor_scale(root) {
     harmonic_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn harmonic_minor_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _harmonic_minor_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn melodic_minor_scale(root) {
     melodic_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn melodic_minor_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _melodic_minor_intervals(), num_notes, octave);
 }
@@ -203,18 +256,22 @@ fn melodic_minor_scale_ex(root, octave, num_notes) {
 // Pentatonic Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn major_pentatonic_scale(root) {
     major_pentatonic_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn major_pentatonic_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _major_pentatonic_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn minor_pentatonic_scale(root) {
     minor_pentatonic_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn minor_pentatonic_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _minor_pentatonic_intervals(), num_notes, octave);
 }
@@ -223,26 +280,32 @@ fn minor_pentatonic_scale_ex(root, octave, num_notes) {
 // Blues Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn blues_major_scale(root) {
     blues_major_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_major_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _blues_major_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_minor_scale(root) {
     blues_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_minor_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _blues_minor_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_scale(root) {
     blues_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn blues_scale_ex(root, octave, num_notes) {
     return blues_minor_scale_ex(root, octave, num_notes);  // Default to minor blues
 }
@@ -251,34 +314,42 @@ fn blues_scale_ex(root, octave, num_notes) {
 // Other Common Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn whole_tone_scale(root) {
     whole_tone_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn whole_tone_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _whole_tone_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn diminished_scale(root) {
     diminished_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn diminished_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _diminished_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn diminished_whole_half_scale(root) {
     diminished_whole_half_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn diminished_whole_half_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _diminished_whole_half_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn chromatic_scale(root) {
     chromatic_scale_ex(root, 4, 12)
 }
 
+/// @vibelang-api export=public support=supported
 fn chromatic_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _chromatic_intervals(), num_notes, octave);
 }
@@ -287,58 +358,72 @@ fn chromatic_scale_ex(root, octave, num_notes) {
 // Exotic Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn harmonic_major_scale(root) {
     harmonic_major_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn harmonic_major_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _harmonic_major_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn double_harmonic_scale(root) {
     double_harmonic_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn double_harmonic_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _double_harmonic_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn byzantine_scale(root) {
     byzantine_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn byzantine_scale_ex(root, octave, num_notes) {
     return double_harmonic_scale_ex(root, octave, num_notes);  // Same as double harmonic
 }
 
+/// @vibelang-api export=public support=supported
 fn phrygian_dominant_scale(root) {
     phrygian_dominant_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn phrygian_dominant_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _phrygian_dominant_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn hungarian_minor_scale(root) {
     hungarian_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn hungarian_minor_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _hungarian_minor_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn neapolitan_major_scale(root) {
     neapolitan_major_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn neapolitan_major_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _neapolitan_major_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn neapolitan_minor_scale(root) {
     neapolitan_minor_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn neapolitan_minor_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _neapolitan_minor_intervals(), num_notes, octave);
 }
@@ -347,34 +432,42 @@ fn neapolitan_minor_scale_ex(root, octave, num_notes) {
 // World/Ethnic Scales
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn japanese_scale(root) {
     japanese_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn japanese_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _japanese_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn hirajoshi_scale(root) {
     hirajoshi_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn hirajoshi_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _hirajoshi_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn pelog_scale(root) {
     pelog_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn pelog_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _pelog_intervals(), num_notes, octave);
 }
 
+/// @vibelang-api export=public support=supported
 fn arabic_scale(root) {
     arabic_scale_ex(root, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn arabic_scale_ex(root, octave, num_notes) {
     return _generate_scale_ex(root, _arabic_intervals(), num_notes, octave);
 }
@@ -383,10 +476,12 @@ fn arabic_scale_ex(root, octave, num_notes) {
 // Scale by Name (Convenience Function)
 // ============================================================================
 
+/// @vibelang-api export=public support=supported
 fn scale(root, scale_name) {
     scale_ex(root, scale_name, 4, 8)
 }
 
+/// @vibelang-api export=public support=supported
 fn scale_ex(root, scale_name, octave, num_notes) {
     let name_lower = scale_name.to_lower();
     
@@ -431,10 +526,12 @@ fn scale_ex(root, scale_name, octave, num_notes) {
 // ============================================================================
 
 // Get specific degrees of a scale (e.g., [1, 3, 5] for triad)
+/// @vibelang-api export=public support=supported
 fn scale_degrees(root, scale_name, degrees) {
     scale_degrees_ex(root, scale_name, degrees, 4)
 }
 
+/// @vibelang-api export=public support=supported
 fn scale_degrees_ex(root, scale_name, degrees, octave) {
     let intervals = switch scale_name.to_lower() {
         "major" => _major_intervals(),

@@ -1,0 +1,164 @@
+{
+  "schema": "https://vibelang.org/schemas/public-api-package-index/v1",
+  "schema_version": 1,
+  "contract_digest": "0b5db8a4483962086fd66deba8c9abadcface0d2a4646b875c9a5721a8c162c2",
+  "files": [
+    {
+      "path": "Cargo.lock",
+      "kind": "lockfile",
+      "bytes": 98167,
+      "sha256": "fff9fb3cd9b1f7d94ca53cf0d959830643b75863fa3be0ea9187fb0d1dd32b5b"
+    },
+    {
+      "path": "Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 1006,
+      "sha256": "0546725d640fc56d91e4658f8cbb1d10d4385788a7abd990a1a3808364e9e896"
+    },
+    {
+      "path": "crates/vibelang-api-manifest/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 321,
+      "sha256": "d68c179d958c078fc9ad41daf04957e589ce3d989dd59ce27bb3cc42ae91bb03"
+    },
+    {
+      "path": "crates/vibelang-cli/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 2272,
+      "sha256": "5e2ea7e3c4344ac7d8016382f416847334beeb95ee52edd3d36252f4150b3a74"
+    },
+    {
+      "path": "crates/vibelang-core/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 2489,
+      "sha256": "679e76e048bc0717cddd56092bf550853c7825d5548508e8c5223fea97850085"
+    },
+    {
+      "path": "crates/vibelang-dsp/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 856,
+      "sha256": "d60bc715a6c375fafb2369b42e89217b49aa1edbde434bb72bc5955ab3c6c025"
+    },
+    {
+      "path": "crates/vibelang-http/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 1220,
+      "sha256": "011361d91b50e793657269739f1aa8e00353c21173259052ff05831449c9a351"
+    },
+    {
+      "path": "crates/vibelang-keys/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 974,
+      "sha256": "4949e8cc41aea3c22e6148dc5c27c92a4af6d4c934ac5665873fd9555fc79cc8"
+    },
+    {
+      "path": "crates/vibelang-lsp/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 1492,
+      "sha256": "9f4e3e8548b09846ffdedeb719817edd4d0407231e2d0491b161d1dad93f8a78"
+    },
+    {
+      "path": "crates/vibelang-rhai/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 1942,
+      "sha256": "8890b0cfb18658acdf09425f2d0f101553f701bbcd07182a3a341df6fcaa4a50"
+    },
+    {
+      "path": "crates/vibelang-sfz/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 567,
+      "sha256": "8b003d1babc3620267fb29e77e63a5933c114b01e91fee2432f72efdffc29cbd"
+    },
+    {
+      "path": "crates/vibelang-std/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 543,
+      "sha256": "dcd2285b97fec6b14f00907beb730762e7fc5f1c704a1794b514e7552c0b00de"
+    },
+    {
+      "path": "crates/vibelang-wasm/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 1104,
+      "sha256": "da71120168e74d5e8d53d02556cce230641332ea2b0a6d41346e3762ffc7215b"
+    },
+    {
+      "path": "crates/vibelang-wasm/package-lock.json",
+      "kind": "lockfile",
+      "bytes": 748,
+      "sha256": "5f9f11e2a071bd8840744aeb24f8742fd1fdccdf2bd2c8be63d1be8a64162c52"
+    },
+    {
+      "path": "crates/vibelang-wasm/package.json",
+      "kind": "node_manifest",
+      "bytes": 608,
+      "sha256": "ce7bbd299cb8ebfbe9cf423c3109f76850efc0c117e0ff94f2490a0114129285"
+    },
+    {
+      "path": "landing-page/package-lock.json",
+      "kind": "lockfile",
+      "bytes": 177729,
+      "sha256": "1beb8d1af672f35d93c0abc58fb8b585026fe96c4f4409af0351966230517705"
+    },
+    {
+      "path": "landing-page/package.json",
+      "kind": "node_manifest",
+      "bytes": 1088,
+      "sha256": "142d792a6929d83f7fb19b7475a903f7c3243c33397f368cd01770a43191111a"
+    },
+    {
+      "path": "landing-page/src/audio/package.json",
+      "kind": "node_manifest",
+      "bytes": 374,
+      "sha256": "47301842fa8ab0cc33e7725a3675d13f117d01b02c37c84417a4a953e5444c31"
+    },
+    {
+      "path": "vscode-extension/package-lock.json",
+      "kind": "lockfile",
+      "bytes": 5075,
+      "sha256": "c3e44311686c7713538bf56d40df4f232f8c9603b5901cd66e487d0a317b0a6f"
+    },
+    {
+      "path": "vscode-extension/package.json",
+      "kind": "node_manifest",
+      "bytes": 22783,
+      "sha256": "d998051e05678a62fbdaf1f6599ba4a9f4891ca047d1b57b46e410b232af7f83"
+    },
+    {
+      "path": "xtask/Cargo.toml",
+      "kind": "cargo_manifest",
+      "bytes": 532,
+      "sha256": "e3bb9a2fd50352745bd594e03e9423827e7784bc297bcf05e3144ebe6071e212"
+    }
+  ],
+  "wasm_package_owners": [
+    {
+      "path": "crates/vibelang-wasm/package.json",
+      "name": "vibelang-wasm",
+      "version": "0.4.0",
+      "canonical": true,
+      "compatibility_debt": false
+    },
+    {
+      "path": "landing-page/src/audio/package.json",
+      "name": "vibelang-wasm",
+      "version": "0.1.0",
+      "canonical": false,
+      "compatibility_debt": true
+    }
+  ],
+  "vscode_required_members": [
+    "vscode-extension/package.json",
+    "vscode-extension/out/extension.js",
+    "vscode-extension/src/data/rhai-api.json",
+    "vscode-extension/src/data/stdlib.json",
+    "vscode-extension/ugen_manifests"
+  ],
+  "wasm_required_members": [
+    "crates/vibelang-wasm/package.json",
+    "crates/vibelang-wasm/types/index.d.ts",
+    "crates/vibelang-wasm/pkg/*.js",
+    "crates/vibelang-wasm/pkg/*.wasm"
+  ],
+  "orphan_count": 0,
+  "unclassified_count": 0
+}

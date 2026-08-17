@@ -1,0 +1,21 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-negative-fixture/1",
+  "defect": "invalid_ugen_labels",
+  "expected_current_outcome": "completion_inserts_an_unregistered_function_name",
+  "observed_count": 8,
+  "labels": [
+    { "completion": "a2_k_kr", "runtime": "a2k_kr" },
+    { "completion": "k2_a_ar", "runtime": "k2a_ar" },
+    { "completion": "lag2_ud_ar", "runtime": "lag2ud_ar" },
+    { "completion": "lag2_ud_kr", "runtime": "lag2ud_kr" },
+    { "completion": "lag3_ud_ar", "runtime": "lag3ud_ar" },
+    { "completion": "lag3_ud_kr", "runtime": "lag3ud_kr" },
+    { "completion": "t2_a_ar", "runtime": "t2a_ar" },
+    { "completion": "t2_k_kr", "runtime": "t2k_kr" }
+  ],
+  "source_assertions": [
+    { "path": "vscode-extension/src/features/completion.ts", "contains": "ugen.functions" },
+    { "path": "vscode-extension/ugen_manifests/conversion.json", "contains": "a2_k_kr" },
+    { "path": "vscode-extension/ugen_manifests/filters.json", "contains": "lag3_ud_ar" }
+  ]
+}

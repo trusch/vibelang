@@ -1,0 +1,17 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+rhai = { version = "1.23.6", features = ["metadata", "sync"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+syn = { version = "2", features = ["full", "visit"] }
+toml = "0.8"
+vibelang-api-manifest = { path = "../crates/vibelang-api-manifest" }
+vibelang-rhai = { path = "../crates/vibelang-rhai", features = ["api-manifest"] }
+walkdir = "2"

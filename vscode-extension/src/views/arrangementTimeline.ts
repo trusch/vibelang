@@ -1006,7 +1006,7 @@ export class ArrangementTimeline {
             { label: 'Copy to Clipboard', description: 'Copy the generated code to clipboard' },
             { label: 'Insert at Cursor', description: 'Insert at current cursor position in active editor' },
             { label: 'Create New File', description: 'Create a new .vibe file with the automation code' },
-        ], { placeHolder: 'Where to put the generated fade() code?' });
+        ], { placeHolder: 'Where to put the generated automation sequence?' });
 
         if (!result) return;
 

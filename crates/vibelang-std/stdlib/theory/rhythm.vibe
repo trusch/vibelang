@@ -9,6 +9,7 @@
 // ============================================================================
 
 // Generate a pattern of "x" and "." based on steps
+/// @vibelang-api export=public support=supported
 fn rhythm_pattern(hits, total_steps) {
     let result = "";
     
@@ -24,10 +25,12 @@ fn rhythm_pattern(hits, total_steps) {
 }
 
 // Four on the floor (kick on every beat)
+/// @vibelang-api export=public support=supported
 fn four_on_floor() {
     four_on_floor_ex(1)
 }
 
+/// @vibelang-api export=public support=supported
 fn four_on_floor_ex(bars) {
     let beats = bars * 16;  // 16 steps per bar (4/4 at 16th note resolution)
     let result = "";
@@ -44,10 +47,12 @@ fn four_on_floor_ex(bars) {
 }
 
 // Backbeat (hits on beats 2 and 4)
+/// @vibelang-api export=public support=supported
 fn backbeat() {
     backbeat_ex(1)
 }
 
+/// @vibelang-api export=public support=supported
 fn backbeat_ex(bars) {
     let beats = bars * 16;
     let result = "";
@@ -64,10 +69,12 @@ fn backbeat_ex(bars) {
 }
 
 // Offbeat (8th note offbeats)
+/// @vibelang-api export=public support=supported
 fn offbeat() {
     offbeat_ex(1)
 }
 
+/// @vibelang-api export=public support=supported
 fn offbeat_ex(bars) {
     let beats = bars * 16;
     let result = "";
@@ -89,6 +96,7 @@ fn offbeat_ex(bars) {
 
 // Generate Euclidean rhythm pattern
 // Distributes hits as evenly as possible across steps
+/// @vibelang-api export=public support=supported
 fn euclidean_rhythm(hits, steps) {
     if hits == 0 || steps == 0 {
         return "";
@@ -120,6 +128,7 @@ fn euclidean_rhythm(hits, steps) {
 }
 
 // Common Euclidean patterns by name
+/// @vibelang-api export=public support=supported
 fn euclidean_pattern(name) {
     return switch name.to_lower() {
         "tresillo" => euclidean_rhythm(3, 8),     // 3:8 - Afro-Cuban tresillo
@@ -137,26 +146,31 @@ fn euclidean_pattern(name) {
 // ============================================================================
 
 // Son clave (3-2)
+/// @vibelang-api export=public support=supported
 fn son_clave_3_2() {
     return "x..x...x....x..x........";  // 2 bars
 }
 
 // Son clave (2-3) - reversed
+/// @vibelang-api export=public support=supported
 fn son_clave_2_3() {
     return "....x..x........x..x...x";  // 2 bars
 }
 
 // Rumba clave (3-2)
+/// @vibelang-api export=public support=supported
 fn rumba_clave_3_2() {
     return "x..x...x.....x..x.......";  // 2 bars
 }
 
 // Rumba clave (2-3)
+/// @vibelang-api export=public support=supported
 fn rumba_clave_2_3() {
     return "....x..x.......x..x...x.";  // 2 bars
 }
 
 // Bossa nova clave
+/// @vibelang-api export=public support=supported
 fn bossa_nova_clave() {
     return "x..x...x.....x.x........";  // 2 bars
 }
@@ -166,31 +180,37 @@ fn bossa_nova_clave() {
 // ============================================================================
 
 // House/4-4 kick pattern
+/// @vibelang-api export=public support=supported
 fn house_kick() {
     return "x...x...x...x...";
 }
 
 // Techno kick (with syncopation)
+/// @vibelang-api export=public support=supported
 fn techno_kick() {
     return "x...x..xx...x...";
 }
 
 // Trap hi-hat pattern
+/// @vibelang-api export=public support=supported
 fn trap_hihat() {
     return "x.xxx.xxx.xxx.xx";
 }
 
 // Drum and bass break
+/// @vibelang-api export=public support=supported
 fn dnb_break() {
     return "x.x.x.x.x.xxx.x.";
 }
 
 // Reggae one-drop (accent on 3)
+/// @vibelang-api export=public support=supported
 fn reggae_one_drop() {
     return "........x.......";
 }
 
 // Funk ghost notes
+/// @vibelang-api export=public support=supported
 fn funk_ghost_notes() {
     return "x.x.x.x.x.x.x.x.";
 }
@@ -201,16 +221,19 @@ fn funk_ghost_notes() {
 
 // Generate swing pattern (straight 8ths -> swing 8ths)
 // Returns timing pattern indicating swing notes
+/// @vibelang-api export=public support=supported
 fn swing_8th() {
     return "x.x.x.x.x.x.x.x.";  // Would need timing adjustment in playback
 }
 
 // Shuffle pattern (triplet feel)
+/// @vibelang-api export=public support=supported
 fn shuffle_pattern() {
     return "x..x..x..x..";  // 12/8 feel
 }
 
 // Half-time shuffle
+/// @vibelang-api export=public support=supported
 fn half_time_shuffle() {
     return "x.......x..x....";
 }
@@ -220,6 +243,7 @@ fn half_time_shuffle() {
 // ============================================================================
 
 // Add syncopation (shift some beats earlier)
+/// @vibelang-api export=public support=supported
 fn add_syncopation(pattern) {
     let result = "";
     let pattern_len = pattern.len();
@@ -240,6 +264,7 @@ fn add_syncopation(pattern) {
 }
 
 // Generate anticipation (hit slightly before the beat)
+/// @vibelang-api export=public support=supported
 fn anticipate(pattern, beats_to_anticipate) {
     let result = pattern;
     
@@ -264,6 +289,7 @@ fn anticipate(pattern, beats_to_anticipate) {
 // ============================================================================
 
 // Generate polyrhythm (two patterns of different lengths)
+/// @vibelang-api export=public support=supported
 fn polyrhythm(pattern1, pattern2) {
     let len1 = pattern1.len();
     let len2 = pattern2.len();
@@ -287,11 +313,13 @@ fn polyrhythm(pattern1, pattern2) {
 }
 
 // Helper: Least common multiple
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _lcm(a, b) {
     return (a * b) / _gcd(a, b);
 }
 
 // Helper: Greatest common divisor
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _gcd(a, b) {
     while b != 0 {
         let temp = b;
@@ -306,6 +334,7 @@ fn _gcd(a, b) {
 // ============================================================================
 
 // Insert rests at specific positions
+/// @vibelang-api export=public support=supported
 fn insert_rests(pattern, rest_positions) {
     let result = "";
     
@@ -321,6 +350,7 @@ fn insert_rests(pattern, rest_positions) {
 }
 
 // Remove consecutive hits (ensure rests between hits)
+/// @vibelang-api export=public support=supported
 fn add_space(pattern) {
     let result = "";
     let last_was_hit = false;
@@ -349,6 +379,7 @@ fn add_space(pattern) {
 // ============================================================================
 
 // Add accents (convert x to X for accented hits)
+/// @vibelang-api export=public support=supported
 fn add_accents(pattern, accent_positions) {
     let result = "";
     
@@ -366,6 +397,7 @@ fn add_accents(pattern, accent_positions) {
 }
 
 // Accent every Nth hit
+/// @vibelang-api export=public support=supported
 fn accent_every_n(pattern, n) {
     let result = "";
     let hit_count = 0;
@@ -391,6 +423,7 @@ fn accent_every_n(pattern, n) {
 // ============================================================================
 
 // Reverse pattern
+/// @vibelang-api export=public support=supported
 fn reverse_pattern(pattern) {
     let result = "";
     
@@ -402,6 +435,7 @@ fn reverse_pattern(pattern) {
 }
 
 // Rotate pattern (circular shift)
+/// @vibelang-api export=public support=supported
 fn rotate_pattern(pattern, steps) {
     let len = pattern.len();
     let shift = steps % len;
@@ -415,6 +449,7 @@ fn rotate_pattern(pattern, steps) {
 }
 
 // Invert pattern (x becomes ., . becomes x)
+/// @vibelang-api export=public support=supported
 fn invert_pattern(pattern) {
     let result = "";
     
@@ -430,6 +465,7 @@ fn invert_pattern(pattern) {
 }
 
 // Double time (repeat each step twice)
+/// @vibelang-api export=public support=supported
 fn double_time(pattern) {
     let result = "";
     
@@ -442,6 +478,7 @@ fn double_time(pattern) {
 }
 
 // Half time (take every other step)
+/// @vibelang-api export=public support=supported
 fn half_time(pattern) {
     let result = "";
     
@@ -459,6 +496,7 @@ fn half_time(pattern) {
 // ============================================================================
 
 // Apply rhythm pattern to note array (insert rests where pattern has .)
+/// @vibelang-api export=public support=supported
 fn apply_rhythm(notes, rhythm) {
     let result = [];
     let note_idx = 0;
@@ -484,10 +522,12 @@ fn apply_rhythm(notes, rhythm) {
 // ============================================================================
 
 // Generate random rhythm with given density (0.0-1.0)
+/// @vibelang-api export=public support=supported
 fn random_rhythm(steps) {
     random_rhythm_ex(steps, 0.5)
 }
 
+/// @vibelang-api export=public support=supported
 fn random_rhythm_ex(steps, density) {
     let result = "";
     let hits = steps * density;

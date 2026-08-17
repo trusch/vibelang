@@ -190,7 +190,6 @@ pub async fn open_input(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::OpenInput { device: device_id }))
         .await
         .map_err(|e| {
@@ -217,7 +216,6 @@ pub async fn open_output(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::OpenOutput { device: device_id }))
         .await
         .map_err(|e| {
@@ -244,7 +242,6 @@ pub async fn close_device(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::CloseDevice {
             device: device_id,
         }))
@@ -277,7 +274,6 @@ pub async fn send_note_on(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendNoteOn {
             device: device_id,
             channel: req.channel,
@@ -309,7 +305,6 @@ pub async fn send_note_off(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendNoteOff {
             device: device_id,
             channel: req.channel,
@@ -340,7 +335,6 @@ pub async fn send_cc(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendCC {
             device: device_id,
             channel: req.channel,
@@ -385,7 +379,7 @@ pub async fn start_recording(
         Message::Midi(MidiMessage::StartRecording { device: device_id })
     };
 
-    state.handle.send(msg).await.map_err(|e| {
+    state.send(msg).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -413,7 +407,6 @@ pub async fn stop_recording(
     let device_id = MidiDeviceId::new(req.device_id);
 
     state
-        .handle
         .send(Message::Midi(MidiMessage::StopRecording {
             device: device_id,
         }))
@@ -446,7 +439,6 @@ pub async fn enable_clock_output(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::EnableClockOutput {
             device: device_id,
         }))
@@ -475,7 +467,6 @@ pub async fn disable_clock_output(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::DisableClockOutput {
             device: device_id,
         }))
@@ -504,7 +495,6 @@ pub async fn send_midi_start(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendStart { device: device_id }))
         .await
         .map_err(|e| {
@@ -531,7 +521,6 @@ pub async fn send_midi_stop(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendStop { device: device_id }))
         .await
         .map_err(|e| {
@@ -558,7 +547,6 @@ pub async fn send_midi_continue(
 
     let device_id = MidiDeviceId::new(req.device_id);
     state
-        .handle
         .send(Message::Midi(MidiMessage::SendContinue {
             device: device_id,
         }))
@@ -633,7 +621,6 @@ pub async fn add_keyboard_route(
     let voice_id = VoiceId::new(req.voice_id);
 
     state
-        .handle
         .send(Message::Midi(MidiMessage::AddKeyboardRoute {
             device: device_id,
             voice: voice_id,
@@ -671,7 +658,6 @@ pub async fn remove_keyboard_route(
     use vibelang_core::Message;
 
     state
-        .handle
         .send(Message::Midi(MidiMessage::RemoveKeyboardRoute { index }))
         .await
         .map_err(|e| {
@@ -696,7 +682,6 @@ pub async fn clear_routes(
     use vibelang_core::Message;
 
     state
-        .handle
         .send(Message::Midi(MidiMessage::ClearRoutes))
         .await
         .map_err(|e| {

@@ -29,14 +29,17 @@
 //   seg_N_trigger   : 0/1 segment trigger/advance input.
 //   seg_N_group_with_prev: 0 starts a new group, 1 chains to previous segment.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _stages_gate(x) {
     clip_kr(round(x), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _stages_mask(value, target) {
     1.0 - clip_kr(abs(value - target), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _stages_curve(phase, shape) {
     let shaped = clip_kr(shape, 0.0, 1.0);
     let low = (1.0 - shaped * 2.0).max(0.0);
@@ -46,6 +49,7 @@ fn _stages_curve(phase, shape) {
     p * p * low + p * mid + sqrt(p) * high
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _stages_segment_value(kind_raw, loop_raw, primary_raw, secondary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig, scale_raw) {
     let kind = clip_kr(round(kind_raw), 0.0, 3.0);
     let is_ramp = _stages_mask(kind, 0.0);
@@ -87,6 +91,7 @@ fn _stages_segment_value(kind_raw, loop_raw, primary_raw, secondary_raw, gate_ra
     clip_kr((ramp * is_ramp + step * is_step + hold * is_hold + alt * is_alt) * scale, 0.0, 2.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _stages_segment_eor(kind_raw, loop_raw, primary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig) {
     let kind = clip_kr(round(kind_raw), 0.0, 3.0);
     let is_ramp = _stages_mask(kind, 0.0);

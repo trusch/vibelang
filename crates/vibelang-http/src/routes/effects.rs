@@ -6,7 +6,12 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::{hash_name_to_id, EffectId, EffectMessage};
+use vibelang_core::{
+    hash_name_to_id,
+    traits::{FadeConfig, FadeTarget},
+    types::Duration,
+    EffectId, EffectMessage, FadeMessage, Message,
+};
 
 use crate::{
     models::{Effect, EffectUpdate, ErrorResponse, ParamSet},
@@ -172,17 +177,25 @@ pub async fn set_effect_param(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let effect_id = resolve_effect_id(&state, &id).await?;
 
-    if let Err(e) = state
-        .send(
-            EffectMessage::SetParam {
-                id: effect_id,
-                param,
-                value: req.value,
-            }
-            .into(),
-        )
-        .await
-    {
+    let message: Message = if let Some(fade_beats) = req.fade_beats {
+        FadeMessage::Start {
+            config: FadeConfig::new(
+                FadeTarget::Effect(effect_id),
+                &param,
+                req.value,
+                Duration::from_beats(fade_beats),
+            ),
+        }
+        .into()
+    } else {
+        EffectMessage::SetParam {
+            id: effect_id,
+            param,
+            value: req.value,
+        }
+        .into()
+    };
+    if let Err(e) = state.send(message).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!(

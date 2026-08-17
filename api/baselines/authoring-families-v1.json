@@ -1,0 +1,24 @@
+{
+  "schema": "https://vibelang.org/schemas/v1-authoring-family-baseline/1",
+  "schema_version": 1,
+  "accepted_base": "9aff9b40db1597364279f9aacf47d436718a031e",
+  "families": [
+    { "family": "transport", "script": "tests/fixtures/api-unification/v1/golden/08_transport.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/08_transport.snapshot", "pins": ["tempo", "time_signature", "explicit_quantization"] },
+    { "family": "group", "script": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot", "pins": ["eager_group_write", "body_contribution_order", "invalid_output_error"] },
+    { "family": "voice", "script": "tests/fixtures/api-unification/v1/golden/01_groups_voices.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/01_groups_voices.snapshot", "pins": ["named_eager_write", "voice_order", "run_timing"] },
+    { "family": "pattern", "script": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot", "pins": ["apply_vs_start", "launch_alias", "set_param_ignored"] },
+    { "family": "melody", "script": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/02_patterns_melodies.snapshot", "pins": ["apply_vs_start", "launch_alias"] },
+    { "family": "sequence", "script": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot", "pins": ["clip_order", "melody_implicit_sync", "pattern_and_sequence_dependency_drop"] },
+    { "family": "fade", "script": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot", "pins": ["apply_noop", "start_and_now_same_timing"] },
+    { "family": "effect", "script": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/03_sequences_fades_effects.snapshot", "pins": ["apply_eager_write", "group_effect_order"] },
+    { "family": "output_route", "script": "tests/fixtures/api-unification/v1/golden/04_routes.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/04_routes.snapshot", "pins": ["terminal_eager_write", "route_order", "replacement_after_add"] },
+    { "family": "sample", "script": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot", "pins": ["factory_eager_write", "configuration_write_through"] },
+    { "family": "sfz", "script": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot", "pins": ["factory_eager_write", "load_deferred"] },
+    { "family": "buffer", "script": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot", "pins": ["reserved_physical_id", "stable_name_id"] },
+    { "family": "recording", "script": "tests/fixtures/api-unification/v1/golden/05_resources_recording.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/05_resources_recording.snapshot", "pins": ["apply_records_request", "immediate_ignored", "pending_sample_not_registered"] },
+    { "family": "synthdef", "script": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot", "pins": ["body_eager_registry_write", "stable_body_hash"] },
+    { "family": "effectdef", "script": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot", "pins": ["body_eager_registry_write", "effect_use"] },
+    { "family": "dsp_value", "script": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/06_definitions_dsp.snapshot", "pins": ["graph_value_build", "definition_terminal"] },
+    { "family": "midi", "script": "tests/fixtures/api-unification/v1/golden/07_midi.vibe", "snapshot": "tests/fixtures/api-unification/v1/golden/07_midi.snapshot", "pins": ["unknown_device_sentinel", "route_terminal", "looper_terminal"] }
+  ]
+}

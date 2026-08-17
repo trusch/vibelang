@@ -1,0 +1,11 @@
+fragment_schema = "https://vibelang.org/schemas/public-api-semantic-fragment/v1"
+fragment_version = 1
+domain = "authoring"
+
+[[records]]
+target_id = "v1:entry:0000000000000001"
+owner = "vibelang-rhai"
+
+[records.stability]
+level = "stable"
+since = "0.4.0"

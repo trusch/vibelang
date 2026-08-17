@@ -14,18 +14,22 @@
 //   level_N        : 0..1 channel output level.
 //   link_N         : rounded 0/1; channels 2..4 can fire from previous EOR/EOF.
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _quadrax_gate(x) {
     clip_kr(x, 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _quadrax_mode_weight(mode, target) {
     clip_kr(1.0 - abs(mode - target), 0.0, 1.0)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _quadrax_shape(pos, curve_exp) {
     exp(ln(pos.max(0.00001)) * curve_exp)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _quadrax_ad_shape(phase, rise_frac, curve_exp) {
     let rise_pos = clip_kr(phase / rise_frac, 0.0, 1.0);
     let fall_pos = clip_kr((phase - rise_frac) / (1.0 - rise_frac), 0.0, 1.0);
@@ -36,6 +40,7 @@ fn _quadrax_ad_shape(phase, rise_frac, curve_exp) {
     rise_shape * rise_mask + fall_shape * (1.0 - rise_mask)
 }
 
+/// @vibelang-api export=import_callable_internal support=unsupported
 fn _quadrax_channel(trig_param, rise_param, fall_param, shape_param, mode_param, level_param) {
     let trig = _quadrax_gate(trig_param);
     let rise = clip_kr(rise_param, 0.0, 1.0).max(0.001);

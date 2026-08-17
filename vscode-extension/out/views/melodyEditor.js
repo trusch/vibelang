@@ -20,6 +20,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MelodyEditor = void 0;
 const vscode = require("vscode");
 const melodyParser_1 = require("../utils/melodyParser");
+const sourceEmitters_1 = require("../utils/sourceEmitters");
 const sharedComponents_1 = require("./sharedComponents");
 class MelodyEditor {
     constructor(panel, store) {
@@ -642,11 +643,11 @@ class MelodyEditor {
         let notesCallsStr;
         if (laneCount <= 1) {
             // Single lane - backward compatible format
-            notesCallsStr = `.notes("${lanes[0] || ''}")`;
+            notesCallsStr = sourceEmitters_1.vibe.member('Melody', 'notes', [sourceEmitters_1.vibe.string(lanes[0] || '')]);
         }
         else {
             // Multiple lanes - generate chained .notes() calls
-            notesCallsStr = lanes.map(lane => `.notes("${lane}")`).join('\n    ');
+            notesCallsStr = lanes.map(lane => sourceEmitters_1.vibe.member('Melody', 'notes', [sourceEmitters_1.vibe.string(lane)])).join('\n    ');
         }
         try {
             const document = await vscode.workspace.openTextDocument(this._currentMelody.sourceLocation.file);
@@ -2212,11 +2213,19 @@ class MelodyEditor {
                 let code;
                 if (laneCount <= 1) {
                     // Single lane - simple format
-                    code = 'melody("' + state.currentMelody.melodyName + '").on(' + (state.currentMelody.voiceName || 'voice') + ').notes("' + (lanes[0] || '') + '").start();';
+                    code = vibe.free('melody', [vibe.string(state.currentMelody.melodyName)])
+                        + vibe.member('Melody', 'on', [vibe.expr('Voice', state.currentMelody.voiceName || 'voice')])
+                        + vibe.member('Melody', 'notes', [vibe.string(lanes[0] || '')])
+                        + vibe.member('Melody', 'start', [])
+                        + ';';
                 } else {
                     // Multiple lanes - polyphonic format
-                    const notesCalls = lanes.map(lane => '    .notes("' + lane + '")').join('\\n');
-                    code = 'melody("' + state.currentMelody.melodyName + '")\\n    .on(' + (state.currentMelody.voiceName || 'voice') + ')\\n' + notesCalls + '\\n    .start();';
+                    const notesCalls = lanes.map(lane => '    ' + vibe.member('Melody', 'notes', [vibe.string(lane)])).join('\\n');
+                    code = vibe.free('melody', [vibe.string(state.currentMelody.melodyName)])
+                        + '\\n    ' + vibe.member('Melody', 'on', [vibe.expr('Voice', state.currentMelody.voiceName || 'voice')])
+                        + '\\n' + notesCalls
+                        + '\\n    ' + vibe.member('Melody', 'start', [])
+                        + ';';
                 }
 
                 const codeEl = document.getElementById('codeOutput');
@@ -2629,6 +2638,7 @@ class MelodyEditor {
     ${(0, sharedComponents_1.renderToastContainer)()}
 
     <script>
+        ${sourceEmitters_1.WEBVIEW_VIBE_EMITTER_RUNTIME}
         const vscode = acquireVsCodeApi();
         ${scripts}
     </script>

@@ -212,7 +212,9 @@ pub async fn fade_group(
         .with_state(|s| {
             s.groups
                 .iter()
-                .find(|(_, g)| g.id.raw().to_string() == path || format!("{}", g.id) == path)
+                .find(|(_, g)| {
+                    g.id.raw().to_string() == path || format!("{}", g.id) == path || g.name == path
+                })
                 .map(|(id, _)| *id)
         })
         .await;

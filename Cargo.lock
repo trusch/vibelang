@@ -735,6 +735,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1082,6 +1083,15 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "http"
@@ -2117,6 +2127,8 @@ dependencies = [
  "num-traits",
  "once_cell",
  "rhai_codegen",
+ "serde",
+ "serde_json",
  "smallvec",
  "smartstring",
  "thin-vec",
@@ -2209,6 +2221,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
+name = "ryu-js"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6518fc26bced4d53678a22d6e423e9d8716377def84545fe328236e3af070e7f"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2262,6 +2280,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_jcs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cacecf649bc1a7c5f0e299cc813977c6a78116abda2b93b1ee01735b71ead9a8"
+dependencies = [
+ "ryu-js",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2341,6 +2370,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2396,6 +2436,9 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smartstring"
@@ -2404,6 +2447,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
 dependencies = [
  "autocfg",
+ "serde",
  "static_assertions",
  "version_check",
 ]
@@ -2469,6 +2513,12 @@ dependencies = [
  "rustversion",
  "syn",
 ]
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
@@ -2546,6 +2596,9 @@ name = "thin-vec"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "144f754d318415ac792f9d69fc87abbbfc043ce2ef041c60f16ad828f638717d"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "thiserror"
@@ -3026,6 +3079,7 @@ checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
@@ -3048,10 +3102,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vibelang-api-manifest"
+version = "0.4.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "vibelang-cli"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "ctrlc",
  "env_logger",
@@ -3060,9 +3124,11 @@ dependencies = [
  "notify",
  "rhai",
  "rosc 0.11.4",
+ "serde",
  "tar",
  "tempfile",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
  "vibelang-core",
@@ -3083,6 +3149,8 @@ dependencies = [
  "futures",
  "getrandom 0.3.4",
  "gloo-timers",
+ "hmac",
+ "humantime",
  "js-sys",
  "libc",
  "libspa",
@@ -3092,11 +3160,17 @@ dependencies = [
  "rhai",
  "rosc 0.10.1",
  "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "subtle",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+ "vibelang-api-manifest",
  "vibelang-dsp",
  "vibelang-sfz",
  "wasm-bindgen",
@@ -3123,11 +3197,13 @@ dependencies = [
 name = "vibelang-http"
 version = "0.4.0"
 dependencies = [
+ "async-trait",
  "axum",
  "futures",
  "midir 0.9.1",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
  "tokio",
  "tower-http",
  "tracing",
@@ -3187,6 +3263,7 @@ dependencies = [
  "log",
  "midir 0.10.3",
  "rhai",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -3222,12 +3299,16 @@ dependencies = [
 name = "vibelang-wasm"
 version = "0.4.0"
 dependencies = [
+ "async-trait",
  "console_error_panic_hook",
  "getrandom 0.2.16",
  "getrandom 0.3.4",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
+ "tokio",
+ "uuid",
  "vibelang-core",
  "vibelang-dsp",
  "vibelang-rhai",
@@ -3770,6 +3851,22 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix 1.1.2",
+]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rhai",
+ "serde",
+ "serde_json",
+ "syn",
+ "toml 0.8.23",
+ "vibelang-api-manifest",
+ "vibelang-rhai",
+ "walkdir",
 ]
 
 [[package]]

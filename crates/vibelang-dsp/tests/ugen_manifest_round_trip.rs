@@ -25,6 +25,7 @@ const MANIFESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/ugen_manifests
 struct UGenManifest {
     name: String,
     rates: Vec<String>,
+    inputs: Vec<serde_json::Value>,
     category: String,
     #[serde(default)]
     ugen_class: Option<String>,
@@ -34,7 +35,37 @@ struct UGenManifest {
     requires_plugin: Option<String>,
     #[serde(default)]
     unavailable_reason: Option<String>,
+    #[serde(skip)]
+    source_manifest: String,
 }
+
+const EXPECTED_DEMAND_FUNCTIONS: &[(&str, usize, &str)] = &[
+    ("dseq_demand", 2, "demand.json"),
+    ("dser_demand", 2, "demand.json"),
+    ("drand_demand", 2, "demand.json"),
+    ("dxrand_demand", 2, "demand.json"),
+    ("dseries_demand", 3, "demand.json"),
+    ("dgeom_demand", 3, "demand.json"),
+    ("dbrown_demand", 4, "demand.json"),
+    ("dwhite_demand", 3, "demand.json"),
+    ("dibrown_demand", 4, "demand.json"),
+    ("diwhite_demand", 3, "demand.json"),
+    ("dbufrd_demand", 3, "demand.json"),
+    ("dbufwr_demand", 4, "demand.json"),
+    ("dconst_demand", 3, "demand.json"),
+    ("ddup_demand", 2, "demand.json"),
+    ("dstutter_demand", 2, "demand.json"),
+    ("dshuf_demand", 2, "demand.json"),
+    ("dwrand_demand", 3, "demand.json"),
+    ("dswitch_demand", 2, "demand.json"),
+    ("dswitch1_demand", 2, "demand.json"),
+    ("dreset_demand", 2, "demand.json"),
+    ("dpoll_demand", 4, "demand.json"),
+    ("deta_blocker_buf_demand", 2, "sc3_betablocker.json"),
+    ("dgauss_demand", 3, "sc3_bhob.json"),
+    ("dbrown2_demand", 5, "sc3_bhob.json"),
+    ("d_noise_ring_demand", 5, "sc3_chaos.json"),
+];
 
 const CONFIRMED_PSEUDO_UGENS: &[&str] = &[
     "AMClip",
@@ -143,8 +174,12 @@ fn load_manifests() -> Vec<UGenManifest> {
     for path in paths {
         let body =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-        let parsed: Vec<UGenManifest> = serde_json::from_str(&body)
+        let mut parsed: Vec<UGenManifest> = serde_json::from_str(&body)
             .unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
+        let source_manifest = path.file_name().unwrap().to_string_lossy().into_owned();
+        for manifest in &mut parsed {
+            manifest.source_manifest.clone_from(&source_manifest);
+        }
         all.extend(parsed);
     }
     all
@@ -193,7 +228,7 @@ fn first_concrete_rate(ugen: &UGenManifest) -> Option<&str> {
     ugen.rates
         .iter()
         .map(String::as_str)
-        .find(|r| *r != "builder")
+        .find(|r| !matches!(*r, "builder" | "demand"))
 }
 
 fn expects_literal_ugen_name(ugen: &UGenManifest) -> bool {
@@ -220,6 +255,49 @@ fn parse_scsyndef_header(bytes: &[u8]) -> Result<(), String> {
         return Err(format!("unexpected version: {}", version));
     }
     Ok(())
+}
+
+#[test]
+fn demand_rate_functions_are_quarantined() {
+    let manifests = load_manifests();
+    let actual: BTreeMap<String, (usize, String)> = manifests
+        .iter()
+        .filter(|manifest| manifest.rates.iter().any(|rate| rate == "demand"))
+        .map(|manifest| {
+            (
+                format!("{}_demand", to_snake_case(&manifest.name)),
+                (manifest.inputs.len(), manifest.source_manifest.clone()),
+            )
+        })
+        .collect();
+    let expected: BTreeMap<String, (usize, String)> = EXPECTED_DEMAND_FUNCTIONS
+        .iter()
+        .map(|(name, arity, source)| ((*name).into(), (*arity, (*source).into())))
+        .collect();
+
+    assert_eq!(actual, expected, "exact demand-rate inventory drifted");
+
+    let mut engine = Engine::new();
+    register_dsp_api(&mut engine);
+    for (function, max_arity, _) in EXPECTED_DEMAND_FUNCTIONS {
+        for arity in 0..=*max_arity {
+            let arguments = std::iter::repeat("0.0")
+                .take(arity)
+                .collect::<Vec<_>>()
+                .join(", ");
+            set_active_builder(GraphBuilderInner::new());
+            let result = engine.eval::<Dynamic>(&format!("{function}({arguments});"));
+            let builder = clear_active_builder().expect("active builder vanished");
+            assert!(
+                result.is_err(),
+                "{function} arity {arity} must not be callable"
+            );
+            assert!(
+                builder.nodes.is_empty(),
+                "{function} arity {arity} must not add a fallback-rate graph node"
+            );
+        }
+    }
 }
 
 #[test]

@@ -8,9 +8,9 @@ use crate::errors::{Result, SynthDefError};
 use crate::graph::{
     clear_active_builder, set_active_builder, GraphBuilderInner, GraphIR, Input, Rate,
 };
-use crate::helpers;
+use crate::helpers::{self, UgenAdapterProfile};
 use crate::rhainodes::{self, NodeRef};
-use crate::ugens::register_generated_ugens;
+use crate::ugens::register_generated_ugens_for_profile;
 
 /// Selects how a body closure receives its parameters.
 ///
@@ -122,6 +122,7 @@ pub struct SynthDef {
     // True once the user has called `.output(...)` at least once. Tracks whether
     // `outputs` is the implicit legacy default or an explicit declaration.
     outputs_explicit: bool,
+    ugen_profile: UgenAdapterProfile,
 }
 
 impl SynthDef {
@@ -138,7 +139,13 @@ impl SynthDef {
                 rate: PortRate::Ar,
             }],
             outputs_explicit: false,
+            ugen_profile: UgenAdapterProfile::V1Compatibility,
         }
+    }
+
+    pub(crate) fn with_ugen_profile(mut self, profile: UgenAdapterProfile) -> Self {
+        self.ugen_profile = profile;
+        self
     }
 
     /// Declare a named audio-rate input port. Channels typically 1
@@ -387,8 +394,8 @@ impl SynthDef {
         // Create engine with DSP components
         let mut engine = rhai::Engine::new();
         rhainodes::register_node_ref(&mut engine);
-        register_generated_ugens(&mut engine);
-        helpers::register_helpers(&mut engine);
+        register_generated_ugens_for_profile(&mut engine, self.ugen_profile);
+        helpers::register_helpers_for_profile(&mut engine, self.ugen_profile);
         engine.register_type::<GraphIR>();
 
         // Prepare arguments (input first, followed by user params)
@@ -734,8 +741,8 @@ impl SynthDef {
         let mut engine = rhai::Engine::new();
         rhainodes::register_node_ref(&mut engine);
         // Register UGen functions with default parameters
-        register_generated_ugens(&mut engine);
-        helpers::register_helpers(&mut engine);
+        register_generated_ugens_for_profile(&mut engine, self.ugen_profile);
+        helpers::register_helpers_for_profile(&mut engine, self.ugen_profile);
         engine.register_type::<GraphIR>();
 
         // Create empty AST for closure call (no wrapper AST needed anymore)

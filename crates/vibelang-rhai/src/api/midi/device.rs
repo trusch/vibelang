@@ -2,7 +2,8 @@
 
 use rhai::{CustomType, Dynamic, EvalAltResult, FnPtr, Position, TypeBuilder};
 use vibelang_core::midi::{
-    parse_note_name, CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder,
+    parse_note_name, resolve_midi_output_endpoint, CcRouteBuilder, KeyboardRouteBuilder,
+    MidiOutputEndpoint, NoteRouteBuilder,
 };
 use vibelang_core::reload::{
     MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
@@ -48,6 +49,15 @@ pub struct MidiDevice {
 }
 
 impl MidiDevice {
+    fn output_endpoint(&self, action: &str) -> Result<MidiOutputEndpoint, Box<EvalAltResult>> {
+        resolve_midi_output_endpoint(&self.name).map_err(|error| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                format!("{action}(): {error}; no MIDI message was queued").into(),
+                Position::NONE,
+            ))
+        })
+    }
+
     /// Get the device ID as an integer.
     pub fn get_id(&mut self) -> i64 {
         self.id.raw() as i64
@@ -712,33 +722,29 @@ impl MidiDevice {
     // === MIDI Clock Output Methods ===
 
     /// Enable MIDI clock output to this device.
-    pub fn enable_clock(self) -> Self {
-        if !self.has_input && !self.has_output {
-            log::warn!(
-                "[MIDI] enable_clock(): device '{}' not found, skipping",
-                self.name
-            );
-            return self;
-        }
+    pub fn enable_clock(self) -> Result<Self, Box<EvalAltResult>> {
+        let endpoint = self.output_endpoint("enable_clock")?;
         context::with_state(|state| {
-            state.midi_outputs.insert(self.id);
+            state.midi_output_endpoints.insert(endpoint.clone());
             state.midi_clock_outputs.push(MidiClockOutputRequest {
-                device_id: self.id,
+                endpoint,
                 enabled: true,
             });
         });
-        self
+        Ok(self)
     }
 
     /// Disable MIDI clock output to this device.
-    pub fn disable_clock(self) -> Self {
+    pub fn disable_clock(self) -> Result<Self, Box<EvalAltResult>> {
+        let endpoint = self.output_endpoint("disable_clock")?;
         context::with_state(|state| {
+            state.midi_output_endpoints.insert(endpoint.clone());
             state.midi_clock_outputs.push(MidiClockOutputRequest {
-                device_id: self.id,
+                endpoint,
                 enabled: false,
             });
         });
-        self
+        Ok(self)
     }
 
     // === MIDI Transport Messages ===
@@ -756,19 +762,15 @@ impl MidiDevice {
     /// let ko2 = midi_device("KO2");
     /// ko2.send_start();  // External device starts in sync
     /// ```
-    pub fn send_start(&mut self) {
-        if !self.has_input && !self.has_output {
-            log::warn!(
-                "[MIDI] send_start(): device '{}' not found, skipping",
-                self.name
-            );
-            return;
-        }
-        let msg = MidiOutputMessage::Start { device_id: self.id };
+    pub fn send_start(&mut self) -> Result<(), Box<EvalAltResult>> {
+        let endpoint = self.output_endpoint("send_start")?;
         context::with_state(|state| {
-            state.midi_outputs.insert(self.id);
-            state.midi_output_messages.push(msg);
+            state.midi_output_endpoints.insert(endpoint.clone());
+            state
+                .midi_output_messages
+                .push(MidiOutputMessage::Start { endpoint });
         });
+        Ok(())
     }
 
     /// Send a MIDI Stop message (0xFC) to this device.
@@ -780,12 +782,15 @@ impl MidiDevice {
     /// let ko2 = midi_device("KO2");
     /// ko2.send_stop();  // External device stops
     /// ```
-    pub fn send_stop(&mut self) {
-        let msg = MidiOutputMessage::Stop { device_id: self.id };
+    pub fn send_stop(&mut self) -> Result<(), Box<EvalAltResult>> {
+        let endpoint = self.output_endpoint("send_stop")?;
         context::with_state(|state| {
-            state.midi_outputs.insert(self.id);
-            state.midi_output_messages.push(msg);
+            state.midi_output_endpoints.insert(endpoint.clone());
+            state
+                .midi_output_messages
+                .push(MidiOutputMessage::Stop { endpoint });
         });
+        Ok(())
     }
 
     /// Send a MIDI Continue message (0xFB) to this device.
@@ -797,12 +802,15 @@ impl MidiDevice {
     /// let ko2 = midi_device("KO2");
     /// ko2.send_continue();  // External device resumes
     /// ```
-    pub fn send_continue(&mut self) {
-        let msg = MidiOutputMessage::Continue { device_id: self.id };
+    pub fn send_continue(&mut self) -> Result<(), Box<EvalAltResult>> {
+        let endpoint = self.output_endpoint("send_continue")?;
         context::with_state(|state| {
-            state.midi_outputs.insert(self.id);
-            state.midi_output_messages.push(msg);
+            state.midi_output_endpoints.insert(endpoint.clone());
+            state
+                .midi_output_messages
+                .push(MidiOutputMessage::Continue { endpoint });
         });
+        Ok(())
     }
 
     // === MIDI 2.0 Methods ===
@@ -831,8 +839,8 @@ impl MidiDevice {
         PerNotePressureBuilder::new(self.id)
     }
 
-    /// Start building a high-resolution 32-bit CC route.
-
+    /// Start building a deprecated compatibility CC route.
+    #[deprecated(note = "use map_cc(); transport resolution is selected automatically")]
     pub fn cc32(self, cc: i64) -> Cc32Route {
         Cc32Route::new(self.id, cc.clamp(0, 127) as u8)
     }

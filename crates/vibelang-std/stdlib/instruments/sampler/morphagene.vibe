@@ -544,6 +544,7 @@ define_synthdef("morphagene_reel_fill", |builder| {
 // 8.35M frames × 1 channel ≈ 8 MB at 32-bit float — large but within the
 // scsynth `-b 4096` script-buffer pool. For shorter loops, pick a smaller
 // frame count (e.g. 480000 = 10 s @ 48 kHz).
+/// @vibelang-api export=public support=supported
 fn reel(name, frames, channels) {
     let buf = allocate_buffer(name, frames, channels);
     return #{
@@ -563,6 +564,7 @@ fn reel(name, frames, channels) {
 // splices is a single-splice whole-Reel reader), and `splices_buf` from
 // `reel.splices_buf` (0 means even spacing).
 // Returns the voice for chaining.
+/// @vibelang-api export=public support=supported
 fn reel_attach(voice, reel) {
     let n_splices = reel.splices.len();
     if n_splices < 1 {
@@ -592,6 +594,7 @@ fn reel_attach(voice, reel) {
 //   2 → sine     (single-harmonic — useful for clean "pure tone" baseline)
 //   3 → pink noise (broadband — useful for granular texture without pitch)
 //   4 → silence  (explicitly clears the Reel via near-zero amp)
+/// @vibelang-api export=public support=supported
 fn reel_fill_preset(reel, preset) {
     let voice_name = "morphagene_reel_fill_" + reel.name;
     return voice(voice_name)

@@ -15,6 +15,11 @@
 //! ```
 
 use crate::backend::{AddAction, Backend, BufferInfo};
+use crate::native_generation::{
+    ActivationAcknowledgement, ActivationSwitch, BackendCorrelation, GenerationAllocation,
+    NativeGenerationDriver, NativeGenerationPlan, NativePlanComponent, NativeStageOperation,
+};
+use crate::resource_manager::PhysicalResourceId;
 use crate::types::{BufferId, NodeId, ParamMap};
 use async_trait::async_trait;
 use rosc::{decoder, encoder, OscBundle, OscMessage, OscPacket, OscTime, OscType};
@@ -23,7 +28,7 @@ use std::fs;
 use std::io;
 use std::net::UdpSocket;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -1142,6 +1147,14 @@ impl ScsynthBackend {
         args
     }
 
+    fn g_new_args(node: NodeId, target: NodeId, action: AddAction) -> Vec<OscType> {
+        vec![
+            OscType::Int(node.0 as i32),
+            OscType::Int(action.to_sc_int()),
+            OscType::Int(target.0 as i32),
+        ]
+    }
+
     async fn send_msg_and_await_done(
         &self,
         path: &str,
@@ -1264,24 +1277,86 @@ impl ScsynthBackend {
     /// continuing. Useful for ensuring groups exist before creating synths
     /// that target them.
     pub async fn sync(&self) -> Result<(), ScsynthError> {
-        // Get a unique sync ID
-        let sync_id = self.next_sync_id.fetch_add(1, Ordering::SeqCst);
+        let correlation = self.reserve_generation_correlation()?;
+        self.sync_reserved(&correlation).await.map(|_| ())
+    }
+
+    fn reserve_generation_correlation(&self) -> Result<BackendCorrelation, ScsynthError> {
+        let sync_id = Self::reserve_sync_id(&self.next_sync_id)?;
+        Ok(BackendCorrelation {
+            backend: "scsynth".into(),
+            token: format!("sync-{sync_id}"),
+        })
+    }
+
+    fn reserve_sync_id(next_sync_id: &AtomicI32) -> Result<i32, ScsynthError> {
+        next_sync_id
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                (current > 0).then(|| current.checked_add(1)).flatten()
+            })
+            .map_err(|_| {
+                ScsynthError::ConnectionFailed("scsynth correlation id space exhausted".into())
+            })
+    }
+
+    fn register_pending_sync_and_send(
+        pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
+        sync_id: i32,
+        tx: oneshot::Sender<()>,
+        send: impl FnOnce() -> Result<(), ScsynthError>,
+    ) -> Result<(), ScsynthError> {
+        {
+            let mut pending = pending_sync
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
+            if pending.contains_key(&sync_id) {
+                return Err(ScsynthError::ConnectionFailed(format!(
+                    "duplicate pending scsynth correlation {sync_id}"
+                )));
+            }
+            pending.insert(sync_id, tx);
+        }
+        if let Err(error) = send() {
+            if let Ok(mut pending) = pending_sync.lock() {
+                pending.remove(&sync_id);
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn correlation_id(correlation: &BackendCorrelation) -> Result<i32, ScsynthError> {
+        let value = correlation
+            .token
+            .strip_prefix("sync-")
+            .ok_or_else(|| {
+                ScsynthError::ConnectionFailed("invalid scsynth correlation token".into())
+            })?
+            .parse::<i32>()
+            .map_err(|_| {
+                ScsynthError::ConnectionFailed("invalid scsynth correlation token".into())
+            })?;
+        if correlation.backend != "scsynth" || value <= 0 {
+            return Err(ScsynthError::ConnectionFailed(
+                "invalid scsynth correlation token".into(),
+            ));
+        }
+        Ok(value)
+    }
+
+    async fn sync_reserved(
+        &self,
+        correlation: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, ScsynthError> {
+        let sync_id = Self::correlation_id(correlation)?;
         let started = Instant::now();
 
         // Create oneshot channel for response
         let (tx, rx) = oneshot::channel();
 
-        // Register pending request
-        {
-            let mut pending = self
-                .pending_sync
-                .lock()
-                .map_err(|_| ScsynthError::LockPoisoned)?;
-            pending.insert(sync_id, tx);
-        }
-
-        // Send sync command
-        self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
+        Self::register_pending_sync_and_send(&self.pending_sync, sync_id, tx, || {
+            self.send_msg("/sync", vec![OscType::Int(sync_id)])
+        })?;
         Self::osc_diag_log(|| format!("sync_wait_start id={sync_id}"));
 
         // Wait for response with reasonable timeout.
@@ -1297,12 +1372,20 @@ impl ScsynthBackend {
                     )
                 });
                 tracing::trace!("Sync {} completed", sync_id);
-                Ok(())
+                Ok(correlation.clone())
             }
-            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
-                "Sync response channel closed".to_string(),
-            )),
+            Ok(Err(_)) => {
+                if let Ok(mut pending) = self.pending_sync.lock() {
+                    pending.remove(&sync_id);
+                }
+                Err(ScsynthError::ConnectionFailed(
+                    "Sync response channel closed".to_string(),
+                ))
+            }
             Err(_) => {
+                if let Ok(mut pending) = self.pending_sync.lock() {
+                    pending.remove(&sync_id);
+                }
                 Self::osc_diag_log(|| {
                     format!(
                         "sync_wait_timeout id={} elapsed_ms={:.3}",
@@ -1311,6 +1394,42 @@ impl ScsynthBackend {
                     )
                 });
                 tracing::warn!("Sync {} timed out after 5 seconds", sync_id);
+                Err(ScsynthError::Timeout)
+            }
+        }
+    }
+
+    async fn free_buffer_correlated(
+        &self,
+        id: BufferId,
+        correlation: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, ScsynthError> {
+        let sync_id = Self::correlation_id(correlation)?;
+        let completion = encoder::encode(&OscPacket::Message(OscMessage {
+            addr: "/sync".into(),
+            args: vec![OscType::Int(sync_id)],
+        }))?;
+        let (tx, rx) = oneshot::channel();
+        Self::register_pending_sync_and_send(&self.pending_sync, sync_id, tx, || {
+            self.send_msg(
+                "/b_free",
+                vec![OscType::Int(id.raw() as i32), OscType::Blob(completion)],
+            )
+        })?;
+        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+            Ok(Ok(())) => Ok(correlation.clone()),
+            Ok(Err(_)) => {
+                if let Ok(mut pending) = self.pending_sync.lock() {
+                    pending.remove(&sync_id);
+                }
+                Err(ScsynthError::ConnectionFailed(
+                    "buffer-free correlation channel closed".into(),
+                ))
+            }
+            Err(_) => {
+                if let Ok(mut pending) = self.pending_sync.lock() {
+                    pending.remove(&sync_id);
+                }
                 Err(ScsynthError::Timeout)
             }
         }
@@ -1478,14 +1597,7 @@ impl Backend for ScsynthBackend {
         action: AddAction,
     ) -> Result<(), Self::Error> {
         self.prepare_node_generation(node);
-        self.send_msg(
-            "/g_new",
-            vec![
-                OscType::Int(node.0 as i32),
-                OscType::Int(action.to_sc_int()),
-                OscType::Int(target.0 as i32),
-            ],
-        )?;
+        self.send_msg("/g_new", Self::g_new_args(node, target, action))?;
         Ok(())
     }
 
@@ -1822,6 +1934,177 @@ impl Backend for ScsynthBackend {
     }
 }
 
+#[async_trait]
+impl NativeGenerationDriver for ScsynthBackend {
+    type Error = ScsynthError;
+
+    fn backend_identity(&self) -> &str {
+        "scsynth"
+    }
+
+    fn has_exact_component_acknowledgements(&self) -> bool {
+        false
+    }
+
+    fn reserve_correlation(&self) -> Result<BackendCorrelation, Self::Error> {
+        self.reserve_generation_correlation()
+    }
+
+    async fn stage_inactive_root(
+        &self,
+        allocation: &GenerationAllocation,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        self.create_group(allocation.root, allocation.parent, AddAction::Tail)
+            .await?;
+        self.run_node(allocation.root, false).await?;
+        self.sync_reserved(expected).await
+    }
+
+    async fn stage_component(
+        &self,
+        root: NodeId,
+        component: &NativePlanComponent,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        match &component.operation {
+            NativeStageOperation::LoadSynthDef { name, bytes } => {
+                self.load_synthdef(name, bytes).await?
+            }
+            NativeStageOperation::CreateGroup {
+                node,
+                target,
+                action,
+            } => {
+                if *node == root {
+                    return Err(ScsynthError::ConnectionFailed(
+                        "inactive root cannot be restaged as a component".into(),
+                    ));
+                }
+                self.create_group(*node, *target, *action).await?
+            }
+            NativeStageOperation::CreateSynth {
+                definition,
+                node,
+                target,
+                action,
+                params,
+            }
+            | NativeStageOperation::CreateEffect {
+                definition,
+                node,
+                target,
+                action,
+                params,
+            } => {
+                if *node == root {
+                    return Err(ScsynthError::ConnectionFailed(
+                        "inactive root cannot be restaged as a component".into(),
+                    ));
+                }
+                self.create_synth(definition, *node, *target, *action, params)
+                    .await?
+            }
+            NativeStageOperation::SetParams { node, params } => {
+                self.set_params(*node, params).await?
+            }
+            NativeStageOperation::MapRoute {
+                node,
+                parameter,
+                bus,
+            } => self.map_param_to_bus(*node, parameter, *bus).await?,
+            NativeStageOperation::Resource { .. } | NativeStageOperation::RemoveResource { .. } => {
+            }
+        }
+        self.sync_reserved(expected).await
+    }
+
+    async fn barrier(
+        &self,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        self.sync_reserved(expected).await
+    }
+
+    async fn activate(
+        &self,
+        activation: &ActivationSwitch,
+        expected: &BackendCorrelation,
+    ) -> Result<ActivationAcknowledgement, Self::Error> {
+        let mut messages = Vec::with_capacity(2);
+        if let Some(previous) = activation.previous_root {
+            messages.push((
+                "/n_run",
+                vec![OscType::Int(previous.raw() as i32), OscType::Int(0)],
+            ));
+        }
+        messages.push((
+            "/n_run",
+            vec![
+                OscType::Int(activation.next_root.raw() as i32),
+                OscType::Int(1),
+            ],
+        ));
+        self.send_msgs_at(messages, activation.deadline)?;
+        if let Some(deadline) = activation.deadline {
+            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
+        }
+        Ok(ActivationAcknowledgement {
+            correlation: self.sync_reserved(expected).await?,
+            timing: None,
+        })
+    }
+
+    async fn precommit(&self, _plan: &NativeGenerationPlan) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn restore(
+        &self,
+        activation: &ActivationSwitch,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        let mut messages = vec![(
+            "/n_run",
+            vec![
+                OscType::Int(activation.next_root.raw() as i32),
+                OscType::Int(0),
+            ],
+        )];
+        if let Some(previous) = activation.previous_root {
+            messages.push((
+                "/n_run",
+                vec![OscType::Int(previous.raw() as i32), OscType::Int(1)],
+            ));
+        }
+        self.send_msgs_at(messages, None)?;
+        self.sync_reserved(expected).await
+    }
+
+    async fn cleanup_generation(
+        &self,
+        root: NodeId,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        self.free_node(root).await?;
+        self.sync_reserved(expected).await
+    }
+
+    async fn free_resource(
+        &self,
+        physical: PhysicalResourceId,
+        expected: &BackendCorrelation,
+    ) -> Result<BackendCorrelation, Self::Error> {
+        let PhysicalResourceId::Buffer(id) = physical else {
+            return Err(ScsynthError::ConnectionFailed(
+                "scsynth cannot free a non-buffer resource generation".into(),
+            ));
+        };
+        self.free_buffer_correlated(BufferId::new(id), expected)
+            .await
+    }
+}
+
 // Helper trait for AddAction conversion to scsynth integer
 trait AddActionExt {
     fn to_sc_int(&self) -> i32;
@@ -1953,6 +2236,33 @@ mod tests {
     }
 
     #[test]
+    fn inactive_group_and_synth_adapters_preserve_all_add_action_targets_exactly() {
+        let node = NodeId::new(101);
+        let target = NodeId::new(202);
+        for (action, encoded) in [
+            (AddAction::Head, 0),
+            (AddAction::Tail, 1),
+            (AddAction::Before, 2),
+            (AddAction::After, 3),
+            (AddAction::Replace, 4),
+        ] {
+            assert_eq!(
+                ScsynthBackend::g_new_args(node, target, action),
+                vec![OscType::Int(101), OscType::Int(encoded), OscType::Int(202),]
+            );
+            assert_eq!(
+                ScsynthBackend::s_new_args("voice", node, target, action, &ParamMap::new()),
+                vec![
+                    OscType::String("voice".into()),
+                    OscType::Int(101),
+                    OscType::Int(encoded),
+                    OscType::Int(202),
+                ]
+            );
+        }
+    }
+
+    #[test]
     fn test_scsynth_error_display() {
         let err = ScsynthError::ConnectionFailed("test".to_string());
         assert_eq!(format!("{}", err), "Connection failed: test");
@@ -1962,6 +2272,34 @@ mod tests {
 
         let err = ScsynthError::Timeout;
         assert_eq!(format!("{}", err), "Timeout waiting for response");
+    }
+
+    #[test]
+    fn generation_correlations_are_exact_and_fail_closed_at_exhaustion() {
+        let next = AtomicI32::new(1);
+        assert_eq!(ScsynthBackend::reserve_sync_id(&next).unwrap(), 1);
+        assert_eq!(ScsynthBackend::reserve_sync_id(&next).unwrap(), 2);
+
+        next.store(i32::MAX, Ordering::SeqCst);
+        assert!(matches!(
+            ScsynthBackend::reserve_sync_id(&next),
+            Err(ScsynthError::ConnectionFailed(message))
+                if message.contains("correlation id space exhausted")
+        ));
+        assert_eq!(next.load(Ordering::SeqCst), i32::MAX);
+    }
+
+    #[test]
+    fn pending_correlation_is_removed_when_socket_send_fails() {
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, _rx) = oneshot::channel();
+        let result = ScsynthBackend::register_pending_sync_and_send(&pending, 41, tx, || {
+            Err(ScsynthError::ConnectionFailed(
+                "injected send failure".into(),
+            ))
+        });
+        assert!(matches!(result, Err(ScsynthError::ConnectionFailed(_))));
+        assert!(pending.lock().unwrap().is_empty());
     }
 
     #[test]

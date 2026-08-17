@@ -17,6 +17,10 @@ midi = ["vibelang-core/midi", "dep:midir"]
 # Enable all extensions
 extensions = ["ext-fs", "ext-exec", "ext-net"]
 
+# Build-time public API metadata extraction. This only exposes Rhai's metadata
+# view and enables all optional registration modules; it changes no default API.
+api-manifest = ["native", "midi", "extensions", "rhai/metadata"]
+
 # Filesystem extension (read_file, write_file, etc.)
 ext-fs = []
 
@@ -24,7 +28,7 @@ ext-fs = []
 ext-exec = []
 
 # Networking extension (HTTP client)
-ext-net = []
+ext-net = ["dep:serde_json"]
 
 [dependencies]
 vibelang-core = { version = "0.4.0", default-features = false }
@@ -33,10 +37,16 @@ rhai = { version = "1", features = ["sync"] }
 tracing = "0.1"
 log = "0.4"
 thiserror = "1"
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+# The M09 capability-rejection proofs manufacture deterministic unavailable
+# snapshots; the feature exists only for proofs and never ships.
+vibelang-core = { version = "0.4.0", default-features = false, features = [
+    "capability-fixtures",
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 midir = { version = "0.10", optional = true }

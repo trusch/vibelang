@@ -7,6 +7,7 @@ use tower_lsp::lsp_types::{
 };
 
 use crate::analysis::AnalysisResult;
+use crate::data::get_api_function_doc;
 
 /// Semantic token types used by VibeLang.
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
@@ -245,32 +246,7 @@ fn classify_identifier(
         return (TT_KEYWORD, 0);
     }
 
-    // Built-in functions (from stdlib)
-    let builtins = [
-        "voice",
-        "pattern",
-        "melody",
-        "sequence",
-        "group",
-        "define_group",
-        "set_tempo",
-        "set_time_signature",
-        "set_quantization",
-        "load_sample",
-        "load_sfz",
-        "define_synthdef",
-        "define_fx",
-        "at_bar",
-        "every",
-        "after",
-        "fade_in",
-        "fade_out",
-        "midi_out",
-        "midi_in",
-        "record",
-        "export_audio",
-    ];
-    if builtins.contains(&word) {
+    if get_api_function_doc(word).is_some() {
         return (TT_FUNCTION, MOD_DEFAULT_LIBRARY);
     }
 

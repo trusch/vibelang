@@ -5,11 +5,106 @@
 use rhai::Engine;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc, Mutex};
+use vibelang_core::candidate::{
+    Candidate, ContractDigest, EngineInstanceId, EvaluationIdentity, LanguageContract,
+};
+use vibelang_core::mutation::{
+    Atomicity, CandidateOrigin, FailurePhase, MutationEventSink, MutationKind, MutationReceipt,
+    MutationReplySink, MutationSource, RequestMaterial, Submission, SupersessionPolicy,
+};
 use vibelang_core::reload::ScriptState;
+use vibelang_core::{MutationAttempt, ReloadMessage, RuntimeHandle};
 
 use crate::api;
 use crate::context;
 use crate::error::{Error, Result};
+use crate::foundation;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::version::select_import_language;
+use crate::version::{select_language, LanguageSelectionError, LanguageVersion};
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct VersionedFileModuleResolver {
+    inner: rhai::module_resolvers::FileModuleResolver,
+    importer: LanguageVersion,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl VersionedFileModuleResolver {
+    fn new(base_path: Option<PathBuf>, importer: LanguageVersion) -> Self {
+        let mut inner = rhai::module_resolvers::FileModuleResolver::new();
+        if let Some(base_path) = base_path {
+            inner.set_base_path(base_path);
+        }
+        inner.set_extension("vibe");
+        Self { inner, importer }
+    }
+
+    fn validate(
+        &self,
+        source: Option<&str>,
+        path: &str,
+        pos: rhai::Position,
+    ) -> std::result::Result<(), Box<rhai::EvalAltResult>> {
+        let source_path = source.and_then(|source| Path::new(source).parent());
+        let file_path = self.inner.get_file_path(path, source_path);
+        let Ok(module_source) = std::fs::read_to_string(file_path) else {
+            return Ok(());
+        };
+        select_import_language(&module_source, self.importer).map_err(|error| {
+            Box::new(rhai::EvalAltResult::ErrorInModule(
+                path.to_string(),
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    error.to_string().into(),
+                    pos,
+                )),
+                pos,
+            ))
+        })?;
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl rhai::module_resolvers::ModuleResolver for VersionedFileModuleResolver {
+    fn resolve(
+        &self,
+        engine: &Engine,
+        source: Option<&str>,
+        path: &str,
+        pos: rhai::Position,
+    ) -> std::result::Result<rhai::Shared<rhai::Module>, Box<rhai::EvalAltResult>> {
+        self.validate(source, path, pos)?;
+        self.inner.resolve(engine, source, path, pos)
+    }
+
+    fn resolve_raw(
+        &self,
+        engine: &Engine,
+        global: &mut rhai::GlobalRuntimeState,
+        scope: &mut rhai::Scope,
+        path: &str,
+        pos: rhai::Position,
+    ) -> std::result::Result<rhai::Shared<rhai::Module>, Box<rhai::EvalAltResult>> {
+        self.validate(global.source(), path, pos)?;
+        self.inner.resolve_raw(engine, global, scope, path, pos)
+    }
+
+    fn resolve_ast(
+        &self,
+        engine: &Engine,
+        source: Option<&str>,
+        path: &str,
+        pos: rhai::Position,
+    ) -> Option<std::result::Result<rhai::AST, Box<rhai::EvalAltResult>>> {
+        if let Err(error) = self.validate(source, path, pos) {
+            return Some(Err(error));
+        }
+        self.inner.resolve_ast(engine, source, path, pos)
+    }
+}
 
 // ============================================================================
 // In-memory module resolver for WASM
@@ -17,6 +112,7 @@ use crate::error::{Error, Result};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_resolver {
+    use crate::version::{select_import_language, LanguageVersion};
     use rhai::module_resolvers::ModuleResolver;
     use rhai::{Engine, Module, Position, Scope, AST};
     use std::collections::HashMap;
@@ -32,14 +128,21 @@ mod wasm_resolver {
         modules: Arc<HashMap<String, String>>,
         /// File extension to add (default: "vibe")
         extension: String,
+        /// Language major inherited by unversioned modules.
+        importer: LanguageVersion,
     }
 
     impl InMemoryModuleResolver {
         /// Create a new in-memory resolver with the given modules.
         pub fn new(modules: HashMap<String, String>) -> Self {
+            Self::for_language(modules, LanguageVersion::V1)
+        }
+
+        pub fn for_language(modules: HashMap<String, String>, importer: LanguageVersion) -> Self {
             Self {
                 modules: Arc::new(modules),
                 extension: "vibe".to_string(),
+                importer,
             }
         }
 
@@ -86,6 +189,17 @@ mod wasm_resolver {
                 ))
             })?;
 
+            select_import_language(source, self.importer).map_err(|error| {
+                Box::new(rhai::EvalAltResult::ErrorInModule(
+                    path.to_string(),
+                    Box::new(rhai::EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        pos,
+                    )),
+                    pos,
+                ))
+            })?;
+
             // Compile and create module
             let ast = engine.compile(source).map_err(|e| {
                 Box::new(rhai::EvalAltResult::ErrorInModule(
@@ -123,6 +237,17 @@ mod wasm_resolver {
                 }
             };
 
+            if let Err(error) = select_import_language(source, self.importer) {
+                return Some(Err(Box::new(rhai::EvalAltResult::ErrorInModule(
+                    path.to_string(),
+                    Box::new(rhai::EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        pos,
+                    )),
+                    pos,
+                ))));
+            }
+
             // Compile the source
             Some(engine.compile(source).map_err(|e| {
                 Box::new(rhai::EvalAltResult::ErrorInModule(
@@ -137,6 +262,264 @@ mod wasm_resolver {
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm_resolver::InMemoryModuleResolver;
+
+/// Canonical runtime outcome carrier for one evaluated v1 Rhai script.
+///
+/// Rhai terminal return values remain evaluation-local. This outer carrier is
+/// the authoritative source for queue admission, readiness transitions, and
+/// the eventual runtime outcome.
+pub struct HostMutation {
+    initial_receipt: MutationReceipt,
+    latest_receipt: Arc<Mutex<Option<MutationReceipt>>>,
+    receipt_updates: mpsc::Receiver<MutationReceipt>,
+}
+
+impl HostMutation {
+    /// The receipt returned by submission. `accepted` is pending only; a
+    /// pre-admission failure may instead already be terminal.
+    #[must_use]
+    pub fn initial_receipt(&self) -> &MutationReceipt {
+        &self.initial_receipt
+    }
+
+    /// The newest canonical receipt published by the runtime.
+    pub fn latest_receipt(&self) -> Result<MutationReceipt> {
+        self.latest_receipt
+            .lock()
+            .map_err(|_| Error::Runtime("host receipt state is poisoned".into()))?
+            .clone()
+            .ok_or_else(|| Error::Runtime("host receipt was not published".into()))
+    }
+
+    /// Read the next readiness or terminal transition without blocking.
+    ///
+    /// `None` means no newer transition is currently available. Callers must
+    /// not reinterpret that as success; [`HostMutation::latest_receipt`] stays
+    /// authoritative.
+    pub fn try_next_receipt(&self) -> Option<MutationReceipt> {
+        while let Ok(receipt) = self.receipt_updates.try_recv() {
+            if receipt.event_sequence > self.initial_receipt.event_sequence {
+                return Some(receipt);
+            }
+        }
+        None
+    }
+
+    /// Acknowledge the current fenced Partial so a host may deliberately
+    /// continue v1 best-effort mutation.
+    pub fn continue_best_effort(&self, handle: &RuntimeHandle) -> Result<()> {
+        let latest = self.latest_receipt()?;
+        handle
+            .continue_best_effort(latest.attempt_id)
+            .map_err(|error| Error::Runtime(error.to_string()))
+    }
+}
+
+fn host_receipt_sink() -> (
+    Arc<Mutex<Option<MutationReceipt>>>,
+    mpsc::Receiver<MutationReceipt>,
+    MutationReplySink,
+) {
+    let (send, receive) = mpsc::channel();
+    let latest: Arc<Mutex<Option<MutationReceipt>>> = Arc::new(Mutex::new(None));
+    let sink_latest = Arc::clone(&latest);
+    let sink = MutationReplySink::new(move |receipt| {
+        let mut publish = false;
+        if let Ok(mut current) = sink_latest.lock() {
+            let replace = current.as_ref().is_none_or(|current| {
+                current.attempt_id == receipt.attempt_id
+                    && current.runtime_epoch == receipt.runtime_epoch
+                    && receipt.event_sequence > current.event_sequence
+            });
+            if replace {
+                *current = Some(receipt.clone());
+                publish = true;
+            }
+        }
+        if publish {
+            let _ = send.send(receipt);
+        }
+    });
+    (latest, receive, sink)
+}
+
+struct PendingHostMutation {
+    attempt: MutationAttempt,
+    latest_receipt: Arc<Mutex<Option<MutationReceipt>>>,
+    receipt_updates: mpsc::Receiver<MutationReceipt>,
+}
+
+impl PendingHostMutation {
+    fn into_carrier(self, initial_receipt: MutationReceipt) -> HostMutation {
+        HostMutation {
+            initial_receipt,
+            latest_receipt: self.latest_receipt,
+            receipt_updates: self.receipt_updates,
+        }
+    }
+}
+
+fn host_failure(error: &Error) -> (FailurePhase, &'static str) {
+    match error {
+        Error::Io(_) => (FailurePhase::Decode, "script_read_failed"),
+        Error::Parse(_) => (FailurePhase::Parse, "script_parse_failed"),
+        Error::Language(_) => (FailurePhase::Decode, "language_contract_rejected"),
+        Error::Foundation(_) => (FailurePhase::Evaluate, "candidate_validation_failed"),
+        Error::Script(_) | Error::Runtime(_) => {
+            (FailurePhase::Evaluate, "script_evaluation_failed")
+        }
+    }
+}
+
+fn host_submission_receipt(
+    result: vibelang_core::Result<MutationReceipt>,
+    latest_receipt: &Arc<Mutex<Option<MutationReceipt>>>,
+) -> Result<MutationReceipt> {
+    match result {
+        Ok(receipt) => Ok(receipt),
+        Err(error) => latest_receipt
+            .lock()
+            .map_err(|_| Error::Runtime("host receipt state is poisoned".into()))?
+            .clone()
+            .filter(|receipt| receipt.state.is_terminal())
+            .ok_or_else(|| Error::Runtime(error.to_string())),
+    }
+}
+
+fn host_submission(runtime_epoch: vibelang_core::mutation::RuntimeEpoch) -> Result<Submission> {
+    let material = RequestMaterial::new(
+        &("compat.vibelang.v1", "rhai_host", "reload_apply"),
+        Some(&("compat.vibelang.v1", "rhai_host", "reload_apply")),
+    )
+    .map_err(|error| Error::Runtime(error.to_string()))?;
+    Ok(Submission {
+        kind: MutationKind::Candidate {
+            origin: CandidateOrigin::RhaiHost,
+        },
+        source: MutationSource::Rhai {
+            engine_id: "compat.vibelang.v1.rhai_host".into(),
+        },
+        caller_namespace: "compat.vibelang.v1.local".into(),
+        idempotency_key: None,
+        require_idempotency_key: false,
+        retry_epoch: Some(runtime_epoch),
+        expected_revision: None,
+        atomicity: Atomicity::BestEffort,
+        supersession: SupersessionPolicy::Fifo,
+        material,
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct V2EngineConfig {
+    manifest_digest: ContractDigest,
+    runtime_epoch: vibelang_core::mutation::RuntimeEpoch,
+}
+
+impl V2EngineConfig {
+    #[must_use]
+    pub fn new(
+        manifest_digest: ContractDigest,
+        runtime_epoch: vibelang_core::mutation::RuntimeEpoch,
+    ) -> Self {
+        Self {
+            manifest_digest,
+            runtime_epoch,
+        }
+    }
+
+    #[must_use]
+    pub fn manifest_digest(&self) -> &ContractDigest {
+        &self.manifest_digest
+    }
+
+    #[must_use]
+    pub const fn runtime_epoch(&self) -> vibelang_core::mutation::RuntimeEpoch {
+        self.runtime_epoch
+    }
+}
+
+struct V2Engine {
+    engine: Engine,
+    identity: EvaluationIdentity,
+}
+
+pub struct CompiledScript {
+    language: LanguageVersion,
+    identity: Option<EvaluationIdentity>,
+    ast: rhai::AST,
+}
+
+impl CompiledScript {
+    #[must_use]
+    pub const fn language(&self) -> LanguageVersion {
+        self.language
+    }
+
+    #[must_use]
+    pub fn identity(&self) -> Option<&EvaluationIdentity> {
+        self.identity.as_ref()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ScriptEvaluation {
+    V1(Box<ScriptState>),
+    V2(Candidate),
+}
+
+fn base_engine() -> Engine {
+    let mut engine = Engine::new();
+    engine.set_max_expr_depths(4096, 4096);
+    engine.set_max_call_levels(4096);
+    engine.on_print(|text| {
+        log::info!("[script] {}", text);
+    });
+    engine.on_debug(|text, source, pos| {
+        let loc = match (source, pos) {
+            (Some(src), pos) if !pos.is_none() => format!(" ({}:{})", src, pos),
+            (Some(src), _) => format!(" ({})", src),
+            (None, pos) if !pos.is_none() => format!(" ({})", pos),
+            _ => String::new(),
+        };
+        log::debug!("[script]{} {}", loc, text);
+    });
+    engine
+}
+
+fn v1_engine() -> Engine {
+    let mut engine = base_engine();
+    api::register_api(&mut engine);
+    vibelang_dsp::register_dsp_api(&mut engine);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let resolver = InMemoryModuleResolver::for_language(
+            vibelang_std::get_stdlib_files(),
+            LanguageVersion::V1,
+        );
+        engine.set_module_resolver(resolver);
+    }
+
+    engine
+}
+
+fn v2_engine(identity: EvaluationIdentity) -> V2Engine {
+    let mut engine = base_engine();
+    foundation::register(&mut engine);
+    api::install_v2_api(&mut engine);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let resolver = InMemoryModuleResolver::for_language(
+            vibelang_std::get_stdlib_files(),
+            LanguageVersion::V2,
+        );
+        engine.set_module_resolver(resolver);
+    }
+
+    V2Engine { engine, identity }
+}
 
 /// Script engine for executing VibeLang scripts.
 ///
@@ -154,54 +537,75 @@ pub use wasm_resolver::InMemoryModuleResolver;
 /// ```
 pub struct ScriptEngine {
     engine: Engine,
+    v2: Option<V2Engine>,
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    extension_config: Option<crate::extensions::ExtensionConfig>,
     #[cfg(not(target_arch = "wasm32"))]
     import_paths: Vec<PathBuf>,
+    #[cfg(not(target_arch = "wasm32"))]
+    module_base_path: Option<PathBuf>,
 }
 
 impl ScriptEngine {
     /// Create a new script engine with all VibeLang API registered.
     pub fn new() -> Self {
-        let mut engine = Engine::new();
-
-        // Set appropriate limits for complex scripts
-        engine.set_max_expr_depths(4096, 4096);
-        engine.set_max_call_levels(4096);
-
-        // Override print() to route through the log system
-        engine.on_print(|text| {
-            log::info!("[script] {}", text);
-        });
-
-        // Override debug() similarly
-        engine.on_debug(|text, source, pos| {
-            let loc = match (source, pos) {
-                (Some(src), pos) if !pos.is_none() => format!(" ({}:{})", src, pos),
-                (Some(src), _) => format!(" ({})", src),
-                (None, pos) if !pos.is_none() => format!(" ({})", pos),
-                _ => String::new(),
-            };
-            log::debug!("[script]{} {}", loc, text);
-        });
-
-        // Register VibeLang API
-        api::register_api(&mut engine);
-
-        // Register vibelang-dsp API for define_synthdef
-        vibelang_dsp::register_dsp_api(&mut engine);
-
-        // Set up stdlib module resolver for WASM
-        #[cfg(target_arch = "wasm32")]
-        {
-            let stdlib_files = vibelang_std::get_stdlib_files();
-            let resolver = InMemoryModuleResolver::new(stdlib_files);
-            engine.set_module_resolver(resolver);
-        }
-
         Self {
-            engine,
+            engine: v1_engine(),
+            v2: None,
+            #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+            extension_config: None,
             #[cfg(not(target_arch = "wasm32"))]
             import_paths: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            module_base_path: None,
         }
+    }
+
+    pub fn with_v2(config: V2EngineConfig) -> Result<Self> {
+        let mut engine = Self::new();
+        engine.enable_v2(config)?;
+        Ok(engine)
+    }
+
+    pub fn enable_v2(&mut self, config: V2EngineConfig) -> Result<()> {
+        if self.v2.is_some() {
+            return Err(Error::Runtime(
+                "vibe-api 2 is already enabled for this ScriptEngine".into(),
+            ));
+        }
+        let identity = EvaluationIdentity::new(
+            LanguageContract::v2(config.manifest_digest),
+            EngineInstanceId::new(),
+            config.runtime_epoch,
+        );
+        self.v2 = Some(v2_engine(identity));
+        #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+        if let (Some(v2), Some(extension_config)) =
+            (self.v2.as_mut(), self.extension_config.as_ref())
+        {
+            crate::extensions::register_extensions_v2(&mut v2.engine, extension_config);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(base_path) = self.module_base_path.clone() {
+            self.setup_module_resolver(base_path);
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn v2_identity(&self) -> Option<&EvaluationIdentity> {
+        self.v2.as_ref().map(|v2| &v2.identity)
+    }
+
+    /// Serialize the effective native registrations for the versioned public API manifest.
+    #[cfg(feature = "api-manifest")]
+    pub fn public_api_metadata_json() -> std::result::Result<String, String> {
+        let mut script_engine = Self::new();
+        script_engine.register_all_extensions();
+        script_engine
+            .engine
+            .gen_fn_metadata_to_json(false)
+            .map_err(|error| error.to_string())
     }
 
     /// Add import paths for module resolution (native only).
@@ -210,10 +614,80 @@ impl ScriptEngine {
         self.import_paths.push(path.into());
     }
 
+    pub fn compile_versioned(&self, script: &str) -> Result<CompiledScript> {
+        let language = select_language(script)?;
+        match language {
+            LanguageVersion::V1 => Ok(CompiledScript {
+                language,
+                identity: None,
+                ast: self.engine.compile(script).map_err(Error::from)?,
+            }),
+            LanguageVersion::V2 => {
+                let v2 = self.v2.as_ref().ok_or(LanguageSelectionError::V2Disabled)?;
+                Ok(CompiledScript {
+                    language,
+                    identity: Some(v2.identity.clone()),
+                    ast: v2.engine.compile(script).map_err(Error::from)?,
+                })
+            }
+        }
+    }
+
+    pub fn evaluate(&mut self, script: &str) -> Result<ScriptEvaluation> {
+        let compiled = self.compile_versioned(script)?;
+        self.execute_compiled(&compiled)
+    }
+
+    pub fn execute_compiled(&mut self, compiled: &CompiledScript) -> Result<ScriptEvaluation> {
+        match compiled.language {
+            LanguageVersion::V1 => {
+                if compiled.identity.is_some() {
+                    return Err(Error::Runtime(
+                        "a v1 compiled script carried a v2 evaluation identity".into(),
+                    ));
+                }
+                Ok(ScriptEvaluation::V1(Box::new(
+                    self.execute_precompiled(&compiled.ast)?,
+                )))
+            }
+            LanguageVersion::V2 => {
+                let v2 = self.v2.as_mut().ok_or(LanguageSelectionError::V2Disabled)?;
+                let compiled_identity = compiled.identity.as_ref().ok_or_else(|| {
+                    Error::Runtime("a v2 compiled script has no evaluation identity".into())
+                })?;
+                v2.identity
+                    .ensure_compatible(compiled_identity)
+                    .map_err(foundation::FoundationError::from)?;
+                foundation::begin_evaluation(v2.identity.clone())?;
+                if let Err(error) = v2.engine.run_ast(&compiled.ast) {
+                    foundation::abort_evaluation();
+                    return Err(Error::from(error));
+                }
+                Ok(ScriptEvaluation::V2(foundation::finish_evaluation()?))
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn evaluate_file(&mut self, path: impl AsRef<Path>) -> Result<ScriptEvaluation> {
+        let path = path.as_ref();
+        let script = std::fs::read_to_string(path)?;
+        let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        self.setup_module_resolver(base_path);
+        let mut compiled = self.compile_versioned(&script)?;
+        compiled.ast.set_source(path.to_string_lossy().to_string());
+        self.execute_compiled(&compiled)
+    }
+
     /// Execute a script from a string.
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
     pub fn execute(&mut self, script: &str) -> Result<ScriptState> {
+        if select_language(script)? == LanguageVersion::V2 {
+            return Err(LanguageSelectionError::V2RequiresVersionedEntryPoint.into());
+        }
+        self.compile(script)?;
+
         // Clear object registries before each execution
         api::clear_all_registries();
 
@@ -242,6 +716,163 @@ impl ScriptEngine {
         Ok(state)
     }
 
+    /// Execute a previously compiled whole script with normal v1 setup and
+    /// exit handling. Hosts may use this to keep parsing ahead of eager work.
+    pub fn execute_precompiled(&mut self, ast: &rhai::AST) -> Result<ScriptState> {
+        // Clear object registries before each execution
+        api::clear_all_registries();
+
+        // Reset exit code before execution
+        crate::reset_exit_code();
+
+        // Initialize context
+        context::init_context();
+
+        // Execute script
+        let result = self.engine.run_ast(ast).map_err(Error::from);
+
+        // Take state regardless of result (to clean up context)
+        let state = context::take_state();
+        context::clear_context();
+
+        // Check if script exited via exit() - this is not an error
+        if crate::get_exit_code().is_some() {
+            // Script requested exit, return state normally
+            return Ok(state);
+        }
+
+        // Return error if script failed for other reasons
+        result?;
+
+        Ok(state)
+    }
+
+    /// Evaluate a v1 Rhai script and submit its collected state through the
+    /// canonical runtime receipt ledger.
+    ///
+    /// The returned [`HostMutation`] initially contains queue-admission truth,
+    /// not an applied claim. Hosts should observe it until the canonical
+    /// receipt becomes terminal.
+    pub async fn execute_and_submit(
+        &mut self,
+        script: &str,
+        handle: &RuntimeHandle,
+    ) -> Result<HostMutation> {
+        let mut pending = Self::begin_host_attempt(handle)?;
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let state = match self
+            .compile(script)
+            .and_then(|ast| self.execute_precompiled(&ast))
+        {
+            Ok(state) => state,
+            Err(error) => {
+                let (phase, code) = host_failure(&error);
+                let message = error.to_string();
+                let terminal_message = if error.definitely_no_effect() {
+                    message
+                } else {
+                    match pending.attempt.record_uncertain_effect(
+                        "rhai/evaluation",
+                        "evaluate",
+                        code,
+                        message.clone(),
+                    ) {
+                        Ok(()) => message,
+                        Err(accounting) => {
+                            format!("{message}; effect accounting failed: {accounting}")
+                        }
+                    }
+                };
+                return Self::finish_host_attempt(handle, pending, phase, code, terminal_message);
+            }
+        };
+        if let Err(error) = pending.attempt.record_uncertain_effect(
+                "rhai/evaluation",
+                "evaluate",
+                "rhai_eager_effects_possible",
+                "Rhai evaluation may have updated process-global registries or invoked a deploy callback",
+            ) {
+            return Self::finish_host_attempt(
+                handle,
+                pending,
+                FailurePhase::Evaluate,
+                "evaluation_effect_accounting_failed",
+                error.to_string(),
+            );
+        }
+        Self::submit_host_attempt(handle, state, pending).await
+    }
+
+    /// Submit an already evaluated v1 [`ScriptState`] and expose all canonical
+    /// receipt transitions to the Rhai host.
+    pub async fn submit_state(handle: &RuntimeHandle, state: ScriptState) -> Result<HostMutation> {
+        let pending = Self::begin_host_attempt(handle)?;
+        Self::submit_host_attempt(handle, state, pending).await
+    }
+
+    fn begin_host_attempt(handle: &RuntimeHandle) -> Result<PendingHostMutation> {
+        let (latest_receipt, receipt_updates, reply_sink) = host_receipt_sink();
+        let submission = host_submission(handle.mutation_status().runtime_epoch)?;
+        let attempt = handle
+            .begin_attempt(submission, reply_sink, MutationEventSink::default())
+            .map_err(|error| Error::Runtime(error.to_string()))?;
+        Ok(PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
+    fn finish_host_attempt(
+        handle: &RuntimeHandle,
+        pending: PendingHostMutation,
+        phase: FailurePhase,
+        code: &str,
+        message: String,
+    ) -> Result<HostMutation> {
+        let PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        } = pending;
+        let receipt = handle
+            .finish_attempt_failure(attempt, phase, code, message)
+            .map_err(|error| Error::Runtime(error.to_string()))?;
+        Ok(HostMutation {
+            initial_receipt: receipt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
+    async fn submit_host_attempt(
+        handle: &RuntimeHandle,
+        state: ScriptState,
+        pending: PendingHostMutation,
+    ) -> Result<HostMutation> {
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let PendingHostMutation {
+            attempt,
+            latest_receipt,
+            receipt_updates,
+        } = pending;
+        let submission_result = handle
+            .submit_attempt(ReloadMessage::Apply { state }.into(), attempt)
+            .await;
+        let initial_receipt = host_submission_receipt(submission_result, &latest_receipt)?;
+        Ok(HostMutation {
+            initial_receipt,
+            latest_receipt,
+            receipt_updates,
+        })
+    }
+
     /// Execute a script from a file (native only).
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
@@ -251,10 +882,15 @@ impl ScriptEngine {
 
         // Read script
         let script = std::fs::read_to_string(path)?;
+        if select_language(&script)? == LanguageVersion::V2 {
+            return Err(LanguageSelectionError::V2RequiresVersionedEntryPoint.into());
+        }
 
         // Set up module resolver
         let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         self.setup_module_resolver(base_path);
+
+        let ast = self.engine.compile(&script).map_err(Error::from)?;
 
         // Clear object registries before each execution
         api::clear_all_registries();
@@ -268,7 +904,7 @@ impl ScriptEngine {
         context::set_import_paths(self.import_paths.clone());
 
         // Execute script
-        let result = self.engine.run(&script).map_err(Error::from);
+        let result = self.engine.run_ast(&ast).map_err(Error::from);
 
         // Take state regardless of result
         let state = context::take_state();
@@ -307,6 +943,59 @@ impl ScriptEngine {
         Ok(state)
     }
 
+    /// Evaluate a v1 Rhai file and submit its state through the canonical
+    /// runtime receipt ledger.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn execute_file_and_submit(
+        &mut self,
+        path: impl AsRef<Path>,
+        handle: &RuntimeHandle,
+    ) -> Result<HostMutation> {
+        let mut pending = Self::begin_host_attempt(handle)?;
+        if !pending.attempt.is_active() {
+            let receipt = pending.attempt.receipt().clone();
+            return Ok(pending.into_carrier(receipt));
+        }
+        let state = match self.execute_file(path) {
+            Ok(state) => state,
+            Err(error) => {
+                let (phase, code) = host_failure(&error);
+                let message = error.to_string();
+                let terminal_message = if error.definitely_no_effect() {
+                    message
+                } else {
+                    match pending.attempt.record_uncertain_effect(
+                        "rhai/file_evaluation",
+                        "evaluate",
+                        code,
+                        message.clone(),
+                    ) {
+                        Ok(()) => message,
+                        Err(accounting) => {
+                            format!("{message}; effect accounting failed: {accounting}")
+                        }
+                    }
+                };
+                return Self::finish_host_attempt(handle, pending, phase, code, terminal_message);
+            }
+        };
+        if let Err(error) = pending.attempt.record_uncertain_effect(
+                "rhai/file_evaluation",
+                "evaluate",
+                "rhai_eager_effects_possible",
+                "Rhai file evaluation may have updated process-global registries or invoked a deploy callback",
+            ) {
+            return Self::finish_host_attempt(
+                handle,
+                pending,
+                FailurePhase::Evaluate,
+                "evaluation_effect_accounting_failed",
+                error.to_string(),
+            );
+        }
+        Self::submit_host_attempt(handle, state, pending).await
+    }
+
     /// Execute a script from a file and return state, AST, and any registered
     /// MIDI callbacks captured during execution (native + `midi` feature only).
     ///
@@ -325,9 +1014,14 @@ impl ScriptEngine {
         let path = path.as_ref();
 
         let script = std::fs::read_to_string(path)?;
+        if select_language(&script)? == LanguageVersion::V2 {
+            return Err(LanguageSelectionError::V2RequiresVersionedEntryPoint.into());
+        }
 
         let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         self.setup_module_resolver(base_path);
+
+        let ast = self.engine.compile(&script).map_err(Error::from)?;
 
         api::clear_all_registries();
         crate::reset_exit_code();
@@ -335,15 +1029,6 @@ impl ScriptEngine {
         context::init_context();
         context::set_current_file(Some(path.to_path_buf()));
         context::set_import_paths(self.import_paths.clone());
-
-        let ast = self.engine.compile(&script).map_err(Error::from);
-        let ast = match ast {
-            Ok(a) => a,
-            Err(e) => {
-                context::clear_context();
-                return Err(e);
-            }
-        };
 
         let result = self.engine.run_ast(&ast).map_err(Error::from);
 
@@ -382,6 +1067,9 @@ impl ScriptEngine {
 
     /// Compile a script to AST for repeated execution.
     pub fn compile(&self, script: &str) -> Result<rhai::AST> {
+        if select_language(script)? == LanguageVersion::V2 {
+            return Err(LanguageSelectionError::V2RequiresVersionedEntryPoint.into());
+        }
         self.engine.compile(script).map_err(Error::from)
     }
 
@@ -389,6 +1077,10 @@ impl ScriptEngine {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn compile_file(&self, path: impl AsRef<Path>) -> Result<rhai::AST> {
         let path = path.as_ref();
+        let source = std::fs::read_to_string(path)?;
+        if select_language(&source)? == LanguageVersion::V2 {
+            return Err(LanguageSelectionError::V2RequiresVersionedEntryPoint.into());
+        }
         self.engine
             .compile_file(path.to_path_buf())
             .map_err(Error::from)
@@ -397,28 +1089,43 @@ impl ScriptEngine {
     /// Set up module resolver for import statements (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn setup_module_resolver(&mut self, base_path: PathBuf) {
-        let mut collection = rhai::module_resolvers::ModuleResolversCollection::new();
+        self.module_base_path = Some(base_path.clone());
+        let mut v1_collection = rhai::module_resolvers::ModuleResolversCollection::new();
 
         // 1. Source-relative resolver (highest priority)
-        let mut source_resolver = rhai::module_resolvers::FileModuleResolver::new();
-        source_resolver.set_extension("vibe");
-        collection.push(source_resolver);
+        v1_collection.push(VersionedFileModuleResolver::new(None, LanguageVersion::V1));
 
         // 2. Base path resolver
-        let mut base_resolver = rhai::module_resolvers::FileModuleResolver::new();
-        base_resolver.set_base_path(base_path);
-        base_resolver.set_extension("vibe");
-        collection.push(base_resolver);
+        v1_collection.push(VersionedFileModuleResolver::new(
+            Some(base_path.clone()),
+            LanguageVersion::V1,
+        ));
 
         // 3. Additional import paths
         for import_path in &self.import_paths {
-            let mut resolver = rhai::module_resolvers::FileModuleResolver::new();
-            resolver.set_base_path(import_path.clone());
-            resolver.set_extension("vibe");
-            collection.push(resolver);
+            v1_collection.push(VersionedFileModuleResolver::new(
+                Some(import_path.clone()),
+                LanguageVersion::V1,
+            ));
         }
 
-        self.engine.set_module_resolver(collection);
+        self.engine.set_module_resolver(v1_collection);
+
+        if let Some(v2) = self.v2.as_mut() {
+            let mut v2_collection = rhai::module_resolvers::ModuleResolversCollection::new();
+            v2_collection.push(VersionedFileModuleResolver::new(None, LanguageVersion::V2));
+            v2_collection.push(VersionedFileModuleResolver::new(
+                Some(base_path),
+                LanguageVersion::V2,
+            ));
+            for import_path in &self.import_paths {
+                v2_collection.push(VersionedFileModuleResolver::new(
+                    Some(import_path.clone()),
+                    LanguageVersion::V2,
+                ));
+            }
+            v2.engine.set_module_resolver(v2_collection);
+        }
     }
 
     /// Get a reference to the underlying Rhai engine.
@@ -458,6 +1165,10 @@ impl ScriptEngine {
     #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
     pub fn register_extensions(&mut self, config: &crate::extensions::ExtensionConfig) {
         crate::extensions::register_extensions(&mut self.engine, config);
+        if let Some(v2) = self.v2.as_mut() {
+            crate::extensions::register_extensions_v2(&mut v2.engine, config);
+        }
+        self.extension_config = Some(config.clone());
     }
 
     /// Register all available extensions.
@@ -468,6 +1179,10 @@ impl ScriptEngine {
     pub fn register_all_extensions(&mut self) {
         let config = crate::extensions::ExtensionConfig::enable_all();
         crate::extensions::register_extensions(&mut self.engine, &config);
+        if let Some(v2) = self.v2.as_mut() {
+            crate::extensions::register_extensions_v2(&mut v2.engine, &config);
+        }
+        self.extension_config = Some(config);
     }
 }
 
@@ -480,6 +1195,129 @@ impl Default for ScriptEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use vibelang_core::compat::Instant;
+    use vibelang_core::mutation::{ReceiptState, TerminalOutcome};
+    use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime};
+
+    #[derive(Debug)]
+    struct CarrierBackendError;
+
+    impl std::fmt::Display for CarrierBackendError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("carrier backend error")
+        }
+    }
+
+    impl std::error::Error for CarrierBackendError {}
+
+    struct CarrierBackend;
+
+    #[async_trait]
+    impl Backend for CarrierBackend {
+        type Error = CarrierBackendError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 1,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44_100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn write_test_project(files: &[(&str, &str)]) -> std::path::PathBuf {
@@ -507,6 +1345,415 @@ mod tests {
         let mut engine = ScriptEngine::new();
         let state = engine.execute("set_tempo(140);").unwrap();
         assert_eq!(state.tempo, 140.0);
+    }
+
+    fn v2_config(seed: u8) -> V2EngineConfig {
+        V2EngineConfig::new(
+            ContractDigest::from_bytes(&[seed]),
+            vibelang_core::mutation::RuntimeEpoch::new(),
+        )
+    }
+
+    #[test]
+    fn versioned_evaluation_selects_exact_v2_while_unversioned_stays_v1() {
+        let mut engine = ScriptEngine::with_v2(v2_config(1)).unwrap();
+
+        let ScriptEvaluation::V1(state) = engine.evaluate("set_tempo(143);").unwrap() else {
+            panic!("unversioned source must remain v1");
+        };
+        assert_eq!(state.tempo, 143.0);
+
+        let ScriptEvaluation::V2(candidate) = engine
+            .evaluate("// vibe-api: 2\nlet detached = 1 + 1;")
+            .unwrap()
+        else {
+            panic!("the exact directive must select v2");
+        };
+        assert!(candidate.declarations().is_empty());
+        assert_eq!(candidate.identity(), engine.v2_identity().unwrap());
+    }
+
+    #[test]
+    fn disabled_v2_and_legacy_entry_point_reject_without_v1_dispatch() {
+        let mut disabled = ScriptEngine::new();
+        assert!(matches!(
+            disabled.evaluate("// vibe-api: 2\nset_tempo(199);"),
+            Err(Error::Language(LanguageSelectionError::V2Disabled))
+        ));
+        assert_eq!(disabled.execute("set_tempo(144);").unwrap().tempo, 144.0);
+
+        let mut enabled = ScriptEngine::with_v2(v2_config(2)).unwrap();
+        assert!(matches!(
+            enabled.execute("// vibe-api: 2\nset_tempo(199);"),
+            Err(Error::Language(
+                LanguageSelectionError::V2RequiresVersionedEntryPoint
+            ))
+        ));
+        assert!(enabled
+            .evaluate("// vibe-api: 2\nset_tempo(199);")
+            .unwrap_err()
+            .to_string()
+            .contains("set_tempo"));
+        let ScriptEvaluation::V2(candidate) = enabled.evaluate("// vibe-api: 2").unwrap() else {
+            panic!("v2 context must be clean after evaluation failure");
+        };
+        assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn compiled_v2_script_rejects_cross_engine_identity_without_candidate_residue() {
+        let first = ScriptEngine::with_v2(v2_config(3)).unwrap();
+        let compiled = first
+            .compile_versioned("// vibe-api: 2\nlet x = 1;")
+            .unwrap();
+        let mut second = ScriptEngine::with_v2(v2_config(3)).unwrap();
+
+        assert!(matches!(
+            second.execute_compiled(&compiled),
+            Err(Error::Foundation(
+                foundation::FoundationError::Compatibility(
+                    vibelang_core::candidate::CompatibilityError::Engine { .. }
+                )
+            ))
+        ));
+        let ScriptEvaluation::V2(candidate) = second.evaluate("// vibe-api: 2").unwrap() else {
+            panic!("cross-engine rejection must leave no active Candidate");
+        };
+        assert!(candidate.declarations().is_empty());
+    }
+
+    #[test]
+    fn v2_engine_installs_all_m08_authoring_families_for_production_scripts() {
+        let mut engine = ScriptEngine::with_v2(v2_config(8)).unwrap();
+        let ScriptEvaluation::V2(candidate) = engine
+            .evaluate(
+                r#"// vibe-api: 2
+define_group("band", || {});
+let lead = voice("lead").synth("sine").apply();
+pattern("kick").on(lead).step("x...").apply();
+melody("hook").on(lead).notes("C4 E4 G4 C5").apply();
+sequence("intro").loop_beats(4.0).apply();
+fade("swell").on_group(group("band")).over(2.0).apply();
+define_synthdef("tone").param("freq", 440.0).body(|freq| dc_ar(0.0)).apply();
+define_effect("room").param("mix", 0.5).body(|input, mix| input).apply();
+fx("verb");
+"#,
+            )
+            .unwrap()
+        else {
+            panic!("the v2 directive must produce a candidate");
+        };
+
+        let keys: std::collections::BTreeSet<_> = candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().key().as_str().to_owned())
+            .collect();
+        for key in ["band", "lead", "kick", "hook", "intro", "swell"] {
+            assert!(keys.contains(key), "missing v2 {key} declaration");
+        }
+        assert_eq!(candidate.dsp_definitions().definitions().count(), 2);
+    }
+
+    #[test]
+    #[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
+    fn v2_engine_installs_all_m09_families_for_production_scripts() {
+        let mut engine = ScriptEngine::with_v2(v2_config(9)).unwrap();
+        let ScriptEvaluation::V2(candidate) = engine
+            .evaluate(
+                r#"// vibe-api: 2
+define_group("band", || {});
+let lead = voice("lead").synth("sine").apply();
+let wob = voice("wob").synth("sine").apply();
+sample("kick", "samples/kick.wav").one_shot().apply();
+buffer("scratch").frames(64).channels(2).clear().apply();
+sfz("piano", "instruments/piano.sfz").apply();
+record("take1")
+    .from(group_ref("band"))
+    .beats(16.0)
+    .to_file("takes/one.wav")
+    .channels(2)
+    .apply();
+output(lead, "out").to_groups([group_ref("band")]);
+output(wob, "cv").scale(0.5).set(lead, "cutoff");
+let mpk = midi_device("mpk").port("MPK Mini").input().apply();
+keyboard_route(mpk).channel(2).to(lead);
+"#,
+            )
+            .unwrap()
+        else {
+            panic!("the v2 directive must produce a candidate");
+        };
+
+        let keys: std::collections::BTreeSet<_> = candidate
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.address().key().as_str().to_owned())
+            .collect();
+        for key in [
+            "band", "lead", "wob", "kick", "scratch", "piano", "take1", "mpk",
+        ] {
+            assert!(keys.contains(key), "missing v2 {key} declaration");
+        }
+        let topology = candidate.route_topology();
+        assert_eq!(topology.audio.len(), 1);
+        assert_eq!(topology.params.len(), 1);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imports_inherit_v2_and_cached_cross_major_changes_reject() {
+        let dir = write_test_project(&[("helper.vibe", "let helper_value = 1;")]);
+        let mut v2 = ScriptEngine::with_v2(v2_config(4)).unwrap();
+        v2.setup_module_resolver(dir.clone());
+        let ScriptEvaluation::V2(candidate) = v2
+            .evaluate("// vibe-api: 2\nimport \"helper.vibe\";")
+            .unwrap()
+        else {
+            panic!("unversioned import must inherit v2");
+        };
+        assert!(candidate.declarations().is_empty());
+
+        let mut v1 = ScriptEngine::new();
+        v1.setup_module_resolver(dir.clone());
+        v1.execute("import \"helper.vibe\";").unwrap();
+        std::fs::write(
+            dir.join("helper.vibe"),
+            "// vibe-api: 2\nlet helper_value = 2;",
+        )
+        .unwrap();
+        let error = v1.execute("import \"helper.vibe\";").unwrap_err();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert!(error.to_string().contains("cross-major import rejected"));
+    }
+
+    fn host_receipt(state: vibelang_core::mutation::ReceiptState) -> MutationReceipt {
+        use vibelang_core::mutation::{
+            Atomicity, EventSequence, MutationKind, MutationSource, ReceiptTimestamps,
+            RequestIdentity, RuntimeEpoch, SupersessionPolicy, Timestamp, MUTATION_SCHEMA_VERSION,
+        };
+
+        let now = Timestamp::parse("2026-07-17T08:00:00Z").unwrap();
+        MutationReceipt {
+            schema_version: MUTATION_SCHEMA_VERSION,
+            attempt_id: vibelang_core::mutation::AttemptId::new(),
+            runtime_epoch: RuntimeEpoch::new(),
+            revision: Some(vibelang_core::mutation::RevisionId::new(1).unwrap()),
+            event_sequence: EventSequence::new(1).unwrap(),
+            request: RequestIdentity {
+                kind: MutationKind::Candidate {
+                    origin: CandidateOrigin::RhaiHost,
+                },
+                source: MutationSource::Rhai {
+                    engine_id: "compat.vibelang.v1.rhai_host".into(),
+                },
+                submission_digest: None,
+                operation_digest: None,
+                idempotency_key_present: false,
+                expected_revision: None,
+                atomicity: Atomicity::BestEffort,
+                supersession: SupersessionPolicy::Fifo,
+            },
+            state,
+            previous_confirmed_revision: None,
+            timestamps: ReceiptTimestamps {
+                submitted_at: now.clone(),
+                accepted_at: Some(now.clone()),
+                last_transition_at: now,
+                terminal_at: None,
+            },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn host_submission_is_candidate_local_best_effort() {
+        let epoch = vibelang_core::mutation::RuntimeEpoch::new();
+        let submission = host_submission(epoch).unwrap();
+
+        assert_eq!(
+            submission.kind,
+            MutationKind::Candidate {
+                origin: CandidateOrigin::RhaiHost
+            }
+        );
+        assert_eq!(
+            submission.source,
+            MutationSource::Rhai {
+                engine_id: "compat.vibelang.v1.rhai_host".into()
+            }
+        );
+        assert_eq!(submission.atomicity, Atomicity::BestEffort);
+        assert_eq!(submission.supersession, SupersessionPolicy::Fifo);
+        assert_eq!(submission.retry_epoch, Some(epoch));
+    }
+
+    #[test]
+    fn host_carrier_keeps_late_partial_canonical() {
+        use vibelang_core::mutation::{
+            FailurePhase, Partial, ReceiptState, RollbackState, TerminalOutcome,
+        };
+
+        let accepted = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let (latest_receipt, receipt_updates, sink) = host_receipt_sink();
+        sink.publish(accepted.clone());
+        let carrier = HostMutation {
+            initial_receipt: accepted,
+            latest_receipt,
+            receipt_updates,
+        };
+        let mut partial = host_receipt(ReceiptState::Terminal(TerminalOutcome::Partial(Partial {
+            phase: FailurePhase::BackendBarrier,
+            code: "backend_sync_failed".into(),
+            components: Vec::new(),
+            rollback: RollbackState::Uncertain,
+            fenced: true,
+            last_confirmed_revision: None,
+        })));
+        partial.attempt_id = carrier.initial_receipt().attempt_id;
+        partial.runtime_epoch = carrier.initial_receipt().runtime_epoch;
+        partial.revision = carrier.initial_receipt().revision;
+        partial.event_sequence = vibelang_core::mutation::EventSequence::new(2).unwrap();
+        sink.publish(partial.clone());
+
+        assert_eq!(carrier.try_next_receipt().unwrap(), partial);
+        assert!(carrier.try_next_receipt().is_none());
+        assert_eq!(carrier.latest_receipt().unwrap(), partial);
+    }
+
+    #[test]
+    fn host_carrier_preserves_terminal_receipt_when_admission_channel_closes() {
+        use vibelang_core::mutation::{
+            FailurePhase, ReceiptState, Rejected, RollbackState, TerminalOutcome,
+        };
+
+        let rejected = host_receipt(ReceiptState::Terminal(TerminalOutcome::Rejected(
+            Rejected {
+                phase: FailurePhase::Admission,
+                code: "queue_closed".into(),
+                message: "the runtime mutation queue is closed".into(),
+                rollback: RollbackState::NotNeeded,
+                preserved_revision: None,
+            },
+        )));
+        let latest = Arc::new(Mutex::new(Some(rejected.clone())));
+
+        let canonical =
+            host_submission_receipt(Err(vibelang_core::Error::ChannelClosed), &latest).unwrap();
+
+        assert_eq!(canonical, rejected);
+    }
+
+    #[test]
+    fn host_receipt_sink_rejects_reordered_and_foreign_callbacks() {
+        let accepted = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(1),
+        });
+        let mut terminal = accepted.clone();
+        terminal.event_sequence = vibelang_core::mutation::EventSequence::new(3).unwrap();
+        terminal.state = ReceiptState::Terminal(TerminalOutcome::Rejected(
+            vibelang_core::mutation::Rejected {
+                phase: FailurePhase::Evaluate,
+                code: "script_evaluation_failed".into(),
+                message: "script aborted".into(),
+                rollback: vibelang_core::mutation::RollbackState::NotNeeded,
+                preserved_revision: None,
+            },
+        ));
+        let mut stale = accepted;
+        stale.event_sequence = vibelang_core::mutation::EventSequence::new(2).unwrap();
+        let foreign = host_receipt(ReceiptState::Accepted {
+            queue_position: Some(2),
+        });
+        let (latest, updates, sink) = host_receipt_sink();
+
+        sink.publish(terminal.clone());
+        sink.publish(stale);
+        sink.publish(foreign);
+
+        assert_eq!(updates.try_recv().unwrap(), terminal);
+        assert!(updates.try_recv().is_err());
+        assert_eq!(latest.lock().unwrap().as_ref(), Some(&terminal));
+    }
+
+    #[tokio::test]
+    async fn host_success_preserves_preallocated_attempt_through_admission() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let mut engine = ScriptEngine::new();
+
+        let carrier = engine
+            .execute_and_submit("set_tempo(141);", &handle)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            carrier.initial_receipt().state,
+            ReceiptState::Accepted { .. }
+        ));
+        assert!(carrier.initial_receipt().revision.is_some());
+        assert_eq!(
+            carrier.latest_receipt().unwrap().attempt_id,
+            carrier.initial_receipt().attempt_id
+        );
+        assert_eq!(
+            carrier.latest_receipt().unwrap().revision,
+            carrier.initial_receipt().revision
+        );
+    }
+
+    #[tokio::test]
+    async fn host_parse_failure_is_effect_free_rejected_attempt() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let mut engine = ScriptEngine::new();
+
+        let carrier = engine.execute_and_submit("let = ;", &handle).await.unwrap();
+
+        assert!(carrier.initial_receipt().revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Rejected(rejected)) =
+            &carrier.initial_receipt().state
+        else {
+            panic!("parse failure must be rejected");
+        };
+        assert_eq!(rejected.phase, FailurePhase::Parse);
+        assert_eq!(rejected.code, "script_parse_failed");
+        assert_eq!(
+            carrier.latest_receipt().unwrap().attempt_id,
+            carrier.initial_receipt().attempt_id
+        );
+    }
+
+    #[tokio::test]
+    async fn host_runtime_failure_after_eager_effect_is_fenced_partial() {
+        let runtime = Runtime::new(CarrierBackend);
+        let handle = runtime.handle();
+        let effect_ran = Arc::new(AtomicBool::new(false));
+        let effect_capture = Arc::clone(&effect_ran);
+        let mut engine = ScriptEngine::new();
+        engine.engine.register_fn("eager_effect", move || {
+            effect_capture.store(true, Ordering::SeqCst);
+        });
+
+        let carrier = engine
+            .execute_and_submit("eager_effect(); throw \"stop\";", &handle)
+            .await
+            .unwrap();
+
+        assert!(effect_ran.load(Ordering::SeqCst));
+        assert!(carrier.initial_receipt().revision.is_none());
+        let ReceiptState::Terminal(TerminalOutcome::Partial(partial)) =
+            &carrier.initial_receipt().state
+        else {
+            panic!("runtime failure after eager work must be partial");
+        };
+        assert!(partial.fenced);
+        assert_eq!(partial.phase, FailurePhase::Evaluate);
+        assert_eq!(partial.code, "script_evaluation_failed");
+        assert_eq!(partial.components[0].path, "rhai/evaluation");
     }
 
     #[test]
@@ -3517,6 +4764,7 @@ mod tests {
         assert_eq!(route.cc, 14, "CC number should be 14");
         assert_eq!(route.curve, "linear", "Default curve should be linear");
         assert_eq!(route.channel, None, "No channel filter by default");
+        assert_eq!(route.group, None, "No UMP group filter by default");
         assert_eq!(route.param, "cutoff", "Param should be cutoff");
         assert!((route.min - 200.0f32).abs() < 0.01, "Min should be 200.0");
         assert!((route.max - 8000.0f32).abs() < 0.01, "Max should be 8000.0");
@@ -3602,6 +4850,54 @@ mod tests {
             "\"log\" maps to \"logarithmic\""
         );
         assert_eq!(route.param, "cutoff", "Param should be cutoff");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_group_and_curve_aliases_are_canonical() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let effect = fx("echo").synth("delay").apply();
+                let dev = midi_device("test-device");
+                dev.map_cc(18).group(3).curve("s-curve").to(synth, "shape", 0.0, 1.0);
+                dev.map_cc(19).curve("unknown").to(synth, "fallback", 0.0, 1.0);
+                dev.map_cc(20).to(effect, "mix", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 3);
+        assert_eq!(state.advanced_cc_routes[0].group, Some(3));
+        assert_eq!(state.advanced_cc_routes[0].curve, "s_curve");
+        assert_eq!(state.advanced_cc_routes[1].group, None);
+        assert_eq!(state.advanced_cc_routes[1].curve, "linear");
+        assert!(matches!(
+            state.advanced_cc_routes[2].target,
+            vibelang_core::traits::FadeTarget::Effect(_)
+        ));
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_cc32_is_equivalent_alias_into_advanced_registry() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let dev = midi_device("test-device");
+                dev.map_cc(74).group(2).channel(1).curve("log").to(synth, "cutoff", 200.0, 8000.0);
+                dev.cc32(74).group(2).channel(1).curve("log").to(synth, "cutoff", 200.0, 8000.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 2);
+        assert_eq!(state.advanced_cc_routes[0], state.advanced_cc_routes[1]);
+        assert_eq!(state.advanced_cc_routes[1].curve, "logarithmic");
     }
 
     #[cfg(feature = "midi")]

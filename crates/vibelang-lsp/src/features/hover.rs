@@ -34,12 +34,18 @@ pub fn get_hover(
             String::new()
         };
 
+        let example = if doc.example.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n**Example:**\n```rhai\n{}\n```", doc.example)
+        };
+
         return Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
                 value: format!(
-                    "### `{}`\n\n{}\n\n**Signature:** `{}`{}\n\n**Example:**\n```rhai\n{}\n```",
-                    doc.name, doc.description, doc.signature, params_doc, doc.example
+                    "### `{}`\n\n{}\n\n**Signature:** `{}`{}{}",
+                    doc.name, doc.description, doc.signature, params_doc, example
                 ),
             }),
             range: None,
