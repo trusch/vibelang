@@ -318,13 +318,25 @@ impl<B: Backend> Groups for GroupsHandler<B> {
                 .get(&parent_id)
                 .ok_or(Error::GroupNotFound(parent_id))?
                 .node_id;
-            if let Some(first_fx_node) = state.first_effect_node_in_group(parent_id) {
-                (first_fx_node, AddAction::Before)
-            } else if let Some(link_node) = state
+            let first_fx_node = state.first_effect_node_in_group(parent_id);
+            let parent_link = state
                 .groups
                 .get(&parent_id)
-                .and_then(|g| g.link_synth_node_id)
-            {
+                .and_then(|g| g.link_synth_node_id);
+            // Which anchor was available decides everything here, and the
+            // wrong branch is inaudible rather than an error — so record what
+            // the parent looked like, not just where the child went.
+            tracing::debug!(
+                "placing group {} under parent {} (node {}): first fx {:?}, link {:?}",
+                id.0,
+                parent_id.0,
+                parent_node_id.0,
+                first_fx_node.map(|n| n.0),
+                parent_link.map(|n| n.0),
+            );
+            if let Some(first_fx_node) = first_fx_node {
+                (first_fx_node, AddAction::Before)
+            } else if let Some(link_node) = parent_link {
                 (link_node, AddAction::Before)
             } else {
                 (parent_node_id, AddAction::Tail)

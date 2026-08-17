@@ -1743,6 +1743,16 @@ impl Backend for ScsynthBackend {
         action: AddAction,
     ) -> Result<(), Self::Error> {
         self.prepare_node_generation(node);
+        // Placement is the whole story for a group: it decides whether the
+        // group runs before or after the nodes that read its parent's bus.
+        // `/s_new` has logged its target since forever; a group that lands on
+        // the wrong side of a link synth is silent, so log this one too.
+        tracing::debug!(
+            "g_new: node={}, target={}, action={:?}",
+            node.0,
+            target.0,
+            action
+        );
         self.send_msg(
             "/g_new",
             vec![
