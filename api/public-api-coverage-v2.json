@@ -1,11 +1,11 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-coverage/v2",
   "schema_version": 2,
-  "contract_digest": "2b52725cfd3ae395690ae382a207bec3e2f4e7e1caa44988e5b1e1c9eeaa2dd4",
+  "contract_digest": "c6496e34921b4522ec16d1a327f26555bd370f0dd46a4f1d26937269ce086804",
   "totals": {
-    "entries": 3629,
-    "overloads": 8436,
-    "routes": 102,
+    "entries": 3630,
+    "overloads": 8439,
+    "routes": 103,
     "http_types": 108,
     "http_fields": 423,
     "source_nodes": 968,
@@ -9176,7 +9176,7 @@
       "id": "v1:source:1d406059d415ef39",
       "path": "crates/vibelang-http/src/lib.rs",
       "kind": "mechanical_declaration",
-      "node_count": 108,
+      "node_count": 109,
       "node_ids": [
         "v1:binding:00be3f56a1ad2716",
         "v1:binding:02117779f9e0c681",
@@ -9266,6 +9266,7 @@
         "v1:binding:d4fc895506d71306",
         "v1:binding:d648deeb4b9dbe9b",
         "v1:binding:d90a9d24765d9be2",
+        "v1:binding:dab4ba78a278a172",
         "v1:binding:e5c8443207524c87",
         "v1:binding:e90332c1095e27a2",
         "v1:binding:ea35436a714ba35f",
@@ -9287,7 +9288,7 @@
         "v1:field:daea60d6daf96b7c",
         "v1:type:83d665cbbb1ee3a1"
       ],
-      "node_ids_sha256": "33cdc7ad8ab1bc954a3180f95e37854091e14221104eaa84ba39e12f1205a2c5"
+      "node_ids_sha256": "4a79525f48464479ec99e20593682ef54a559a272698739cb3393915e2777806"
     },
     {
       "id": "v1:source:1d96eeb4a01bace1",
@@ -10730,7 +10731,7 @@
       "id": "v1:source:2afcbc5e2685db96",
       "path": "crates/vibelang-http/src/routes/midi.rs",
       "kind": "mechanical_declaration",
-      "node_count": 72,
+      "node_count": 73,
       "node_ids": [
         "v1:field:1ab0b7e790f99735",
         "v1:field:1c6d9abd7cc691ea",
@@ -10788,6 +10789,7 @@
         "v1:operation:7d1e4dcbb5c21363",
         "v1:operation:99ad2d595a908ab4",
         "v1:operation:c534ffaecd9298d2",
+        "v1:operation:dab4ba78a278a172",
         "v1:operation:f91ea0c6e45be3bc",
         "v1:operation:fe8185f876f18a7c",
         "v1:type:0bc8dd74dd8ed1f9",
@@ -10805,7 +10807,7 @@
         "v1:type:e1af5ef00931f884",
         "v1:type:f16a14dd21b403a2"
       ],
-      "node_ids_sha256": "6406d8600982b6cd8a5e22de9152cf4c0fe27f8a772991a77e94fde80c135044"
+      "node_ids_sha256": "c2efee4d623f8b26576703f76a1ccaed26bc6f5a3402a17bb7a070781e3be296"
     },
     {
       "id": "v1:source:2b2fd51df5fb9b4f",
@@ -14785,7 +14787,7 @@
       "id": "v1:source:56307351097a058d",
       "path": "crates/vibelang-rhai/src/api/midi/routing.rs",
       "kind": "mechanical_declaration",
-      "node_count": 62,
+      "node_count": 63,
       "node_ids": [
         "v1:entry:037761a88a7bb36e",
         "v1:entry:18ae3a0fd084cbd8",
@@ -14826,6 +14828,7 @@
         "v1:overload:39152f745455f4f5",
         "v1:overload:3d50e56da7b55c79",
         "v1:overload:42201ee69b719b84",
+        "v1:overload:42263a2c234f9577",
         "v1:overload:4564ecbbad01dc07",
         "v1:overload:46bcdc182f031528",
         "v1:overload:4d3d07aa6839667c",
@@ -14850,7 +14853,7 @@
         "v1:overload:db2475553967934c",
         "v1:overload:f0ca57be37557881"
       ],
-      "node_ids_sha256": "f8016e3fb775777f6c56cb6bbc26afadbe0806ae2a3f72f77bc98d597138d650"
+      "node_ids_sha256": "d8a4f850614ab137e4f7678e123c4e601d8dce076656e82909890aa497b50a26"
     },
     {
       "id": "v1:source:5634567bc0a50e53",
@@ -18102,7 +18105,7 @@
       "id": "v1:source:7e43714d25e1445e",
       "path": "crates/vibelang-rhai/src/api/route.rs",
       "kind": "mechanical_declaration",
-      "node_count": 93,
+      "node_count": 94,
       "node_ids": [
         "v1:entry:06630630f03edea7",
         "v1:entry:0eff65b0a9cdcc75",
@@ -18169,6 +18172,7 @@
         "v1:overload:73f95dd5e4049f18",
         "v1:overload:7427465e0d2da927",
         "v1:overload:7907561abe4f1752",
+        "v1:overload:7f71f8c7bf1a5d88",
         "v1:overload:7fb253801aa2c61a",
         "v1:overload:88a5a8a0434644f9",
         "v1:overload:8b9289174a79f4f1",
@@ -18198,7 +18202,7 @@
         "v1:overload:f6d61b8b24604763",
         "v1:overload:fceabc4fcd7475ca"
       ],
-      "node_ids_sha256": "7e8adf25317f00e5d779777669eba46d722e4af852e0c9f7116cfb9845363adc"
+      "node_ids_sha256": "d7b2bed09374c62ac0b89189d1e35efc0c77eefb001a1fcde99a4ec1fb175a77"
     },
     {
       "id": "v1:source:7e61f16077ee6e36",
@@ -21789,7 +21793,7 @@
       "id": "v1:source:a02beba522eaa84e",
       "path": "api/http-api-snapshot-v1.json",
       "kind": "mechanical_declaration",
-      "node_count": 35,
+      "node_count": 36,
       "node_ids": [
         "v1:type:06fbfa5a38c81d8e",
         "v1:type:0b2a7f62d9ca462d",
@@ -21825,9 +21829,10 @@
         "v1:type:c3960ad635ca305b",
         "v1:type:c39ffad635d269b0",
         "v1:type:e8ac75ce1d7b52cd",
-        "v1:type:ed7b26dd59d98368"
+        "v1:type:ed7b26dd59d98368",
+        "v1:type:f84527faf52d5033"
       ],
-      "node_ids_sha256": "72aeae0d119abf28247bc872c4cd18b5352442baa5da8fb74dab2c5e3e22ac6f"
+      "node_ids_sha256": "4a3627b0e8c231c7396a8f751ada22c570bc99563f09b155fee30db400990ed5"
     },
     {
       "id": "v1:source:a03c812a7daa548b",
@@ -22602,7 +22607,7 @@
       "id": "v1:source:aa307d48f6d41ccf",
       "path": "crates/vibelang-rhai/src/api/midi/mod.rs",
       "kind": "mechanical_declaration",
-      "node_count": 460,
+      "node_count": 463,
       "node_ids": [
         "v1:entry:0035039364a40b15",
         "v1:entry:0212f3953cb71d2a",
@@ -22625,6 +22630,7 @@
         "v1:entry:1280ac11674b0b44",
         "v1:entry:163d1d260ac8fb78",
         "v1:entry:16e26077642e8ca0",
+        "v1:entry:17223ff79da30cfd",
         "v1:entry:173c57de5d5af751",
         "v1:entry:17b258a52569d4be",
         "v1:entry:18ae3a0fd084cbd8",
@@ -22901,6 +22907,7 @@
         "v1:overload:3f6c24d5aa4e2f79",
         "v1:overload:4111b68836469d38",
         "v1:overload:42201ee69b719b84",
+        "v1:overload:42263a2c234f9577",
         "v1:overload:42fee3a3427f6175",
         "v1:overload:439bd16d8dc9f45e",
         "v1:overload:441317f81d2f4395",
@@ -22952,6 +22959,7 @@
         "v1:overload:72477d71c5cd6d7e",
         "v1:overload:72670cd64dc0c2c3",
         "v1:overload:747cb1ac8b23705b",
+        "v1:overload:74e0fe8aa3013533",
         "v1:overload:755e0a85fc7c6059",
         "v1:overload:7650639fc53804b6",
         "v1:overload:77c1306fb4e82b74",
@@ -23065,7 +23073,7 @@
         "v1:overload:f9ad8c22fb556ce5",
         "v1:overload:fe970d89107493a6"
       ],
-      "node_ids_sha256": "ce19df935f25be85c0f5c11ec54b8fec856af5f8118c35c37ba1a0e324b0b43f"
+      "node_ids_sha256": "a2e31d13f1edb8544853fbaccc09101c0febd030122c2dc64f7f7f900df6ea32"
     },
     {
       "id": "v1:source:aafe72e834ac3fbc",
@@ -24140,7 +24148,6 @@
         "v1:overload:1aa4bb1ea9bcc1ac",
         "v1:overload:26a1c7a470297991",
         "v1:overload:3bcfa3fc909614df",
-        "v1:overload:3ecb4ebe0a74105a",
         "v1:overload:45261c520dd45d2d",
         "v1:overload:62e1934ae0d76219",
         "v1:overload:680b1404c0856bac",
@@ -24150,6 +24157,7 @@
         "v1:overload:9bc2242d44f5745d",
         "v1:overload:9fd0900f77986ff6",
         "v1:overload:a6886a22d4e08523",
+        "v1:overload:ab578dddec64a6e2",
         "v1:overload:b2ed5044a5129888",
         "v1:overload:c619c978a3e5689b",
         "v1:overload:ca10d2ea831037ba",
@@ -24160,7 +24168,7 @@
         "v1:overload:f0aae7e08e528490",
         "v1:overload:ff62944927b029a4"
       ],
-      "node_ids_sha256": "5b23e814d39e6c6d33c384ba7d47e390834ab01992e17fcaa5a766183674ce8f"
+      "node_ids_sha256": "5b770487d7d3d24bff39ca5cc7b2540c35a8e72a642a342dde3dde043869c622"
     },
     {
       "id": "v1:source:b47783048cc1b778",
@@ -30033,8 +30041,8 @@
       "projection_paths": [
         "api/public-api-manifest-v1.json"
       ],
-      "included_count": 13548,
-      "eligible_count": 13548,
+      "included_count": 13555,
+      "eligible_count": 13555,
       "accepted_denominator": 13001,
       "denominator_baseline_owner": "xtask",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -30061,8 +30069,8 @@
       "projection_paths": [
         "api/http-api-snapshot-v1.json"
       ],
-      "included_count": 799,
-      "eligible_count": 799,
+      "included_count": 802,
+      "eligible_count": 802,
       "accepted_denominator": 620,
       "denominator_baseline_owner": "vibelang-http",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",
@@ -30159,8 +30167,8 @@
         "vscode-extension/ugen_manifests/reverb.json",
         "vscode-extension/ugen_manifests/triggers.json"
       ],
-      "included_count": 2144,
-      "eligible_count": 3146,
+      "included_count": 2147,
+      "eligible_count": 3149,
       "accepted_denominator": 3141,
       "denominator_baseline_owner": "vibelang-tools",
       "denominator_baseline_revision": "128dbc2381476a39d999f1f61dacae4448c6b669",

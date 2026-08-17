@@ -1,7 +1,7 @@
 {
   "schema": "https://vibelang.org/schemas/public-api-compatibility-debt/v1",
   "schema_version": 1,
-  "contract_digest": "2b52725cfd3ae395690ae382a207bec3e2f4e7e1caa44988e5b1e1c9eeaa2dd4",
+  "contract_digest": "c6496e34921b4522ec16d1a327f26555bd370f0dd46a4f1d26937269ce086804",
   "records": [
     {
       "id": "v1:debt:001cc8b4d1999b0e",
@@ -17974,6 +17974,21 @@
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
+      "id": "v1:debt:78394d946ac57c7b",
+      "surface": "http",
+      "node_id": "v1:operation:dab4ba78a278a172",
+      "operation_id": "v1:operation:dab4ba78a278a172",
+      "member": "authentication",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.no_authentication",
+      "issue": "M11 HTTP v2 security policy",
+      "exit_gate": "define and enforce an authentication policy before remote exposure",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-http/src/lib.rs",
+      "test_anchor": "crates/vibelang-http/src/lib.rs"
+    },
+    {
       "id": "v1:debt:784d3d82edfa9daf",
       "surface": "http",
       "node_id": "v1:field:571db82bcf94b40e",
@@ -22696,6 +22711,21 @@
       "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
       "remove_by": "v2 release-ready gate",
       "source_anchor": "crates/vibelang-http/src/models.rs",
+      "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
+    },
+    {
+      "id": "v1:debt:98610f571e435e7c",
+      "surface": "http",
+      "node_id": "v1:field:327721404392724b",
+      "operation_id": "v1:operation:dab4ba78a278a172",
+      "member": "error",
+      "legacy_class": "stale",
+      "owner": "vibelang-http",
+      "diagnostic_id": "compat.http.operation_binding_pending",
+      "issue": "M11 HTTP v2 effectiveness binding",
+      "exit_gate": "M11 must implement or structurally reject this operation-scoped member",
+      "remove_by": "v2 release-ready gate",
+      "source_anchor": "crates/vibelang-http/src/routes/midi.rs",
       "test_anchor": "tests/fixtures/api-unification/v1/negative/ignored-fields.json"
     },
     {
@@ -37762,7 +37792,7 @@
   "counts": {
     "dead": 91,
     "ignored": 24,
-    "stale": 2402
+    "stale": 2404
   },
   "orphan_count": 0,
   "unclassified_count": 0

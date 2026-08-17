@@ -47,7 +47,7 @@ const FRAGMENT_DIR: &str = "api/contract";
 const GENERATOR_NAME: &str = "vibelang-xtask-effective-contract";
 const API_VERSION: &str = "0.4.0";
 const ACCEPTED_V1_MANIFEST_SHA256: &str =
-    "465c4fe86dd98abc96689e082780544067465550ce6e2e67dac0c90c03eab33f";
+    "9a4484900c121e0e3c568ab13bd5609c4bb5ffcf500ede5a72cd164071c89c8e";
 const ACCEPTED_V1_HTTP_SHA256: &str =
     "76949f764c09d24c6abb22ae1f3b9d1e16830f0fcd5a6450e8cce3c164b61055";
 const ACCEPTED_CONSUMER_DENOMINATOR_BASELINE_SHA256: &str =
@@ -56,7 +56,7 @@ const WASM_TYPES_PATH: &str = "crates/vibelang-wasm/types/index.d.ts";
 const CORE_MANIFEST_PATH: &str = "crates/vibelang-core/Cargo.toml";
 const CORE_WIRE_TEST_PATH: &str = "crates/vibelang-core/tests/mutation_ledger.rs";
 const EXPECTED_ENTRIES: usize = 3_630;
-const EXPECTED_OVERLOADS: usize = 8_438;
+const EXPECTED_OVERLOADS: usize = 8_439;
 const EXPECTED_HTTP_ROUTES: usize = 103;
 const EXPECTED_HTTP_TYPES: usize = 108;
 const EXPECTED_HTTP_FIELDS: usize = 423;
@@ -6619,7 +6619,7 @@ mod tests {
                 let expected = crate::conventions::build(&discovery.v1).unwrap();
                 assert_eq!(manifest.conventions.as_ref(), Some(&expected));
                 assert_eq!(expected.capabilities.len(), 28);
-                assert_eq!(expected.parameter_quantities.len(), 18_795);
+                assert_eq!(expected.parameter_quantities.len(), 18_797);
             })
             .unwrap()
             .join()

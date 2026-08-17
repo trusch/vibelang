@@ -4022,7 +4022,7 @@
   {
     "name": "body",
     "description": "Source-backed rhai method on GroupHandle registration; availability: available.",
-    "signature": "body(_: GroupHandle, _: Fn) -> GroupHandle",
+    "signature": "body(_: GroupHandle, _: Fn) -> core::result::Result<vibelang_rhai::api::group::GroupHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": "GroupHandle",
     "lifecycle": {
@@ -11103,6 +11103,26 @@
     "name": "to_input",
     "description": "Source-backed rhai method on RouteHandle registration; availability: available.",
     "signature": "to_input(_: RouteHandle, _: Voice, _: string) -> core::result::Result<vibelang_rhai::api::route::RouteHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+    "example": "",
+    "receiver": "RouteHandle",
+    "lifecycle": {
+      "phase": "builder_or_handle_call",
+      "terminal": "non_terminal_chain",
+      "classification": "signature-and-registration-derived"
+    },
+    "availability": {
+      "status": "available",
+      "cfg": [],
+      "targets": [],
+      "features": [],
+      "plugins": [],
+      "runtime_conditions": []
+    }
+  },
+  {
+    "name": "to_input",
+    "description": "Source-backed rhai method on RouteHandle registration; availability: available.",
+    "signature": "to_input(_: RouteHandle, _: vibelang_rhai::api::sequence::Fx, _: string) -> core::result::Result<vibelang_rhai::api::route::RouteHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
     "example": "",
     "receiver": "RouteHandle",
     "lifecycle": {

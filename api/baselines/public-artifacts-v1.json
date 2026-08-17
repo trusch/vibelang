@@ -278,22 +278,22 @@
     },
     "manifest": {
       "counts": {
-        "bytes": 33322175,
+        "bytes": 33326363,
         "entries": 3630,
         "files": 1,
         "named_terminals": 26,
-        "overloads": 8438,
+        "overloads": 8439,
         "properties": 277,
         "registered_types": 34
       },
       "files": [
         {
-          "bytes": 33322175,
+          "bytes": 33326363,
           "path": "api/public-api-manifest-v1.json",
-          "sha256": "465c4fe86dd98abc96689e082780544067465550ce6e2e67dac0c90c03eab33f"
+          "sha256": "9a4484900c121e0e3c568ab13bd5609c4bb5ffcf500ede5a72cd164071c89c8e"
         }
       ],
-      "tree_sha256": "14539804285a438dd45f1513a2761d146d41cb0b2d63783f180ff076ed1cb98b"
+      "tree_sha256": "4170adf06198fb7cce4287f8977ef79e70e4434cbe907283a61fb2924864e6e1"
     },
     "packages": {
       "counts": {
@@ -432,21 +432,21 @@
     },
     "rhai_editor": {
       "counts": {
-        "bytes": 1807543,
+        "bytes": 1809211,
         "canonical_ugen_categories": 71,
         "files": 51,
-        "lsp_rhai_rows": 605,
+        "lsp_rhai_rows": 606,
         "lsp_ugen_categories": 24,
         "rhai_projections_equal": true,
-        "rhai_rows": 605,
+        "rhai_rows": 606,
         "stdlib_rows": 887,
         "vscode_ugen_categories": 24
       },
       "files": [
         {
-          "bytes": 379145,
+          "bytes": 379979,
           "path": "crates/vibelang-lsp/src/data/rhai-api.json",
-          "sha256": "322ba2fbc482ca9c8d4cb768fbb7ec2c0a28b51ef3bd83743a094e20dc5b1e39"
+          "sha256": "6144c2222a5fe8234d5243ed758382bb5642b1c61136e4d504334990394e62f1"
         },
         {
           "bytes": 16998,
@@ -569,9 +569,9 @@
           "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
         },
         {
-          "bytes": 379145,
+          "bytes": 379979,
           "path": "vscode-extension/src/data/rhai-api.json",
-          "sha256": "322ba2fbc482ca9c8d4cb768fbb7ec2c0a28b51ef3bd83743a094e20dc5b1e39"
+          "sha256": "6144c2222a5fe8234d5243ed758382bb5642b1c61136e4d504334990394e62f1"
         },
         {
           "bytes": 521451,
@@ -699,7 +699,7 @@
           "sha256": "67aaec77d5ff482c19ba5d42823bdb5776c8dcf15a8973b4937e89482df86d99"
         }
       ],
-      "tree_sha256": "ffee103c9946ba1f05f947c5325b3be7b3fc12e8b0441903b7534031896f30bb"
+      "tree_sha256": "638d37c2fa21b710c65c285c82c9ea72429e2faaf4c8a7768c0232289fe04311"
     },
     "wasm": {
       "counts": {

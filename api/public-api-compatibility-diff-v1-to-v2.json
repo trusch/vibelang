@@ -3,17 +3,17 @@
   "schema_version": 1,
   "base": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "6cba069dce1052c82a2fc4e216f391bf1fcc99541c6b9361c6150605b1b44e6f",
-    "bytes": 33314621
+    "sha256": "9a4484900c121e0e3c568ab13bd5609c4bb5ffcf500ede5a72cd164071c89c8e",
+    "bytes": 33326363
   },
   "candidate_v1_projection": {
     "path": "api/public-api-manifest-v1.json",
-    "sha256": "6cba069dce1052c82a2fc4e216f391bf1fcc99541c6b9361c6150605b1b44e6f",
-    "bytes": 33314621
+    "sha256": "9a4484900c121e0e3c568ab13bd5609c4bb5ffcf500ede5a72cd164071c89c8e",
+    "bytes": 33326363
   },
-  "candidate_v2_digest": "2b52725cfd3ae395690ae382a207bec3e2f4e7e1caa44988e5b1e1c9eeaa2dd4",
-  "unchanged_entry_ids": 3629,
-  "unchanged_overload_ids": 8436,
+  "candidate_v2_digest": "c6496e34921b4522ec16d1a327f26555bd370f0dd46a4f1d26937269ce086804",
+  "unchanged_entry_ids": 3630,
+  "unchanged_overload_ids": 8439,
   "unclassified_count": 0,
   "report": {
     "changes": []
