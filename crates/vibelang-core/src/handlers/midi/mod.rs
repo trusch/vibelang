@@ -75,10 +75,10 @@ use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
 use crate::state::{PatternOwner, State};
-#[cfg(feature = "midi")]
-use crate::traits::VoiceConfig;
 #[cfg(feature = "pipewire-midi2")]
 use crate::traits::Midi;
+#[cfg(feature = "midi")]
+use crate::traits::VoiceConfig;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
