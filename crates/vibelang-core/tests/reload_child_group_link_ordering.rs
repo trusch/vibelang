@@ -457,6 +457,17 @@ async fn apply(runtime: &mut Runtime<MockBackend>, script: ScriptState) {
     runtime.tick().await;
 }
 
+/// Let the reload's deferred work land: removed effects and deleted groups
+/// are faded and freed past a grace period, so the tree straight after an
+/// `Apply` is mid-transition and not what the board ever plays. Every
+/// assertion about audio-path order must be made on the SETTLED tree.
+async fn settle(runtime: &mut Runtime<MockBackend>) {
+    for _ in 0..4 {
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        runtime.tick().await;
+    }
+}
+
 async fn boot_with_defs(
     script: ScriptState,
     defs: &[&str],
@@ -641,7 +652,9 @@ async fn board_shape_surviving_master_changing_child_recreated_fx() {
         ),
     )
     .await;
-    eprintln!("--- after recall (horn-section) ---\n{}", backend.render());
+    eprintln!("--- after recall, unsettled ---\n{}", backend.render());
+    settle(&mut runtime).await;
+    eprintln!("--- after recall, settled (horn-section) ---\n{}", backend.render());
 
     let breaks = backend.breaks();
     assert!(
@@ -651,4 +664,67 @@ async fn board_shape_surviving_master_changing_child_recreated_fx() {
         backend.render(),
         report(&breaks)
     );
+}
+
+/// The factory bank in the real shape: masters that repeat under a constant
+/// id, children whose ids change every recall, effects that MIGRATE between
+/// a master chain and a child chain, and synthdefs that flip on the
+/// surviving master so its chain is structurally recreated in place.
+///
+/// The migration is the part the old fixtures never had: once an effect id
+/// listed in `State::group_effect_chain[master]` belongs to a CHILD instead,
+/// `first_effect_node_in_group` finds nothing in the chain and falls through
+/// to `min_by_key(id.raw())` over whatever effects are left on the master —
+/// the smallest id hash, which is not the head of the audio path.
+fn real_bank() -> Vec<ScriptState> {
+    vec![
+        // vibes-and-air: master chain [FX_3, FX_2, FX_1], child n17.
+        patch_with_def(
+            MASTER_A,
+            &[FX_3, FX_2, FX_1],
+            DEF_JPVERB,
+            &[(CHILD_N17, &[], DEF_JPVERB)],
+        ),
+        // horn-section: same master id, NEW child id, defs flip, and FX_1
+        // MIGRATES off the master onto the child.
+        patch_with_def(
+            MASTER_A,
+            &[FX_3, FX_2],
+            DEF_HALL,
+            &[(CHILD_N18, &[FX_1], DEF_HALL)],
+        ),
+        // FX_1 comes back to the master, but at the chain TAIL, while FX_3
+        // migrates out — so the min-id effect is no longer the chain head.
+        patch_with_def(
+            MASTER_A,
+            &[FX_2, FX_1],
+            DEF_JPVERB,
+            &[(CHILD_N17, &[FX_3], DEF_JPVERB)],
+        ),
+        patch_with_def(
+            MASTER_A,
+            &[FX_1, FX_3],
+            DEF_HALL,
+            &[(CHILD_N18, &[FX_2], DEF_HALL)],
+        ),
+    ]
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_run_of_real_shape_recalls_never_strands_a_child() {
+    let bank = real_bank();
+    let (mut runtime, backend) = boot_with_defs(bank[0].clone(), &[DEF_JPVERB, DEF_HALL]).await;
+    settle(&mut runtime).await;
+
+    for (round, script) in bank.iter().cycle().take(35).enumerate() {
+        apply(&mut runtime, script.clone()).await;
+        settle(&mut runtime).await;
+        let breaks = backend.breaks();
+        assert!(
+            breaks.is_empty(),
+            "recall #{round} stranded a child on a dead bus:\n{}\n{}",
+            backend.render(),
+            report(&breaks)
+        );
+    }
 }
