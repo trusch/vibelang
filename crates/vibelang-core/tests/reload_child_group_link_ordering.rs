@@ -1274,10 +1274,13 @@ async fn a_child_that_moves_master_mixes_into_the_new_master() {
 }
 
 /// The board's id regime: a child group belongs to one master forever,
-/// because its id hashes the full path.
+/// because its id hashes the full path — `define_group("sg_chain_n21/n17")`
+/// names the parent inside the child's own name, so a child cannot change
+/// master without changing id. Two children share each master, so the
+/// `n17` -> `n18` alternation under a surviving master is in the space.
 #[tokio::test(flavor = "current_thread")]
 async fn fuzz_reload_sequences_board_id_regime() {
-    fuzz_sequences(0x5EED_0001, 6, 12, true).await;
+    fuzz_sequences(0x5EED_0001, 10, 15, true).await;
 }
 
 /// The looser regime: the same group id reappears under a different parent.
