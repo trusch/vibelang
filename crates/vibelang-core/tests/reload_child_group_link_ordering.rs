@@ -728,3 +728,65 @@ async fn a_run_of_real_shape_recalls_never_strands_a_child() {
         );
     }
 }
+
+// =========================================================================
+// Detector sensitivity — what the green runs above are worth.
+// =========================================================================
+
+/// A green run only means something if the detector would go red on the
+/// tree the board actually produced. These drive the mock tree directly,
+/// bypassing the engine, to pin down which orderings `audio_path_breaks`
+/// calls a break — and therefore what the fixtures above can and cannot
+/// ever catch.
+fn synth(node: i32, def: &str, inbus: u32, outbus: u32) -> TreeSynth {
+    TreeSynth {
+        node,
+        def: def.to_string(),
+        controls: [
+            ("inbus".to_string(), inbus as f32),
+            ("outbus".to_string(), outbus as f32),
+        ]
+        .into_iter()
+        .collect(),
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn detector_flags_a_child_link_after_the_parent_link() {
+    // The board tree: child link writes bus 16, parent link (its only
+    // reader) already ran.
+    let tree = vec![
+        synth(1002, "reverb_jpverb", 16, 16),
+        synth(1005, "system_link_audio", 16, 0), // parent link — last reader
+        synth(1011, "system_link_audio", 20, 16), // child link — STRANDED
+    ];
+    let breaks = audio_path_breaks(&tree);
+    assert_eq!(
+        breaks.len(),
+        1,
+        "detector must flag a child link that runs after the parent link:\n{}",
+        report(&breaks)
+    );
+    assert_eq!(breaks[0].node, 1011);
+}
+
+/// The consequence of the `min_by_key(id.raw())` anchor in
+/// `State::first_effect_node_in_group`: a child anchored `Before` the WRONG
+/// fx lands mid-chain, so the fx ahead of it never hear that child. That is
+/// a real wetness defect — but it is NOT an audio-path break, because the
+/// parent's link synth still reads the bus afterwards. No fixture driven
+/// through `audio_path_breaks` can ever turn this lead red.
+#[tokio::test(flavor = "current_thread")]
+async fn detector_is_blind_to_a_child_landing_mid_fx_chain() {
+    let tree = vec![
+        synth(1002, "reverb_jpverb", 16, 16), // never hears the child
+        synth(1011, "system_link_audio", 20, 16), // child link, mid-chain
+        synth(1003, "reverb_jpverb", 16, 16),
+        synth(1005, "system_link_audio", 16, 0), // parent link still reads 16
+    ];
+    assert!(
+        audio_path_breaks(&tree).is_empty(),
+        "a mid-chain child is silently wrong, not stranded — the detector \
+         cannot see it, so the anchor lead needs a DIFFERENT assertion"
+    );
+}
