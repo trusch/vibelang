@@ -181,6 +181,39 @@ impl MockBackend {
     fn breaks(&self) -> Vec<AudioPathBreak> {
         audio_path_breaks(&self.tree())
     }
+
+    /// The whole tree — groups included — in evaluation order, so a failing
+    /// assertion says WHERE a node landed and not just that it is stranded.
+    fn render(&self) -> String {
+        let tree = self.state.tree.lock().unwrap();
+        let mut out = String::new();
+        let mut stack: Vec<(NodeId, usize)> = tree
+            .children
+            .get(&NodeId::new(0))
+            .map(|kids| kids.iter().rev().map(|n| (*n, 1usize)).collect())
+            .unwrap_or_default();
+        while let Some((node, depth)) = stack.pop() {
+            let pad = "  ".repeat(depth);
+            match tree.defs.get(&node) {
+                Some(def) => {
+                    let ctl = tree.controls.get(&node);
+                    let get = |k: &str| ctl.and_then(|c| c.get(k)).copied();
+                    let ports = match (get("inbus"), get("outbus")) {
+                        (Some(i), Some(o)) => format!(" in={i} out={o}"),
+                        (None, Some(o)) => format!(" out={o}"),
+                        (Some(i), None) => format!(" in={i}"),
+                        (None, None) => String::new(),
+                    };
+                    out.push_str(&format!("{pad}{} {}{}\n", node.0, def, ports));
+                }
+                None => out.push_str(&format!("{pad}{} [group]\n", node.0)),
+            }
+            if let Some(kids) = tree.children.get(&node) {
+                stack.extend(kids.iter().rev().map(|n| (*n, depth + 1)));
+            }
+        }
+        out
+    }
 }
 
 #[async_trait]
@@ -355,6 +388,63 @@ fn patch(master: GroupId, master_fx: &[EffectId], sides: &[Side]) -> ScriptState
     script
 }
 
+/// The board shape, exactly: one master that SURVIVES the reload under a
+/// constant id, carrying a serial fx chain whose synthdef CHANGES, plus one
+/// child group whose id CHANGES because ids hash the full path.
+///
+/// `master_fx` is given in audio-path order — the order the chain runs in.
+/// It is deliberately NOT id order in the tests below, so that the
+/// `min_by_key(id.raw())` fallback in `State::first_effect_node_in_group`
+/// picks a different node than the true chain head.
+fn patch_with_def(
+    master: GroupId,
+    master_fx: &[EffectId],
+    master_def: &str,
+    sides: &[(GroupId, &[EffectId], &str)],
+) -> ScriptState {
+    let mut script = ScriptState::new();
+    script.add_group(
+        master,
+        GroupConfig {
+            name: format!("master{}", master.0),
+            effects: master_fx.to_vec(),
+            ..Default::default()
+        },
+    );
+    for id in master_fx {
+        script.add_effect(
+            *id,
+            EffectConfig {
+                group: master,
+                synthdef: master_def.to_string(),
+                params: ParamMap::new(),
+            },
+        );
+    }
+    for (group, fx, def) in sides {
+        script.add_group(
+            *group,
+            GroupConfig {
+                name: format!("master{}/side{}", master.0, group.0),
+                parent: Some(master),
+                effects: fx.to_vec(),
+                ..Default::default()
+            },
+        );
+        for id in *fx {
+            script.add_effect(
+                *id,
+                EffectConfig {
+                    group: *group,
+                    synthdef: def.to_string(),
+                    params: ParamMap::new(),
+                },
+            );
+        }
+    }
+    script
+}
+
 fn side(group: GroupId, fx: &'static [EffectId]) -> Side {
     Side { group, fx }
 }
@@ -367,22 +457,31 @@ async fn apply(runtime: &mut Runtime<MockBackend>, script: ScriptState) {
     runtime.tick().await;
 }
 
-async fn boot(script: ScriptState) -> (Runtime<MockBackend>, MockBackend) {
+async fn boot_with_defs(
+    script: ScriptState,
+    defs: &[&str],
+) -> (Runtime<MockBackend>, MockBackend) {
     let backend = MockBackend::new();
     let mut runtime = Runtime::new(backend.clone());
-    runtime
-        .send(
-            SynthDefMessage::Load {
-                name: DEF_FX.to_string(),
-                data: Vec::new(),
-            }
-            .into(),
-        )
-        .await
-        .unwrap();
+    for def in defs {
+        runtime
+            .send(
+                SynthDefMessage::Load {
+                    name: (*def).to_string(),
+                    data: Vec::new(),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+    }
     runtime.tick().await;
     apply(&mut runtime, script).await;
     (runtime, backend)
+}
+
+async fn boot(script: ScriptState) -> (Runtime<MockBackend>, MockBackend) {
+    boot_with_defs(script, &[DEF_FX]).await
 }
 
 fn report(breaks: &[AudioPathBreak]) -> String {
@@ -486,4 +585,70 @@ async fn a_run_of_recalls_never_strands_a_side() {
             report(&breaks)
         );
     }
+}
+
+// =========================================================================
+// The board shape: surviving master, changing child, recreated master fx.
+// =========================================================================
+
+/// `vibes-and-air` -> `horn-section`: master `sg_chain_n21` is declared by
+/// BOTH patches, so its id is constant and it survives the reload. The child
+/// is `sg_chain_n21/n17` in one and `sg_chain_n21/n18` in the other — ids
+/// hash the full path, so the child is a NEW group. In the same reload the
+/// surviving master's own effects change synthdef (`reverb_jpverb` ->
+/// `hall_reverb`), so they are structurally recreated too.
+const DEF_JPVERB: &str = "reverb_jpverb";
+const DEF_HALL: &str = "hall_reverb";
+
+/// Master fx in AUDIO-PATH order `[FX_3, FX_2, FX_1]` — the reverse of id
+/// order, so the `min_by_key(id.raw())` fallback in
+/// `first_effect_node_in_group` resolves to the chain TAIL (`FX_1`), not
+/// the head. That is the anchor lead: a child group anchored `Before` the
+/// tail fx lands after the fx that should have seen it.
+const MASTER_CHAIN: [EffectId; 3] = [FX_3, FX_2, FX_1];
+
+const CHILD_N17: GroupId = SIDE_A;
+const CHILD_N18: GroupId = SIDE_B;
+
+#[tokio::test(flavor = "current_thread")]
+async fn board_shape_surviving_master_changing_child_recreated_fx() {
+    let (mut runtime, backend) = boot_with_defs(
+        patch_with_def(
+            MASTER_A,
+            &MASTER_CHAIN,
+            DEF_JPVERB,
+            &[(CHILD_N17, &[], DEF_JPVERB)],
+        ),
+        &[DEF_JPVERB, DEF_HALL],
+    )
+    .await;
+    assert!(
+        backend.breaks().is_empty(),
+        "precondition: cold boot is whole:\n{}\n{}",
+        backend.render(),
+        report(&backend.breaks())
+    );
+    eprintln!("--- after cold boot (vibes-and-air) ---\n{}", backend.render());
+
+    // The recall: same master id, NEW child id, master fx change synthdef.
+    apply(
+        &mut runtime,
+        patch_with_def(
+            MASTER_A,
+            &MASTER_CHAIN,
+            DEF_HALL,
+            &[(CHILD_N18, &[], DEF_HALL)],
+        ),
+    )
+    .await;
+    eprintln!("--- after recall (horn-section) ---\n{}", backend.render());
+
+    let breaks = backend.breaks();
+    assert!(
+        breaks.is_empty(),
+        "a recall left a child group writing a bus whose only reader already \
+         ran — that child is SILENT with every synth alive:\n{}\n{}",
+        backend.render(),
+        report(&breaks)
+    );
 }
