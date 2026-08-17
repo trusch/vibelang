@@ -676,10 +676,7 @@ async fn group_nodes(runtime: &Runtime<MockBackend>) -> Vec<(GroupId, NodeId, Op
         .collect()
 }
 
-async fn boot_with_defs(
-    script: ScriptState,
-    defs: &[&str],
-) -> (Runtime<MockBackend>, MockBackend) {
+async fn boot_with_defs(script: ScriptState, defs: &[&str]) -> (Runtime<MockBackend>, MockBackend) {
     register_gated_voice_synthdef();
     let backend = MockBackend::new();
     let mut runtime = Runtime::new(backend.clone());
@@ -848,7 +845,10 @@ async fn board_shape_surviving_master_changing_child_recreated_fx() {
         backend.render(),
         report(&backend.breaks())
     );
-    eprintln!("--- after cold boot (vibes-and-air) ---\n{}", backend.render());
+    eprintln!(
+        "--- after cold boot (vibes-and-air) ---\n{}",
+        backend.render()
+    );
 
     // The recall: same master id, NEW child id, master fx change synthdef.
     apply(
@@ -863,7 +863,10 @@ async fn board_shape_surviving_master_changing_child_recreated_fx() {
     .await;
     eprintln!("--- after recall, unsettled ---\n{}", backend.render());
     settle(&mut runtime).await;
-    eprintln!("--- after recall, settled (horn-section) ---\n{}", backend.render());
+    eprintln!(
+        "--- after recall, settled (horn-section) ---\n{}",
+        backend.render()
+    );
 
     let breaks = backend.breaks();
     assert!(
@@ -1324,7 +1327,10 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
     let mut interleaved = 0usize;
 
     for run in 0..runs {
-        let mut rng = Rng(seed.wrapping_add(run as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        let mut rng = Rng(seed
+            .wrapping_add(run as u64)
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            | 1);
         let mut history: Vec<Spec> = Vec::new();
 
         let first = random_spec(&mut rng, stable_parents);
@@ -1483,7 +1489,12 @@ async fn a_child_that_moves_master_mixes_into_the_new_master() {
     settle(&mut runtime).await;
 
     let violations = all_violations(&runtime, &backend).await;
-    assert!(violations.is_empty(), "{}\n{}", backend.render(), violations.join("\n"));
+    assert!(
+        violations.is_empty(),
+        "{}\n{}",
+        backend.render(),
+        violations.join("\n")
+    );
 
     let state = runtime.state().read().await;
     let child = state.groups.get(&GroupId(3)).expect("child in state");
