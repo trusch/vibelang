@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use vibelang_core::{
@@ -560,7 +560,7 @@ async fn run_simple_mode(
     // This ensures MIDI devices are registered before transport starts,
     // so they receive the Start message
     handle.sync_and_wait().await?;
-    if graph_is_whole(&integrity_backend, "Initial load") {
+    if graph_is_whole(&integrity_backend, "Initial load").await {
         info!("State applied");
     }
 
@@ -651,7 +651,7 @@ async fn run_simple_mode(
                                 // would be read before the server has
                                 // answered for it, so it cannot be claimed.
                                 error!("Reload could not be confirmed: {}", e);
-                            } else if graph_is_whole(&reload_backend, "Reload") {
+                            } else if graph_is_whole(&reload_backend, "Reload").await {
                                 info!("Reload successful");
                             }
                         }
@@ -686,31 +686,68 @@ async fn run_simple_mode(
     Ok(())
 }
 
-/// Whether the graph the server just built contains every synth the script
-/// asked for — and a loud report naming what is missing when it does not.
+/// Whether the graph the server just built is whole — every synth the script
+/// asked for present, and every one of them actually connected to the output.
+/// A loud report naming what went missing when it is not.
 ///
-/// A reload that instantiates voices against SynthDefs the server does not
-/// have leaves a partial graph: some voices play, others are silent, and
-/// nothing about it looks broken from the outside. Reporting that as a
-/// successful reload is the failure mode this guards. Call it after a
-/// `/sync` barrier, so the server has already answered for every `/s_new`.
-fn graph_is_whole(backend: &Arc<vibelang_core::ScsynthBackend>, what: &str) -> bool {
+/// Two ways a reload leaves a graph that looks fine and is not:
+///
+/// 1. A voice instantiated against a SynthDef the server does not have. Some
+///    voices play, others are silent, nothing looks broken from the outside.
+/// 2. Every synth present and correct, but one of them writing an audio bus
+///    that nothing downstream reads any more — a node placed on the wrong
+///    side of the node that consumes its bus. scsynth zeroes audio buses
+///    every block, so that whole branch of the instrument goes silent with
+///    a full, healthy-looking node tree. Nothing is refused, so (1) sees it
+///    as a clean reload.
+///
+/// Call it after a `/sync` barrier, so the server has already answered for
+/// every `/s_new` and its tree is the one this reload built.
+async fn graph_is_whole(backend: &Arc<vibelang_core::ScsynthBackend>, what: &str) -> bool {
     let missing = backend.take_missing_synthdefs();
-    if missing.is_empty() {
+    if !missing.is_empty() {
+        let mut names: Vec<&str> = missing.iter().map(|m| m.def.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        error!(
+            "{} FAILED: the graph is incomplete — scsynth has no SynthDef for {} \
+             of the synths it was asked to create ({}). Those voices are SILENT. \
+             Check the server's own log for `exception in GraphDef_Recv` (a UGen \
+             it does not have), then fix the script and reload.",
+            what,
+            missing.len(),
+            names.join(", ")
+        );
+        return false;
+    }
+
+    // An unreadable tree is not evidence of a broken one — say so and let the
+    // reload stand, rather than failing it on a diagnostic that did not run.
+    let breaks = match backend.audio_path_breaks().await {
+        Ok(breaks) => breaks,
+        Err(e) => {
+            warn!(
+                "{}: could not read the server's node tree ({}), so the audio \
+                 path was not checked this time",
+                what, e
+            );
+            return true;
+        }
+    };
+    if breaks.is_empty() {
         return true;
     }
-    let mut names: Vec<&str> = missing.iter().map(|m| m.def.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
+
     error!(
-        "{} FAILED: the graph is incomplete — scsynth has no SynthDef for {} \
-         of the synths it was asked to create ({}). Those voices are SILENT. \
-         Check the server's own log for `exception in GraphDef_Recv` (a UGen \
-         it does not have), then fix the script and reload.",
+        "{} FAILED: the graph is whole but not connected — {} node(s) write an \
+         audio bus nothing downstream reads, so everything feeding them is \
+         SILENT even though every SynthDef loaded and every synth is alive.",
         what,
-        missing.len(),
-        names.join(", ")
+        breaks.len()
     );
+    for audio_break in &breaks {
+        error!("  {}", audio_break);
+    }
     false
 }
 

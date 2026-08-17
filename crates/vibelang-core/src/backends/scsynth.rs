@@ -175,6 +175,132 @@ pub struct MissingSynthDef {
     pub reason: String,
 }
 
+/// One synth from the server's node tree, with its control values.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeSynth {
+    /// Node id as the server reports it.
+    pub node: i32,
+    /// The SynthDef this node was built from.
+    pub def: String,
+    /// Control values. Controls mapped to a bus report as a symbol on the
+    /// wire and are dropped here — a mapped control names no fixed value.
+    pub controls: HashMap<String, f32>,
+}
+
+/// A live node writing an audio bus that nothing downstream reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioPathBreak {
+    /// The node whose output goes nowhere.
+    pub node: i32,
+    /// Its SynthDef name.
+    pub def: String,
+    /// The bus it writes.
+    pub bus: u32,
+    /// The last node that read that bus — earlier in the same cycle, which
+    /// is why the write is lost.
+    pub consumer_node: i32,
+    /// That reader's SynthDef name.
+    pub consumer_def: String,
+}
+
+impl std::fmt::Display for AudioPathBreak {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "node {} ({}) writes audio bus {}, but the last node to read bus {} \
+             is node {} ({}) EARLIER in the same cycle — everything feeding \
+             node {} is silent",
+            self.node,
+            self.def,
+            self.bus,
+            self.bus,
+            self.consumer_node,
+            self.consumer_def,
+            self.node,
+        )
+    }
+}
+
+/// The audio-fabric bus a synth reads and the one it writes, if it is one of
+/// the three families that carry group audio.
+///
+/// Deliberately narrow. These three are audio-rate by construction, so their
+/// bus numbers are unambiguously audio-bus numbers; a generic "any control
+/// named like a bus" rule would collide with the control-bus namespace (a kr
+/// port's `out` is a *control* bus 17, which is not audio bus 17) and invent
+/// breaks that are not there. Voices need no entry: they are added at the
+/// head of their own group, always ahead of the fabric that carries them.
+fn audio_fabric_ports(synth: &TreeSynth) -> Option<(u32, u32)> {
+    let pair = |read: &str, write: &str| -> Option<(u32, u32)> {
+        Some((
+            *synth.controls.get(read)? as u32,
+            *synth.controls.get(write)? as u32,
+        ))
+    };
+    // `define_fx` inserts: read and rewrite a group bus in place.
+    if let Some(ports) = pair("__fx_bus_in", "__fx_bus_out") {
+        return Some(ports);
+    }
+    // A group's link synth: its bus into the parent's bus (or hardware).
+    if synth.def.starts_with("system_link_audio") {
+        return pair("inbus", "outbus");
+    }
+    // A voice's output port into a group bus.
+    if synth.def.starts_with("port_to_group_link") {
+        return pair("in_bus", "out_bus");
+    }
+    None
+}
+
+/// The nodes in `tree` whose audio output is dropped on the floor.
+///
+/// `tree` must be in evaluation order — the order scsynth walks the node
+/// tree, which is the order `/g_queryTree` reports it in.
+///
+/// The rule: scsynth zeroes audio buses every block, so a write only counts
+/// if some node reads that bus LATER in the same cycle. A write whose bus is
+/// read only earlier is lost, and the whole branch feeding it is inaudible
+/// while every synth in it is alive, correctly parameterised, and built from
+/// a SynthDef the server definitely has. That is the shape a reload leaves
+/// behind when it places a node on the wrong side of the node that consumes
+/// its bus.
+///
+/// A bus that nothing reads anywhere is a sink — the hardware outputs — and
+/// is never reported.
+pub fn audio_path_breaks(tree: &[TreeSynth]) -> Vec<AudioPathBreak> {
+    let fabric: Vec<(usize, &TreeSynth, u32, u32)> = tree
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| audio_fabric_ports(s).map(|(r, w)| (i, s, r, w)))
+        .collect();
+
+    fabric
+        .iter()
+        .filter_map(|(index, synth, _, written)| {
+            // An in-place insert reads and writes at the same index; its own
+            // read cannot consume its own write, hence the strict `>`.
+            let consumed_later = fabric
+                .iter()
+                .any(|(other, _, read, _)| other > index && read == written);
+            if consumed_later {
+                return None;
+            }
+            // Nothing reads this bus at all: a hardware sink, not a break.
+            let last_reader = fabric
+                .iter()
+                .filter(|(other, _, read, _)| other < index && read == written)
+                .next_back()?;
+            Some(AudioPathBreak {
+                node: synth.node,
+                def: synth.def.clone(),
+                bus: *written,
+                consumer_node: last_reader.1.node,
+                consumer_def: last_reader.1.def.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Which `/s_new` requests the server has answered, and which it refused.
 ///
 /// scsynth accepts a `/d_recv` whose graph it cannot build — it prints
@@ -250,6 +376,8 @@ pub struct ScsynthBackend {
     pending_done: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     /// Pending /d_recv synthdef load request.
     pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
+    /// Pending `/g_queryTree` request.
+    pending_node_tree: Arc<Mutex<Option<oneshot::Sender<Vec<TreeSynth>>>>>,
     /// Next sync ID for /sync messages.
     next_sync_id: Arc<std::sync::atomic::AtomicI32>,
     /// General response callbacks.
@@ -302,6 +430,7 @@ impl ScsynthBackend {
         let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
         let pending_done = Arc::new(Mutex::new(HashMap::new()));
         let pending_synthdef_load = Arc::new(Mutex::new(None));
+        let pending_node_tree = Arc::new(Mutex::new(None));
         let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
         let ended_nodes = Arc::new(Mutex::new(HashSet::new()));
@@ -319,6 +448,7 @@ impl ScsynthBackend {
             pending_control_bus: pending_control_bus.clone(),
             pending_done: pending_done.clone(),
             pending_synthdef_load: pending_synthdef_load.clone(),
+            pending_node_tree: pending_node_tree.clone(),
             next_sync_id,
             callbacks: callbacks.clone(),
             ended_nodes: ended_nodes.clone(),
@@ -385,6 +515,7 @@ impl ScsynthBackend {
             pending_control_bus.clone(),
             pending_done.clone(),
             pending_synthdef_load.clone(),
+            pending_node_tree.clone(),
             callbacks.clone(),
             server_ready.clone(),
         );
@@ -457,6 +588,7 @@ impl ScsynthBackend {
         pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         pending_done: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
+        pending_node_tree: Arc<Mutex<Option<oneshot::Sender<Vec<TreeSynth>>>>>,
         callbacks: Arc<Mutex<Vec<OscCallback>>>,
         server_ready: Arc<AtomicBool>,
     ) {
@@ -479,6 +611,7 @@ impl ScsynthBackend {
                                 &pending_control_bus,
                                 &pending_done,
                                 &pending_synthdef_load,
+                                &pending_node_tree,
                                 &callbacks,
                                 &server_ready,
                             );
@@ -510,6 +643,7 @@ impl ScsynthBackend {
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         pending_done: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
+        pending_node_tree: &Arc<Mutex<Option<oneshot::Sender<Vec<TreeSynth>>>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
@@ -522,6 +656,7 @@ impl ScsynthBackend {
                     pending_control_bus,
                     pending_done,
                     pending_synthdef_load,
+                    pending_node_tree,
                     callbacks,
                     server_ready,
                 );
@@ -535,6 +670,7 @@ impl ScsynthBackend {
                         pending_control_bus,
                         pending_done,
                         pending_synthdef_load,
+                        pending_node_tree,
                         callbacks,
                         server_ready,
                     );
@@ -551,6 +687,7 @@ impl ScsynthBackend {
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         pending_done: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
+        pending_node_tree: &Arc<Mutex<Option<oneshot::Sender<Vec<TreeSynth>>>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
@@ -657,6 +794,24 @@ impl ScsynthBackend {
                 } else {
                     None
                 }
+            }
+            "/g_queryTree.reply" => {
+                if let Ok(mut pending) = pending_node_tree.lock() {
+                    if let Some(sender) = pending.take() {
+                        match Self::parse_node_tree(&msg.args) {
+                            Some(tree) => {
+                                let _ = sender.send(tree);
+                            }
+                            None => {
+                                tracing::debug!(
+                                    "Unparseable /g_queryTree.reply ({} args) — dropping",
+                                    msg.args.len()
+                                );
+                            }
+                        }
+                    }
+                }
+                None
             }
             "/done" => {
                 // Command completed
@@ -852,6 +1007,48 @@ impl ScsynthBackend {
         }
     }
 
+    /// Ask the server for its whole node tree and wait for the answer.
+    ///
+    /// The reply lists nodes depth-first, which IS the order scsynth
+    /// evaluates them in, so the returned vector is in evaluation order.
+    /// Only synths are returned — groups carry no controls and read no bus.
+    pub async fn query_node_tree(&self) -> Result<Vec<TreeSynth>, ScsynthError> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self
+                .pending_node_tree
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
+            *pending = Some(tx);
+        }
+
+        // Group 0 (the root), flag 1 = include control values. The bus a node
+        // reads and writes lives in those controls, so flag 0 is useless here.
+        self.send_msg("/g_queryTree", vec![OscType::Int(0), OscType::Int(1)])?;
+
+        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+            Ok(Ok(tree)) => Ok(tree),
+            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
+                "Response channel closed".to_string(),
+            )),
+            Err(_) => Err(ScsynthError::Timeout),
+        }
+    }
+
+    /// The live nodes whose audio output is dropped on the floor.
+    ///
+    /// Asks the server for its node tree and walks it in evaluation order.
+    /// scsynth zeroes audio buses every block, so a node that writes a bus
+    /// only read EARLIER in the same cycle is writing into nothing: whatever
+    /// feeds it is inaudible, however healthy every synth involved looks.
+    /// See [`audio_path_breaks`] for the rule and its limits.
+    ///
+    /// Errors are the caller's cue to stay quiet, not to claim a break: an
+    /// unreadable tree is not evidence of a broken one.
+    pub async fn audio_path_breaks(&self) -> Result<Vec<AudioPathBreak>, ScsynthError> {
+        Ok(audio_path_breaks(&self.query_node_tree().await?))
+    }
+
     /// Take the SynthDefs the server has refused to instantiate since the
     /// last call, and reset the ledger.
     ///
@@ -864,6 +1061,74 @@ impl ScsynthBackend {
             Ok(mut integrity) => std::mem::take(&mut integrity.missing),
             Err(_) => Vec::new(),
         }
+    }
+
+    /// Parse a `/g_queryTree.reply` argument list into its synths, in the
+    /// depth-first order the server reports (and evaluates) them.
+    ///
+    /// Wire format: `flag, root node, root child count`, then per node
+    /// `node id, child count` — child count is -1 for a synth, and a synth
+    /// adds its def name plus, when `flag` is 1, `numControls` and that many
+    /// name/value pairs. Groups contribute neither, and their children simply
+    /// follow inline, so a flat scan needs no tree bookkeeping.
+    ///
+    /// Returns `None` on a reply without control values or on any malformed
+    /// tail: half a tree cannot be reasoned about, and guessing at one would
+    /// invent breaks.
+    fn parse_node_tree(args: &[OscType]) -> Option<Vec<TreeSynth>> {
+        let int_at = |i: usize| match args.get(i) {
+            Some(OscType::Int(v)) => Some(*v),
+            _ => None,
+        };
+        if int_at(0)? != 1 {
+            return None;
+        }
+
+        let mut synths = Vec::new();
+        let mut i = 3;
+        while i < args.len() {
+            let node = int_at(i)?;
+            let children = int_at(i + 1)?;
+            i += 2;
+            if children >= 0 {
+                continue; // a group: no def name, no controls
+            }
+
+            let def = match args.get(i)? {
+                OscType::String(name) => name.clone(),
+                _ => return None,
+            };
+            i += 1;
+
+            let num_controls = int_at(i)?;
+            i += 1;
+            let mut controls = HashMap::new();
+            for _ in 0..num_controls {
+                let name = match args.get(i)? {
+                    OscType::String(name) => name.clone(),
+                    OscType::Int(index) => index.to_string(),
+                    _ => return None,
+                };
+                let value = match args.get(i + 1)? {
+                    OscType::Float(v) => Some(*v),
+                    OscType::Double(v) => Some(*v as f32),
+                    // A control mapped to a bus reports as e.g. "c12".
+                    OscType::String(_) => None,
+                    _ => return None,
+                };
+                i += 2;
+                if let Some(value) = value {
+                    controls.insert(name, value);
+                }
+            }
+
+            synths.push(TreeSynth {
+                node,
+                def,
+                controls,
+            });
+        }
+        Some(synths)
     }
 
     fn clear_pending_synthdef_load(&self, name: &str) {
@@ -1943,6 +2208,209 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    /// A node of the audio fabric: `(node id, def, read bus, write bus)`.
+    fn fabric_node(node: i32, def: &str, read: f32, write: f32) -> TreeSynth {
+        let (read_name, write_name) = if def.starts_with("system_link_audio") {
+            ("inbus", "outbus")
+        } else if def.starts_with("port_to_group_link") {
+            ("in_bus", "out_bus")
+        } else {
+            ("__fx_bus_in", "__fx_bus_out")
+        };
+        let mut controls = HashMap::new();
+        controls.insert(read_name.to_string(), read);
+        controls.insert(write_name.to_string(), write);
+        TreeSynth {
+            node,
+            def: def.to_string(),
+            controls,
+        }
+    }
+
+    /// The board's own node tree, transcribed from `/g_dumpTree` while the
+    /// instrument played correctly on both sides. Chords chain (bus 10) and
+    /// notes chain (bus 23) both fold into the master bus 17 ahead of the
+    /// master link that carries 17 to the hardware.
+    fn healthy_board_tree() -> Vec<TreeSynth> {
+        vec![
+            fabric_node(1014, "system_link_audio", 4.0, 0.0),
+            fabric_node(1711, "port_to_group_link_2", 12.0, 10.0),
+            fabric_node(1321, "saturator", 10.0, 10.0),
+            fabric_node(1009, "system_link_audio", 10.0, 17.0),
+            fabric_node(1712, "port_to_group_link_2", 19.0, 23.0),
+            fabric_node(1001, "ladder_filter", 23.0, 23.0),
+            fabric_node(1710, "system_link_audio", 23.0, 17.0),
+            fabric_node(1330, "analog_delay", 17.0, 17.0),
+            fabric_node(1002, "sg_vca", 17.0, 17.0),
+            fabric_node(1004, "limiter", 17.0, 17.0),
+            fabric_node(1720, "system_link_audio", 17.0, 0.0),
+        ]
+    }
+
+    #[test]
+    fn a_healthy_tree_reports_no_break() {
+        assert_eq!(audio_path_breaks(&healthy_board_tree()), vec![]);
+    }
+
+    /// The board defect: a reload recreated the notes group and Tail-added it
+    /// to its parent, so the notes chain ended up AFTER the master link synth
+    /// that reads bus 17. Measured on the instrument as notes 0.000 with every
+    /// SynthDef loaded and the voice spawning happily to its own bus.
+    #[test]
+    fn a_chain_moved_past_its_consumer_is_reported_with_both_ends_named() {
+        let mut tree = healthy_board_tree();
+        let notes_chain: Vec<TreeSynth> = tree.drain(4..7).collect();
+        tree.extend(notes_chain); // notes chain now runs last, after node 1720
+
+        let breaks = audio_path_breaks(&tree);
+        assert_eq!(
+            breaks,
+            vec![AudioPathBreak {
+                node: 1710,
+                def: "system_link_audio".to_string(),
+                bus: 17,
+                consumer_node: 1720,
+                consumer_def: "system_link_audio".to_string(),
+            }],
+            "the stranded link synth and the consumer that already ran must both be named"
+        );
+    }
+
+    /// Bus 0 is the hardware sink: read by nothing in the tree, written by
+    /// every top-level link. Reporting those would drown the real break.
+    #[test]
+    fn writes_to_a_bus_nothing_ever_reads_are_hardware_sinks_not_breaks() {
+        let tree = vec![
+            fabric_node(1, "system_link_audio", 4.0, 0.0),
+            fabric_node(2, "system_link_audio", 6.0, 0.0),
+        ];
+        assert_eq!(audio_path_breaks(&tree), vec![]);
+    }
+
+    /// An fx insert reads and writes the same bus at the same position. Its
+    /// own read must not count as consuming its own write, or every last
+    /// effect in every chain would report as broken — but an insert that has
+    /// slipped past the node reading its bus still has to be caught.
+    #[test]
+    fn an_in_place_insert_does_not_consume_its_own_write() {
+        let healthy = vec![
+            fabric_node(1, "port_to_group_link_2", 8.0, 10.0),
+            fabric_node(2, "system_link_audio", 10.0, 17.0),
+            fabric_node(3, "reverb", 17.0, 17.0),
+            fabric_node(4, "system_link_audio", 17.0, 0.0),
+        ];
+        assert_eq!(
+            audio_path_breaks(&healthy),
+            vec![],
+            "the last insert in a chain writes for the link synth after it"
+        );
+
+        let mut stranded = healthy.clone();
+        stranded.swap(2, 3); // reverb now runs after the master link
+        let breaks = audio_path_breaks(&stranded);
+        assert_eq!(breaks.len(), 1, "{:?}", breaks);
+        assert_eq!((breaks[0].node, breaks[0].bus), (3, 17));
+    }
+
+    #[test]
+    fn a_kr_control_bus_is_never_mistaken_for_an_audio_bus() {
+        // A modulator voice writing control bus 17 and a summer reading it:
+        // same numbers as the audio fabric above, different namespace. Voices
+        // are not fabric, so neither shows up at all.
+        let mut controls = HashMap::new();
+        controls.insert("out".to_string(), 17.0);
+        let tree = vec![
+            TreeSynth {
+                node: 1,
+                def: "lfo_sine".to_string(),
+                controls,
+            },
+            fabric_node(2, "system_link_audio", 4.0, 0.0),
+        ];
+        assert_eq!(audio_path_breaks(&tree), vec![]);
+    }
+
+    #[test]
+    fn parse_node_tree_reads_a_group_with_two_synths() {
+        // flag, root, 1 child | group 100 with 2 children | synth, 1 control |
+        // synth, 2 controls
+        let args = vec![
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Int(100),
+            OscType::Int(2),
+            OscType::Int(101),
+            OscType::Int(-1),
+            OscType::String("saw".to_string()),
+            OscType::Int(1),
+            OscType::String("out".to_string()),
+            OscType::Float(12.0),
+            OscType::Int(102),
+            OscType::Int(-1),
+            OscType::String("system_link_audio".to_string()),
+            OscType::Int(2),
+            OscType::String("inbus".to_string()),
+            OscType::Float(12.0),
+            OscType::String("outbus".to_string()),
+            OscType::Float(0.0),
+        ];
+        let tree = ScsynthBackend::parse_node_tree(&args).expect("well-formed reply");
+        assert_eq!(tree.len(), 2, "groups contribute no entry");
+        assert_eq!(tree[0].def, "saw");
+        assert_eq!(tree[0].controls.get("out"), Some(&12.0));
+        assert_eq!(tree[1].node, 102);
+        assert_eq!(tree[1].controls.get("inbus"), Some(&12.0));
+    }
+
+    #[test]
+    fn parse_node_tree_drops_a_reply_without_control_values() {
+        // flag 0: no bus numbers, so nothing can be concluded from it.
+        let args = vec![OscType::Int(0), OscType::Int(0), OscType::Int(0)];
+        assert_eq!(ScsynthBackend::parse_node_tree(&args), None);
+    }
+
+    #[test]
+    fn parse_node_tree_drops_a_truncated_reply() {
+        // A synth header with its controls cut off — half a tree must not be
+        // reasoned about.
+        let args = vec![
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Int(101),
+            OscType::Int(-1),
+            OscType::String("saw".to_string()),
+            OscType::Int(2),
+            OscType::String("out".to_string()),
+            OscType::Float(12.0),
+        ];
+        assert_eq!(ScsynthBackend::parse_node_tree(&args), None);
+    }
+
+    /// A control mapped to a bus reports as a symbol, not a float. It must
+    /// not abort the parse — the rest of the tree is still readable.
+    #[test]
+    fn parse_node_tree_keeps_going_past_a_mapped_control() {
+        let args = vec![
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Int(101),
+            OscType::Int(-1),
+            OscType::String("system_link_audio".to_string()),
+            OscType::Int(2),
+            OscType::String("inbus".to_string()),
+            OscType::String("c4".to_string()),
+            OscType::String("outbus".to_string()),
+            OscType::Float(0.0),
+        ];
+        let tree = ScsynthBackend::parse_node_tree(&args).expect("well-formed reply");
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree[0].controls.get("inbus"), None);
+        assert_eq!(tree[0].controls.get("outbus"), Some(&0.0));
+    }
+
     #[test]
     fn test_add_action_to_sc_int() {
         assert_eq!(AddAction::Head.to_sc_int(), 0);
@@ -2156,6 +2624,7 @@ mod tests {
             &pending_control_bus,
             &pending_done,
             &pending_synthdef_load,
+            &Arc::new(Mutex::new(None)),
             &callbacks,
             &server_ready,
         );
@@ -2196,6 +2665,7 @@ mod tests {
             &pending_control_bus,
             &pending_done,
             &pending_synthdef_load,
+            &Arc::new(Mutex::new(None)),
             &callbacks,
             &server_ready,
         );

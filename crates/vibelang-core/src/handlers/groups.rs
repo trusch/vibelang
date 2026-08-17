@@ -296,15 +296,43 @@ impl<B: Backend> Groups for GroupsHandler<B> {
         let node_id = state.alloc_node_id()?;
         let audio_bus = state.alloc_bus_id()?;
 
-        // Determine target for placement
+        // Determine target for placement.
+        //
+        // A child group feeds the parent's bus through its own link synth, so
+        // it has to run BEFORE everything in the parent that reads that bus:
+        // the parent's fx chain and the parent's link synth. scsynth evaluates
+        // in tree order and zeroes audio buses every block, so a child group
+        // Tail-added after the parent's link synth writes a bus nobody reads
+        // any more — that whole branch of the instrument goes silent while
+        // every synth in it is alive and correct.
+        //
+        // On a cold build the parent has neither fx nor link yet (both come
+        // later, fx at Tail and the link at Tail from `finalize`), so Tail is
+        // right and reproduces the cold-boot order. On a RELOAD that recreates
+        // a group the parent already carries both, which is where Tail strands
+        // it. Same three-case placement as `RoutesHandler::spawn_route` and
+        // `EffectsHandler::add`, one slot earlier than the fx chain.
         let (target, action) = if let Some(parent_id) = parent {
-            let parent_state = state
+            let parent_node_id = state
                 .groups
                 .get(&parent_id)
-                .ok_or(Error::GroupNotFound(parent_id))?;
-            (parent_state.node_id, AddAction::Tail)
+                .ok_or(Error::GroupNotFound(parent_id))?
+                .node_id;
+            if let Some(first_fx_node) = state.first_effect_node_in_group(parent_id) {
+                (first_fx_node, AddAction::Before)
+            } else if let Some(link_node) = state
+                .groups
+                .get(&parent_id)
+                .and_then(|g| g.link_synth_node_id)
+            {
+                (link_node, AddAction::Before)
+            } else {
+                (parent_node_id, AddAction::Tail)
+            }
         } else {
-            // Add to root group (node 0)
+            // Add to root group (node 0). Root children write either bus 0 or
+            // a sibling's bus via their own link; the driver drains bus 0 at
+            // the end of the block, so Tail carries no ordering hazard here.
             (NodeId::new(0), AddAction::Tail)
         };
 
@@ -491,7 +519,7 @@ mod tests {
     use super::*;
     use crate::backend::BufferInfo;
     use crate::compat::Instant;
-    use crate::types::BufferId;
+    use crate::types::{BufferId, EffectId};
     use std::path::Path;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
@@ -520,6 +548,11 @@ mod tests {
         synth_names: Mutex<Vec<String>>,
         synth_params: Mutex<Vec<ParamMap>>,
         set_param_calls: Mutex<Vec<(NodeId, String, f32)>>,
+        /// `(new group node, target node, add action)` per `create_group`.
+        /// Placement is the whole point for a child group — it decides
+        /// whether the group runs before or after the nodes that read its
+        /// parent's bus — so the mock has to keep it, not just count it.
+        group_placements: Mutex<Vec<(NodeId, NodeId, AddAction)>>,
     }
 
     impl MockBackend {
@@ -533,6 +566,7 @@ mod tests {
                 synth_names: Mutex::new(Vec::new()),
                 synth_params: Mutex::new(Vec::new()),
                 set_param_calls: Mutex::new(Vec::new()),
+                group_placements: Mutex::new(Vec::new()),
             }
         }
 
@@ -566,6 +600,10 @@ mod tests {
 
         fn set_param_calls(&self) -> Vec<(NodeId, String, f32)> {
             self.set_param_calls.lock().unwrap().clone()
+        }
+
+        fn group_placements(&self) -> Vec<(NodeId, NodeId, AddAction)> {
+            self.group_placements.lock().unwrap().clone()
         }
 
         /// The set_param calls that targeted the `mute` parameter.
@@ -606,11 +644,15 @@ mod tests {
 
         async fn create_group(
             &self,
-            _node: NodeId,
-            _target: NodeId,
-            _action: AddAction,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
         ) -> std::result::Result<(), Self::Error> {
             self.groups_created.fetch_add(1, Ordering::Relaxed);
+            self.group_placements
+                .lock()
+                .unwrap()
+                .push((node, target, action));
             Ok(())
         }
 
@@ -760,6 +802,110 @@ mod tests {
         let state_read = state.read().await;
         let child = state_read.groups.get(&child_id).unwrap();
         assert_eq!(child.parent, Some(parent_id));
+    }
+
+    /// Cold boot: the parent carries neither fx nor link synth yet, so Tail
+    /// on the parent node is right and reproduces the cold-boot tree order.
+    #[tokio::test]
+    async fn child_group_on_a_bare_parent_lands_at_tail() {
+        let (handler, backend, state) = create_handler();
+        let parent_id = GroupId::new(1);
+
+        handler.create(parent_id, "Parent", None).await.unwrap();
+        handler
+            .create(GroupId::new(2), "Child", Some(parent_id))
+            .await
+            .unwrap();
+
+        let parent_node = state.read().await.groups.get(&parent_id).unwrap().node_id;
+        let (_, target, action) = backend.group_placements()[1];
+        assert_eq!(
+            (target, action),
+            (parent_node, AddAction::Tail),
+            "with nothing reading the parent bus yet, Tail is the cold-boot order"
+        );
+    }
+
+    /// A reload that recreates a group hits a parent that already carries its
+    /// link synth. Tail-adding there puts the child AFTER the node that reads
+    /// the parent's bus: scsynth zeroes audio buses every block, so the whole
+    /// child branch goes silent while every synth in it is alive and correct.
+    /// This is the board defect — a recall that half-silenced the instrument.
+    #[tokio::test]
+    async fn child_group_created_after_finalize_precedes_the_parent_link_synth() {
+        let (handler, backend, state) = create_handler();
+        let parent_id = GroupId::new(1);
+
+        handler.create(parent_id, "Parent", None).await.unwrap();
+        // `finalize` is what a first build does — from here on the parent has
+        // a link synth sitting at its tail.
+        handler.finalize().await.unwrap();
+
+        handler
+            .create(GroupId::new(2), "Child", Some(parent_id))
+            .await
+            .unwrap();
+
+        let link_node = state
+            .read()
+            .await
+            .groups
+            .get(&parent_id)
+            .unwrap()
+            .link_synth_node_id
+            .expect("finalize creates the parent's link synth");
+        let (_, target, action) = backend.group_placements()[1];
+        assert_eq!(
+            (target, action),
+            (link_node, AddAction::Before),
+            "a child group must run before the link synth that reads its parent's bus"
+        );
+    }
+
+    /// Same hazard one slot earlier: the parent's fx chain reads and rewrites
+    /// the parent bus in place, so a child added after the first effect is
+    /// unprocessed at best and inaudible at worst.
+    #[tokio::test]
+    async fn child_group_precedes_the_parents_first_effect() {
+        let (handler, backend, state) = create_handler();
+        let parent_id = GroupId::new(1);
+
+        handler.create(parent_id, "Parent", None).await.unwrap();
+        handler.finalize().await.unwrap();
+
+        // An effect on the parent, placed as `EffectsHandler::add` places it:
+        // between the voices and the link synth.
+        let fx_node = NodeId::new(4242);
+        {
+            let mut state = state.write().await;
+            let audio_bus = state.groups.get(&parent_id).unwrap().audio_bus;
+            state.effects.insert(
+                EffectId::new(7),
+                crate::state::EffectState {
+                    id: EffectId::new(7),
+                    group: parent_id,
+                    synthdef: "ladder_filter".to_string(),
+                    node_id: fx_node,
+                    audio_bus,
+                    params: ParamMap::new(),
+                },
+            );
+            state
+                .group_effect_chain
+                .insert(parent_id, vec![EffectId::new(7)]);
+        }
+
+        handler
+            .create(GroupId::new(2), "Child", Some(parent_id))
+            .await
+            .unwrap();
+
+        let (_, target, action) = backend.group_placements()[1];
+        assert_eq!(
+            (target, action),
+            (fx_node, AddAction::Before),
+            "a child group must run before the fx chain that rewrites its parent's bus"
+        );
     }
 
     #[tokio::test]
