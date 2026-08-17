@@ -23,7 +23,7 @@ use vibelang_core::backends::scsynth::{audio_path_breaks, AudioPathBreak, TreeSy
 use vibelang_core::reload::{EffectConfig, GroupConfig, ScriptState};
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, EffectId, GroupId, NodeId, ParamMap, ReloadMessage,
-    Runtime, SynthDefMessage,
+    Runtime, SynthDefMessage, VoiceConfig, VoiceId, VoiceMessage,
 };
 
 // =========================================================================
@@ -422,6 +422,51 @@ const FX_3: EffectId = EffectId(12);
 
 const DEF_FX: &str = "chain_fx";
 
+/// A GATED voice synthdef. `voice_is_gated` asks the DSP registry whether the
+/// synthdef declares a `gate` param, and `voice_release_grace` reads its
+/// `release` default — so a voice only earns a teardown grace if its synthdef
+/// is registered there. Without one, `reload_group_teardown_grace` returns
+/// ZERO for every reload and `delete_with_grace` always takes the IMMEDIATE
+/// branch, which is what left the deferred group-free window untested.
+const DEF_VOICE: &str = "fuzz_gated_pad";
+
+/// Release time of `DEF_VOICE`. The grace is `release + 100ms` margin, so a
+/// group delete that catches this voice sounding defers its `/n_free` by
+/// 350ms — deliberately far longer than the 50ms
+/// `EFFECT_GRACE_PERIOD_MS` a deleted effect already buys, so a test can tell
+/// the two windows apart by timing alone. `settle()` outlasts it.
+const VOICE_RELEASE_S: f32 = 0.25;
+
+/// Long enough to be past the effect grace (50ms) and still well inside the
+/// voice grace (350ms).
+const BETWEEN_THE_TWO_GRACES: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Register `DEF_VOICE` in the process-global DSP registry. The registry is
+/// shared by every test in the binary, so this runs once.
+fn register_gated_voice_synthdef() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let params = [("gate", 1.0f32), ("release", VOICE_RELEASE_S), ("amp", 0.5)];
+        let ir = vibelang_dsp::GraphIR {
+            name: DEF_VOICE.to_string(),
+            constants: Vec::new(),
+            params: params
+                .iter()
+                .enumerate()
+                .map(|(index, (name, value))| vibelang_dsp::ParamSpec {
+                    name: (*name).to_string(),
+                    default: vec![*value],
+                    index,
+                    lag_ms: None,
+                })
+                .collect(),
+            nodes: Vec::new(),
+            out_bus: 0,
+        };
+        vibelang_dsp::register_synthdef_ir(DEF_VOICE.to_string(), ir);
+    });
+}
+
 /// One performance side: the group plus the effects on it.
 struct Side {
     group: GroupId,
@@ -548,17 +593,94 @@ async fn apply(runtime: &mut Runtime<MockBackend>, script: ScriptState) {
 /// are faded and freed past a grace period, so the tree straight after an
 /// `Apply` is mid-transition and not what the board ever plays. Every
 /// assertion about audio-path order must be made on the SETTLED tree.
+///
+/// This has to outlast the LONGEST grace any recall can ask for, which with
+/// sounding gated voices is `VOICE_RELEASE_S + 100ms` = 350ms, not the 50ms
+/// effect grace. Under-settling would hide a divergence rather than report
+/// it, since a group whose free is still pending is already out of state and
+/// so out of the invariant's reach.
 async fn settle(runtime: &mut Runtime<MockBackend>) {
-    for _ in 0..4 {
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    for _ in 0..6 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         runtime.tick().await;
     }
+}
+
+/// Trigger every voice in `voices` so it is SOUNDING when the next reload
+/// looks at it: `reload_group_teardown_grace` only counts a deleted or
+/// structurally recreated voice whose `active_nodes` are non-empty, so an
+/// untriggered voice buys no grace at all.
+async fn sound_voices(runtime: &mut Runtime<MockBackend>, voices: &[VoiceId]) {
+    for id in voices {
+        runtime
+            .send(
+                VoiceMessage::Trigger {
+                    id: *id,
+                    params: ParamMap::new(),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+    }
+    runtime.tick().await;
+
+    // A `Trigger` for a voice the reload never created fails INSIDE the tick
+    // and is logged, not returned — so without this the fuzz would happily
+    // report a green run in which nothing ever sounded and no group delete
+    // ever earned a grace. Check the premise instead of assuming it.
+    let state = runtime.state().read().await;
+    for id in voices {
+        let voice = state
+            .voices
+            .get(id)
+            .unwrap_or_else(|| panic!("voice {} was never created by the reload", id.0));
+        assert!(
+            !voice.active_nodes.is_empty(),
+            "voice {} is not sounding, so it buys no teardown grace",
+            id.0
+        );
+    }
+}
+
+/// Groups that the reload has already dropped from state but whose nodes are
+/// STILL ALIVE in the tree — the deferred group-free window, counted at the
+/// instant the caller asks.
+///
+/// `before` is the (group, node, link) triple of every group that existed
+/// before the reload.
+async fn open_free_windows(
+    runtime: &Runtime<MockBackend>,
+    backend: &MockBackend,
+    before: &[(GroupId, NodeId, Option<NodeId>)],
+) -> usize {
+    let state = runtime.state().read().await;
+    before
+        .iter()
+        .filter(|(id, node, link)| {
+            !state.groups.contains_key(id)
+                && (backend.alive(*node) || link.is_some_and(|l| backend.alive(l)))
+        })
+        .count()
+}
+
+/// Every live group as (id, node, link), for `open_free_windows`.
+async fn group_nodes(runtime: &Runtime<MockBackend>) -> Vec<(GroupId, NodeId, Option<NodeId>)> {
+    runtime
+        .state()
+        .read()
+        .await
+        .groups
+        .values()
+        .map(|g| (g.id, g.node_id, g.link_synth_node_id))
+        .collect()
 }
 
 async fn boot_with_defs(
     script: ScriptState,
     defs: &[&str],
 ) -> (Runtime<MockBackend>, MockBackend) {
+    register_gated_voice_synthdef();
     let backend = MockBackend::new();
     let mut runtime = Runtime::new(backend.clone());
     for def in defs {
@@ -1009,9 +1131,18 @@ struct Spec {
     masters: Vec<(u32, Vec<u32>, &'static str)>,
     /// (child id, parent master id, fx chain, synthdef)
     children: Vec<(u32, u32, Vec<u32>, &'static str)>,
+    /// (voice id, group id) — a gated voice living in that group. Triggered
+    /// after every settled recall, so the NEXT recall finds it sounding and
+    /// a delete of its group takes the DEFERRED free path.
+    voices: Vec<(u32, u32)>,
 }
 
 impl Spec {
+    /// Every voice this patch declares, for `sound_voices`.
+    fn voice_ids(&self) -> Vec<VoiceId> {
+        self.voices.iter().map(|(v, _)| VoiceId(*v)).collect()
+    }
+
     fn build(&self) -> ScriptState {
         let mut script = ScriptState::new();
         for (master, fx, def) in &self.masters {
@@ -1058,6 +1189,12 @@ impl Spec {
                 );
             }
         }
+        for (voice, group) in &self.voices {
+            script.add_voice(
+                VoiceId(*voice),
+                VoiceConfig::new(format!("v{voice}"), DEF_VOICE, GroupId(*group)),
+            );
+        }
         script
     }
 }
@@ -1066,6 +1203,11 @@ const MASTER_IDS: [u32; 2] = [1, 2];
 const CHILD_IDS: [u32; 3] = [3, 4, 5];
 const FX_IDS: [u32; 3] = [10, 11, 12];
 const DEFS: [&str; 2] = [DEF_JPVERB, DEF_HALL];
+/// A group's own voice is `VOICE_ID_BASE + group id`, so it lives and dies
+/// with that group.
+const VOICE_ID_BASE: u32 = 100;
+/// A voice id that survives a change of group — the `voice("n16")` shape.
+const ROAMING_VOICE: u32 = 200;
 
 /// A random patch of the board's shape: one or two masters, each with a
 /// serial fx chain, each carrying zero or more child groups that mix into
@@ -1120,6 +1262,33 @@ fn random_spec(rng: &mut Rng, stable_parents: bool) -> Spec {
         }
     }
 
+    // Gated voices, the thing that gives a group delete a real grace. On the
+    // board every sounding node is one of these: `voice("n16").synth("dx7_epiano")`
+    // is polyphonic and gated, and a recall lands while notes are still ringing.
+    //
+    // Voice names on the board are NOT path-qualified (`voice("n16")`, not
+    // `voice("sg_chain_n21/n16")`) even though group names are — so unlike a
+    // group id, a VOICE id is stable across a group change. `ROAMING_VOICE`
+    // keeps that shape: the same voice id turns up in a different group next
+    // patch, which the reload treats as a structural recreate and which
+    // therefore also feeds `reload_group_teardown_grace`.
+    let group_ids: Vec<u32> = masters
+        .iter()
+        .copied()
+        .chain(children.iter().map(|(c, _, _, _)| *c))
+        .collect();
+    let mut voices: Vec<(u32, u32)> = Vec::new();
+    for g in &group_ids {
+        // Roughly two groups in three carry their own voice.
+        if rng.below(3) != 0 {
+            voices.push((VOICE_ID_BASE + *g, *g));
+        }
+    }
+    if !group_ids.is_empty() && rng.below(4) != 0 {
+        let host = group_ids[rng.below(group_ids.len())];
+        voices.push((ROAMING_VOICE, host));
+    }
+
     let mut spec = Spec {
         masters: masters
             .iter()
@@ -1127,6 +1296,7 @@ fn random_spec(rng: &mut Rng, stable_parents: bool) -> Spec {
             .map(|(i, m)| (*m, master_fx[i].clone(), DEFS[rng.below(2)]))
             .collect(),
         children,
+        voices,
     };
     // Declaration order is audio-path order, and it is deliberately NOT id
     // order: reversing a chain is what makes the `min_by_key(id.raw())`
@@ -1144,6 +1314,12 @@ fn random_spec(rng: &mut Rng, stable_parents: bool) -> Spec {
 /// reproduce from a fresh start — and check the STATE invariant after every
 /// settled recall.
 async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bool) {
+    // Coverage, not results: how many group deletes were still holding their
+    // nodes 150ms after the Apply. The 50ms effect grace cannot reach that
+    // far, so every one of these is a window a SOUNDING VOICE held open, and
+    // a run that scores zero has not tested the thing this fuzz exists for.
+    let mut wide_windows = 0usize;
+
     for run in 0..runs {
         let mut rng = Rng(seed.wrapping_add(run as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
         let mut history: Vec<Spec> = Vec::new();
@@ -1151,14 +1327,30 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
         let first = random_spec(&mut rng, stable_parents);
         history.push(first.clone());
         let (mut runtime, backend) =
-            boot_with_defs(first.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX]).await;
+            boot_with_defs(first.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX, DEF_VOICE]).await;
         settle(&mut runtime).await;
+        // Notes are ringing when the next recall arrives — that is what makes
+        // the group deletes below take the DEFERRED free path.
+        sound_voices(&mut runtime, &first.voice_ids()).await;
 
         for step in 0..steps {
             let spec = random_spec(&mut rng, stable_parents);
             history.push(spec.clone());
+            let live_before = group_nodes(&runtime).await;
+
             apply(&mut runtime, spec.build()).await;
+            // Mid-transition, deliberately: past the effect grace, inside the
+            // voice grace. Deleted groups are out of state here while their
+            // nodes and links are still in the tree, which is the shape of
+            // the board's symptom and the state the invariant below is blind
+            // to — so the next recall runs its diff against a tree that is
+            // still carrying them.
+            tokio::time::sleep(BETWEEN_THE_TWO_GRACES).await;
+            runtime.tick().await;
+            wide_windows += open_free_windows(&runtime, &backend, &live_before).await;
+
             settle(&mut runtime).await;
+            sound_voices(&mut runtime, &spec.voice_ids()).await;
 
             let violations = all_violations(&runtime, &backend).await;
             assert!(
@@ -1175,6 +1367,17 @@ async fn fuzz_sequences(seed: u64, runs: usize, steps: usize, stable_parents: bo
             );
         }
     }
+
+    // A green run is only worth something if the window was actually open.
+    assert!(
+        wide_windows >= runs,
+        "the deferred group-free window opened only {wide_windows} times across \
+         {runs} runs x {steps} recalls — the voices are not buying a grace and \
+         this fuzz is measuring the immediate path again"
+    );
+    eprintln!(
+        "coverage: {wide_windows} voice-held group-free windows across {runs} runs x {steps} recalls"
+    );
 }
 
 /// The fuzz hit above, minimized to two recalls: a child group moves to
@@ -1191,10 +1394,12 @@ async fn a_child_that_moves_master_survives_the_old_master_being_deleted() {
     let before = Spec {
         masters: vec![(1, vec![11], DEF_HALL), (2, vec![], DEF_HALL)],
         children: vec![(3, 1, vec![10], DEF_HALL)],
+        voices: Vec::new(),
     };
     let after = Spec {
         masters: vec![(2, vec![], DEF_HALL)],
         children: vec![(3, 2, vec![10], DEF_HALL)],
+        voices: Vec::new(),
     };
 
     let (mut runtime, backend) =
@@ -1240,10 +1445,12 @@ async fn a_child_that_moves_master_mixes_into_the_new_master() {
     let before = Spec {
         masters: vec![(1, vec![11], DEF_HALL), (2, vec![12], DEF_HALL)],
         children: vec![(3, 1, vec![10], DEF_HALL)],
+        voices: Vec::new(),
     };
     let after = Spec {
         masters: vec![(1, vec![11], DEF_HALL), (2, vec![12], DEF_HALL)],
         children: vec![(3, 2, vec![10], DEF_HALL)],
+        voices: Vec::new(),
     };
 
     let (mut runtime, backend) =
@@ -1273,6 +1480,85 @@ async fn a_child_that_moves_master_mixes_into_the_new_master() {
     );
 }
 
+/// What the fuzz above is worth depends entirely on how wide the deferred
+/// window actually is, so pin it by TIMING.
+///
+/// A deleted effect alone already buys `EFFECT_GRACE_PERIOD_MS` (50ms), so
+/// the voiceless fuzz was NOT running with a zero grace — it was running with
+/// a 50ms one. A sounding gated voice widens that to `release + 100ms` =
+/// 350ms. This test proves the wider window: 150ms after the Apply the group
+/// is already out of state but its node and link are still ALIVE in the tree,
+/// which the effect grace alone could not produce, and the free lands only
+/// after the voice's own grace expires.
+#[tokio::test(flavor = "current_thread")]
+async fn a_sounding_gated_voice_makes_a_group_delete_defer_its_free() {
+    let before = Spec {
+        masters: vec![(1, vec![11], DEF_HALL), (2, vec![12], DEF_HALL)],
+        children: vec![(3, 1, vec![10], DEF_HALL)],
+        voices: vec![(VOICE_ID_BASE + 3, 3)],
+    };
+    // Master 1 and its child are gone; master 2 survives.
+    let after = Spec {
+        masters: vec![(2, vec![12], DEF_HALL)],
+        children: Vec::new(),
+        voices: Vec::new(),
+    };
+
+    let (mut runtime, backend) =
+        boot_with_defs(before.build(), &[DEF_JPVERB, DEF_HALL, DEF_FX, DEF_VOICE]).await;
+    settle(&mut runtime).await;
+    sound_voices(&mut runtime, &before.voice_ids()).await;
+
+    let (child_node, child_link) = {
+        let state = runtime.state().read().await;
+        let voice = state
+            .voices
+            .get(&VoiceId(VOICE_ID_BASE + 3))
+            .expect("voice in state");
+        assert!(
+            !voice.active_nodes.is_empty(),
+            "the voice must be SOUNDING or it buys no grace at all"
+        );
+        let child = state.groups.get(&GroupId(3)).expect("child in state");
+        (child.node_id, child.link_synth_node_id.expect("link"))
+    };
+
+    apply(&mut runtime, after.build()).await;
+    // Past the 50ms effect grace, still inside the 350ms voice grace.
+    tokio::time::sleep(BETWEEN_THE_TWO_GRACES).await;
+    runtime.tick().await;
+
+    // Gone from state, still alive in the tree: the window the board's
+    // symptom lives in, and now wide enough that only the voice can hold it.
+    {
+        let state = runtime.state().read().await;
+        assert!(
+            !state.groups.contains_key(&GroupId(3)),
+            "the deleted group must already be out of state"
+        );
+    }
+    assert!(
+        backend.alive(child_node) && backend.alive(child_link),
+        "DEFERRED branch not taken: the group's nodes were freed immediately, \
+         so the grace window this fuzz exists to exercise never opened:\n{}",
+        backend.render()
+    );
+
+    settle(&mut runtime).await;
+    assert!(
+        !backend.alive(child_node) && !backend.alive(child_link),
+        "the deferred free never landed — the tree keeps a group nothing owns:\n{}",
+        backend.render()
+    );
+    let violations = all_violations(&runtime, &backend).await;
+    assert!(
+        violations.is_empty(),
+        "{}\n{}",
+        backend.render(),
+        violations.join("\n")
+    );
+}
+
 /// The board's id regime: a child group belongs to one master forever,
 /// because its id hashes the full path — `define_group("sg_chain_n21/n17")`
 /// names the parent inside the child's own name, so a child cannot change
@@ -1286,7 +1572,7 @@ async fn fuzz_reload_sequences_board_id_regime() {
 /// The looser regime: the same group id reappears under a different parent.
 #[tokio::test(flavor = "current_thread")]
 async fn fuzz_reload_sequences_reparenting() {
-    fuzz_sequences(0x5EED_0002, 6, 12, false).await;
+    fuzz_sequences(0x5EED_0002, 10, 15, false).await;
 }
 
 #[tokio::test(flavor = "current_thread")]
