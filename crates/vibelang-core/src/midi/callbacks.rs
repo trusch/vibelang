@@ -247,6 +247,17 @@ impl VelocityCurve {
 // Parameter Curves
 // ============================================================================
 
+/// Canonicalize a CC curve name accepted by the scripting boundary.
+pub fn canonical_cc_curve_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "linear" => Some("linear"),
+        "log" | "logarithmic" => Some("logarithmic"),
+        "exp" | "exponential" => Some("exponential"),
+        "s_curve" | "scurve" | "s-curve" => Some("s_curve"),
+        _ => None,
+    }
+}
+
 /// Parameter curve types for CC routing.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ParameterCurve {
@@ -282,11 +293,20 @@ impl ParameterCurve {
 
     /// Parse a parameter curve from a string name.
     pub fn from_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
+        match canonical_cc_curve_name(name)? {
             "linear" => Some(Self::Linear),
-            "logarithmic" | "log" => Some(Self::Logarithmic),
-            "exponential" | "exp" => Some(Self::Exponential),
+            "logarithmic" => Some(Self::Logarithmic),
+            "exponential" => Some(Self::Exponential),
             _ => None,
+        }
+    }
+
+    /// Return the canonical name used by script-state routes.
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Linear => "linear",
+            Self::Logarithmic => "logarithmic",
+            Self::Exponential => "exponential",
         }
     }
 }
@@ -614,6 +634,23 @@ mod tests {
         // Exponential at midpoint should be less than linear
         let exp_mid = ParameterCurve::Exponential.apply(0.5, 0.0, 100.0);
         assert!(exp_mid < 50.0);
+    }
+
+    #[test]
+    fn canonical_cc_curve_aliases_are_complete_and_unknown_is_rejected() {
+        for alias in ["linear", "LINEAR"] {
+            assert_eq!(canonical_cc_curve_name(alias), Some("linear"));
+        }
+        for alias in ["log", "logarithmic", "LOG"] {
+            assert_eq!(canonical_cc_curve_name(alias), Some("logarithmic"));
+        }
+        for alias in ["exp", "exponential", "EXP"] {
+            assert_eq!(canonical_cc_curve_name(alias), Some("exponential"));
+        }
+        for alias in ["s_curve", "scurve", "s-curve", "S-CURVE"] {
+            assert_eq!(canonical_cc_curve_name(alias), Some("s_curve"));
+        }
+        assert_eq!(canonical_cc_curve_name("unknown"), None);
     }
 
     #[test]

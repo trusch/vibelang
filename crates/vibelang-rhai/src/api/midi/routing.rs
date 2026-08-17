@@ -269,6 +269,7 @@ impl CcRoute {
             device_id: self.device_id,
             cc: self.builder.cc,
             channel: self.builder.channel,
+            group: None,
             curve: match self.builder.curve {
                 ParameterCurve::Linear => "linear".to_string(),
                 ParameterCurve::Logarithmic => "logarithmic".to_string(),

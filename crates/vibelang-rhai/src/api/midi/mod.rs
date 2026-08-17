@@ -373,6 +373,7 @@ pub fn register(engine: &mut Engine) {
 
     // Register CcMapping type
     engine.build_type::<CcMapping>();
+    engine.register_fn("group", CcMapping::group);
     engine.register_fn("channel", CcMapping::channel);
     engine.register_fn("curve", CcMapping::curve);
     engine.register_fn("to", CcMapping::to);
@@ -466,6 +467,7 @@ fn register_midi2(engine: &mut Engine) {
     engine.register_fn("per_note_pitch_bend", MidiDevice::per_note_pitch_bend);
     engine.register_fn("per_note_controller", MidiDevice::per_note_controller);
     engine.register_fn("per_note_pressure", MidiDevice::per_note_pressure);
+    #[allow(deprecated)]
     engine.register_fn("cc32", MidiDevice::cc32);
 
     // Register GroupRoute type

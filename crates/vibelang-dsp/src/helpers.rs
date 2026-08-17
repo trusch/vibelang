@@ -557,7 +557,7 @@ pub fn array_zip(arr1: Array, arr2: Array) -> Array {
 /// Envelope specification (like SuperCollider's Env class).
 #[derive(Clone, Debug)]
 pub struct Env {
-    pub levels: Vec<f32>,
+    pub levels: Vec<EnvGenParam>,
     pub times: Vec<EnvGenParam>,
     pub curves: Vec<f32>,
     pub release_node: i32,
@@ -565,26 +565,18 @@ pub struct Env {
 
 impl Env {
     /// Create a new envelope specification.
+    ///
+    /// Both levels and times accept either numbers or control sources
+    /// (`NodeRef`), so a synthdef parameter can drive a breakpoint's level
+    /// just as it can drive its duration.
     pub fn new(levels: Array, times: Array, curve: f64) -> Result<Self> {
-        let levels_vec: Vec<f32> = levels
+        let levels_vec: Vec<EnvGenParam> = levels
             .iter()
-            .map(|v| v.clone().try_cast::<f64>().unwrap_or(0.0) as f32)
-            .collect();
+            .map(|v| env_gen_param_from_dynamic(v.clone(), "level"))
+            .collect::<Result<Vec<_>>>()?;
         let times_vec: Vec<EnvGenParam> = times
             .iter()
-            .map(|v| {
-                if let Some(node) = v.clone().try_cast::<NodeRef>() {
-                    Ok(EnvGenParam::Node(node))
-                } else if let Some(f) = v.clone().try_cast::<f64>() {
-                    Ok(EnvGenParam::Constant(f))
-                } else if let Some(i) = v.clone().try_cast::<i64>() {
-                    Ok(EnvGenParam::Constant(i as f64))
-                } else {
-                    Err(SynthDefError::ValidationError(
-                        "Env time must be a number or control source".to_string(),
-                    ))
-                }
-            })
+            .map(|v| env_gen_param_from_dynamic(v.clone(), "time"))
             .collect::<Result<Vec<_>>>()?;
 
         let curve_val = curve as f32;
@@ -608,7 +600,11 @@ impl Env {
 
     pub fn perc_p(attack: EnvGenParam, release: EnvGenParam) -> Self {
         Env {
-            levels: vec![0.0, 1.0, 0.0],
+            levels: vec![
+                EnvGenParam::Constant(0.0),
+                EnvGenParam::Constant(1.0),
+                EnvGenParam::Constant(0.0),
+            ],
             times: vec![attack, release],
             curves: vec![1.0, 1.0],
             release_node: -1,
@@ -620,19 +616,29 @@ impl Env {
         Self::adsr_p(
             EnvGenParam::Constant(attack),
             EnvGenParam::Constant(decay),
-            sustain,
+            EnvGenParam::Constant(sustain),
             EnvGenParam::Constant(release),
         )
     }
 
+    /// ADSR where any of the four arguments may be a control source.
+    ///
+    /// The sustain level is a level rather than a time, so it lands in
+    /// `levels`; it is the reason `levels` carries `EnvGenParam`.
     pub fn adsr_p(
         attack: EnvGenParam,
         decay: EnvGenParam,
-        sustain: f64,
+        sustain: EnvGenParam,
         release: EnvGenParam,
     ) -> Self {
         Env {
-            levels: vec![0.0, 1.0, sustain as f32, sustain as f32, 0.0],
+            levels: vec![
+                EnvGenParam::Constant(0.0),
+                EnvGenParam::Constant(1.0),
+                sustain.clone(),
+                sustain,
+                EnvGenParam::Constant(0.0),
+            ],
             times: vec![attack, decay, EnvGenParam::Constant(0.0), release],
             curves: vec![1.0, 1.0, 1.0, 1.0],
             release_node: 3,
@@ -643,14 +649,19 @@ impl Env {
     pub fn asr(attack: f64, sustain: f64, release: f64) -> Self {
         Self::asr_p(
             EnvGenParam::Constant(attack),
-            sustain,
+            EnvGenParam::Constant(sustain),
             EnvGenParam::Constant(release),
         )
     }
 
-    pub fn asr_p(attack: EnvGenParam, sustain: f64, release: EnvGenParam) -> Self {
+    /// ASR where any of the three arguments may be a control source.
+    pub fn asr_p(attack: EnvGenParam, sustain: EnvGenParam, release: EnvGenParam) -> Self {
         Env {
-            levels: vec![0.0, sustain as f32, 0.0],
+            levels: vec![
+                EnvGenParam::Constant(0.0),
+                sustain,
+                EnvGenParam::Constant(0.0),
+            ],
             times: vec![attack, release],
             curves: vec![1.0, 1.0],
             release_node: 1,
@@ -660,7 +671,11 @@ impl Env {
     /// Create a triangle envelope.
     pub fn triangle(duration: f64) -> Self {
         Env {
-            levels: vec![0.0, 1.0, 0.0],
+            levels: vec![
+                EnvGenParam::Constant(0.0),
+                EnvGenParam::Constant(1.0),
+                EnvGenParam::Constant(0.0),
+            ],
             times: vec![
                 EnvGenParam::Constant(duration / 2.0),
                 EnvGenParam::Constant(duration / 2.0),
@@ -727,17 +742,21 @@ fn env_gen_with_env_impl(
     with_builder(|builder| {
         let num_levels = env.levels.len();
         let num_stages = (num_levels - 1) as f32;
-        let init_level = env.levels[0];
+        let init_level = &env.levels[0];
         let release_node = env.release_node as f32;
         let loop_node = -1.0f32;
 
-        builder.add_constant(init_level);
+        if let EnvGenParam::Constant(l) = init_level {
+            builder.add_constant(*l as f32);
+        }
         builder.add_constant(num_stages);
         builder.add_constant(release_node);
         builder.add_constant(loop_node);
 
         for i in 0..(num_levels - 1) {
-            builder.add_constant(env.levels[i + 1]);
+            if let EnvGenParam::Constant(l) = &env.levels[i + 1] {
+                builder.add_constant(*l as f32);
+            }
             if let EnvGenParam::Constant(t) = &env.times[i] {
                 builder.add_constant(*t as f32);
             }
@@ -761,13 +780,13 @@ fn env_gen_with_env_impl(
             done_action,
         ];
 
-        inputs.push(Input::Constant(init_level));
+        inputs.push(init_level.to_input());
         inputs.push(Input::Constant(num_stages));
         inputs.push(Input::Constant(release_node));
         inputs.push(Input::Constant(loop_node));
 
         for i in 0..(num_levels - 1) {
-            inputs.push(Input::Constant(env.levels[i + 1]));
+            inputs.push(env.levels[i + 1].to_input());
             inputs.push(env.times[i].to_input());
             let curve_val = env.curves[i];
             let shape = if curve_val == 1.0 {
@@ -798,6 +817,23 @@ impl EnvGenParam {
             EnvGenParam::Constant(v) => Input::Constant(*v as f32),
             EnvGenParam::Node(n) => n.to_input(),
         }
+    }
+}
+
+/// Coerce one entry of an `Env(levels, times, curve)` array into an
+/// `EnvGenParam`. `kind` is "level" or "time" and only shapes the error.
+fn env_gen_param_from_dynamic(value: rhai::Dynamic, kind: &str) -> Result<EnvGenParam> {
+    if let Some(node) = value.clone().try_cast::<NodeRef>() {
+        Ok(EnvGenParam::Node(node))
+    } else if let Some(f) = value.clone().try_cast::<f64>() {
+        Ok(EnvGenParam::Constant(f))
+    } else if let Some(i) = value.try_cast::<i64>() {
+        Ok(EnvGenParam::Constant(i as f64))
+    } else {
+        Err(SynthDefError::ValidationError(format!(
+            "Env {} must be a number or control source",
+            kind
+        )))
     }
 }
 
@@ -906,7 +942,7 @@ fn synthdef_error_to_eval(err: SynthDefError) -> Box<rhai::EvalAltResult> {
     ))
 }
 
-fn set_time_error(error: &mut Option<String>, field: &str, message: String) {
+fn set_env_error(error: &mut Option<String>, field: &str, message: String) {
     let message = format!("envelope {}: {}", field, message);
     log::warn!("{}", message);
     *error = Some(message);
@@ -923,10 +959,37 @@ fn parse_time_param(
         match parse_duration(value) {
             Ok(t) => Some(EnvGenParam::Constant(t)),
             Err(e) => {
-                set_time_error(error, field, e.to_string());
+                set_env_error(error, field, e.to_string());
                 None
             }
         }
+    }
+}
+
+/// Parse an envelope *level* (as opposed to a time).
+///
+/// Accepts a control source or a number. Numeric levels are clamped to
+/// 0.0..=1.0, matching the long-standing `sustain(f64)` behaviour;
+/// control-rate levels cannot be clamped at graph-build time and are
+/// passed through as the caller supplied them.
+fn parse_level_param(
+    error: &mut Option<String>,
+    value: rhai::Dynamic,
+    field: &str,
+) -> Option<EnvGenParam> {
+    if let Some(node) = value.clone().try_cast::<NodeRef>() {
+        Some(EnvGenParam::Node(node))
+    } else if let Some(v) = value.clone().try_cast::<f64>() {
+        Some(EnvGenParam::Constant(v.clamp(0.0, 1.0)))
+    } else if let Some(v) = value.try_cast::<i64>() {
+        Some(EnvGenParam::Constant((v as f64).clamp(0.0, 1.0)))
+    } else {
+        set_env_error(
+            error,
+            field,
+            "Expected number or control source".to_string(),
+        );
+        None
     }
 }
 
@@ -956,7 +1019,7 @@ pub struct EnvelopeBuilder {
     // Envelope parameters
     attack: Option<EnvGenParam>,
     decay: Option<EnvGenParam>,
-    sustain: Option<f64>,
+    sustain: Option<EnvGenParam>,
     release: Option<EnvGenParam>,
     error: Option<String>,
 
@@ -1017,9 +1080,19 @@ impl EnvelopeBuilder {
         self
     }
 
-    /// Set the sustain level (0.0 to 1.0).
-    pub fn sustain(mut self, level: f64) -> Self {
-        self.sustain = Some(level.clamp(0.0, 1.0));
+    /// Set the sustain level.
+    /// Accepts f64/i64 (clamped to 0.0..=1.0) or a control source, so a
+    /// synthdef parameter can drive the sustain level.
+    pub fn sustain(mut self, value: rhai::Dynamic) -> Self {
+        if let Some(s) = parse_level_param(&mut self.error, value, "sustain") {
+            self.sustain = Some(s);
+        }
+        self
+    }
+
+    /// Set the sustain level from f64 (0.0 to 1.0).
+    pub fn sustain_f(mut self, level: f64) -> Self {
+        self.sustain = Some(EnvGenParam::Constant(level.clamp(0.0, 1.0)));
         self
     }
 
@@ -1123,12 +1196,20 @@ impl EnvelopeBuilder {
     }
 
     /// Configure an ASR envelope (attack → sustain → release).
-    /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
-    pub fn asr(mut self, attack: rhai::Dynamic, sustain: f64, release: rhai::Dynamic) -> Self {
+    /// Times accept f64 (seconds), i64 (seconds), or humantime strings;
+    /// the sustain level accepts a number or a control source.
+    pub fn asr(
+        mut self,
+        attack: rhai::Dynamic,
+        sustain: rhai::Dynamic,
+        release: rhai::Dynamic,
+    ) -> Self {
         if let Some(a) = parse_time_param(&mut self.error, attack, "attack") {
             self.attack = Some(a);
         }
-        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        if let Some(s) = parse_level_param(&mut self.error, sustain, "sustain") {
+            self.sustain = Some(s);
+        }
         if let Some(r) = parse_time_param(&mut self.error, release, "release") {
             self.release = Some(r);
         }
@@ -1139,19 +1220,21 @@ impl EnvelopeBuilder {
     /// Configure an ASR envelope with f64 values.
     pub fn asr_f(mut self, attack: f64, sustain: f64, release: f64) -> Self {
         self.attack = Some(EnvGenParam::Constant(attack));
-        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        self.sustain = Some(EnvGenParam::Constant(sustain.clamp(0.0, 1.0)));
         self.release = Some(EnvGenParam::Constant(release));
         self.decay = None;
         self
     }
 
     /// Configure an ADSR envelope (attack → decay → sustain → release).
-    /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
+    /// Times accept f64 (seconds), i64 (seconds), or humantime strings;
+    /// the sustain level accepts a number or a control source, so
+    /// `adsr(p.attack, p.decay, p.sustain, p.release)` is a valid synthdef.
     pub fn adsr(
         mut self,
         attack: rhai::Dynamic,
         decay: rhai::Dynamic,
-        sustain: f64,
+        sustain: rhai::Dynamic,
         release: rhai::Dynamic,
     ) -> Self {
         if let Some(a) = parse_time_param(&mut self.error, attack, "attack") {
@@ -1160,7 +1243,9 @@ impl EnvelopeBuilder {
         if let Some(d) = parse_time_param(&mut self.error, decay, "decay") {
             self.decay = Some(d);
         }
-        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        if let Some(s) = parse_level_param(&mut self.error, sustain, "sustain") {
+            self.sustain = Some(s);
+        }
         if let Some(r) = parse_time_param(&mut self.error, release, "release") {
             self.release = Some(r);
         }
@@ -1171,7 +1256,7 @@ impl EnvelopeBuilder {
     pub fn adsr_f(mut self, attack: f64, decay: f64, sustain: f64, release: f64) -> Self {
         self.attack = Some(EnvGenParam::Constant(attack));
         self.decay = Some(EnvGenParam::Constant(decay));
-        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        self.sustain = Some(EnvGenParam::Constant(sustain.clamp(0.0, 1.0)));
         self.release = Some(EnvGenParam::Constant(release));
         self
     }
@@ -1180,7 +1265,7 @@ impl EnvelopeBuilder {
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings.
     pub fn triangle(mut self, duration: rhai::Dynamic) -> Self {
         if duration.clone().try_cast::<NodeRef>().is_some() {
-            set_time_error(
+            set_env_error(
                 &mut self.error,
                 "triangle",
                 "control-rate duration not supported in v1".to_string(),
@@ -1191,7 +1276,7 @@ impl EnvelopeBuilder {
                     self.attack = Some(EnvGenParam::Constant(d / 2.0));
                     self.release = Some(EnvGenParam::Constant(d / 2.0));
                 }
-                Err(e) => set_time_error(&mut self.error, "triangle", e.to_string()),
+                Err(e) => set_env_error(&mut self.error, "triangle", e.to_string()),
             }
         }
         self.decay = None;
@@ -1274,7 +1359,7 @@ impl EnvelopeBuilder {
         let attack = self.attack.clone().unwrap_or(EnvGenParam::Constant(0.01));
         let release = self.release.clone().unwrap_or(EnvGenParam::Constant(0.1));
 
-        match (self.decay.clone(), self.sustain) {
+        match (self.decay.clone(), self.sustain.clone()) {
             // Full ADSR
             (Some(decay), Some(sustain)) => Env::adsr_p(attack, decay, sustain, release),
             // ASR (no decay, has sustain)
@@ -1463,8 +1548,27 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
             Env::adsr(attack, decay, sustain, release)
         },
     );
+    // Sustain as a control source (synthdef parameter).
+    engine.register_fn(
+        "env_adsr",
+        |attack: f64, decay: f64, sustain: NodeRef, release: f64| {
+            Env::adsr_p(
+                EnvGenParam::Constant(attack),
+                EnvGenParam::Constant(decay),
+                EnvGenParam::Node(sustain),
+                EnvGenParam::Constant(release),
+            )
+        },
+    );
     engine.register_fn("env_asr", |attack: f64, sustain: f64, release: f64| {
         Env::asr(attack, sustain, release)
+    });
+    engine.register_fn("env_asr", |attack: f64, sustain: NodeRef, release: f64| {
+        Env::asr_p(
+            EnvGenParam::Constant(attack),
+            EnvGenParam::Node(sustain),
+            EnvGenParam::Constant(release),
+        )
     });
     engine.register_fn("env_triangle", |duration: f64| Env::triangle(duration));
 
@@ -1578,8 +1682,9 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         // Decay methods
         .register_fn("decay", EnvelopeBuilder::decay)
         .register_fn("decay", EnvelopeBuilder::decay_f)
-        // Sustain method
+        // Sustain methods
         .register_fn("sustain", EnvelopeBuilder::sustain)
+        .register_fn("sustain", EnvelopeBuilder::sustain_f)
         // Release methods
         .register_fn("release", EnvelopeBuilder::release)
         .register_fn("release", EnvelopeBuilder::release_f)

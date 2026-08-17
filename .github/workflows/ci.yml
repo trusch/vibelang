@@ -118,6 +118,8 @@ jobs:
             libx11-dev libxi-dev libxtst-dev \
             libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: Swatinem/rust-cache@v2
+      - name: Test transparent MIDI CC runtime
+        run: cargo test -p vibelang-rhai --test transparent_midi_cc_runtime
       - name: Run unit tests
         # Unit tests only. The workspace test suites use mock backends and do
         # not require a running scsynth or JACK/PipeWire server, so nothing

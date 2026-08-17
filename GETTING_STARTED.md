@@ -948,6 +948,32 @@ let env = envelope().perc("1ms", "50ms").gate(gate).cleanup_on_finish().build();
 let env = envelope().attack("5ms").release("200ms").gate(gate).cleanup_on_finish().build();
 ```
 
+Every envelope argument — the times *and* the sustain level — accepts a
+synthdef parameter as well as a literal, so an ADSR can be fully controllable
+from the script:
+
+```rhai
+define_synthdef("pad")
+    .param("freq", 220.0)
+    .param("attack", 0.01)
+    .param("decay", 0.2)
+    .param("sustain", 0.8)
+    .param("release", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, attack, decay, sustain, release, gate| {
+        let env = envelope()
+            .adsr(attack, decay, sustain, release)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        saw_ar(freq) * env
+    });
+```
+
+Numeric sustain levels are clamped to `0.0..=1.0`. A parameter-driven sustain
+cannot be clamped when the graph is built, so keep it in range at the call
+site.
+
 ---
 
 ## 11. Complete Example

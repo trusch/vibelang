@@ -1,10 +1,11 @@
 //! MIDI 2.0 routing builders (feature-gated).
 
 use rhai::{CustomType, Dynamic, EvalAltResult, Position, TypeBuilder};
-use vibelang_core::midi::parse_note_name;
+use vibelang_core::midi::{canonical_cc_curve_name, parse_note_name};
 use vibelang_core::reload::{
-    Midi2CcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute,
+    AdvancedMidiCcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute,
 };
+use vibelang_core::traits::FadeTarget;
 use vibelang_core::types::MidiDeviceId;
 
 use crate::api::voice::Voice;
@@ -384,7 +385,7 @@ impl PerNotePressureBuilder {
 // MIDI 2.0 High-Resolution CC (32-bit) Builder
 // ============================================================================
 
-/// Builder for high-resolution 32-bit CC routing.
+/// Deprecated compatibility builder for transport-transparent CC routing.
 #[derive(Debug, Clone, CustomType)]
 pub struct Cc32Route {
     device_id: MidiDeviceId,
@@ -420,50 +421,63 @@ impl Cc32Route {
 
     /// Set the mapping curve.
     pub fn curve(mut self, curve_name: String) -> Self {
-        self.curve = curve_name;
+        self.curve = match canonical_cc_curve_name(&curve_name) {
+            Some(curve) => curve.to_string(),
+            None => {
+                tracing::warn!(
+                    "Unknown MIDI CC curve '{}'; falling back to linear",
+                    curve_name
+                );
+                "linear".to_string()
+            }
+        };
         self
     }
 
-    /// Route high-resolution CC to a voice parameter.
+    /// Route CC to a voice parameter through the unified registry.
     pub fn to(self, voice: Voice, param: String, min: f64, max: f64) {
         let voice_id = context::get_or_create_voice_id(&voice.name);
 
-        let route = Midi2CcRoute {
+        tracing::warn!("cc32() is deprecated; use map_cc() for transport-transparent CC routing");
+
+        let route = AdvancedMidiCcRoute {
             device_id: self.device_id,
             group: self.group,
             channel: self.channel,
             cc: self.cc,
-            voice: voice_id,
+            target: FadeTarget::Voice(voice_id),
             param,
-            min_value: min as f32,
-            max_value: max as f32,
+            min: min as f32,
+            max: max as f32,
             curve: self.curve,
         };
 
         context::with_state(|state| {
-            state.midi2_cc_routes.push(route);
+            state.advanced_cc_routes.push(route);
             state.midi_inputs.insert(self.device_id);
         });
     }
 
-    /// Route high-resolution CC to a voice parameter by name.
+    /// Route CC to a voice parameter by name through the unified registry.
     pub fn to_name(self, voice_name: String, param: String, min: f64, max: f64) {
         let voice_id = context::get_or_create_voice_id(&voice_name);
 
-        let route = Midi2CcRoute {
+        tracing::warn!("cc32() is deprecated; use map_cc() for transport-transparent CC routing");
+
+        let route = AdvancedMidiCcRoute {
             device_id: self.device_id,
             group: self.group,
             channel: self.channel,
             cc: self.cc,
-            voice: voice_id,
+            target: FadeTarget::Voice(voice_id),
             param,
-            min_value: min as f32,
-            max_value: max as f32,
+            min: min as f32,
+            max: max as f32,
             curve: self.curve,
         };
 
         context::with_state(|state| {
-            state.midi2_cc_routes.push(route);
+            state.advanced_cc_routes.push(route);
             state.midi_inputs.insert(self.device_id);
         });
     }
