@@ -390,6 +390,15 @@ pub enum MidiMessage {
         device: crate::types::ids::MidiDeviceId,
     },
 
+    /// Reconcile open PipeWire MIDI inputs against the set of devices
+    /// currently present on the system. Emitted periodically by the MIDI
+    /// hot-plug watcher thread with a fresh device snapshot; the runtime
+    /// opens requested devices that have (re)appeared and closes ones that
+    /// have vanished, so inputs recover from unplug/replug and power-on.
+    ReconcileInputs {
+        present: std::collections::HashSet<crate::types::ids::MidiDeviceId>,
+    },
+
     // =========================================================================
     // Note/CC Output
     // =========================================================================
@@ -700,6 +709,7 @@ impl Message {
                 MidiMessage::OpenInput { .. } => "Midi::OpenInput",
                 MidiMessage::OpenOutput { .. } => "Midi::OpenOutput",
                 MidiMessage::CloseDevice { .. } => "Midi::CloseDevice",
+                MidiMessage::ReconcileInputs { .. } => "Midi::ReconcileInputs",
                 MidiMessage::NoteOn { .. } => "Midi::NoteOn",
                 MidiMessage::NoteOff { .. } => "Midi::NoteOff",
                 MidiMessage::Cc { .. } => "Midi::Cc",

@@ -350,6 +350,10 @@ impl<B: Backend> Runtime<B> {
             self.midi
                 .start_clock_thread(Arc::clone(&self.transport_snapshot));
             self.clock_thread_started = true;
+            // Watch for MIDI devices appearing/disappearing so inputs recover
+            // from unplug/replug and power-on-after-start.
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+            self.midi.start_input_hotplug_watcher();
         }
 
         loop {
@@ -374,9 +378,13 @@ impl<B: Backend> Runtime<B> {
                     // Channel closed, exit
                     tracing::info!("Runtime channel closed, shutting down");
 
-                    // Stop MIDI clock thread
+                    // Stop MIDI clock thread + hot-plug watcher
                     #[cfg(feature = "midi")]
-                    self.midi.stop_clock_thread();
+                    {
+                        self.midi.stop_clock_thread();
+                        #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+                        self.midi.stop_input_hotplug_watcher();
+                    }
 
                     break;
                 }
@@ -396,6 +404,11 @@ impl<B: Backend> Runtime<B> {
         if !self.clock_thread_started {
             self.midi
                 .start_clock_thread(Arc::clone(&self.transport_snapshot));
+            // Same first-tick guard starts the input hot-plug watcher, so the
+            // CLI (which drives the runtime via tick(), not run()) gets device
+            // recovery too.
+            #[cfg(all(feature = "pipewire-midi2", not(target_arch = "wasm32")))]
+            self.midi.start_input_hotplug_watcher();
             self.clock_thread_started = true;
         }
 
@@ -666,6 +679,10 @@ impl<B: Backend> Runtime<B> {
                 MidiMessage::OpenInput { device } => self.midi.open_input(device).await,
                 MidiMessage::OpenOutput { device } => self.midi.open_output(device).await,
                 MidiMessage::CloseDevice { device } => self.midi.close(device).await,
+                MidiMessage::ReconcileInputs { present } => {
+                    self.midi.reconcile_pipewire_inputs(present).await;
+                    Ok(())
+                }
 
                 // Note/CC output
                 MidiMessage::NoteOn {
@@ -1987,6 +2004,11 @@ impl<B: Backend> Runtime<B> {
             // randomised per process; without sorting the order in which we
             // grab ALSA/JACK MIDI ports — and any error reporting tied to the
             // first/second device — would flicker reload-to-reload.
+            // Record the script's requested inputs so the hot-plug watcher
+            // reopens exactly these (and stops reopening ones removed from the
+            // script) as devices come and go.
+            self.midi.set_requested_inputs(&new_state.midi_inputs);
+
             let mut midi_input_ids: Vec<_> = new_state.midi_inputs.iter().copied().collect();
             midi_input_ids.sort_by_key(|id| id.raw());
             for device_id in midi_input_ids
