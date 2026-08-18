@@ -24,7 +24,10 @@ define_synthdef("acid_303_classic", |builder| {
 
             // Resonant filter with envelope modulation
             let mod_cutoff = cutoff + (filter_env * cutoff * 4.0);
-            let filtered = rlpf_ar(osc, mod_cutoff, res);
+            // `res` is a direct 0..1 resonance amount, as its docstring says.
+            // RLPF's third input is rq (reciprocal Q, lower = more resonance), so
+            // convert here rather than leaking the inverted convention to callers.
+            let filtered = rlpf_ar(osc, mod_cutoff, 1.0 - res * 0.9);
 
             filtered * env * amp
         })

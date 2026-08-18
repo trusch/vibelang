@@ -11,7 +11,7 @@
 define_synthdef("qpas")
     .input("in", 2)
     .param("cutoff", 1200.0) // units: Hz, range: 20..20000, default: 1200.0. Filter cutoff or tone point; higher keeps more high-frequency brightness.
-    .param("q", 0.35) // units: resonance, range: 0..1, default: 0.35. Filter resonance amount; higher emphasizes a narrower frequency peak.
+    .param("q", 0.7222) // units: resonance, range: 0..1, default: 0.7222. Filter resonance amount; higher emphasizes a narrower frequency peak.
     .param("radiate", 0.25) // units: normalized, range: 0..1, default: 0.25. QPAS radiate spread; higher offsets the filter cores for wider stereo motion.
     .param("smile", 0.5) // units: normalized, range: 0..1, default: 0.5. QPAS smile response; higher emphasizes the upward spectral curve.
     .param("frown", 0.5) // units: normalized, range: 0..1, default: 0.5. QPAS frown response; higher emphasizes the downward spectral curve.
@@ -25,11 +25,19 @@ define_synthdef("qpas")
         let dry_l = p.inputs["in"][0] * p.input_gain;
         let dry_r = p.inputs["in"][1] * p.input_gain;
         let cutoff = clip(p.cutoff, 30.0, 16000.0);
-        let q = clip(p.q, 0.05, 1.0);
+        // `q`, `q_plus` and `q_minus` are direct 0..1 resonance amounts, as their
+        // docstrings say: higher means a narrower, more emphasized peak. RLPF/BPF/RHPF
+        // all take rq (reciprocal Q, LOWER = more resonance), so the offsets are summed
+        // in the direct domain first and the whole thing is converted here — the ugen
+        // owns the inversion, the parameter means what it is documented to mean.
+        let q_res = clip(p.q, 0.0, 1.0);
         let q_plus = clip(p.q_plus, -1.0, 1.0);
         let q_minus = clip(p.q_minus, -1.0, 1.0);
-        let q_low = clip(q + q_minus * 0.35, 0.05, 1.0);
-        let q_high = clip(q + q_plus * 0.35, 0.05, 1.0);
+        let q_low_res = clip(q_res + q_minus * 0.35, 0.0, 1.0);
+        let q_high_res = clip(q_res + q_plus * 0.35, 0.0, 1.0);
+        let q = clip(1.0 - q_res * 0.9, 0.05, 1.0);
+        let q_low = clip(1.0 - q_low_res * 0.9, 0.05, 1.0);
+        let q_high = clip(1.0 - q_high_res * 0.9, 0.05, 1.0);
         let radiate = clip(p.radiate, 0.0, 1.0);
         let smile = clip(p.smile, -1.0, 1.0);
         let frown = clip(p.frown, -1.0, 1.0);
