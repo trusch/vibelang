@@ -113,18 +113,23 @@ fn split_args(rest: &str) -> Vec<String> {
     args
 }
 
-fn identifiers(expr: &str) -> Vec<String> {
+/// Identifiers in `expr`, each tagged with whether it was a `.field` access.
+fn identifiers(expr: &str) -> Vec<(String, bool)> {
     let mut out = Vec::new();
     let mut cur = String::new();
+    let mut is_field = false;
     for ch in expr.chars() {
         if ch.is_alphanumeric() || ch == '_' {
             cur.push(ch);
-        } else if !cur.is_empty() {
-            out.push(std::mem::take(&mut cur));
+        } else {
+            if !cur.is_empty() {
+                out.push((std::mem::take(&mut cur), is_field));
+            }
+            is_field = ch == '.';
         }
     }
     if !cur.is_empty() {
-        out.push(cur);
+        out.push((cur, is_field));
     }
     out
 }
@@ -187,13 +192,19 @@ fn unconverted_rq_params(src: &str) -> Vec<String> {
         }
         let mut out = String::new();
         let mut cur = String::new();
-        let flush = |cur: &mut String, out: &mut String| {
-            if let Some(v) = lets.get(cur.as_str()) {
-                out.push('(');
-                out.push_str(&expand(v, lets, depth - 1));
-                out.push(')');
-            } else {
-                out.push_str(cur);
+        // `p.q` is a parameter access, NOT the local `let q`. Without this a
+        // sibling conversion in the same body (`let q = 1.0 - q_res * 0.9`)
+        // leaks into the expansion of every other `p.<name>` and masks a real
+        // finding -- which is exactly what it did before this guard landed.
+        let mut is_field = false;
+        let flush = |cur: &mut String, out: &mut String, is_field: bool| {
+            match lets.get(cur.as_str()) {
+                Some(v) if !is_field => {
+                    out.push('(');
+                    out.push_str(&expand(v, lets, depth - 1));
+                    out.push(')');
+                }
+                _ => out.push_str(cur),
             }
             cur.clear();
         };
@@ -201,11 +212,12 @@ fn unconverted_rq_params(src: &str) -> Vec<String> {
             if ch.is_alphanumeric() || ch == '_' {
                 cur.push(ch);
             } else {
-                flush(&mut cur, &mut out);
+                flush(&mut cur, &mut out, is_field);
+                is_field = ch == '.';
                 out.push(ch);
             }
         }
-        flush(&mut cur, &mut out);
+        flush(&mut cur, &mut out, is_field);
         out
     }
 
@@ -216,15 +228,16 @@ fn unconverted_rq_params(src: &str) -> Vec<String> {
         depth: usize,
         out: &mut Vec<String>,
     ) {
-        for id in identifiers(expr) {
-            if docs.contains_key(&id) {
-                if !out.contains(&id) {
-                    out.push(id);
-                }
-            } else if depth > 0 {
+        for (id, is_field) in identifiers(expr) {
+            // A local `let` shadows nothing when the name appears as `p.<id>`.
+            if !is_field && depth > 0 {
                 if let Some(rhs) = lets.get(&id) {
                     roots(rhs, docs, lets, depth - 1, out);
+                    continue;
                 }
+            }
+            if docs.contains_key(&id) && !out.contains(&id) {
+                out.push(id);
             }
         }
     }
@@ -360,6 +373,27 @@ fn the_scanner_can_fail() {
     assert!(
         unconverted_rq_params(&fixed).is_empty(),
         "converting in-body must clear the finding"
+    );
+
+    // A sibling conversion in the same body must not launder an unconverted
+    // one. `p.q` is a parameter access; the local `let q` is a different thing.
+    let two_bands = r#"
+        define_synthdef("y")
+            .param("cutoff", 1000.0) // units: Hz, range: 20..20000, default: 1000.0. Filter cutoff.
+            .param("q", 0.7) // units: resonance, range: 0..1, default: 0.7. Filter resonance amount; higher emphasizes a narrower frequency peak.
+            .body_map(|p| {
+                let q_res = clip(p.q, 0.0, 1.0);
+                let q = clip(1.0 - q_res * 0.9, 0.05, 1.0);
+                let q_high = clip(q_res, 0.05, 1.0);
+                let low = rlpf_ar(p.inputs["in"], p.cutoff, q);
+                let high = rhpf_ar(p.inputs["in"], p.cutoff, q_high);
+                [low + high]
+            });
+    "#;
+    assert_eq!(
+        unconverted_rq_params(two_bands),
+        vec!["q".to_string()],
+        "the converted `q` band must not hide the unconverted `q_high` one"
     );
 
     // A parameter honestly named and documented as rq is not a finding.
