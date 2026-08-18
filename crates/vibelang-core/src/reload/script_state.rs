@@ -5,7 +5,7 @@
 
 use crate::handlers::{InputRouteMap, InputRouteSrc, ParamRouteMap, ParamRouteTarget, RouteMap};
 #[cfg(feature = "midi")]
-use crate::midi::MidiInputIntent;
+use crate::midi::{MidiInputIntent, MidiOutputEndpoint};
 use crate::state::State;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
@@ -308,11 +308,11 @@ pub enum MidiOutputMessage {
 
     // MIDI Real-Time messages (for sync with external gear)
     /// MIDI Start message (0xFA) - starts playback from beginning.
-    Start { device_id: MidiDeviceId },
+    Start { endpoint: MidiOutputEndpoint },
     /// MIDI Stop message (0xFC) - stops playback.
-    Stop { device_id: MidiDeviceId },
+    Stop { endpoint: MidiOutputEndpoint },
     /// MIDI Continue message (0xFB) - resumes playback from current position.
-    Continue { device_id: MidiDeviceId },
+    Continue { endpoint: MidiOutputEndpoint },
 }
 
 /// Advanced MIDI keyboard route with range, transpose, and velocity curves.
@@ -782,6 +782,13 @@ pub struct ScriptState {
     #[cfg(feature = "midi")]
     pub midi_outputs: HashSet<MidiDeviceId>,
 
+    /// Stable, exact-name output bindings used by clock and transport.
+    ///
+    /// The runtime re-resolves these in the output namespace at apply time;
+    /// the retained mapping is also emitted in MIDI readiness logs.
+    #[cfg(feature = "midi")]
+    pub midi_output_endpoints: HashSet<MidiOutputEndpoint>,
+
     /// Pending MIDI output messages to send immediately.
     #[cfg(feature = "midi")]
     pub midi_output_messages: Vec<MidiOutputMessage>,
@@ -894,8 +901,8 @@ pub struct MidiRecordingRequest {
 #[cfg(feature = "midi")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MidiClockOutputRequest {
-    /// Device ID to send clock to.
-    pub device_id: MidiDeviceId,
+    /// Exact output endpoint to send clock to.
+    pub endpoint: MidiOutputEndpoint,
 
     /// Enable (true) or disable (false) clock output.
     pub enabled: bool,
