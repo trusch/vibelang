@@ -205,6 +205,20 @@ pub trait Backend: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Move a live node to the tail of a group (scsynth `/g_tail`).
+    ///
+    /// The counterpart to [`Self::move_node_before`] for the case where the
+    /// destination group has nothing to anchor against yet — a group that a
+    /// reload created in the same pass carries neither an fx chain nor a
+    /// link synth until later phases, so "before the first thing that reads
+    /// the bus" and "at the tail" are the same position.
+    ///
+    /// The default implementation is a no-op, like `move_node_before`.
+    async fn move_node_to_tail(&self, node: NodeId, group: NodeId) -> Result<(), Self::Error> {
+        let _ = (node, group);
+        Ok(())
+    }
+
     // =========================================================================
     // Parameter Control
     // =========================================================================
@@ -459,6 +473,14 @@ pub trait Backend: 'static {
     /// Default is a no-op; see the native trait variant for semantics.
     async fn move_node_before(&self, node: NodeId, before: NodeId) -> Result<(), Self::Error> {
         let _ = (node, before);
+        Ok(())
+    }
+
+    /// Move a live node to the tail of a group (`/g_tail`).
+    ///
+    /// Default is a no-op; see the native trait variant for semantics.
+    async fn move_node_to_tail(&self, node: NodeId, group: NodeId) -> Result<(), Self::Error> {
+        let _ = (node, group);
         Ok(())
     }
 
