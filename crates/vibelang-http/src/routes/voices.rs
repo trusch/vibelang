@@ -1,5 +1,6 @@
 //! Voices endpoint handlers.
 
+use crate::routes::resolve::resolve_voice_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -15,44 +16,6 @@ use crate::{
     },
     AppState,
 };
-
-/// Resolve a voice identifier (either numeric ID or string name) to a VoiceId.
-/// Returns the VoiceId if found, or an error response if not found.
-async fn resolve_voice_id(
-    state: &Arc<AppState>,
-    identifier: &str,
-) -> Result<VoiceId, (StatusCode, Json<ErrorResponse>)> {
-    // First, try to parse as a numeric ID
-    if let Ok(num_id) = identifier.parse::<u32>() {
-        let voice_id = VoiceId::new(num_id);
-        let exists = state.with_state(|s| s.voices.contains_key(&voice_id)).await;
-        if exists {
-            return Ok(voice_id);
-        }
-        // Fall through to try as name if numeric ID not found
-    }
-
-    // Try to find by name
-    let found = state
-        .with_state(|s| {
-            s.voices
-                .iter()
-                .find(|(_, vs)| vs.config.name == identifier)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    match found {
-        Some(id) => Ok(id),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Voice '{}' not found",
-                identifier
-            ))),
-        )),
-    }
-}
 
 /// Convert internal VoiceState to API Voice model
 fn voice_to_api(_id: &VoiceId, state: &vibelang_core::VoiceState) -> Voice {

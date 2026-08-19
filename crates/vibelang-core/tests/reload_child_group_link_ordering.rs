@@ -490,6 +490,7 @@ fn patch(master: GroupId, master_fx: &[EffectId], sides: &[Side]) -> ScriptState
         script.add_effect(
             *id,
             EffectConfig {
+                name: String::new(),
                 group: master,
                 synthdef: DEF_FX.to_string(),
                 params: ParamMap::new(),
@@ -510,6 +511,7 @@ fn patch(master: GroupId, master_fx: &[EffectId], sides: &[Side]) -> ScriptState
             script.add_effect(
                 *id,
                 EffectConfig {
+                    name: String::new(),
                     group: side.group,
                     synthdef: DEF_FX.to_string(),
                     params: ParamMap::new(),
@@ -547,6 +549,7 @@ fn patch_with_def(
         script.add_effect(
             *id,
             EffectConfig {
+                name: String::new(),
                 group: master,
                 synthdef: master_def.to_string(),
                 params: ParamMap::new(),
@@ -567,6 +570,7 @@ fn patch_with_def(
             script.add_effect(
                 *id,
                 EffectConfig {
+                    name: String::new(),
                     group: *group,
                     synthdef: def.to_string(),
                     params: ParamMap::new(),
@@ -1164,6 +1168,7 @@ impl Spec {
                 script.add_effect(
                     EffectId(*f),
                     EffectConfig {
+                        name: String::new(),
                         group: GroupId(*master),
                         synthdef: (*def).to_string(),
                         params: ParamMap::new(),
@@ -1185,6 +1190,7 @@ impl Spec {
                 script.add_effect(
                     EffectId(*f),
                     EffectConfig {
+                        name: String::new(),
                         group: GroupId(*child),
                         synthdef: (*def).to_string(),
                         params: ParamMap::new(),

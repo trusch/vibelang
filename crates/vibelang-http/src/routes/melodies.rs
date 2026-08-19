@@ -1,5 +1,6 @@
 //! Melodies endpoint handlers.
 
+use crate::routes::resolve::resolve_melody_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -19,45 +20,6 @@ use crate::{
     },
     AppState,
 };
-
-/// Resolve a melody identifier (either numeric ID or string name) to a MelodyId.
-async fn resolve_melody_id(
-    state: &Arc<AppState>,
-    identifier: &str,
-) -> Result<MelodyId, (StatusCode, Json<ErrorResponse>)> {
-    // First, try to parse as a numeric ID
-    if let Ok(num_id) = identifier.parse::<u32>() {
-        let melody_id = MelodyId::new(num_id);
-        let exists = state
-            .with_state(|s| s.melodies.contains_key(&melody_id))
-            .await;
-        if exists {
-            return Ok(melody_id);
-        }
-        // Fall through to try as name if numeric ID not found
-    }
-
-    // Try to find by name
-    let found = state
-        .with_state(|s| {
-            s.melodies
-                .iter()
-                .find(|(_, ms)| ms.content.name == identifier)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    match found {
-        Some(id) => Ok(id),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Melody '{}' not found",
-                identifier
-            ))),
-        )),
-    }
-}
 
 /// Convert internal MelodyState to API Melody model
 fn melody_to_api(

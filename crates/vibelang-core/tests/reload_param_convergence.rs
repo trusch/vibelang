@@ -286,6 +286,7 @@ fn effect_script(synthdef: &str, fx_params: &[(&str, f32)]) -> ScriptState {
     script.add_effect(
         FX,
         EffectConfig {
+            name: String::new(),
             group: GROUP,
             synthdef: synthdef.to_string(),
             params: params(fx_params),

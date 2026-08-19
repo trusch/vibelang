@@ -1,5 +1,6 @@
 //! Groups endpoint handlers.
 
+use crate::routes::resolve::resolve_group_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -12,43 +13,6 @@ use crate::{
     models::{ErrorResponse, Group, GroupUpdate, ParamSet},
     AppState,
 };
-
-/// Resolve a group identifier (either numeric ID or string name) to a GroupId.
-async fn resolve_group_id(
-    state: &Arc<AppState>,
-    identifier: &str,
-) -> Result<GroupId, (StatusCode, Json<ErrorResponse>)> {
-    // First, try to parse as a numeric ID
-    if let Ok(num_id) = identifier.parse::<u32>() {
-        let group_id = GroupId::new(num_id);
-        let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-        if exists {
-            return Ok(group_id);
-        }
-        // Fall through to try as name if numeric ID not found
-    }
-
-    // Try to find by name
-    let found = state
-        .with_state(|s| {
-            s.groups
-                .iter()
-                .find(|(_, gs)| gs.name == identifier)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    match found {
-        Some(id) => Ok(id),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                identifier
-            ))),
-        )),
-    }
-}
 
 /// Convert internal GroupState to API Group model
 fn group_to_api(

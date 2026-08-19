@@ -11,6 +11,7 @@ pub mod midi;
 pub mod patterns;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recordings;
+pub mod resolve;
 pub mod samples;
 pub mod sequences;
 pub mod synthdefs;

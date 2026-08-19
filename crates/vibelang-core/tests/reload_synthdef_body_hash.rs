@@ -250,6 +250,7 @@ fn effect_script(synthdef: &str, hash: u64) -> ScriptState {
     script.add_effect(
         FX,
         EffectConfig {
+            name: String::new(),
             group: GROUP,
             synthdef: synthdef.to_string(),
             params: ParamMap::new(),

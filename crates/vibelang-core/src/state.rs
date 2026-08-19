@@ -500,6 +500,14 @@ pub struct EffectState {
     /// Effect ID.
     pub id: EffectId,
 
+    /// Script name this effect was declared under (`fx("name")`).
+    ///
+    /// The id is derived from this name by `hash_name_to_id`, but that
+    /// derivation probes forward on collision, so it is not invertible.
+    /// Callers that resolve an effect by name (the HTTP routes) must match
+    /// this field rather than recompute the hash.
+    pub name: String,
+
     /// Group this effect belongs to.
     pub group: GroupId,
 
@@ -525,7 +533,10 @@ impl EffectState {
     /// derived `PartialEq` field set exactly, but borrows the param map instead of
     /// building a throwaway `EffectConfig`.
     pub fn matches_config(&self, config: &EffectConfig, params: &ParamMap) -> bool {
-        self.group == config.group && self.synthdef == config.synthdef && *params == config.params
+        self.name == config.name
+            && self.group == config.group
+            && self.synthdef == config.synthdef
+            && *params == config.params
     }
 }
 
