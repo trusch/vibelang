@@ -253,6 +253,7 @@ async fn insert_effect(
     s.effects.insert(
         effect_id,
         EffectState {
+            name: String::new(),
             id: effect_id,
             group,
             synthdef: synthdef.to_string(),

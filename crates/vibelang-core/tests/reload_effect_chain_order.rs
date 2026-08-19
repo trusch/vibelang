@@ -386,6 +386,7 @@ fn chain_script(chain: &[EffectId]) -> ScriptState {
         script.add_effect(
             *id,
             EffectConfig {
+                name: String::new(),
                 group: GROUP,
                 synthdef: def_of(*id).to_string(),
                 params: ParamMap::new(),

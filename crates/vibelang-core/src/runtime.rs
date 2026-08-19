@@ -593,10 +593,11 @@ impl<B: Backend> Runtime<B> {
             Message::Effect(effect_msg) => match effect_msg {
                 EffectMessage::Add {
                     id,
+                    name,
                     group,
                     synthdef,
                     params,
-                } => self.effects.add(id, group, &synthdef, &params).await,
+                } => self.effects.add(id, &name, group, &synthdef, &params).await,
                 EffectMessage::Remove { id } => self.effects.remove(id).await,
                 EffectMessage::SetParam { id, param, value } => {
                     self.effects.set_param(id, &param, value).await
@@ -3117,7 +3118,13 @@ impl<B: Backend> Runtime<B> {
             tracing::debug!("Reload: creating effect {:?}", id);
             if let Err(e) = self
                 .effects
-                .add(id, config.group, &config.synthdef, &config.params)
+                .add(
+                    id,
+                    &config.name,
+                    config.group,
+                    &config.synthdef,
+                    &config.params,
+                )
                 .await
             {
                 tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
@@ -3175,6 +3182,7 @@ impl<B: Backend> Runtime<B> {
                     .effects
                     .add(
                         id,
+                        &new_config.name,
                         new_config.group,
                         &new_config.synthdef,
                         &new_config.params,
@@ -5814,6 +5822,7 @@ mod tests {
         state.add_effect(
             effect,
             EffectConfig {
+                name: String::new(),
                 group,
                 synthdef: effect_synth,
                 params: ParamMap::from([("mix".to_string(), 1.0)]),
@@ -8005,6 +8014,7 @@ mod tests {
         new_state.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "reverb".to_string(),
                 params: ParamMap::new(),
@@ -8186,6 +8196,7 @@ mod tests {
         new_state.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: fx_evens_id,
                 synthdef: "reverb".to_string(),
                 params: ParamMap::new(),
@@ -8424,6 +8435,7 @@ mod tests {
         initial.add_effect(
             body_a_effect,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "body_a_fx".to_string(),
                 params: ParamMap::new(),
@@ -8440,6 +8452,7 @@ mod tests {
         initial.add_effect(
             body_b_effect,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "body_b_fx".to_string(),
                 params: ParamMap::new(),
@@ -8505,6 +8518,7 @@ mod tests {
         reloaded.add_effect(
             body_a_effect,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "body_a_fx".to_string(),
                 params: ParamMap::new(),
@@ -8521,6 +8535,7 @@ mod tests {
         reloaded.add_effect(
             body_c_effect,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "body_c_fx".to_string(),
                 params: ParamMap::new(),
@@ -8744,6 +8759,7 @@ mod tests {
         initial.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "body_fx".to_string(),
                 params: ParamMap::new(),
@@ -8880,6 +8896,7 @@ mod tests {
         initial.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "shared_reverb".to_string(),
                 params: ParamMap::new(),
@@ -8931,6 +8948,7 @@ mod tests {
         reloaded.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "shared_reverb".to_string(),
                 params: ParamMap::new(),
@@ -9034,6 +9052,7 @@ mod tests {
         initial.add_effect(
             effect_id,
             EffectConfig {
+                name: String::new(),
                 group: group_id,
                 synthdef: "last_fx".to_string(),
                 params: ParamMap::new(),

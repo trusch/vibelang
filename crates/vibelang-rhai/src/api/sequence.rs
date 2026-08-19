@@ -739,6 +739,7 @@ impl Fx {
         let group_id = context::get_or_create_group_id(&self.group_path);
 
         let config = EffectConfig {
+            name: self.id.clone(),
             synthdef: self.synth_name.clone().unwrap_or_default(),
             group: group_id,
             params: self.params.clone(),

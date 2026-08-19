@@ -1,5 +1,6 @@
 //! Sequences endpoint handlers.
 
+use crate::routes::resolve::resolve_sequence_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -16,45 +17,6 @@ use crate::{
     },
     AppState,
 };
-
-/// Resolve a sequence identifier (either numeric ID or string name) to a SequenceId.
-async fn resolve_sequence_id(
-    state: &Arc<AppState>,
-    identifier: &str,
-) -> Result<SequenceId, (StatusCode, Json<ErrorResponse>)> {
-    // First, try to parse as a numeric ID
-    if let Ok(num_id) = identifier.parse::<u32>() {
-        let sequence_id = SequenceId::new(num_id);
-        let exists = state
-            .with_state(|s| s.sequences.contains_key(&sequence_id))
-            .await;
-        if exists {
-            return Ok(sequence_id);
-        }
-        // Fall through to try as name if numeric ID not found
-    }
-
-    // Try to find by name
-    let found = state
-        .with_state(|s| {
-            s.sequences
-                .iter()
-                .find(|(_, ss)| ss.config.name == identifier)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    match found {
-        Some(id) => Ok(id),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Sequence '{}' not found",
-                identifier
-            ))),
-        )),
-    }
-}
 
 /// Convert a Clip enum to API model
 fn clip_to_api(clip: &Clip) -> SequenceClip {

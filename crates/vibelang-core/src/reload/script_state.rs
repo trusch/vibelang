@@ -138,6 +138,9 @@ pub enum GroupAliasError {
 /// Configuration for an effect (from script, no runtime IDs).
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectConfig {
+    /// Script name this effect was declared under (`fx("name")`).
+    pub name: String,
+
     /// Group this effect belongs to.
     pub group: GroupId,
 

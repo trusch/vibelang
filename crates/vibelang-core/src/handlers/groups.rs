@@ -975,6 +975,7 @@ mod tests {
             state.effects.insert(
                 EffectId::new(7),
                 crate::state::EffectState {
+                    name: String::new(),
                     id: EffectId::new(7),
                     group: parent_id,
                     synthdef: "ladder_filter".to_string(),

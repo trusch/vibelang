@@ -1,5 +1,6 @@
 //! Patterns endpoint handlers.
 
+use crate::routes::resolve::resolve_pattern_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -19,45 +20,6 @@ use crate::{
     },
     AppState,
 };
-
-/// Resolve a pattern identifier (either numeric ID or string name) to a PatternId.
-async fn resolve_pattern_id(
-    state: &Arc<AppState>,
-    identifier: &str,
-) -> Result<PatternId, (StatusCode, Json<ErrorResponse>)> {
-    // First, try to parse as a numeric ID
-    if let Ok(num_id) = identifier.parse::<u32>() {
-        let pattern_id = PatternId::new(num_id);
-        let exists = state
-            .with_state(|s| s.patterns.contains_key(&pattern_id))
-            .await;
-        if exists {
-            return Ok(pattern_id);
-        }
-        // Fall through to try as name if numeric ID not found
-    }
-
-    // Try to find by name
-    let found = state
-        .with_state(|s| {
-            s.patterns
-                .iter()
-                .find(|(_, ps)| ps.content.name == identifier)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    match found {
-        Some(id) => Ok(id),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Pattern '{}' not found",
-                identifier
-            ))),
-        )),
-    }
-}
 
 /// Convert internal PatternState to API Pattern model
 fn pattern_to_api(

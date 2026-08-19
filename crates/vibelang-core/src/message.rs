@@ -299,6 +299,7 @@ pub enum EffectMessage {
     /// Add an effect to a group.
     Add {
         id: EffectId,
+        name: String,
         group: GroupId,
         synthdef: String,
         params: ParamMap,

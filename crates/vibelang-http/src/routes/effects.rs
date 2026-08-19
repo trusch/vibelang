@@ -1,54 +1,18 @@
 //! Effects endpoint handlers.
 
+use crate::routes::resolve::resolve_effect_id;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::{hash_name_to_id, EffectId, EffectMessage};
+use vibelang_core::{EffectId, EffectMessage};
 
 use crate::{
     models::{Effect, EffectUpdate, ErrorResponse, ParamSet},
     AppState,
 };
-
-/// Resolve an effect identifier (numeric ID or `fx("name")` script name).
-///
-/// Effect ids are the FNV-1a hash of the script name (`hash_name_to_id`),
-/// so a non-numeric identifier resolves by hashing it — the same derivation
-/// the scripting layer uses. A numeric identifier is tried as a raw id first
-/// and falls back to the name hash when no effect carries that id, so an
-/// effect declared as `fx("123")` stays reachable. Existence is checked
-/// against live state either way, mirroring `resolve_voice_id` in the voices
-/// routes.
-async fn resolve_effect_id(
-    state: &Arc<AppState>,
-    id: &str,
-) -> Result<EffectId, (StatusCode, Json<ErrorResponse>)> {
-    // A numeric identifier wins when it addresses a live effect...
-    if let Ok(num_id) = id.parse::<u32>() {
-        let numeric = EffectId::new(num_id);
-        if state.with_state(|s| s.effects.contains_key(&numeric)).await {
-            return Ok(numeric);
-        }
-        // ...otherwise fall through, so `fx("123")` stays addressable by name.
-    }
-
-    let hashed = EffectId::new(hash_name_to_id(id));
-    let exists = state.with_state(|s| s.effects.contains_key(&hashed)).await;
-    if exists {
-        Ok(hashed)
-    } else {
-        Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Effect '{}' not found",
-                id
-            ))),
-        ))
-    }
-}
 
 /// Convert internal EffectState to API Effect model
 fn effect_to_api(id: &EffectId, state: &vibelang_core::EffectState) -> Effect {

@@ -98,6 +98,7 @@ impl<B: Backend> Effects for EffectsHandler<B> {
     async fn add(
         &self,
         id: EffectId,
+        name: &str,
         group: GroupId,
         synthdef: &str,
         params: &ParamMap,
@@ -140,6 +141,7 @@ impl<B: Backend> Effects for EffectsHandler<B> {
                 id,
                 EffectState {
                     id,
+                    name: name.to_string(),
                     group,
                     synthdef: synthdef.to_string(),
                     node_id,
@@ -456,7 +458,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         let result = handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await;
 
         assert!(result.is_ok(), "Adding effect should succeed");
@@ -473,12 +475,12 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
         let result = handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await;
 
         assert!(result.is_err(), "Duplicate effect should fail");
@@ -491,7 +493,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         let result = handler
-            .add(effect_id, GroupId::new(999), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(999), "reverb", &ParamMap::new())
             .await;
 
         assert!(result.is_err(), "Should fail with non-existent group");
@@ -506,6 +508,7 @@ mod tests {
         let result = handler
             .add(
                 effect_id,
+                "",
                 GroupId::new(1),
                 "nonexistent_fx",
                 &ParamMap::new(),
@@ -526,7 +529,7 @@ mod tests {
         params.insert("mix".to_string(), 0.3);
 
         let result = handler
-            .add(effect_id, GroupId::new(1), "reverb", &params)
+            .add(effect_id, "", GroupId::new(1), "reverb", &params)
             .await;
 
         assert!(result.is_ok());
@@ -547,11 +550,11 @@ mod tests {
         let effect2 = EffectId::new(2);
 
         handler
-            .add(effect1, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect1, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
         handler
-            .add(effect2, GroupId::new(1), "delay", &ParamMap::new())
+            .add(effect2, "", GroupId::new(1), "delay", &ParamMap::new())
             .await
             .unwrap();
 
@@ -573,7 +576,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
@@ -615,7 +618,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
@@ -647,7 +650,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
@@ -675,7 +678,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
@@ -695,7 +698,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 
@@ -711,7 +714,7 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         handler
-            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .add(effect_id, "", GroupId::new(1), "reverb", &ParamMap::new())
             .await
             .unwrap();
 

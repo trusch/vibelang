@@ -1,5 +1,8 @@
 //! Fade endpoint handlers.
 
+use crate::routes::resolve::{
+    resolve_effect_id, resolve_group_id, resolve_melody_id, resolve_pattern_id, resolve_voice_id,
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -150,34 +153,7 @@ pub async fn fade_voice(
     Path(name): Path<String>,
     Json(req): Json<VoiceFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    // Find the voice by name
-    let voice_id = state
-        .with_state(|s| {
-            s.voices
-                .iter()
-                .find(|(_, v)| v.id.raw().to_string() == name || v.config.name == name)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    let voice_id = match voice_id {
-        Some(id) => id,
-        None => {
-            // Try parsing as numeric ID
-            match name.parse::<u32>() {
-                Ok(n) => VoiceId::new(n),
-                Err(_) => {
-                    return Err((
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse::not_found(&format!(
-                            "Voice '{}' not found",
-                            name
-                        ))),
-                    ));
-                }
-            }
-        }
-    };
+    let voice_id = resolve_voice_id(&state, &name).await?;
 
     let mut config = FadeConfig::new(
         FadeTarget::Voice(voice_id),
@@ -207,34 +183,7 @@ pub async fn fade_group(
     Path(path): Path<String>,
     Json(req): Json<GroupFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    // Find the group by path or name
-    let group_id = state
-        .with_state(|s| {
-            s.groups
-                .iter()
-                .find(|(_, g)| g.id.raw().to_string() == path || format!("{}", g.id) == path)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    let group_id = match group_id {
-        Some(id) => id,
-        None => {
-            // Try parsing as numeric ID
-            match path.parse::<u32>() {
-                Ok(n) => GroupId::new(n),
-                Err(_) => {
-                    return Err((
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse::not_found(&format!(
-                            "Group '{}' not found",
-                            path
-                        ))),
-                    ));
-                }
-            }
-        }
-    };
+    let group_id = resolve_group_id(&state, &path).await?;
 
     let mut config = FadeConfig::new(
         FadeTarget::Group(group_id),
@@ -264,15 +213,7 @@ pub async fn fade_effect(
     Path(id): Path<String>,
     Json(req): Json<EffectFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let effect_id = id.parse::<u32>().map(EffectId::new).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::bad_request(&format!(
-                "Invalid effect ID '{}': must be a number",
-                id
-            ))),
-        )
-    })?;
+    let effect_id = resolve_effect_id(&state, &id).await?;
 
     let mut config = FadeConfig::new(
         FadeTarget::Effect(effect_id),
@@ -336,30 +277,7 @@ pub async fn fade_pattern(
     Path(name): Path<String>,
     Json(req): Json<PatternFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let pattern_id = state
-        .with_state(|s| {
-            s.patterns
-                .iter()
-                .find(|(_, p)| p.id.raw().to_string() == name || p.content.name == name)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    let pattern_id = match pattern_id {
-        Some(id) => id,
-        None => match name.parse::<u32>() {
-            Ok(n) => PatternId::new(n),
-            Err(_) => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse::not_found(&format!(
-                        "Pattern '{}' not found",
-                        name
-                    ))),
-                ));
-            }
-        },
-    };
+    let pattern_id = resolve_pattern_id(&state, &name).await?;
 
     let mut config = FadeConfig::new(
         FadeTarget::Pattern(pattern_id),
@@ -389,30 +307,7 @@ pub async fn fade_melody(
     Path(name): Path<String>,
     Json(req): Json<MelodyFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let melody_id = state
-        .with_state(|s| {
-            s.melodies
-                .iter()
-                .find(|(_, m)| m.id.raw().to_string() == name || m.content.name == name)
-                .map(|(id, _)| *id)
-        })
-        .await;
-
-    let melody_id = match melody_id {
-        Some(id) => id,
-        None => match name.parse::<u32>() {
-            Ok(n) => MelodyId::new(n),
-            Err(_) => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse::not_found(&format!(
-                        "Melody '{}' not found",
-                        name
-                    ))),
-                ));
-            }
-        },
-    };
+    let melody_id = resolve_melody_id(&state, &name).await?;
 
     let mut config = FadeConfig::new(
         FadeTarget::Melody(melody_id),
@@ -454,43 +349,13 @@ pub async fn cancel_fade(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let target = match req.target_type {
         FadeTargetType::Group => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(GroupId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid group ID")),
-                    )
-                })?;
-            FadeTarget::Group(id)
+            FadeTarget::Group(resolve_group_id(&state, &req.target_name).await?)
         }
         FadeTargetType::Voice => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(VoiceId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid voice ID")),
-                    )
-                })?;
-            FadeTarget::Voice(id)
+            FadeTarget::Voice(resolve_voice_id(&state, &req.target_name).await?)
         }
         FadeTargetType::Effect => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(EffectId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid effect ID")),
-                    )
-                })?;
-            FadeTarget::Effect(id)
+            FadeTarget::Effect(resolve_effect_id(&state, &req.target_name).await?)
         }
     };
 
@@ -520,43 +385,13 @@ pub async fn start_fade(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let target = match req.target_type {
         FadeTargetType::Group => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(GroupId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid group ID")),
-                    )
-                })?;
-            FadeTarget::Group(id)
+            FadeTarget::Group(resolve_group_id(&state, &req.target_name).await?)
         }
         FadeTargetType::Voice => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(VoiceId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid voice ID")),
-                    )
-                })?;
-            FadeTarget::Voice(id)
+            FadeTarget::Voice(resolve_voice_id(&state, &req.target_name).await?)
         }
         FadeTargetType::Effect => {
-            let id = req
-                .target_name
-                .parse::<u32>()
-                .map(EffectId::new)
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse::bad_request("Invalid effect ID")),
-                    )
-                })?;
-            FadeTarget::Effect(id)
+            FadeTarget::Effect(resolve_effect_id(&state, &req.target_name).await?)
         }
     };
 
