@@ -11,10 +11,10 @@ use std::sync::Arc;
 use super::events::TimestampedMidiEvent;
 use super::parser::parse_midi_bytes;
 use super::queue::{MidiEventQueue, MidiEventSender};
-use super::send_panic_clear;
+use super::PacedPanicClearOutput;
 
 #[cfg(feature = "native")]
-use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput};
 
 use crossbeam_channel::Sender;
 use parking_lot::RwLock;
@@ -121,7 +121,7 @@ struct InputDeviceState {
 struct OutputDeviceState {
     info: MidiOutputInfo,
     #[cfg(feature = "native")]
-    connection: Option<MidiOutputConnection>,
+    connection: Option<PacedPanicClearOutput>,
     #[cfg(not(feature = "native"))]
     connection: Option<()>,
     /// Channel for the output thread.
@@ -337,13 +337,13 @@ impl MidiDeviceManager {
             .port_name(port)
             .unwrap_or_else(|_| format!("Output {}", id.0));
 
-        let mut connection = midi_out
+        let connection = midi_out
             .connect(port, "vibelang-output")
             .map_err(|e| format!("Failed to connect MIDI output: {}", e))?;
-
-        send_panic_clear(|message| {
-            let _ = connection.send(message);
-        });
+        let connection = PacedPanicClearOutput::new(
+            connection,
+            format!("{} (device-manager id={})", port_name, id.0),
+        )?;
 
         // Store state
         let mut outputs = self.outputs.write();
@@ -381,18 +381,17 @@ impl MidiDeviceManager {
     /// Send MIDI bytes to an output device.
     #[cfg(feature = "native")]
     pub fn send(&self, id: MidiOutputId, data: &[u8]) -> Result<(), String> {
-        let mut outputs = self.outputs.write();
+        let outputs = self.outputs.read();
         let state = outputs
-            .get_mut(&id)
+            .get(&id)
             .ok_or_else(|| format!("MIDI output {} not found", id.0))?;
 
         let conn = state
             .connection
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| format!("MIDI output {} not connected", id.0))?;
 
         conn.send(data)
-            .map_err(|e| format!("Failed to send MIDI: {}", e))
     }
 
     /// Get info about a connected input device.

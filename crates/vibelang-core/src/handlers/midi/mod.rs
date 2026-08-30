@@ -71,8 +71,8 @@ use crate::handlers::ParamRouteTarget;
 use crate::message::{Message, PatternMessage, VoiceMessage};
 #[cfg(feature = "midi")]
 use crate::midi::send_cc_for_param;
-use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
+use crate::midi::{PacedPanicClearOutput, PerNoteStateManager};
 use crate::reload::LooperConfig;
 use crate::state::{PatternOwner, State};
 #[cfg(feature = "midi")]
@@ -82,7 +82,7 @@ use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
-use midir::{MidiInputConnection, MidiOutputConnection};
+use midir::MidiInputConnection;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -199,8 +199,9 @@ pub struct MidiHandler<B: Backend> {
     /// Whether the active generation's script routes have been installed.
     input_routes_ready: AtomicBool,
 
-    /// Open output connections (uses std::sync::Mutex because MidiOutputConnection is !Send).
-    outputs: Arc<Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>>,
+    /// Open output workers. Each worker owns its midir connection so open-time
+    /// clear traffic cannot block live messages on the runtime thread.
+    outputs: Arc<Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>>,
 
     /// Open PipeWire raw UMP input connections.
     #[cfg(feature = "pipewire-midi2")]

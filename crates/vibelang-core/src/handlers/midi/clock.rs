@@ -5,10 +5,9 @@
 //! Rust runtime tick loop, synchronized with the transport beat position.
 
 use crate::compat::RwLock;
-use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+use crate::midi::{PacedPanicClearOutput, QueuedMidiEvent, ScheduledMidiEvent};
 use crate::types::ids::MidiDeviceId;
 use crossbeam_channel::Sender;
-use midir::MidiOutputConnection;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -50,18 +49,18 @@ impl MidiClockManager {
     /// Send MIDI clock tick to all devices with clock output enabled.
     pub async fn send_clock_tick(
         &self,
-        outputs: &Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>,
+        outputs: &Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>,
     ) -> crate::Result<()> {
         let clock_devices = self.clock_output_devices.read().await;
         if clock_devices.is_empty() {
             return Ok(());
         }
 
-        let mut outputs = outputs
+        let outputs = outputs
             .lock()
             .map_err(|e| crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}")))?;
         for device_id in clock_devices.iter() {
-            if let Some(conn) = outputs.get_mut(device_id) {
+            if let Some(conn) = outputs.get(device_id) {
                 // MIDI Clock message is 0xF8
                 if let Err(e) = conn.send(&[0xF8]) {
                     tracing::warn!("Failed to send MIDI clock to device {}: {}", device_id.0, e);
@@ -80,7 +79,7 @@ impl MidiClockManager {
         &self,
         current_beat: f64,
         is_playing: bool,
-        outputs: &Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>,
+        outputs: &Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>,
     ) -> crate::Result<()> {
         let clock_devices = self.clock_output_devices.read().await;
         if clock_devices.is_empty() {
@@ -113,12 +112,12 @@ impl MidiClockManager {
         let ticks_to_send = (beat_diff * PPQN).floor() as u32;
 
         if ticks_to_send > 0 {
-            let mut outputs = outputs.lock().map_err(|e| {
+            let outputs = outputs.lock().map_err(|e| {
                 crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}"))
             })?;
 
             for device_id in clock_devices.iter() {
-                if let Some(conn) = outputs.get_mut(device_id) {
+                if let Some(conn) = outputs.get(device_id) {
                     for _ in 0..ticks_to_send {
                         // MIDI Clock message is 0xF8
                         if let Err(e) = conn.send(&[0xF8]) {
@@ -151,7 +150,7 @@ impl MidiClockManager {
     pub async fn enable_clock_output(
         &self,
         device: MidiDeviceId,
-        outputs: &Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>,
+        outputs: &Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>,
         output_channels: &Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>,
     ) -> crate::Result<()> {
         // Ensure output device is open (or has an output channel)
@@ -207,7 +206,7 @@ impl MidiClockManager {
     pub async fn send_start_to_all_clock_devices(
         &self,
         output_channels: &Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>,
-        outputs: &Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>,
+        outputs: &Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>,
     ) -> crate::Result<()> {
         let clock_devices = self.clock_output_devices.read().await;
         for device in clock_devices.iter() {
@@ -224,8 +223,8 @@ impl MidiClockManager {
                 false
             };
             if !sent_via_channel {
-                if let Ok(mut out) = outputs.lock() {
-                    if let Some(conn) = out.get_mut(device) {
+                if let Ok(out) = outputs.lock() {
+                    if let Some(conn) = out.get(device) {
                         if let Err(e) = conn.send(&[0xFA]) {
                             tracing::warn!(
                                 "Failed to send MIDI Start to device {}: {}",
@@ -247,7 +246,7 @@ impl MidiClockManager {
     pub async fn send_stop_to_all_clock_devices(
         &self,
         output_channels: &Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>,
-        outputs: &Mutex<HashMap<MidiDeviceId, MidiOutputConnection>>,
+        outputs: &Mutex<HashMap<MidiDeviceId, PacedPanicClearOutput>>,
     ) -> crate::Result<()> {
         let clock_devices = self.clock_output_devices.read().await;
         for device in clock_devices.iter() {
@@ -264,8 +263,8 @@ impl MidiClockManager {
                 false
             };
             if !sent_via_channel {
-                if let Ok(mut out) = outputs.lock() {
-                    if let Some(conn) = out.get_mut(device) {
+                if let Ok(out) = outputs.lock() {
+                    if let Some(conn) = out.get(device) {
                         if let Err(e) = conn.send(&[0xFC]) {
                             tracing::warn!(
                                 "Failed to send MIDI Stop to device {}: {}",

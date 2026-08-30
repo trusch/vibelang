@@ -4,7 +4,7 @@
 //! with low latency and proper timing.
 
 use crate::compat::{Duration, Instant};
-use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+use crate::midi::{PacedPanicClearOutput, QueuedMidiEvent, ScheduledMidiEvent};
 use crate::traits::MidiOutputCapability;
 use crate::types::ids::MidiDeviceId;
 use crate::Error;
@@ -915,10 +915,10 @@ pub fn detect_midi2_capability(device_name: &str) -> MidiOutputCapability {
 /// (PipeWire, CoreMIDI) can upscale these back to MIDI 2.0 for the device.
 /// The key difference is semantic: we preserve high-resolution intent internally.
 pub fn send_midi2_event_to_device(
-    conn: &mut MidiOutputConnection,
+    conn: &mut PacedPanicClearOutput,
     event: &QueuedMidiEvent,
     capability: MidiOutputCapability,
-) -> std::result::Result<(), midir::SendError> {
+) -> std::result::Result<(), String> {
     match capability {
         MidiOutputCapability::Midi2Native | MidiOutputCapability::Midi2ViaTranslation => {
             // MIDI 2.0 capable device/system
