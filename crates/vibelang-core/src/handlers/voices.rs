@@ -1978,7 +1978,9 @@ fn midi_pool_entry(state: &mut State, id: VoiceId, n: usize) -> &mut MidiVoicePo
 ///
 /// Drives the `n`-slot pool for a MIDI-output voice (`poly(1)` is `n == 1`)
 /// and returns the MIDI events to emit in order. Re-pressing a sounding note
-/// retriggers it (`NoteOn` re-sent). A free slot takes the new note directly.
+/// retriggers it with `NoteOff` then `NoteOn` at the same deadline, so every
+/// physical onset is balanced even when two same-pitch gates overlap. A free
+/// slot takes the new note directly.
 /// When every slot is full the oldest-allocated slot is stolen: its note is
 /// pushed to the overflow stack and the events are `NoteOff(stolen)` (skipped
 /// when `legato`, so portamento synths slur) then `NoteOn(new)`.
@@ -1994,7 +1996,8 @@ fn midi_pool_note_on(
 ) -> Vec<QueuedMidiEvent> {
     let pool = midi_pool_entry(state, id, n);
 
-    // 1. Already sounding in a slot → retrigger, refresh allocation order.
+    // 1. Already sounding in a slot → balance the previous physical onset,
+    // retrigger at the same deadline, and refresh allocation order.
     if let Some(slot) = pool
         .slots
         .iter()
@@ -2003,11 +2006,14 @@ fn midi_pool_note_on(
         pool.slots[slot] = Some((note, velocity));
         pool.alloc_order.retain(|&i| i != slot);
         pool.alloc_order.push(slot);
-        return vec![QueuedMidiEvent::NoteOn {
-            channel,
-            note,
-            velocity,
-        }];
+        return vec![
+            QueuedMidiEvent::NoteOff { channel, note },
+            QueuedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            },
+        ];
     }
 
     // Re-pressing a held-but-stolen note: drop the stale overflow entry so it
@@ -3492,6 +3498,29 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn scheduled_same_pitch_retrigger_balances_at_retrigger_deadline() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let first = Instant::now() + Duration::from_millis(20);
+            let retrigger = first + Duration::from_millis(10);
+
+            handler.note_on_at(v, 60, 1.0, Some(first)).await.unwrap();
+            handler
+                .note_on_at(v, 60, 0.5, Some(retrigger))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                drained_scheduled(&rx),
+                vec![
+                    (first, "on", 0, 60, 127),
+                    (retrigger, "off", 0, 60, 0),
+                    (retrigger, "on", 0, 60, 63),
+                ]
+            );
+        }
+
+        #[tokio::test]
         async fn stale_delayed_same_pitch_note_off_does_not_release_retrigger() {
             let (handler, state, rx) = midi_handler();
             let v = make_midi_voice(&handler, &state, 1, false).await;
@@ -3500,7 +3529,10 @@ mod tests {
             let fresh_generation = handler.note_on_at_tracked(v, 60, 0.5, None).await.unwrap();
 
             assert_ne!(stale_generation, fresh_generation);
-            assert_eq!(drained(&rx), vec![("on", 0, 60, 127), ("on", 0, 60, 63)]);
+            assert_eq!(
+                drained(&rx),
+                vec![("on", 0, 60, 127), ("off", 0, 60, 0), ("on", 0, 60, 63),]
+            );
 
             handler
                 .note_off_at_if_generation(v, 60, stale_generation, None)
@@ -3525,7 +3557,10 @@ mod tests {
 
             let stale = handler.note_on_at_owned(v, 60, 1.0, None).await.unwrap();
             let fresh = handler.note_on_at_owned(v, 60, 0.5, None).await.unwrap();
-            assert_eq!(drained(&rx), vec![("on", 0, 60, 127), ("on", 0, 60, 63)]);
+            assert_eq!(
+                drained(&rx),
+                vec![("on", 0, 60, 127), ("off", 0, 60, 0), ("on", 0, 60, 63),]
+            );
 
             handler.finish_tracked_note_on(v, 60, stale).await.unwrap();
             assert!(
@@ -3783,8 +3818,8 @@ mod tests {
             );
         }
 
-        // Re-pressing an already-sounding note retriggers it (NoteOn re-sent
-        // with the new velocity) without stealing any slot.
+        // Re-pressing an already-sounding note balances the old physical
+        // onset, then retriggers with the new velocity without stealing a slot.
         #[tokio::test]
         async fn poly3_retrigger_held_note() {
             let (handler, state, rx) = midi_handler();
@@ -3796,7 +3831,12 @@ mod tests {
 
             assert_eq!(
                 drained(&rx),
-                vec![("on", 0, 60, 127), ("on", 0, 62, 127), ("on", 0, 60, 63)],
+                vec![
+                    ("on", 0, 60, 127),
+                    ("on", 0, 62, 127),
+                    ("off", 0, 60, 0),
+                    ("on", 0, 60, 63),
+                ],
             );
             // Still only two slots occupied — no steal happened.
             assert_eq!(state.read().await.midi_voice_pool[&v].overflow.len(), 0);
