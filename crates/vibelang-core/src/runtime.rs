@@ -9932,21 +9932,6 @@ mod tests {
             harness.runtime.tick().await;
             harness.settle().await;
 
-            assert_eq!(
-                harness.physical_rx.len(),
-                1,
-                "the aborted owner's late NoteOff must not cut the fresh same-pitch capture"
-            );
-
-            harness.enqueue(MidiMessage::NoteOff {
-                channel: Channel::new(INPUT_CHANNEL),
-                note: NOTE,
-                velocity: Velocity::ZERO,
-            });
-            harness.runtime.tick().await;
-            harness.runtime.tick().await;
-            harness.settle().await;
-
             let fresh_events = harness.drain_physical_trace();
             physical = PhysicalMultiplicity::default();
             physical.apply(&fresh_events);

@@ -87,7 +87,8 @@ pub enum LooperAction {
 pub struct LooperManager {
     instances: HashMap<LooperKey, LooperInstance>,
     /// Physical note-offs still owed by sources whose capture ownership was
-    /// already released on transport stop.
+    /// already released on transport stop, until either the late release or a
+    /// newer ordered onset for that source arrives.
     aborted_capture_note_offs: HashMap<(MidiDeviceId, u8, u8), usize>,
 }
 
@@ -244,6 +245,13 @@ impl LooperManager {
         let Some(key) = self.key_for_event(device_id, channel) else {
             return Vec::new();
         };
+
+        // A newer same-source onset is the ordered boundary of a fresh
+        // physical lifecycle. Stop debt from an earlier lifecycle must not
+        // consume this onset's eventual release.
+        self.aborted_capture_note_offs
+            .remove(&(device_id, channel, note));
+
         let Some(inst) = self.instances.get_mut(&key) else {
             return Vec::new();
         };
@@ -1044,9 +1052,6 @@ mod tests {
             }] if *voice_id == VoiceId::new(7)
         ));
         assert!(manager
-            .handle_note_off(capture_config.device_id, 0, 60, 1_000.1)
-            .is_empty());
-        assert!(manager
             .handle_note_off(capture_config.device_id, 1, 64, 1_000.1)
             .is_empty());
         assert_eq!(manager.instances[&capture_key].recording.pending_count(), 1);
@@ -1058,6 +1063,64 @@ mod tests {
                 if *voice_id == VoiceId::new(7)
         ));
         assert_eq!(manager.instances[&capture_key].recording.pending_count(), 0);
+    }
+
+    #[test]
+    fn fresh_same_source_onset_retires_stopped_capture_note_off_debt() {
+        let (mut manager, device_id) = setup(make_config(1, 7));
+
+        let old_on = manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        assert!(matches!(old_on.as_slice(), [LooperAction::NoteOn { .. }]));
+        let stopped = manager.abort_captures_on_transport_stop();
+        assert!(matches!(
+            stopped.as_slice(),
+            [LooperAction::NoteOff {
+                device_id: released_device,
+                channel: 0,
+                voice_id,
+                note: 60,
+            }] if *released_device == device_id && *voice_id == VoiceId::new(7)
+        ));
+
+        let fresh_on = manager.handle_note_on(device_id, 0, 60, 110, 1_000.0, 4);
+        assert!(matches!(
+            fresh_on.as_slice(),
+            [LooperAction::NoteOn {
+                device_id: onset_device,
+                channel: 0,
+                voice_id,
+                note: 60,
+                velocity: 110,
+            }] if *onset_device == device_id && *voice_id == VoiceId::new(7)
+        ));
+
+        let fresh_off = manager.handle_note_off(device_id, 0, 60, 1_000.25);
+        assert!(matches!(
+            fresh_off.as_slice(),
+            [LooperAction::NoteOff {
+                device_id: released_device,
+                channel: 0,
+                voice_id,
+                note: 60,
+            }] if *released_device == device_id && *voice_id == VoiceId::new(7)
+        ));
+        let key = LooperKey::new(device_id, None);
+        assert_eq!(manager.instances[&key].recording.pending_count(), 0);
+    }
+
+    #[test]
+    fn late_old_note_off_after_transport_stop_is_idempotent_without_fresh_onset() {
+        let (mut manager, device_id) = setup(make_config(1, 7));
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        let stopped = manager.abort_captures_on_transport_stop();
+        assert!(matches!(stopped.as_slice(), [LooperAction::NoteOff { .. }]));
+
+        let late_old_off = manager.handle_note_off(device_id, 0, 60, 1_000.0);
+
+        assert!(late_old_off.is_empty());
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
+        let key = LooperKey::new(device_id, None);
+        assert_eq!(manager.instances[&key].recording.pending_count(), 0);
     }
 
     #[test]
