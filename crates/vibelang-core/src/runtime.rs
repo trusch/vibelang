@@ -9365,7 +9365,7 @@ mod tests {
         use crate::state::PatternOwner;
         use crate::traits::VoiceConfig;
         use crate::types::{MidiDeviceId, PatternId};
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashMap;
         use std::time::Duration;
 
         const INPUT_DEVICE: u32 = 41;
@@ -9518,7 +9518,7 @@ mod tests {
                 );
 
                 let mut counts = HashMap::<(u8, u8), (usize, usize)>::new();
-                let mut sounding = HashSet::new();
+                let mut outstanding = HashMap::<(u8, u8), usize>::new();
                 for (_, scheduled) in scheduled {
                     match scheduled.event {
                         QueuedMidiEvent::NoteOn { channel, note, .. } => {
@@ -9527,7 +9527,7 @@ mod tests {
                                 "event leaked onto MIDI channel {channel}"
                             );
                             counts.entry((channel, note)).or_default().0 += 1;
-                            sounding.insert((channel, note));
+                            *outstanding.entry((channel, note)).or_default() += 1;
                         }
                         QueuedMidiEvent::NoteOff { channel, note } => {
                             assert!(
@@ -9535,7 +9535,8 @@ mod tests {
                                 "cleanup leaked onto MIDI channel {channel}"
                             );
                             counts.entry((channel, note)).or_default().1 += 1;
-                            sounding.remove(&(channel, note));
+                            let count = outstanding.entry((channel, note)).or_default();
+                            *count = count.saturating_sub(1);
                         }
                         other => panic!("unexpected physical MIDI event: {other:?}"),
                     }
@@ -9548,8 +9549,8 @@ mod tests {
                     );
                 }
                 assert!(
-                    sounding.is_empty(),
-                    "physical MIDI notes still sounding after cleanup: {sounding:?}"
+                    outstanding.values().all(|count| *count == 0),
+                    "physical MIDI multiplicity remains after cleanup: {outstanding:?}"
                 );
                 counts
             }
@@ -9594,24 +9595,30 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn same_pitch_restart_balances_a_note_on_already_queued_by_lookahead() {
+        async fn same_pitch_restart_held_past_old_gate_releases_once_to_zero() {
             let voice = VoiceId::new(1);
             let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
             harness.capture_and_schedule().await;
 
             // Re-pressing the same pitch while Playing stops/deletes the old
-            // pattern and starts a replacement capture. The old onset is
-            // already queued for the bar line; release the replacement before
-            // that onset to exercise the physical-delivery cleanup token.
+            // pattern and starts a replacement capture. Keep the replacement
+            // held beyond the old queued onset and gate deadline: the stale
+            // gate must recover its onset without consuming fresh ownership.
             harness.note_on(3.97, INPUT_CHANNEL, NOTE).await;
-            harness.note_off(3.98, INPUT_CHANNEL, NOTE).await;
             harness.settle().await;
+            assert!(harness.runtime.state.read().await.midi_voice_pool[&voice]
+                .slots
+                .iter()
+                .flatten()
+                .any(|(note, _)| *note == NOTE));
+
+            harness.note_off(4.2, INPUT_CHANNEL, NOTE).await;
 
             let counts = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
             let (note_ons, note_offs) = counts[&(FIRST_OUTPUT_CHANNEL, NOTE)];
             assert!(
-                note_ons >= 3,
-                "capture, queued loop, and restart must all run"
+                note_ons >= 4,
+                "capture, queued loop, restart, and fresh reassertion must all run"
             );
             assert!(note_offs >= note_ons);
         }

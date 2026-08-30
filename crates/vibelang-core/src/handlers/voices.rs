@@ -54,6 +54,7 @@ enum TrackedNoteDelivery {
         device_id: MidiDeviceId,
         channel: u8,
         polyphony: usize,
+        lookahead_queued: bool,
     },
 }
 
@@ -473,6 +474,11 @@ impl<B: Backend> VoicesHandler<B> {
         let (generation, events) = {
             let mut state = self.state.write().await;
             let generation = bump_note_generation(&mut state, id, note);
+            if let Some(deadline) = at {
+                state
+                    .midi_note_on_deadlines
+                    .insert((id, note), (generation, deadline));
+            }
             let events =
                 midi_pool_note_on(&mut state, id, channel, note, velocity, polyphony, legato);
             (generation, events)
@@ -502,7 +508,7 @@ impl<B: Backend> VoicesHandler<B> {
     ) -> Result<()> {
         let events = {
             let mut state = self.state.write().await;
-            state.voice_note_generations.remove(&(id, note));
+            clear_note_generation(&mut state, id, note);
             midi_pool_note_off(&mut state, id, channel, note, polyphony)
         };
         for event in events {
@@ -620,6 +626,7 @@ impl<B: Backend> VoicesHandler<B> {
                     device_id,
                     channel: midi_channel,
                     polyphony,
+                    lookahead_queued: timestamp.is_some(),
                 },
             });
         }
@@ -1047,7 +1054,7 @@ impl<B: Backend> VoicesHandler<B> {
     async fn note_off_audio_at(&self, id: VoiceId, note: u8, at: Option<Instant>) -> Result<()> {
         let node_to_release = {
             let mut state = self.state.write().await;
-            state.voice_note_generations.remove(&(id, note));
+            clear_note_generation(&mut state, id, note);
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             voice.note_nodes.remove(&note)
         };
@@ -1101,7 +1108,7 @@ impl<B: Backend> VoicesHandler<B> {
             let midi_channel = voice.config.midi_channel;
             let polyphony = voice.config.polyphony as usize;
 
-            state.voice_note_generations.remove(&(id, note));
+            clear_note_generation(&mut state, id, note);
 
             if let Some(device_id) = midi_output {
                 let events = midi_pool_note_off(&mut state, id, midi_channel, note, polyphony);
@@ -1163,7 +1170,7 @@ impl<B: Backend> VoicesHandler<B> {
                     if state.voice_note_generations.get(&(id, note)).copied()
                         == Some(tracked.generation)
                     {
-                        state.voice_note_generations.remove(&(id, note));
+                        clear_note_generation(&mut state, id, note);
                         if let Some(voice) = state.voices.get_mut(&id) {
                             if voice.note_nodes.get(&note).copied() == Some(node_id) {
                                 voice.note_nodes.remove(&note);
@@ -1180,20 +1187,90 @@ impl<B: Backend> VoicesHandler<B> {
                 device_id,
                 channel,
                 polyphony,
+                lookahead_queued,
             } => {
-                let events = {
+                let recovery_at = Instant::now();
+                let deliveries = {
                     let mut state = self.state.write().await;
                     match state.voice_note_generations.get(&(id, note)).copied() {
-                        Some(generation) if generation != tracked.generation => Vec::new(),
-                        Some(_) => {
-                            state.voice_note_generations.remove(&(id, note));
-                            midi_pool_note_off(&mut state, id, channel, note, polyphony)
+                        Some(generation) if generation != tracked.generation => {
+                            if !lookahead_queued {
+                                Vec::new()
+                            } else {
+                                // The stale lookahead onset was already handed to the
+                                // physical output queue before logical ownership moved
+                                // to `generation`. Recover that old endpoint, then reset
+                                // and reassert a fresh same-pitch note that is still in a
+                                // sounding pool slot on that same endpoint. One NoteOff
+                                // consumes the old queued onset and the other resets hardware
+                                // whose same-pitch gate cannot distinguish generations; the
+                                // final NoteOn leaves exactly one physical onset owned by the
+                                // fresh generation. A retargeted endpoint stays untouched.
+                                let mut deliveries =
+                                    vec![(device_id, QueuedMidiEvent::NoteOff { channel, note })];
+                                let fresh_onset_is_due = !matches!(
+                                    state.midi_note_on_deadlines.get(&(id, note)),
+                                    Some((queued_generation, deadline))
+                                        if *queued_generation == generation
+                                            && *deadline > recovery_at
+                                );
+                                let fresh_delivery = if fresh_onset_is_due {
+                                    state.voices.get(&id).and_then(|voice| {
+                                        let fresh_device = voice.config.midi_output?;
+                                        let fresh_channel = voice.config.midi_channel;
+                                        if fresh_device != device_id || fresh_channel != channel {
+                                            return None;
+                                        }
+                                        let fresh_velocity = state
+                                            .midi_voice_pool
+                                            .get(&id)?
+                                            .slots
+                                            .iter()
+                                            .flatten()
+                                            .find_map(|(slot_note, velocity)| {
+                                                (*slot_note == note).then_some(*velocity)
+                                            })?;
+                                        Some((fresh_device, fresh_channel, fresh_velocity))
+                                    })
+                                } else {
+                                    None
+                                };
+                                if let Some((fresh_device, fresh_channel, fresh_velocity)) =
+                                    fresh_delivery
+                                {
+                                    deliveries.push((
+                                        fresh_device,
+                                        QueuedMidiEvent::NoteOff {
+                                            channel: fresh_channel,
+                                            note,
+                                        },
+                                    ));
+                                    deliveries.push((
+                                        fresh_device,
+                                        QueuedMidiEvent::NoteOn {
+                                            channel: fresh_channel,
+                                            note,
+                                            velocity: fresh_velocity,
+                                        },
+                                    ));
+                                }
+                                deliveries
+                            }
                         }
-                        None => vec![QueuedMidiEvent::NoteOff { channel, note }],
+                        Some(_) => {
+                            clear_note_generation(&mut state, id, note);
+                            midi_pool_note_off(&mut state, id, channel, note, polyphony)
+                                .into_iter()
+                                .map(|event| (device_id, event))
+                                .collect()
+                        }
+                        None => vec![(device_id, QueuedMidiEvent::NoteOff { channel, note })],
                     }
                 };
-                for event in events {
-                    let _ = self.send_midi_event_now(device_id, event).await;
+                for (delivery_device, event) in deliveries {
+                    let _ = self
+                        .send_midi_event_at(delivery_device, event, Some(recovery_at))
+                        .await;
                 }
             }
         }
@@ -1205,12 +1282,21 @@ fn bump_note_generation(state: &mut State, id: VoiceId, note: u8) -> u64 {
     let generation = state.next_voice_note_generation;
     state.next_voice_note_generation = state.next_voice_note_generation.saturating_add(1).max(1);
     state.voice_note_generations.insert((id, note), generation);
+    state.midi_note_on_deadlines.remove(&(id, note));
     generation
+}
+
+fn clear_note_generation(state: &mut State, id: VoiceId, note: u8) {
+    state.voice_note_generations.remove(&(id, note));
+    state.midi_note_on_deadlines.remove(&(id, note));
 }
 
 fn clear_voice_note_generations(state: &mut State, id: VoiceId) {
     state
         .voice_note_generations
+        .retain(|(voice_id, _), _| *voice_id != id);
+    state
+        .midi_note_on_deadlines
         .retain(|(voice_id, _), _| *voice_id != id);
 }
 
@@ -3570,6 +3656,92 @@ mod tests {
 
             handler.finish_tracked_note_on(v, 60, fresh).await.unwrap();
             assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
+        }
+
+        #[tokio::test]
+        async fn stale_gate_does_not_pull_fresh_quantized_onset_forward() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let old_onset = Instant::now() + Duration::from_millis(10);
+
+            let stale = handler
+                .note_on_at_owned(v, 60, 1.0, Some(old_onset))
+                .await
+                .unwrap();
+            handler.note_off(v, 60).await.unwrap();
+            let fresh_onset = Instant::now() + Duration::from_millis(100);
+            let fresh = handler
+                .note_on_at_owned(v, 60, 0.5, Some(fresh_onset))
+                .await
+                .unwrap();
+            let _ = drained(&rx);
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            handler.finish_tracked_note_on(v, 60, stale).await.unwrap();
+
+            let recovery = drained_scheduled(&rx);
+            assert_eq!(recovery.len(), 1);
+            assert_eq!(
+                (recovery[0].1, recovery[0].2, recovery[0].3),
+                ("off", 0, 60),
+                "the stale onset needs recovery, but the fresh onset must keep its deadline"
+            );
+            assert!(recovery[0].0 < fresh_onset);
+            let state = state.read().await;
+            assert_eq!(
+                state.voice_note_generations.get(&(v, 60)),
+                Some(&fresh.generation)
+            );
+            assert_eq!(
+                state.midi_note_on_deadlines.get(&(v, 60)),
+                Some(&(fresh.generation, fresh_onset))
+            );
+        }
+
+        #[tokio::test]
+        async fn stale_gate_recovery_does_not_touch_fresh_different_endpoint() {
+            let (handler, state, old_rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let (fresh_tx, fresh_rx) = crossbeam_channel::unbounded();
+            let fresh_device = MidiDeviceId::new(DEV as u32 + 1);
+            handler
+                .midi_outputs
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .insert(fresh_device, fresh_tx);
+
+            let stale = handler
+                .note_on_at_owned(v, 60, 1.0, Some(Instant::now() + Duration::from_millis(10)))
+                .await
+                .unwrap();
+            handler.note_off(v, 60).await.unwrap();
+            {
+                let mut state = state.write().await;
+                let voice = state.voices.get_mut(&v).unwrap();
+                voice.config.midi_output = Some(fresh_device);
+                voice.config.midi_channel = 9;
+            }
+            let fresh = handler.note_on_at_owned(v, 60, 0.5, None).await.unwrap();
+            let _ = drained(&old_rx);
+            assert_eq!(drained(&fresh_rx), vec![("on", 9, 60, 63)]);
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            handler.finish_tracked_note_on(v, 60, stale).await.unwrap();
+
+            assert_eq!(drained(&old_rx), vec![("off", 0, 60, 0)]);
+            assert!(
+                drained(&fresh_rx).is_empty(),
+                "old-endpoint recovery must not reset or reassert a fresh endpoint"
+            );
+            assert_eq!(
+                state.read().await.voice_note_generations.get(&(v, 60)),
+                Some(&fresh.generation)
+            );
+
+            handler.note_off(v, 60).await.unwrap();
+            assert_eq!(drained(&fresh_rx), vec![("off", 9, 60, 0)]);
         }
 
         /// Dispatching a full tick's batch of future-timestamped MIDI notes

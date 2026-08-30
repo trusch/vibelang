@@ -1346,6 +1346,12 @@ pub struct State {
     /// delayed note-offs only release if the same generation is still active.
     pub voice_note_generations: HashMap<(VoiceId, u8), u64>,
 
+    /// Physical onset deadline for a lookahead-queued MIDI note generation.
+    ///
+    /// A stale gate may reassert a newer same-pitch generation only after this
+    /// deadline; otherwise it would pull a quantized future onset forward.
+    pub midi_note_on_deadlines: HashMap<(VoiceId, u8), (u64, Instant)>,
+
     /// Monotonic source for [`Self::voice_note_generations`].
     pub next_voice_note_generation: u64,
 }
@@ -1456,6 +1462,7 @@ impl Default for State {
             #[cfg(feature = "midi")]
             midi_readiness: crate::midi::MidiReadiness::default(),
             voice_note_generations: HashMap::new(),
+            midi_note_on_deadlines: HashMap::new(),
             next_voice_note_generation: 1,
         }
     }

@@ -1024,12 +1024,13 @@ mod tests {
             use super::*;
             use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
             use crate::types::MidiDeviceId;
-            use std::collections::{HashMap, HashSet};
+            use std::collections::HashMap;
 
             const MIDI_DEVICE: u32 = 7;
             const NOTE: u8 = 60;
 
             async fn setup() -> (
+                Arc<RwLock<State>>,
                 Arc<VoicesHandler<SchedulingBackend>>,
                 PatternsHandler<SchedulingBackend>,
                 VoiceId,
@@ -1077,7 +1078,7 @@ mod tests {
                     .expect("MIDI voice creation");
 
                 let pattern_id = PatternId::new(1);
-                let handler = PatternsHandler::new(state, voices.clone());
+                let handler = PatternsHandler::new(state.clone(), voices.clone());
                 let mut params = ParamMap::new();
                 params.insert("note".to_string(), NOTE as f32);
                 params.insert("amp".to_string(), 1.0);
@@ -1100,67 +1101,117 @@ mod tests {
                     .expect("pattern creation");
                 handler.start(pattern_id).await.expect("pattern start");
 
-                (voices, handler, voice_id, pattern_id, rx)
+                (state, voices, handler, voice_id, pattern_id, rx)
             }
 
-            fn physically_sounding(
-                rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
-            ) -> HashSet<(u8, u8)> {
-                let mut events: Vec<_> = rx.try_iter().enumerate().collect();
-                events.sort_by(|(left_seq, left), (right_seq, right)| {
+            fn physical_multiplicity(
+                events: &[ScheduledMidiEvent],
+            ) -> (Vec<(&'static str, u8, u8)>, HashMap<(u8, u8), usize>) {
+                let mut ordered: Vec<_> = events.iter().enumerate().collect();
+                ordered.sort_by(|(left_seq, left), (right_seq, right)| {
                     left.timestamp
                         .cmp(&right.timestamp)
                         .then(left_seq.cmp(right_seq))
                 });
 
-                let mut sounding = HashSet::new();
-                for (_, scheduled) in events {
-                    match scheduled.event {
+                let mut trace = Vec::new();
+                let mut outstanding = HashMap::<(u8, u8), usize>::new();
+                for (_, scheduled) in ordered {
+                    match &scheduled.event {
                         QueuedMidiEvent::NoteOn { channel, note, .. } => {
-                            sounding.insert((channel, note));
+                            *outstanding.entry((*channel, *note)).or_default() += 1;
+                            trace.push(("on", *channel, *note));
                         }
                         QueuedMidiEvent::NoteOff { channel, note } => {
-                            sounding.remove(&(channel, note));
+                            let count = outstanding.entry((*channel, *note)).or_default();
+                            *count = count.saturating_sub(1);
+                            trace.push(("off", *channel, *note));
                         }
                         other => panic!("unexpected MIDI event: {other:?}"),
                     }
                 }
-                sounding
+                (trace, outstanding)
+            }
+
+            fn outstanding_from(
+                rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
+            ) -> HashMap<(u8, u8), usize> {
+                let events: Vec<_> = rx.try_iter().collect();
+                physical_multiplicity(&events).1
             }
 
             #[tokio::test]
             async fn stop_balances_note_on_already_queued_in_lookahead() {
-                let (_voices, handler, _voice_id, pattern_id, rx) = setup().await;
+                let (_state, _voices, handler, _voice_id, pattern_id, rx) = setup().await;
 
                 handler.tick(Beat::ZERO).await;
                 handler.stop(pattern_id).await.expect("pattern stop");
                 tokio::time::sleep(Duration::from_millis(80)).await;
 
                 assert!(
-                    physically_sounding(&rx).is_empty(),
+                    outstanding_from(&rx).values().all(|count| *count == 0),
                     "the post-stop scheduled onset must still receive a physical note-off"
                 );
             }
 
             #[tokio::test]
-            async fn same_pitch_replacement_released_before_queued_onset_still_balances() {
-                let (voices, handler, voice_id, pattern_id, rx) = setup().await;
+            async fn same_pitch_replacement_held_past_old_gate_releases_once_to_zero() {
+                let (state, voices, handler, voice_id, pattern_id, rx) = setup().await;
 
                 handler.tick(Beat::ZERO).await;
+                let old_generation = state.read().await.voice_note_generations[&(voice_id, NOTE)];
                 handler.stop(pattern_id).await.expect("pattern stop");
+                {
+                    let state = state.read().await;
+                    assert!(!state.voice_note_generations.contains_key(&(voice_id, NOTE)));
+                    assert!(!state.midi_voice_pool.contains_key(&voice_id));
+                }
                 voices
                     .note_on(voice_id, NOTE, 1.0)
                     .await
                     .expect("replacement note-on");
+                let fresh_generation = state.read().await.voice_note_generations[&(voice_id, NOTE)];
+                assert_ne!(old_generation, fresh_generation);
+
+                // Keep the replacement held until after the queued old onset
+                // and its gate deadline have both passed.
+                tokio::time::sleep(Duration::from_millis(80)).await;
+                {
+                    let state = state.read().await;
+                    assert_eq!(
+                        state.voice_note_generations.get(&(voice_id, NOTE)),
+                        Some(&fresh_generation)
+                    );
+                    assert!(state.midi_voice_pool[&voice_id]
+                        .slots
+                        .iter()
+                        .flatten()
+                        .any(|(note, _)| *note == NOTE));
+                }
+
+                let mut events: Vec<_> = rx.try_iter().collect();
+                let (trace, outstanding) = physical_multiplicity(&events);
+                assert_eq!(
+                    trace.iter().map(|event| event.0).collect::<Vec<_>>(),
+                    vec!["off", "on", "on", "off", "off", "on"]
+                );
+                assert_eq!(
+                    outstanding.get(&(0, NOTE)),
+                    Some(&1),
+                    "the replacement must remain physically held after old-gate recovery: {trace:?}"
+                );
+
                 voices
                     .note_off(voice_id, NOTE)
                     .await
                     .expect("replacement note-off");
-                tokio::time::sleep(Duration::from_millis(80)).await;
+                events.extend(rx.try_iter());
+                let (trace, outstanding) = physical_multiplicity(&events);
 
-                assert!(
-                    physically_sounding(&rx).is_empty(),
-                    "the old scheduled onset must not outlive an earlier same-pitch replacement off"
+                assert_eq!(
+                    outstanding.get(&(0, NOTE)),
+                    Some(&0),
+                    "one replacement NoteOff must leave zero physical multiplicity: {trace:?}"
                 );
             }
         }
