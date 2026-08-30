@@ -743,7 +743,7 @@ impl<B: Backend> MidiHandler<B> {
                 action => pattern_actions.push(action),
             }
         }
-        self.dispatch_looper_actions(pattern_actions);
+        self.dispatch_looper_actions(pattern_actions).await;
 
         {
             let state = self.state.read().await;
@@ -1085,7 +1085,7 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.tick(current_beat, time_sig_num)
         };
-        self.dispatch_looper_actions(looper_actions);
+        self.dispatch_looper_actions(looper_actions).await;
 
         // Legacy ALSA ports have unstable numeric IDs. Re-resolve logical
         // intents after processing this tick's queued events so a disconnect
@@ -1237,14 +1237,14 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.reconcile(configs)
         };
-        self.dispatch_looper_actions(actions);
+        self.dispatch_looper_actions(actions).await;
     }
 
-    /// Dispatch a batch of looper actions to the runtime (non-blocking).
+    /// Dispatch a batch of looper actions without awaiting runtime channel capacity.
     ///
     /// Looper messages are dispatched as protected: they are parked (never
     /// dropped) when the runtime channel is full.
-    fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
+    async fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
         for action in actions {
             match action {
                 LooperAction::NoteOn {
@@ -1252,11 +1252,20 @@ impl<B: Backend> MidiHandler<B> {
                     note,
                     velocity,
                 } => {
+                    let voice_amp = self
+                        .state
+                        .read()
+                        .await
+                        .voices
+                        .get(&voice_id)
+                        .and_then(|voice| voice.config.params.get("amp"))
+                        .copied()
+                        .unwrap_or(1.0);
                     self.send_runtime_from_tick(
                         Message::Voice(VoiceMessage::NoteOn {
                             voice: voice_id,
                             note,
-                            velocity: velocity as f32 / 127.0,
+                            velocity: voice_amp * (velocity as f32 / 127.0),
                         }),
                         true,
                         "looper note_on",
@@ -1523,7 +1532,7 @@ impl<B: Backend> MidiHandler<B> {
                     time_sig_num,
                 )
             };
-            self.dispatch_looper_actions(actions);
+            self.dispatch_looper_actions(actions).await;
             return;
         }
 
@@ -1662,7 +1671,7 @@ impl<B: Backend> MidiHandler<B> {
                     .unwrap_or_else(|e| e.into_inner());
                 mgr.handle_note_off(device_id, channel, note, capture_beat)
             };
-            self.dispatch_looper_actions(actions);
+            self.dispatch_looper_actions(actions).await;
             return;
         }
 
@@ -2780,6 +2789,57 @@ mod tests {
         let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
         voices.create(voice_id, config.clone()).await.unwrap();
         config
+    }
+
+    async fn dispatch_looper_note_on(base_amp: Option<f32>) -> f32 {
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        let mut config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        if let Some(base_amp) = base_amp {
+            config.params.insert("amp".to_string(), base_amp);
+        }
+        voices.create(voice_id, config).await.unwrap();
+
+        let (runtime_tx, mut runtime_rx) = channel(4);
+        let handler = MidiHandler::new(backend, state, runtime_tx);
+        handler
+            .dispatch_looper_actions(vec![LooperAction::NoteOn {
+                voice_id,
+                note: 60,
+                velocity: 100,
+            }])
+            .await;
+
+        let Message::Voice(VoiceMessage::NoteOn {
+            voice,
+            note,
+            velocity,
+        }) = runtime_rx.try_recv().expect("looper live NoteOn")
+        else {
+            panic!("expected looper live NoteOn");
+        };
+        assert_eq!(voice, voice_id);
+        assert_eq!(note, 60);
+        assert!(runtime_rx.try_recv().is_err());
+        velocity
+    }
+
+    #[tokio::test]
+    async fn looper_live_note_on_applies_target_voice_amp_once() {
+        let velocity = dispatch_looper_note_on(Some(0.5)).await;
+
+        assert!((velocity - 0.5 * (100.0 / 127.0)).abs() < f32::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn looper_live_note_on_defaults_missing_voice_amp_to_unity() {
+        let velocity = dispatch_looper_note_on(None).await;
+
+        assert!((velocity - 100.0 / 127.0).abs() < f32::EPSILON);
     }
 
     #[test]
