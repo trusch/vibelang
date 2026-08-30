@@ -9388,18 +9388,165 @@ mod tests {
     }
 
     #[cfg(feature = "midi")]
+    mod midi_live_safety_test_oracle {
+        use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+        use std::collections::HashMap;
+        use std::time::Instant;
+
+        pub(super) type PhysicalKey = (u32, u8, u8);
+
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(super) enum PhysicalKind {
+            On(u8),
+            Off,
+        }
+
+        #[derive(Clone, Copy, Debug)]
+        pub(super) struct PhysicalEvent {
+            pub at: Instant,
+            pub sequence: usize,
+            pub key: PhysicalKey,
+            pub kind: PhysicalKind,
+        }
+
+        pub(super) fn drain_sink(
+            device: u32,
+            receiver: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
+        ) -> Vec<PhysicalEvent> {
+            receiver
+                .try_iter()
+                .enumerate()
+                .map(|(sequence, scheduled)| {
+                    let (channel, note, kind) = match scheduled.event {
+                        QueuedMidiEvent::NoteOn {
+                            channel,
+                            note,
+                            velocity,
+                        } => (channel, note, PhysicalKind::On(velocity)),
+                        QueuedMidiEvent::NoteOff { channel, note } => {
+                            (channel, note, PhysicalKind::Off)
+                        }
+                        other => panic!("unexpected physical MIDI event: {other:?}"),
+                    };
+                    PhysicalEvent {
+                        at: scheduled.timestamp,
+                        sequence,
+                        key: (device, channel, note),
+                        kind,
+                    }
+                })
+                .collect()
+        }
+
+        #[derive(Debug, Default)]
+        pub(super) struct PhysicalMultiplicity {
+            outstanding: HashMap<PhysicalKey, usize>,
+            onsets: HashMap<PhysicalKey, Vec<u8>>,
+            note_offs: HashMap<PhysicalKey, usize>,
+            early_note_offs: HashMap<PhysicalKey, usize>,
+            peak: HashMap<PhysicalKey, usize>,
+        }
+
+        impl PhysicalMultiplicity {
+            pub(super) fn apply(&mut self, events: &[PhysicalEvent]) {
+                let mut ordered = events.to_vec();
+                ordered.sort_by(|left, right| {
+                    left.at
+                        .cmp(&right.at)
+                        .then(left.key.cmp(&right.key))
+                        .then(left.sequence.cmp(&right.sequence))
+                });
+                for event in ordered {
+                    let count = self.outstanding.entry(event.key).or_default();
+                    match event.kind {
+                        PhysicalKind::On(velocity) => {
+                            *count += 1;
+                            self.onsets.entry(event.key).or_default().push(velocity);
+                            let peak = self.peak.entry(event.key).or_default();
+                            *peak = (*peak).max(*count);
+                        }
+                        PhysicalKind::Off => {
+                            *self.note_offs.entry(event.key).or_default() += 1;
+                            if *count == 0 {
+                                *self.early_note_offs.entry(event.key).or_default() += 1;
+                            } else {
+                                *count -= 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            pub(super) fn outstanding(&self, key: PhysicalKey) -> usize {
+                self.outstanding.get(&key).copied().unwrap_or(0)
+            }
+
+            pub(super) fn onsets(&self, key: PhysicalKey) -> &[u8] {
+                self.onsets.get(&key).map(Vec::as_slice).unwrap_or(&[])
+            }
+
+            pub(super) fn note_offs(&self, key: PhysicalKey) -> usize {
+                self.note_offs.get(&key).copied().unwrap_or(0)
+            }
+
+            pub(super) fn early_note_offs(&self, key: PhysicalKey) -> usize {
+                self.early_note_offs.get(&key).copied().unwrap_or(0)
+            }
+
+            pub(super) fn peak(&self, key: PhysicalKey) -> usize {
+                self.peak.get(&key).copied().unwrap_or(0)
+            }
+
+            pub(super) fn assert_balanced(&self) {
+                assert!(
+                    self.outstanding.values().all(|count| *count == 0),
+                    "physical MIDI multiplicity remains after cleanup: {:?}",
+                    self.outstanding
+                );
+            }
+        }
+
+        #[test]
+        fn saturating_oracle_never_credits_an_early_note_off() {
+            let key = (1, 2, 60);
+            let now = Instant::now();
+            let events = [
+                PhysicalEvent {
+                    at: now,
+                    sequence: 0,
+                    key,
+                    kind: PhysicalKind::Off,
+                },
+                PhysicalEvent {
+                    at: now,
+                    sequence: 1,
+                    key,
+                    kind: PhysicalKind::On(100),
+                },
+            ];
+            let mut physical = PhysicalMultiplicity::default();
+            physical.apply(&events);
+
+            assert_eq!(physical.early_note_offs(key), 1);
+            assert_eq!(physical.outstanding(key), 1);
+            assert_eq!(physical.onsets(key), &[100]);
+        }
+    }
+
+    #[cfg(feature = "midi")]
     mod midi_looper_stuck_note_integration {
+        use super::midi_live_safety_test_oracle::{
+            drain_sink, PhysicalEvent, PhysicalMultiplicity,
+        };
         use super::*;
         use crate::message::{GroupMessage, TransportMessage, VoiceMessage};
         use crate::midi::{
-            Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
-            Velocity,
+            Channel, MidiMessage, ScheduledMidiEvent, TimestampedMidiEvent, Velocity,
         };
         use crate::reload::LooperConfig;
         use crate::state::PatternOwner;
         use crate::traits::VoiceConfig;
         use crate::types::{MidiDeviceId, PatternId};
-        use std::collections::HashMap;
         use std::time::Duration;
 
         const INPUT_DEVICE: u32 = 41;
@@ -9536,62 +9683,26 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(180)).await;
             }
 
-            fn drain_physical_events(&self) -> Vec<QueuedMidiEvent> {
-                let mut scheduled: Vec<_> = self.physical_rx.try_iter().enumerate().collect();
-                scheduled.sort_by(|(left_seq, left), (right_seq, right)| {
-                    left.timestamp
-                        .cmp(&right.timestamp)
-                        .then(left_seq.cmp(right_seq))
-                });
-                scheduled
-                    .into_iter()
-                    .map(|(_, scheduled)| scheduled.event)
-                    .collect()
+            fn drain_physical_trace(&self) -> Vec<PhysicalEvent> {
+                drain_sink(OUTPUT_DEVICE, &self.physical_rx)
             }
 
-            fn assert_physically_balanced(
-                &self,
-                allowed_channels: &[u8],
-            ) -> HashMap<(u8, u8), (usize, usize)> {
-                let events = self.drain_physical_events();
+            fn assert_physically_balanced(&self, allowed_channels: &[u8]) -> PhysicalMultiplicity {
+                let events = self.drain_physical_trace();
                 assert!(!events.is_empty(), "the physical MIDI sink saw no events");
-
-                let mut counts = HashMap::<(u8, u8), (usize, usize)>::new();
-                let mut outstanding = HashMap::<(u8, u8), usize>::new();
-                for event in events {
-                    match event {
-                        QueuedMidiEvent::NoteOn { channel, note, .. } => {
-                            assert!(
-                                allowed_channels.contains(&channel),
-                                "event leaked onto MIDI channel {channel}"
-                            );
-                            counts.entry((channel, note)).or_default().0 += 1;
-                            *outstanding.entry((channel, note)).or_default() += 1;
-                        }
-                        QueuedMidiEvent::NoteOff { channel, note } => {
-                            assert!(
-                                allowed_channels.contains(&channel),
-                                "cleanup leaked onto MIDI channel {channel}"
-                            );
-                            counts.entry((channel, note)).or_default().1 += 1;
-                            let count = outstanding.entry((channel, note)).or_default();
-                            *count = count.saturating_sub(1);
-                        }
-                        other => panic!("unexpected physical MIDI event: {other:?}"),
-                    }
-                }
-
-                for (key, (note_ons, note_offs)) in &counts {
+                for event in &events {
+                    assert_eq!(event.key.0, OUTPUT_DEVICE);
                     assert!(
-                        note_offs >= note_ons,
-                        "physical note {key:?} emitted {note_ons} note-ons but only {note_offs} note-offs"
+                        allowed_channels.contains(&event.key.1),
+                        "event leaked onto MIDI channel {}",
+                        event.key.1
                     );
                 }
-                assert!(
-                    outstanding.values().all(|count| *count == 0),
-                    "physical MIDI multiplicity remains after cleanup: {outstanding:?}"
-                );
-                counts
+
+                let mut physical = PhysicalMultiplicity::default();
+                physical.apply(&events);
+                physical.assert_balanced();
+                physical
             }
         }
 
@@ -9603,27 +9714,6 @@ mod tests {
                 silence_bars: 0.01,
                 quantize_beats: 0.25,
             }
-        }
-
-        fn saturating_multiplicities(events: &[QueuedMidiEvent]) -> HashMap<(u32, u8, u8), usize> {
-            let mut outstanding = HashMap::<(u32, u8, u8), usize>::new();
-            for event in events {
-                match event {
-                    QueuedMidiEvent::NoteOn { channel, note, .. } => {
-                        *outstanding
-                            .entry((OUTPUT_DEVICE, *channel, *note))
-                            .or_default() += 1;
-                    }
-                    QueuedMidiEvent::NoteOff { channel, note } => {
-                        let count = outstanding
-                            .entry((OUTPUT_DEVICE, *channel, *note))
-                            .or_default();
-                        *count = count.saturating_sub(1);
-                    }
-                    _ => {}
-                }
-            }
-            outstanding
         }
 
         #[tokio::test]
@@ -9645,13 +9735,11 @@ mod tests {
                 assert_eq!(pattern.content.steps.len(), 1);
                 assert_eq!(pattern.content.steps[0].beat, Beat::ZERO);
             }
-            let counts = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
-            assert_eq!(
-                counts.len(),
-                1,
-                "the filtered input channel must stay isolated"
-            );
-            assert!(counts.contains_key(&(FIRST_OUTPUT_CHANNEL, NOTE)));
+            let physical = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+            let key = (OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE);
+            assert_eq!(physical.onsets(key), &[100, 100]);
+            assert_eq!(physical.note_offs(key), 2);
+            assert_eq!(physical.early_note_offs(key), 0);
         }
 
         #[tokio::test]
@@ -9674,13 +9762,16 @@ mod tests {
 
             harness.note_off(4.2, INPUT_CHANNEL, NOTE).await;
 
-            let counts = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
-            let (note_ons, note_offs) = counts[&(FIRST_OUTPUT_CHANNEL, NOTE)];
-            assert!(
-                note_ons >= 4,
-                "capture, queued loop, restart, and fresh reassertion must all run"
+            let physical = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+            let key = (OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE);
+            assert_eq!(
+                physical.onsets(key),
+                &[100, 100, 100, 100],
+                "capture, replacement, queued old onset, and stored-velocity reassertion must each run exactly once"
             );
-            assert!(note_offs >= note_ons);
+            assert_eq!(physical.note_offs(key), 4);
+            assert_eq!(physical.early_note_offs(key), 0);
+            assert_eq!(physical.peak(key), 2);
         }
 
         #[tokio::test]
@@ -9729,12 +9820,20 @@ mod tests {
             harness.note_off(4.15, INPUT_CHANNEL, 67).await;
             harness.settle().await;
 
-            let counts =
+            let physical =
                 harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL, SECOND_OUTPUT_CHANNEL]);
-            assert!(counts.contains_key(&(FIRST_OUTPUT_CHANNEL, NOTE)));
-            assert!(counts.contains_key(&(SECOND_OUTPUT_CHANNEL, 67)));
-            assert!(!counts.contains_key(&(FIRST_OUTPUT_CHANNEL, 67)));
-            assert!(!counts.contains_key(&(SECOND_OUTPUT_CHANNEL, NOTE)));
+            assert!(!physical
+                .onsets((OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE))
+                .is_empty());
+            assert!(!physical
+                .onsets((OUTPUT_DEVICE, SECOND_OUTPUT_CHANNEL, 67))
+                .is_empty());
+            assert!(physical
+                .onsets((OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, 67))
+                .is_empty());
+            assert!(physical
+                .onsets((OUTPUT_DEVICE, SECOND_OUTPUT_CHANNEL, NOTE))
+                .is_empty());
         }
 
         #[tokio::test]
@@ -9807,27 +9906,14 @@ mod tests {
                 .values()
                 .all(|pattern| pattern.owner != PatternOwner::Looper));
 
-            let stopped_events = harness.drain_physical_events();
-            assert!(matches!(
-                stopped_events.as_slice(),
-                [
-                    QueuedMidiEvent::NoteOn {
-                        channel: FIRST_OUTPUT_CHANNEL,
-                        note: NOTE,
-                        ..
-                    },
-                    QueuedMidiEvent::NoteOff {
-                        channel: FIRST_OUTPUT_CHANNEL,
-                        note: NOTE
-                    }
-                ]
-            ));
-            assert_eq!(
-                saturating_multiplicities(&stopped_events)
-                    [&(OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE)],
-                0,
-                "cleanup must reach zero without crediting an early NoteOff"
-            );
+            let stopped_events = harness.drain_physical_trace();
+            let key = (OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE);
+            let mut physical = PhysicalMultiplicity::default();
+            physical.apply(&stopped_events);
+            physical.assert_balanced();
+            assert_eq!(physical.onsets(key), &[100]);
+            assert_eq!(physical.note_offs(key), 1);
+            assert_eq!(physical.early_note_offs(key), 0);
 
             harness.enqueue(MidiMessage::NoteOn {
                 channel: Channel::new(INPUT_CHANNEL),
@@ -9861,26 +9947,13 @@ mod tests {
             harness.runtime.tick().await;
             harness.settle().await;
 
-            let fresh_events = harness.drain_physical_events();
-            assert!(matches!(
-                fresh_events.as_slice(),
-                [
-                    QueuedMidiEvent::NoteOn {
-                        channel: FIRST_OUTPUT_CHANNEL,
-                        note: NOTE,
-                        ..
-                    },
-                    QueuedMidiEvent::NoteOff {
-                        channel: FIRST_OUTPUT_CHANNEL,
-                        note: NOTE
-                    }
-                ]
-            ));
-            assert_eq!(
-                saturating_multiplicities(&fresh_events)
-                    [&(OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE)],
-                0
-            );
+            let fresh_events = harness.drain_physical_trace();
+            physical = PhysicalMultiplicity::default();
+            physical.apply(&fresh_events);
+            physical.assert_balanced();
+            assert_eq!(physical.onsets(key), &[100]);
+            assert_eq!(physical.note_offs(key), 1);
+            assert_eq!(physical.early_note_offs(key), 0);
             let state = harness.runtime.state.read().await;
             assert_eq!(state.current_beat, stopped_beat);
             assert!(state
@@ -9949,17 +10022,19 @@ mod tests {
 
     #[cfg(feature = "midi")]
     mod midi_input_disconnect_ownership_integration {
+        use super::midi_live_safety_test_oracle::{
+            PhysicalEvent, PhysicalKind, PhysicalMultiplicity,
+        };
         use super::*;
         use crate::message::{GroupMessage, PatternMessage, VoiceMessage};
         use crate::midi::{
             Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
             Velocity,
         };
-        use crate::reload::MidiKeyboardRoute;
-        use crate::state::PatternOwner;
+        use crate::reload::{LooperConfig, MidiKeyboardRoute};
+        use crate::state::{MidiInputRoute, NoteOwner, PatternOwner};
         use crate::traits::{PatternConfig, Step, VoiceConfig};
         use crate::types::{MidiDeviceId, PatternId};
-        use std::collections::HashMap;
 
         const FIRST_INPUT: u32 = 61;
         const SECOND_INPUT: u32 = 62;
@@ -9973,40 +10048,25 @@ mod tests {
             Off { note: u8 },
         }
 
-        #[derive(Default)]
-        struct PhysicalMultiplicity(HashMap<(u32, u8, u8), usize>);
-
-        impl PhysicalMultiplicity {
-            fn apply(&mut self, events: &[SinkEvent]) {
-                for event in events {
-                    let note = match event {
-                        SinkEvent::On { note, .. } | SinkEvent::Off { note } => *note,
+        fn apply_sink(physical: &mut PhysicalMultiplicity, events: &[SinkEvent]) {
+            let at = Instant::now();
+            let events: Vec<_> = events
+                .iter()
+                .enumerate()
+                .map(|(sequence, event)| {
+                    let (note, kind) = match event {
+                        SinkEvent::On { note, velocity } => (*note, PhysicalKind::On(*velocity)),
+                        SinkEvent::Off { note } => (*note, PhysicalKind::Off),
                     };
-                    let count = self
-                        .0
-                        .entry((OUTPUT_DEVICE, OUTPUT_CHANNEL, note))
-                        .or_default();
-                    match event {
-                        SinkEvent::On { .. } => *count += 1,
-                        SinkEvent::Off { .. } => *count = count.saturating_sub(1),
+                    PhysicalEvent {
+                        at,
+                        sequence,
+                        key: (OUTPUT_DEVICE, OUTPUT_CHANNEL, note),
+                        kind,
                     }
-                }
-            }
-
-            fn note(&self, note: u8) -> usize {
-                self.0
-                    .get(&(OUTPUT_DEVICE, OUTPUT_CHANNEL, note))
-                    .copied()
-                    .unwrap_or(0)
-            }
-
-            fn assert_balanced(&self) {
-                assert!(
-                    self.0.values().all(|count| *count == 0),
-                    "physical MIDI multiplicity remains after cleanup: {:?}",
-                    self.0
-                );
-            }
+                })
+                .collect();
+            physical.apply(&events);
         }
 
         struct Harness {
@@ -10106,6 +10166,10 @@ mod tests {
                 self.runtime.tick().await;
             }
 
+            async fn set_beat(&self, beat: f64) {
+                self.runtime.state.write().await.current_beat = Beat::from_f64(beat);
+            }
+
             async fn note_on(&mut self, device: u32, channel: u8, note: u8, velocity: u8) {
                 self.input(
                     device,
@@ -10150,10 +10214,18 @@ mod tests {
                 scheduled
                     .into_iter()
                     .map(|(_, scheduled)| match scheduled.event {
-                        QueuedMidiEvent::NoteOn { note, velocity, .. } => {
+                        QueuedMidiEvent::NoteOn {
+                            channel,
+                            note,
+                            velocity,
+                        } => {
+                            assert_eq!(channel, OUTPUT_CHANNEL);
                             SinkEvent::On { note, velocity }
                         }
-                        QueuedMidiEvent::NoteOff { note, .. } => SinkEvent::Off { note },
+                        QueuedMidiEvent::NoteOff { channel, note } => {
+                            assert_eq!(channel, OUTPUT_CHANNEL);
+                            SinkEvent::Off { note }
+                        }
                         other => panic!("unexpected physical MIDI event: {other:?}"),
                     })
                     .collect()
@@ -10189,6 +10261,9 @@ mod tests {
 
         async fn assert_same_pitch_disconnect_order(first_disconnect: u32) {
             const NOTE: u8 = 60;
+            const FIRST_CHANNEL: u8 = 1;
+            const SECOND_CHANNEL: u8 = 6;
+            let key = (OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE);
             let second_disconnect = if first_disconnect == FIRST_INPUT {
                 SECOND_INPUT
             } else {
@@ -10197,8 +10272,35 @@ mod tests {
             let mut harness = Harness::new().await;
             let mut physical = PhysicalMultiplicity::default();
 
-            harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
-            harness.note_on(SECOND_INPUT, 0, NOTE, 80).await;
+            harness.note_on(FIRST_INPUT, FIRST_CHANNEL, NOTE, 100).await;
+            let first_generation =
+                harness.runtime.state.read().await.voice_note_generations[&(VOICE, NOTE)];
+            harness
+                .note_on(SECOND_INPUT, SECOND_CHANNEL, NOTE, 80)
+                .await;
+            let second_generation =
+                harness.runtime.state.read().await.voice_note_generations[&(VOICE, NOTE)];
+            assert!(second_generation > first_generation);
+            {
+                let state = harness.runtime.state.read().await;
+                let held = state.midi_voice_pool[&VOICE]
+                    .slots
+                    .iter()
+                    .flatten()
+                    .find(|held| held.note == NOTE)
+                    .unwrap();
+                assert_eq!(held.velocity, 80);
+                assert_eq!(held.generation, second_generation);
+                assert_eq!(
+                    held.owner,
+                    NoteOwner::MidiInput {
+                        device_id: MidiDeviceId::new(SECOND_INPUT),
+                        channel: SECOND_CHANNEL,
+                        source_note: NOTE,
+                        route: MidiInputRoute::Keyboard,
+                    }
+                );
+            }
             let live = harness.drain();
             assert_eq!(
                 live,
@@ -10214,19 +10316,28 @@ mod tests {
                     },
                 ]
             );
-            physical.apply(&live);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &live);
+            assert_eq!(physical.outstanding(key), 1);
 
             harness.disconnect(first_disconnect).await;
             let first_cleanup = harness.drain();
-            physical.apply(&first_cleanup);
+            apply_sink(&mut physical, &first_cleanup);
             assert_eq!(
-                physical.note(NOTE),
+                physical.outstanding(key),
                 1,
                 "disconnecting input {first_disconnect} truncated the survivor"
             );
             if first_disconnect == FIRST_INPUT {
                 assert!(first_cleanup.is_empty());
+                let state = harness.runtime.state.read().await;
+                let held = state.midi_voice_pool[&VOICE]
+                    .slots
+                    .iter()
+                    .flatten()
+                    .find(|held| held.note == NOTE)
+                    .unwrap();
+                assert_eq!(held.generation, second_generation);
+                assert_eq!(held.velocity, 80);
             } else {
                 assert_eq!(
                     first_cleanup,
@@ -10239,16 +10350,49 @@ mod tests {
                     ],
                     "newest-source cleanup must restore the older owner's final velocity"
                 );
+                let state = harness.runtime.state.read().await;
+                let held = state.midi_voice_pool[&VOICE]
+                    .slots
+                    .iter()
+                    .flatten()
+                    .find(|held| held.note == NOTE)
+                    .unwrap();
+                assert_eq!(held.generation, first_generation);
+                assert_eq!(held.velocity, 100);
+                assert_eq!(
+                    held.owner,
+                    NoteOwner::MidiInput {
+                        device_id: MidiDeviceId::new(FIRST_INPUT),
+                        channel: FIRST_CHANNEL,
+                        source_note: NOTE,
+                        route: MidiInputRoute::Keyboard,
+                    }
+                );
             }
 
             harness.disconnect(second_disconnect).await;
             let final_cleanup = harness.drain();
-            physical.apply(&final_cleanup);
+            apply_sink(&mut physical, &final_cleanup);
             assert_eq!(final_cleanup, vec![SinkEvent::Off { note: NOTE }]);
             physical.assert_balanced();
+            assert_eq!(physical.early_note_offs(key), 0);
+            if first_disconnect == FIRST_INPUT {
+                assert_eq!(physical.onsets(key), &[100, 80]);
+                assert_eq!(physical.note_offs(key), 2);
+            } else {
+                assert_eq!(physical.onsets(key), &[100, 80, 100]);
+                assert_eq!(physical.note_offs(key), 3);
+            }
+            assert!(!harness
+                .runtime
+                .state
+                .read()
+                .await
+                .voice_note_generations
+                .contains_key(&(VOICE, NOTE)));
 
-            harness.note_off(FIRST_INPUT, 0, NOTE).await;
-            harness.note_off(SECOND_INPUT, 0, NOTE).await;
+            harness.note_off(FIRST_INPUT, FIRST_CHANNEL, NOTE).await;
+            harness.note_off(SECOND_INPUT, SECOND_CHANNEL, NOTE).await;
             assert!(
                 harness.drain().is_empty(),
                 "late physical note-offs after both drains must be idempotent"
@@ -10268,21 +10412,21 @@ mod tests {
             harness.note_on(FIRST_INPUT, 0, 60, 100).await;
             harness.note_on(SECOND_INPUT, 0, 64, 90).await;
             let live = harness.drain();
-            physical.apply(&live);
-            assert_eq!(physical.note(60), 1);
-            assert_eq!(physical.note(64), 1);
+            apply_sink(&mut physical, &live);
+            assert_eq!(physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, 60)), 1);
+            assert_eq!(physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, 64)), 1);
 
             harness.disconnect(FIRST_INPUT).await;
             let first_cleanup = harness.drain();
             assert_eq!(first_cleanup, vec![SinkEvent::Off { note: 60 }]);
-            physical.apply(&first_cleanup);
-            assert_eq!(physical.note(60), 0);
-            assert_eq!(physical.note(64), 1);
+            apply_sink(&mut physical, &first_cleanup);
+            assert_eq!(physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, 60)), 0);
+            assert_eq!(physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, 64)), 1);
 
             harness.disconnect(SECOND_INPUT).await;
             let second_cleanup = harness.drain();
             assert_eq!(second_cleanup, vec![SinkEvent::Off { note: 64 }]);
-            physical.apply(&second_cleanup);
+            apply_sink(&mut physical, &second_cleanup);
             physical.assert_balanced();
         }
 
@@ -10294,19 +10438,25 @@ mod tests {
             harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
             harness.note_on(FIRST_INPUT, 1, NOTE, 70).await;
             let live = harness.drain();
-            physical.apply(&live);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &live);
+            assert_eq!(
+                physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE)),
+                1
+            );
 
             harness.note_off(FIRST_INPUT, 0, NOTE).await;
             let first_off = harness.drain();
             assert!(first_off.is_empty());
-            physical.apply(&first_off);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &first_off);
+            assert_eq!(
+                physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE)),
+                1
+            );
 
             harness.note_off(FIRST_INPUT, 1, NOTE).await;
             let second_off = harness.drain();
             assert_eq!(second_off, vec![SinkEvent::Off { note: NOTE }]);
-            physical.apply(&second_off);
+            apply_sink(&mut physical, &second_off);
             physical.assert_balanced();
         }
 
@@ -10334,7 +10484,7 @@ mod tests {
                     },
                 ]
             );
-            physical.apply(&live);
+            apply_sink(&mut physical, &live);
 
             harness.disconnect(FIRST_INPUT).await;
             let disconnect = harness.drain();
@@ -10349,8 +10499,11 @@ mod tests {
                 ],
                 "disconnect must restore the script pattern without rescaling its velocity"
             );
-            physical.apply(&disconnect);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &disconnect);
+            assert_eq!(
+                physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE)),
+                1
+            );
             assert!(harness.runtime.state.read().await.patterns[&PATTERN].playing);
 
             harness
@@ -10361,7 +10514,7 @@ mod tests {
             harness.runtime.tick().await;
             let pattern_stop = harness.drain();
             assert_eq!(pattern_stop, vec![SinkEvent::Off { note: NOTE }]);
-            physical.apply(&pattern_stop);
+            apply_sink(&mut physical, &pattern_stop);
             physical.assert_balanced();
         }
 
@@ -10374,8 +10527,11 @@ mod tests {
             harness.start_script_pattern(PATTERN, NOTE).await;
             harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
             let live = harness.drain();
-            physical.apply(&live);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &live);
+            assert_eq!(
+                physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE)),
+                1
+            );
 
             let message = if delete {
                 PatternMessage::Delete { id: PATTERN }
@@ -10390,8 +10546,11 @@ mod tests {
                 cleanup.is_empty(),
                 "pattern cleanup must not cut the newer live-input owner: {cleanup:?}"
             );
-            physical.apply(&cleanup);
-            assert_eq!(physical.note(NOTE), 1);
+            apply_sink(&mut physical, &cleanup);
+            assert_eq!(
+                physical.outstanding((OUTPUT_DEVICE, OUTPUT_CHANNEL, NOTE)),
+                1
+            );
             if delete {
                 assert!(!harness
                     .runtime
@@ -10407,7 +10566,7 @@ mod tests {
             harness.note_off(FIRST_INPUT, 0, NOTE).await;
             let final_off = harness.drain();
             assert_eq!(final_off, vec![SinkEvent::Off { note: NOTE }]);
-            physical.apply(&final_off);
+            apply_sink(&mut physical, &final_off);
             physical.assert_balanced();
         }
 
@@ -10420,14 +10579,166 @@ mod tests {
         async fn pattern_delete_drains_only_the_pattern_owner() {
             assert_pattern_cleanup_preserves_live_input(true).await;
         }
+
+        #[tokio::test]
+        async fn disconnect_resets_only_the_selected_looper_lifecycle() {
+            const FIRST_CHANNEL: u8 = 1;
+            const SECOND_CHANNEL: u8 = 6;
+            const FIRST_NOTE: u8 = 60;
+            const SECOND_NOTE: u8 = 64;
+            const FRESH_NOTE: u8 = 67;
+            let mut harness = Harness::new().await;
+            harness
+                .runtime
+                .midi
+                .reconcile_loopers(&[
+                    LooperConfig {
+                        device_id: MidiDeviceId::new(FIRST_INPUT),
+                        voice_id: VOICE,
+                        channel: Some(FIRST_CHANNEL),
+                        silence_bars: 0.01,
+                        quantize_beats: 0.25,
+                    },
+                    LooperConfig {
+                        device_id: MidiDeviceId::new(SECOND_INPUT),
+                        voice_id: VOICE,
+                        channel: Some(SECOND_CHANNEL),
+                        silence_bars: 0.01,
+                        quantize_beats: 0.25,
+                    },
+                ])
+                .await;
+
+            harness.set_beat(0.0).await;
+            harness
+                .note_on(SECOND_INPUT, SECOND_CHANNEL, SECOND_NOTE, 90)
+                .await;
+            harness.set_beat(0.05).await;
+            harness
+                .note_off(SECOND_INPUT, SECOND_CHANNEL, SECOND_NOTE)
+                .await;
+            harness.set_beat(0.1).await;
+            harness.runtime.tick().await;
+            harness.runtime.tick().await;
+            let survivor_pattern = {
+                let state = harness.runtime.state.read().await;
+                let patterns: Vec<_> = state
+                    .patterns
+                    .iter()
+                    .filter_map(|(id, pattern)| {
+                        (pattern.owner == PatternOwner::Looper).then_some(*id)
+                    })
+                    .collect();
+                assert_eq!(patterns.len(), 1);
+                assert!(state.patterns[&patterns[0]].playing);
+                patterns[0]
+            };
+
+            harness.set_beat(0.2).await;
+            harness
+                .note_on(FIRST_INPUT, FIRST_CHANNEL, FIRST_NOTE, 100)
+                .await;
+            harness.disconnect(FIRST_INPUT).await;
+            let first_lifecycle = harness.drain();
+            let mut physical = PhysicalMultiplicity::default();
+            apply_sink(&mut physical, &first_lifecycle);
+            assert_eq!(
+                physical.onsets((OUTPUT_DEVICE, OUTPUT_CHANNEL, SECOND_NOTE)),
+                &[90]
+            );
+            assert_eq!(
+                physical.note_offs((OUTPUT_DEVICE, OUTPUT_CHANNEL, SECOND_NOTE)),
+                1
+            );
+            assert_eq!(
+                physical.onsets((OUTPUT_DEVICE, OUTPUT_CHANNEL, FIRST_NOTE)),
+                &[100]
+            );
+            assert_eq!(
+                physical.note_offs((OUTPUT_DEVICE, OUTPUT_CHANNEL, FIRST_NOTE)),
+                1
+            );
+            physical.assert_balanced();
+            {
+                let state = harness.runtime.state.read().await;
+                assert!(state.patterns[&survivor_pattern].playing);
+                assert_eq!(
+                    state
+                        .patterns
+                        .values()
+                        .filter(|pattern| pattern.owner == PatternOwner::Looper)
+                        .count(),
+                    1,
+                    "disconnect must not finalize the selected input's partial capture"
+                );
+            }
+
+            harness
+                .note_off(FIRST_INPUT, FIRST_CHANNEL, FIRST_NOTE)
+                .await;
+            assert!(
+                harness.drain().is_empty(),
+                "the disconnected capture's late NoteOff must be idempotent"
+            );
+
+            harness.set_beat(0.3).await;
+            harness
+                .note_on(FIRST_INPUT, FIRST_CHANNEL, FRESH_NOTE, 70)
+                .await;
+            harness.set_beat(0.35).await;
+            harness
+                .note_off(FIRST_INPUT, FIRST_CHANNEL, FRESH_NOTE)
+                .await;
+            harness.set_beat(0.4).await;
+            harness.runtime.tick().await;
+            harness.runtime.tick().await;
+            {
+                let state = harness.runtime.state.read().await;
+                assert!(state.patterns[&survivor_pattern].playing);
+                assert_eq!(
+                    state
+                        .patterns
+                        .values()
+                        .filter(|pattern| pattern.owner == PatternOwner::Looper)
+                        .count(),
+                    2,
+                    "the disconnected looper must restart from Idle while the other keeps playing"
+                );
+            }
+            let fresh = harness.drain();
+            apply_sink(&mut physical, &fresh);
+            assert_eq!(
+                physical.onsets((OUTPUT_DEVICE, OUTPUT_CHANNEL, FRESH_NOTE)),
+                &[70]
+            );
+            assert_eq!(
+                physical.note_offs((OUTPUT_DEVICE, OUTPUT_CHANNEL, FRESH_NOTE)),
+                1
+            );
+            physical.assert_balanced();
+
+            harness.runtime.midi.reconcile_loopers(&[]).await;
+            harness.runtime.tick().await;
+            assert!(harness
+                .runtime
+                .state
+                .read()
+                .await
+                .patterns
+                .values()
+                .all(|pattern| pattern.owner != PatternOwner::Looper));
+            assert!(harness.drain().is_empty(), "no queued onset was due yet");
+        }
     }
 
     #[cfg(feature = "midi")]
     mod midi_endpoint_reload_integration {
+        use super::midi_live_safety_test_oracle::{
+            drain_sink, PhysicalEvent, PhysicalKind, PhysicalMultiplicity,
+        };
         use super::*;
         use crate::midi::{
-            Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
-            Velocity,
+            Channel, MidiMessage, ScheduledMidiEvent, TimestampedMidiEvent, Velocity,
         };
         use crate::reload::{GroupConfig, LooperConfig, ScriptState};
         use crate::traits::VoiceConfig;
@@ -10463,31 +10774,9 @@ mod tests {
             channel: NEW_OUTPUT_CHANNEL,
         };
 
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        enum PhysicalKind {
-            On(u8),
-            Off,
-        }
-
-        #[derive(Clone, Copy, Debug)]
-        struct PhysicalEvent {
-            timestamp: Instant,
-            sequence: u64,
-            endpoint: Endpoint,
-            note: u8,
-            kind: PhysicalKind,
-        }
-
-        impl PhysicalEvent {
-            fn key(self) -> (u32, u8, u8) {
-                (self.endpoint.device, self.endpoint.channel, self.note)
-            }
-        }
-
         struct Harness {
             runtime: Runtime<MockBackend>,
             receivers: HashMap<u32, crossbeam_channel::Receiver<ScheduledMidiEvent>>,
-            sink_sequences: HashMap<u32, u64>,
             input_sequence: u64,
         }
 
@@ -10512,7 +10801,6 @@ mod tests {
                 Self {
                     runtime,
                     receivers,
-                    sink_sequences: HashMap::new(),
                     input_sequence: 0,
                 }
             }
@@ -10585,31 +10873,10 @@ mod tests {
                 assert!(!state.voice_note_generations.contains_key(&(VOICE, NOTE)));
             }
 
-            fn drain(&mut self) -> Vec<PhysicalEvent> {
+            fn drain(&self) -> Vec<PhysicalEvent> {
                 let mut events = Vec::new();
                 for (&device, receiver) in &self.receivers {
-                    let sequence = self.sink_sequences.entry(device).or_default();
-                    for scheduled in receiver.try_iter() {
-                        *sequence += 1;
-                        let (channel, note, kind) = match scheduled.event {
-                            QueuedMidiEvent::NoteOn {
-                                channel,
-                                note,
-                                velocity,
-                            } => (channel, note, PhysicalKind::On(velocity)),
-                            QueuedMidiEvent::NoteOff { channel, note } => {
-                                (channel, note, PhysicalKind::Off)
-                            }
-                            other => panic!("unexpected physical MIDI event: {other:?}"),
-                        };
-                        events.push(PhysicalEvent {
-                            timestamp: scheduled.timestamp,
-                            sequence: *sequence,
-                            endpoint: Endpoint { device, channel },
-                            note,
-                            kind,
-                        });
-                    }
+                    events.extend(drain_sink(device, receiver));
                 }
                 events
             }
@@ -10640,42 +10907,38 @@ mod tests {
             state
         }
 
-        fn multiplicities(events: &[PhysicalEvent]) -> HashMap<(u32, u8, u8), usize> {
-            let mut ordered = events.to_vec();
-            ordered.sort_by(|left, right| {
-                left.timestamp
-                    .cmp(&right.timestamp)
-                    .then(left.endpoint.device.cmp(&right.endpoint.device))
-                    .then(left.sequence.cmp(&right.sequence))
-            });
-            let mut outstanding = HashMap::<(u32, u8, u8), usize>::new();
-            for event in ordered {
-                let count = outstanding.entry(event.key()).or_default();
-                match event.kind {
-                    PhysicalKind::On(_) => *count += 1,
-                    PhysicalKind::Off => *count = count.saturating_sub(1),
-                }
-            }
-            outstanding
-        }
-
         async fn assert_capture_retarget(endpoint: Endpoint) {
             let mut harness = Harness::new().await;
             harness.note_on(0.0).await;
             let mut events = harness.drain();
-            assert_eq!(multiplicities(&events)[&OLD_ENDPOINT_KEY], 1);
+            let mut physical = PhysicalMultiplicity::default();
+            physical.apply(&events);
+            assert_eq!(physical.outstanding(OLD_ENDPOINT_KEY), 1);
+            assert_eq!(physical.onsets(OLD_ENDPOINT_KEY), &[100]);
 
             harness.reload_endpoint(endpoint).await;
             events.extend(harness.drain());
+            harness.note_off(0.1).await;
+            let late = harness.drain();
+            assert_eq!(late.len(), 1);
+            assert_eq!(late[0].key, OLD_ENDPOINT_KEY);
+            assert_eq!(late[0].kind, PhysicalKind::Off);
+            events.extend(late);
 
-            let outstanding = multiplicities(&events);
-            assert_eq!(outstanding.get(&OLD_ENDPOINT_KEY), Some(&0));
-            assert_eq!(outstanding.get(&endpoint_key(endpoint)), None);
-            assert!(events.iter().any(|event| {
-                event.endpoint == OLD_ENDPOINT
-                    && event.note == NOTE
-                    && event.kind == PhysicalKind::Off
-            }));
+            physical = PhysicalMultiplicity::default();
+            physical.apply(&events);
+            physical.assert_balanced();
+            assert_eq!(physical.onsets(OLD_ENDPOINT_KEY), &[100]);
+            assert_eq!(physical.note_offs(OLD_ENDPOINT_KEY), 2);
+            assert_eq!(
+                physical.early_note_offs(OLD_ENDPOINT_KEY),
+                1,
+                "the late input Off must saturate at zero without future release credit"
+            );
+            assert!(physical.onsets(endpoint_key(endpoint)).is_empty());
+            assert!(events
+                .iter()
+                .any(|event| { event.key == OLD_ENDPOINT_KEY && event.kind == PhysicalKind::Off }));
         }
 
         async fn assert_queued_playback_retarget(endpoint: Endpoint) {
@@ -10683,10 +10946,9 @@ mod tests {
             let dispatched_after = harness.queue_future_looper_onset().await;
             let mut events = harness.drain();
             assert!(events.iter().any(|event| {
-                event.endpoint == OLD_ENDPOINT
-                    && event.note == NOTE
+                event.key == OLD_ENDPOINT_KEY
                     && matches!(event.kind, PhysicalKind::On(_))
-                    && event.timestamp > dispatched_after
+                    && event.at > dispatched_after
             }));
 
             harness.reload_endpoint(endpoint).await;
@@ -10699,13 +10961,29 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(180)).await;
             events.extend(harness.drain());
 
-            let outstanding = multiplicities(&events);
-            assert_eq!(outstanding.get(&OLD_ENDPOINT_KEY), Some(&0));
-            assert_eq!(outstanding.get(&endpoint_key(endpoint)), Some(&1));
+            let mut physical = PhysicalMultiplicity::default();
+            physical.apply(&events);
+            assert_eq!(physical.outstanding(OLD_ENDPOINT_KEY), 0);
+            assert_eq!(
+                physical.onsets(OLD_ENDPOINT_KEY),
+                &[100, 100],
+                "unexpected queued-recovery trace: {events:?}"
+            );
+            assert_eq!(physical.note_offs(OLD_ENDPOINT_KEY), 3);
+            assert_eq!(
+                physical.early_note_offs(OLD_ENDPOINT_KEY),
+                1,
+                "the pre-onset endpoint drain must not credit the later queued onset"
+            );
+            assert_eq!(physical.outstanding(endpoint_key(endpoint)), 1);
+            assert_eq!(
+                physical.onsets(endpoint_key(endpoint)),
+                &[63],
+                "old-endpoint recovery must not reassert on the retargeted endpoint"
+            );
+            assert_eq!(physical.note_offs(endpoint_key(endpoint)), 0);
             assert!(events.iter().any(|event| {
-                event.endpoint == endpoint
-                    && event.note == NOTE
-                    && event.kind == PhysicalKind::On(63)
+                event.key == endpoint_key(endpoint) && event.kind == PhysicalKind::On(63)
             }));
 
             harness
@@ -10715,7 +10993,12 @@ mod tests {
                 .await
                 .unwrap();
             events.extend(harness.drain());
-            assert!(multiplicities(&events).values().all(|count| *count == 0));
+            physical = PhysicalMultiplicity::default();
+            physical.apply(&events);
+            physical.assert_balanced();
+            assert_eq!(physical.onsets(endpoint_key(endpoint)), &[63]);
+            assert_eq!(physical.note_offs(endpoint_key(endpoint)), 1);
+            assert_eq!(physical.early_note_offs(endpoint_key(endpoint)), 0);
         }
 
         const OLD_ENDPOINT_KEY: (u32, u8, u8) = (OLD_OUTPUT_DEVICE, OLD_OUTPUT_CHANNEL, NOTE);
@@ -10747,6 +11030,9 @@ mod tests {
 
     #[cfg(feature = "midi")]
     mod midi_looper_level_parity_integration {
+        use super::midi_live_safety_test_oracle::{
+            PhysicalEvent, PhysicalKind, PhysicalMultiplicity,
+        };
         use super::*;
         use crate::message::{GroupMessage, VoiceMessage};
         use crate::midi::{
@@ -10757,7 +11043,6 @@ mod tests {
         use crate::state::PatternOwner;
         use crate::traits::VoiceConfig;
         use crate::types::{MidiDeviceId, PatternId};
-        use std::collections::HashMap;
         use std::time::Duration;
 
         const INPUT_DEVICE: u32 = 51;
@@ -10974,20 +11259,27 @@ mod tests {
         }
 
         fn assert_balanced(events: &[SinkEvent]) {
-            let mut outstanding = HashMap::<(u32, u8, u8), usize>::new();
-            for event in events {
-                let key = event.key();
-                match event {
-                    SinkEvent::NoteOn { .. } => *outstanding.entry(key).or_default() += 1,
-                    SinkEvent::NoteOff { .. } => {
-                        let count = outstanding.entry(key).or_default();
-                        *count = count.saturating_sub(1);
-                    }
-                }
-            }
-            assert!(
-                outstanding.values().all(|count| *count == 0),
-                "physical MIDI multiplicity remains after cleanup: {outstanding:?}; events={events:?}"
+            let at = Instant::now();
+            let physical_events: Vec<_> = events
+                .iter()
+                .enumerate()
+                .map(|(sequence, event)| PhysicalEvent {
+                    at,
+                    sequence,
+                    key: event.key(),
+                    kind: match event {
+                        SinkEvent::NoteOn { velocity, .. } => PhysicalKind::On(*velocity),
+                        SinkEvent::NoteOff { .. } => PhysicalKind::Off,
+                    },
+                })
+                .collect();
+            let mut physical = PhysicalMultiplicity::default();
+            physical.apply(&physical_events);
+            physical.assert_balanced();
+            assert_eq!(
+                physical.early_note_offs((OUTPUT_DEVICE, OUTPUT_CHANNEL, events[0].key().2)),
+                0,
+                "parity trace must not rely on early NoteOff credit: {events:?}"
             );
         }
 
