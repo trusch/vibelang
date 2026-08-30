@@ -9352,4 +9352,417 @@ mod tests {
             "a single keyboard note should produce exactly one device event"
         );
     }
+
+    #[cfg(feature = "midi")]
+    mod midi_looper_stuck_note_integration {
+        use super::*;
+        use crate::message::{GroupMessage, TransportMessage, VoiceMessage};
+        use crate::midi::{
+            Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
+            Velocity,
+        };
+        use crate::reload::LooperConfig;
+        use crate::state::PatternOwner;
+        use crate::traits::VoiceConfig;
+        use crate::types::{MidiDeviceId, PatternId};
+        use std::collections::{HashMap, HashSet};
+        use std::time::Duration;
+
+        const INPUT_DEVICE: u32 = 41;
+        const OUTPUT_DEVICE: u32 = 42;
+        const INPUT_CHANNEL: u8 = 0;
+        const FIRST_OUTPUT_CHANNEL: u8 = 3;
+        const SECOND_OUTPUT_CHANNEL: u8 = 9;
+        const NOTE: u8 = 60;
+
+        struct Harness {
+            runtime: Runtime<MockBackend>,
+            physical_rx: crossbeam_channel::Receiver<ScheduledMidiEvent>,
+            sequence: u64,
+        }
+
+        impl Harness {
+            async fn new(voices: &[(VoiceId, u8)], looper_voice: VoiceId) -> Self {
+                let mut runtime = Runtime::new(MockBackend);
+                let (physical_tx, physical_rx) = crossbeam_channel::unbounded();
+                runtime
+                    .midi
+                    .output_channels()
+                    .lock()
+                    .unwrap()
+                    .insert(MidiDeviceId::new(OUTPUT_DEVICE), physical_tx);
+
+                runtime
+                    .send(
+                        GroupMessage::Create {
+                            id: GroupId::new(1),
+                            name: "midi-looper-integration".to_string(),
+                            parent: None,
+                        }
+                        .into(),
+                    )
+                    .await
+                    .unwrap();
+                for &(voice_id, channel) in voices {
+                    runtime
+                        .send(
+                            VoiceMessage::Create {
+                                id: voice_id,
+                                config: Box::new(
+                                    VoiceConfig::new(
+                                        format!("midi-{channel}"),
+                                        "",
+                                        GroupId::new(1),
+                                    )
+                                    .with_midi_output(MidiDeviceId::new(OUTPUT_DEVICE), channel)
+                                    .with_polyphony(1),
+                                ),
+                            }
+                            .into(),
+                        )
+                        .await
+                        .unwrap();
+                }
+                runtime.tick().await;
+                runtime
+                    .midi
+                    .reconcile_loopers(&[looper_config(looper_voice)])
+                    .await;
+
+                Self {
+                    runtime,
+                    physical_rx,
+                    sequence: 0,
+                }
+            }
+
+            async fn set_beat(&self, beat: f64) {
+                self.runtime.state.write().await.current_beat = Beat::from_f64(beat);
+            }
+
+            fn enqueue(&mut self, message: MidiMessage) {
+                self.sequence += 1;
+                assert!(self
+                    .runtime
+                    .midi
+                    .event_sender()
+                    .try_send(TimestampedMidiEvent::new(
+                        self.sequence,
+                        Instant::now(),
+                        MidiDeviceId::new(INPUT_DEVICE),
+                        message,
+                    )));
+            }
+
+            async fn note_on(&mut self, beat: f64, channel: u8, note: u8) {
+                self.set_beat(beat).await;
+                self.enqueue(MidiMessage::NoteOn {
+                    channel: Channel::new(channel),
+                    note,
+                    velocity: Velocity::from_midi1(100),
+                });
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+            }
+
+            async fn note_off(&mut self, beat: f64, channel: u8, note: u8) {
+                self.set_beat(beat).await;
+                self.enqueue(MidiMessage::NoteOff {
+                    channel: Channel::new(channel),
+                    note,
+                    velocity: Velocity::ZERO,
+                });
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+            }
+
+            async fn capture_and_schedule(&mut self) -> PatternId {
+                self.note_on(0.0, INPUT_CHANNEL, NOTE).await;
+                self.note_off(0.05, INPUT_CHANNEL, NOTE).await;
+
+                // Silence finalises the capture, and the following runtime
+                // pass installs the generated pattern through PatternMessage.
+                // At beat 3.96 its beat-zero step is inside lookahead for the
+                // next bar, proving StartOnGrid keeps the looper quantised.
+                self.set_beat(3.96).await;
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+
+                let state = self.runtime.state.read().await;
+                state
+                    .patterns
+                    .iter()
+                    .find_map(|(id, pattern)| {
+                        (pattern.owner == PatternOwner::Looper).then_some(*id)
+                    })
+                    .expect("the MIDI handler must install the looper-generated pattern")
+            }
+
+            async fn settle(&self) {
+                tokio::time::sleep(Duration::from_millis(180)).await;
+            }
+
+            fn assert_physically_balanced(
+                &self,
+                allowed_channels: &[u8],
+            ) -> HashMap<(u8, u8), (usize, usize)> {
+                let mut scheduled: Vec<_> = self.physical_rx.try_iter().enumerate().collect();
+                scheduled.sort_by(|(left_seq, left), (right_seq, right)| {
+                    left.timestamp
+                        .cmp(&right.timestamp)
+                        .then(left_seq.cmp(right_seq))
+                });
+                assert!(
+                    !scheduled.is_empty(),
+                    "the physical MIDI sink saw no events"
+                );
+
+                let mut counts = HashMap::<(u8, u8), (usize, usize)>::new();
+                let mut sounding = HashSet::new();
+                for (_, scheduled) in scheduled {
+                    match scheduled.event {
+                        QueuedMidiEvent::NoteOn { channel, note, .. } => {
+                            assert!(
+                                allowed_channels.contains(&channel),
+                                "event leaked onto MIDI channel {channel}"
+                            );
+                            counts.entry((channel, note)).or_default().0 += 1;
+                            sounding.insert((channel, note));
+                        }
+                        QueuedMidiEvent::NoteOff { channel, note } => {
+                            assert!(
+                                allowed_channels.contains(&channel),
+                                "cleanup leaked onto MIDI channel {channel}"
+                            );
+                            counts.entry((channel, note)).or_default().1 += 1;
+                            sounding.remove(&(channel, note));
+                        }
+                        other => panic!("unexpected physical MIDI event: {other:?}"),
+                    }
+                }
+
+                for (key, (note_ons, note_offs)) in &counts {
+                    assert!(
+                        note_offs >= note_ons,
+                        "physical note {key:?} emitted {note_ons} note-ons but only {note_offs} note-offs"
+                    );
+                }
+                assert!(
+                    sounding.is_empty(),
+                    "physical MIDI notes still sounding after cleanup: {sounding:?}"
+                );
+                counts
+            }
+        }
+
+        fn looper_config(voice_id: VoiceId) -> LooperConfig {
+            LooperConfig {
+                device_id: MidiDeviceId::new(INPUT_DEVICE),
+                voice_id,
+                channel: Some(INPUT_CHANNEL),
+                silence_bars: 0.01,
+                quantize_beats: 0.25,
+            }
+        }
+
+        #[tokio::test]
+        async fn generated_loop_balances_normal_completion_on_the_quantized_boundary() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+
+            harness.note_on(0.0, 1, 72).await;
+            harness.note_off(0.05, 1, 72).await;
+            let pattern_id = harness.capture_and_schedule().await;
+            harness.settle().await;
+
+            {
+                let state = harness.runtime.state.read().await;
+                let pattern = &state.patterns[&pattern_id];
+                assert!(pattern.playing);
+                assert_eq!(pattern.start_beat, Beat::ZERO);
+                assert_eq!(pattern.content.length, Beat::from_f64(4.0));
+                assert_eq!(pattern.content.steps.len(), 1);
+                assert_eq!(pattern.content.steps[0].beat, Beat::ZERO);
+            }
+            let counts = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+            assert_eq!(
+                counts.len(),
+                1,
+                "the filtered input channel must stay isolated"
+            );
+            assert!(counts.contains_key(&(FIRST_OUTPUT_CHANNEL, NOTE)));
+        }
+
+        #[tokio::test]
+        async fn same_pitch_restart_balances_a_note_on_already_queued_by_lookahead() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            harness.capture_and_schedule().await;
+
+            // Re-pressing the same pitch while Playing stops/deletes the old
+            // pattern and starts a replacement capture. The old onset is
+            // already queued for the bar line; release the replacement before
+            // that onset to exercise the physical-delivery cleanup token.
+            harness.note_on(3.97, INPUT_CHANNEL, NOTE).await;
+            harness.note_off(3.98, INPUT_CHANNEL, NOTE).await;
+            harness.settle().await;
+
+            let counts = harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+            let (note_ons, note_offs) = counts[&(FIRST_OUTPUT_CHANNEL, NOTE)];
+            assert!(
+                note_ons >= 3,
+                "capture, queued loop, and restart must all run"
+            );
+            assert!(note_offs >= note_ons);
+        }
+
+        #[tokio::test]
+        async fn reload_removal_balances_a_queued_looper_note() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            harness.capture_and_schedule().await;
+
+            // This is the same reconciliation entry point used by reload.
+            harness.runtime.midi.reconcile_loopers(&[]).await;
+            harness.runtime.tick().await;
+            harness.settle().await;
+
+            assert!(harness
+                .runtime
+                .state
+                .read()
+                .await
+                .patterns
+                .values()
+                .all(|pattern| pattern.owner != PatternOwner::Looper));
+            harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+
+        #[tokio::test]
+        async fn reload_retarget_cleans_the_old_voice_without_cross_channel_leakage() {
+            let old_voice = VoiceId::new(1);
+            let new_voice = VoiceId::new(2);
+            let mut harness = Harness::new(
+                &[
+                    (old_voice, FIRST_OUTPUT_CHANNEL),
+                    (new_voice, SECOND_OUTPUT_CHANNEL),
+                ],
+                old_voice,
+            )
+            .await;
+            harness.capture_and_schedule().await;
+
+            harness
+                .runtime
+                .midi
+                .reconcile_loopers(&[looper_config(new_voice)])
+                .await;
+            harness.runtime.tick().await;
+            harness.note_on(4.1, INPUT_CHANNEL, 67).await;
+            harness.note_off(4.15, INPUT_CHANNEL, 67).await;
+            harness.settle().await;
+
+            let counts =
+                harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL, SECOND_OUTPUT_CHANNEL]);
+            assert!(counts.contains_key(&(FIRST_OUTPUT_CHANNEL, NOTE)));
+            assert!(counts.contains_key(&(SECOND_OUTPUT_CHANNEL, 67)));
+            assert!(!counts.contains_key(&(FIRST_OUTPUT_CHANNEL, 67)));
+            assert!(!counts.contains_key(&(SECOND_OUTPUT_CHANNEL, NOTE)));
+        }
+
+        #[tokio::test]
+        async fn transport_start_seek_and_stop_leave_queued_gates_balanced() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            let pattern_id = harness.capture_and_schedule().await;
+
+            harness
+                .runtime
+                .send(TransportMessage::Start.into())
+                .await
+                .unwrap();
+            harness.runtime.tick().await;
+            harness
+                .runtime
+                .send(
+                    TransportMessage::Seek {
+                        beat: Beat::from_f64(7.96),
+                    }
+                    .into(),
+                )
+                .await
+                .unwrap();
+            harness.runtime.tick().await;
+            harness
+                .runtime
+                .send(TransportMessage::Stop.into())
+                .await
+                .unwrap();
+            harness.runtime.tick().await;
+            harness.settle().await;
+
+            let state = harness.runtime.state.read().await;
+            assert!(!state.playing);
+            assert!(state.patterns[&pattern_id].playing);
+            drop(state);
+            harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+
+        #[tokio::test]
+        async fn disconnect_panic_balances_capture_and_queued_playback() {
+            let voice = VoiceId::new(1);
+
+            let mut capture = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            capture.note_on(0.0, INPUT_CHANNEL, NOTE).await;
+            capture
+                .runtime
+                .midi
+                .panic_input_for_test(MidiDeviceId::new(INPUT_DEVICE))
+                .await;
+            capture.runtime.tick().await;
+            capture.set_beat(100.0).await;
+            capture.runtime.tick().await;
+            capture.runtime.tick().await;
+            capture.settle().await;
+            assert!(capture.runtime.state.read().await.patterns.is_empty());
+            capture.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+
+            let mut playback = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            playback.capture_and_schedule().await;
+            playback
+                .runtime
+                .midi
+                .panic_input_for_test(MidiDeviceId::new(INPUT_DEVICE))
+                .await;
+            playback.runtime.tick().await;
+            playback.settle().await;
+            playback.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+
+        #[tokio::test]
+        async fn lost_note_off_timeout_releases_capture_and_generated_pattern() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            harness.note_on(0.0, INPUT_CHANNEL, NOTE).await;
+
+            // No input note-off arrives. Twice the silence threshold triggers
+            // the looper's orphan recovery and emits an explicit VoiceMessage
+            // release before installing the generated pattern.
+            harness.set_beat(0.1).await;
+            harness.runtime.tick().await;
+            harness.set_beat(3.96).await;
+            harness.runtime.tick().await;
+            harness.settle().await;
+
+            assert!(harness
+                .runtime
+                .state
+                .read()
+                .await
+                .patterns
+                .values()
+                .any(|pattern| pattern.owner == PatternOwner::Looper));
+            harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+    }
 }

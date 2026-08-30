@@ -789,6 +789,11 @@ impl<B: Backend> MidiHandler<B> {
         );
     }
 
+    #[cfg(test)]
+    pub(crate) async fn panic_input_for_test(&self, device_id: MidiDeviceId) {
+        self.panic_and_close_input(device_id).await;
+    }
+
     // ========================================================================
     // New Infrastructure Accessors
     // ========================================================================
