@@ -1194,6 +1194,19 @@ impl<B: Backend> MidiHandler<B> {
         self.dispatch_looper_actions(actions).await;
     }
 
+    #[cfg(test)]
+    pub(crate) fn looper_capture_state_for_test(
+        &self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+    ) -> (Option<usize>, usize) {
+        self.looper_manager
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .capture_state_for_test(device_id, channel, note)
+    }
+
     /// Dispatch a batch of looper actions without awaiting runtime channel capacity.
     ///
     /// Looper messages are dispatched as protected: they are parked (never

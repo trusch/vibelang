@@ -116,6 +116,24 @@ impl LooperManager {
         self.key_for_event(device_id, channel).is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn capture_state_for_test(
+        &self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+    ) -> (Option<usize>, usize) {
+        let pending = self
+            .key_for_event(device_id, channel)
+            .map(|key| self.instances[&key].recording.pending_count());
+        let stopped_capture_debt = self
+            .aborted_capture_note_offs
+            .get(&(device_id, channel, note))
+            .copied()
+            .unwrap_or(0);
+        (pending, stopped_capture_debt)
+    }
+
     /// Reconcile instances against the new set of configs.
     ///
     /// - New `(device_id, channel)` keys → insert a fresh LooperInstance.
