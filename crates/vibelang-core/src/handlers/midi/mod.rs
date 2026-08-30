@@ -1240,6 +1240,18 @@ impl<B: Backend> MidiHandler<B> {
         self.dispatch_looper_actions(actions).await;
     }
 
+    /// Release and discard unfinished looper captures after transport stop.
+    pub async fn abort_captures_on_transport_stop(&self) {
+        let actions = {
+            let mut mgr = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            mgr.abort_captures_on_transport_stop()
+        };
+        self.dispatch_looper_actions(actions).await;
+    }
+
     /// Dispatch a batch of looper actions without awaiting runtime channel capacity.
     ///
     /// Looper messages are dispatched as protected: they are parked (never

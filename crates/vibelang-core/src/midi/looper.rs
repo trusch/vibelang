@@ -79,6 +79,9 @@ pub enum LooperAction {
 /// Manages all active looper instances.
 pub struct LooperManager {
     instances: HashMap<LooperKey, LooperInstance>,
+    /// Physical note-offs still owed by sources whose capture ownership was
+    /// already released on transport stop.
+    aborted_capture_note_offs: HashMap<(MidiDeviceId, u8, u8), usize>,
 }
 
 impl Default for LooperManager {
@@ -91,6 +94,7 @@ impl LooperManager {
     pub fn new() -> Self {
         Self {
             instances: HashMap::new(),
+            aborted_capture_note_offs: HashMap::new(),
         }
     }
 
@@ -157,6 +161,39 @@ impl LooperManager {
             *instance = LooperInstance::new(instance.config.clone());
             instance.loop_count = loop_count;
         }
+        self.aborted_capture_note_offs
+            .retain(|(released_device, _, _), _| *released_device != device_id);
+        actions
+    }
+
+    /// Abort unfinished captures when the runtime transport stops.
+    ///
+    /// Pending live notes are released and the partial recording is discarded,
+    /// while completed playing loops keep their normal stop/resume state.
+    pub fn abort_captures_on_transport_stop(&mut self) -> Vec<LooperAction> {
+        let mut actions = Vec::new();
+        let Self {
+            instances,
+            aborted_capture_note_offs,
+        } = self;
+
+        for instance in instances.values_mut() {
+            if !matches!(instance.phase, LooperPhase::Capturing { .. }) {
+                continue;
+            }
+
+            for (note, channel) in instance.recording.pending_note_keys() {
+                let count = aborted_capture_note_offs
+                    .entry((instance.config.device_id, channel, note))
+                    .or_default();
+                *count = count.saturating_add(1);
+            }
+            actions.extend(capturing_teardown_actions(instance));
+            let loop_count = instance.loop_count;
+            *instance = LooperInstance::new(instance.config.clone());
+            instance.loop_count = loop_count;
+        }
+
         actions
     }
 
@@ -272,6 +309,21 @@ impl LooperManager {
         let Some(key) = self.key_for_event(device_id, channel) else {
             return Vec::new();
         };
+
+        // The stop cleanup already released this source owner. Consume its
+        // eventual physical release without forwarding it to a newer owner.
+        if let std::collections::hash_map::Entry::Occupied(mut released) = self
+            .aborted_capture_note_offs
+            .entry((device_id, channel, note))
+        {
+            if *released.get() == 1 {
+                released.remove();
+            } else {
+                *released.get_mut() -= 1;
+            }
+            return Vec::new();
+        }
+
         let Some(inst) = self.instances.get_mut(&key) else {
             return Vec::new();
         };
@@ -421,25 +473,27 @@ fn teardown_actions(instance: &LooperInstance) -> Vec<LooperAction> {
         LooperPhase::Playing { pattern_id, .. } => {
             vec![LooperAction::StopPattern { pattern_id }]
         }
-        LooperPhase::Capturing { .. } => {
-            let mut notes: Vec<u8> = instance
-                .recording
-                .pending_note_keys()
-                .into_iter()
-                .map(|(note, _channel)| note)
-                .collect();
-            notes.sort_unstable();
-            notes.dedup();
-            notes
-                .into_iter()
-                .map(|note| LooperAction::NoteOff {
-                    voice_id: instance.config.voice_id,
-                    note,
-                })
-                .collect()
-        }
+        LooperPhase::Capturing { .. } => capturing_teardown_actions(instance),
         LooperPhase::Idle => Vec::new(),
     }
+}
+
+fn capturing_teardown_actions(instance: &LooperInstance) -> Vec<LooperAction> {
+    let mut notes: Vec<u8> = instance
+        .recording
+        .pending_note_keys()
+        .into_iter()
+        .map(|(note, _channel)| note)
+        .collect();
+    notes.sort_unstable();
+    notes.dedup();
+    notes
+        .into_iter()
+        .map(|note| LooperAction::NoteOff {
+            voice_id: instance.config.voice_id,
+            note,
+        })
+        .collect()
 }
 
 /// Bar line at or before `beat` for the given time signature — the anchor a
@@ -879,6 +933,76 @@ mod tests {
             |action| matches!(action, LooperAction::StopPattern { pattern_id: stopped } if *stopped == pattern_id)
         ));
         assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
+    }
+
+    #[test]
+    fn transport_stop_aborts_captures_without_touching_playing_loopers() {
+        let capture_config = make_config(1, 7);
+        let playing_config = make_config(2, 8);
+        let capture_key = capture_config.key();
+        let playing_key = playing_config.key();
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[capture_config.clone(), playing_config.clone()]);
+        manager.instances.get_mut(&capture_key).unwrap().loop_count = 4;
+
+        manager.handle_note_on(capture_config.device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_on(capture_config.device_id, 1, 64, 90, 0.5, 4);
+        let playing_pattern =
+            record_single_note_loop(&mut manager, playing_config.device_id, 67, 0.0);
+        let playing_loop_count = manager.instances[&playing_key].loop_count;
+
+        let actions = manager.abort_captures_on_transport_stop();
+
+        let releases: Vec<_> = actions
+            .iter()
+            .filter_map(|action| match action {
+                LooperAction::NoteOff { voice_id, note } => Some((*voice_id, *note)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(releases, vec![(VoiceId::new(7), 60), (VoiceId::new(7), 64)]);
+        assert_eq!(actions.len(), releases.len());
+
+        let capture = &manager.instances[&capture_key];
+        assert_eq!(capture.config, capture_config);
+        assert_eq!(capture.loop_count, 4);
+        assert!(matches!(capture.phase, LooperPhase::Idle));
+        assert_eq!(capture.recording.note_count(), 0);
+        assert_eq!(capture.recording.pending_count(), 0);
+
+        let playing = &manager.instances[&playing_key];
+        assert_eq!(playing.config, playing_config);
+        assert_eq!(playing.loop_count, playing_loop_count);
+        assert!(matches!(
+            playing.phase,
+            LooperPhase::Playing { pattern_id, .. } if pattern_id == playing_pattern
+        ));
+        assert!(manager.tick(1_000.0, 4).is_empty());
+
+        let fresh_on = manager.handle_note_on(capture_config.device_id, 0, 60, 110, 1_000.0, 4);
+        assert!(matches!(
+            fresh_on.as_slice(),
+            [LooperAction::NoteOn {
+                voice_id,
+                note: 60,
+                velocity: 110
+            }] if *voice_id == VoiceId::new(7)
+        ));
+        assert!(manager
+            .handle_note_off(capture_config.device_id, 0, 60, 1_000.1)
+            .is_empty());
+        assert!(manager
+            .handle_note_off(capture_config.device_id, 1, 64, 1_000.1)
+            .is_empty());
+        assert_eq!(manager.instances[&capture_key].recording.pending_count(), 1);
+
+        let fresh_off = manager.handle_note_off(capture_config.device_id, 0, 60, 1_000.2);
+        assert!(matches!(
+            fresh_off.as_slice(),
+            [LooperAction::NoteOff { voice_id, note: 60 }]
+                if *voice_id == VoiceId::new(7)
+        ));
+        assert_eq!(manager.instances[&capture_key].recording.pending_count(), 0);
     }
 
     #[test]

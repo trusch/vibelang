@@ -485,7 +485,12 @@ impl<B: Backend> Runtime<B> {
                     self.transport.seek(beat).await
                 }
                 TransportMessage::Start => self.transport.start().await,
-                TransportMessage::Stop => self.transport.stop().await,
+                TransportMessage::Stop => {
+                    self.transport.stop().await?;
+                    #[cfg(feature = "midi")]
+                    self.midi.abort_captures_on_transport_stop().await;
+                    Ok(())
+                }
             },
 
             // SynthDefs
@@ -9510,25 +9515,30 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(180)).await;
             }
 
-            fn assert_physically_balanced(
-                &self,
-                allowed_channels: &[u8],
-            ) -> HashMap<(u8, u8), (usize, usize)> {
+            fn drain_physical_events(&self) -> Vec<QueuedMidiEvent> {
                 let mut scheduled: Vec<_> = self.physical_rx.try_iter().enumerate().collect();
                 scheduled.sort_by(|(left_seq, left), (right_seq, right)| {
                     left.timestamp
                         .cmp(&right.timestamp)
                         .then(left_seq.cmp(right_seq))
                 });
-                assert!(
-                    !scheduled.is_empty(),
-                    "the physical MIDI sink saw no events"
-                );
+                scheduled
+                    .into_iter()
+                    .map(|(_, scheduled)| scheduled.event)
+                    .collect()
+            }
+
+            fn assert_physically_balanced(
+                &self,
+                allowed_channels: &[u8],
+            ) -> HashMap<(u8, u8), (usize, usize)> {
+                let events = self.drain_physical_events();
+                assert!(!events.is_empty(), "the physical MIDI sink saw no events");
 
                 let mut counts = HashMap::<(u8, u8), (usize, usize)>::new();
                 let mut outstanding = HashMap::<(u8, u8), usize>::new();
-                for (_, scheduled) in scheduled {
-                    match scheduled.event {
+                for event in events {
+                    match event {
                         QueuedMidiEvent::NoteOn { channel, note, .. } => {
                             assert!(
                                 allowed_channels.contains(&channel),
@@ -9572,6 +9582,27 @@ mod tests {
                 silence_bars: 0.01,
                 quantize_beats: 0.25,
             }
+        }
+
+        fn saturating_multiplicities(events: &[QueuedMidiEvent]) -> HashMap<(u32, u8, u8), usize> {
+            let mut outstanding = HashMap::<(u32, u8, u8), usize>::new();
+            for event in events {
+                match event {
+                    QueuedMidiEvent::NoteOn { channel, note, .. } => {
+                        *outstanding
+                            .entry((OUTPUT_DEVICE, *channel, *note))
+                            .or_default() += 1;
+                    }
+                    QueuedMidiEvent::NoteOff { channel, note } => {
+                        let count = outstanding
+                            .entry((OUTPUT_DEVICE, *channel, *note))
+                            .or_default();
+                        *count = count.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+            }
+            outstanding
         }
 
         #[tokio::test]
@@ -9721,6 +9752,120 @@ mod tests {
             assert!(state.patterns[&pattern_id].playing);
             drop(state);
             harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+
+        #[tokio::test]
+        async fn transport_stop_aborts_held_capture_without_beat_progress() {
+            let voice = VoiceId::new(1);
+            let mut harness = Harness::new(&[(voice, FIRST_OUTPUT_CHANNEL)], voice).await;
+            harness.note_on(0.0, INPUT_CHANNEL, NOTE).await;
+
+            harness
+                .runtime
+                .send(TransportMessage::Stop.into())
+                .await
+                .unwrap();
+            harness.runtime.tick().await;
+            let stopped_beat = harness.runtime.state.read().await.current_beat;
+            for _ in 0..3 {
+                harness.runtime.tick().await;
+            }
+            harness.settle().await;
+
+            assert_eq!(
+                harness.runtime.state.read().await.current_beat,
+                stopped_beat,
+                "stopped transport must not need beat progress to release capture ownership"
+            );
+            assert!(harness
+                .runtime
+                .state
+                .read()
+                .await
+                .patterns
+                .values()
+                .all(|pattern| pattern.owner != PatternOwner::Looper));
+
+            let stopped_events = harness.drain_physical_events();
+            assert!(matches!(
+                stopped_events.as_slice(),
+                [
+                    QueuedMidiEvent::NoteOn {
+                        channel: FIRST_OUTPUT_CHANNEL,
+                        note: NOTE,
+                        ..
+                    },
+                    QueuedMidiEvent::NoteOff {
+                        channel: FIRST_OUTPUT_CHANNEL,
+                        note: NOTE
+                    }
+                ]
+            ));
+            assert_eq!(
+                saturating_multiplicities(&stopped_events)
+                    [&(OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE)],
+                0,
+                "cleanup must reach zero without crediting an early NoteOff"
+            );
+
+            harness.enqueue(MidiMessage::NoteOn {
+                channel: Channel::new(INPUT_CHANNEL),
+                note: NOTE,
+                velocity: Velocity::from_midi1(100),
+            });
+            harness.runtime.tick().await;
+            harness.runtime.tick().await;
+
+            harness.enqueue(MidiMessage::NoteOff {
+                channel: Channel::new(INPUT_CHANNEL),
+                note: NOTE,
+                velocity: Velocity::ZERO,
+            });
+            harness.runtime.tick().await;
+            harness.runtime.tick().await;
+            harness.settle().await;
+
+            assert_eq!(
+                harness.physical_rx.len(),
+                1,
+                "the aborted owner's late NoteOff must not cut the fresh same-pitch capture"
+            );
+
+            harness.enqueue(MidiMessage::NoteOff {
+                channel: Channel::new(INPUT_CHANNEL),
+                note: NOTE,
+                velocity: Velocity::ZERO,
+            });
+            harness.runtime.tick().await;
+            harness.runtime.tick().await;
+            harness.settle().await;
+
+            let fresh_events = harness.drain_physical_events();
+            assert!(matches!(
+                fresh_events.as_slice(),
+                [
+                    QueuedMidiEvent::NoteOn {
+                        channel: FIRST_OUTPUT_CHANNEL,
+                        note: NOTE,
+                        ..
+                    },
+                    QueuedMidiEvent::NoteOff {
+                        channel: FIRST_OUTPUT_CHANNEL,
+                        note: NOTE
+                    }
+                ]
+            ));
+            assert_eq!(
+                saturating_multiplicities(&fresh_events)
+                    [&(OUTPUT_DEVICE, FIRST_OUTPUT_CHANNEL, NOTE)],
+                0
+            );
+            let state = harness.runtime.state.read().await;
+            assert_eq!(state.current_beat, stopped_beat);
+            assert!(state
+                .patterns
+                .values()
+                .all(|pattern| pattern.owner != PatternOwner::Looper));
         }
 
         #[tokio::test]
