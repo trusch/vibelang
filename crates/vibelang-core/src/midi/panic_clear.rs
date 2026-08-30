@@ -20,6 +20,36 @@ const PANIC_CLEAR_GAP: Duration = Duration::from_millis(10);
 #[cfg(feature = "midi")]
 const LIVE_OUTPUT_QUEUE_CAPACITY: usize = 1024;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MidiOutputOpenProfile {
+    PacedClear,
+    SideEffectFree,
+}
+
+impl MidiOutputOpenProfile {
+    /// `midir` formats ALSA names as `<client>:<port> <client-id>:<port-id>`.
+    /// Match only the exact canonical client component so similarly named
+    /// devices do not silently lose their open-time clear.
+    pub(crate) fn for_device_name(device_name: &str) -> Self {
+        let client_name = device_name.split(':').next().unwrap_or(device_name);
+        let canonical_client_name: String = client_name
+            .chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .map(|character| character.to_ascii_uppercase())
+            .collect();
+
+        if canonical_client_name == "MODEL15" {
+            Self::SideEffectFree
+        } else {
+            Self::PacedClear
+        }
+    }
+
+    fn sends_automatic_clear(self) -> bool {
+        matches!(self, Self::PacedClear)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 enum PanicClearAction {
     Live(Vec<u8>),
@@ -33,15 +63,17 @@ struct PanicClearSchedule {
     next_index: usize,
     next_clear_at: Instant,
     gap: Duration,
+    profile: MidiOutputOpenProfile,
     cancelled: bool,
 }
 
 impl PanicClearSchedule {
-    fn new(now: Instant, gap: Duration) -> Self {
+    fn new(now: Instant, gap: Duration, profile: MidiOutputOpenProfile) -> Self {
         Self {
             next_index: 0,
             next_clear_at: now + gap,
             gap,
+            profile,
             cancelled: false,
         }
     }
@@ -56,6 +88,10 @@ impl PanicClearSchedule {
                 self.next_clear_at = now + self.gap;
             }
             return PanicClearAction::Live(message);
+        }
+
+        if !self.profile.sends_automatic_clear() {
+            return PanicClearAction::Complete;
         }
 
         if self.next_index == PANIC_CLEAR_MESSAGE_COUNT {
@@ -115,21 +151,23 @@ impl PacedPanicClearOutput {
     pub(crate) fn new(
         connection: MidiOutputConnection,
         device_label: impl Into<String>,
+        profile: MidiOutputOpenProfile,
     ) -> Result<Self, String> {
-        Self::spawn(connection, device_label.into(), PANIC_CLEAR_GAP)
+        Self::spawn(connection, device_label.into(), PANIC_CLEAR_GAP, profile)
     }
 
     fn spawn<S: MidiOutputSink>(
         sink: S,
         device_label: String,
         gap: Duration,
+        profile: MidiOutputOpenProfile,
     ) -> Result<Self, String> {
         let (live_tx, live_rx) = crossbeam_channel::bounded(LIVE_OUTPUT_QUEUE_CAPACITY);
         let (cancel_tx, cancel_rx) = crossbeam_channel::bounded(1);
         let worker_label = device_label.clone();
         let worker = thread::Builder::new()
             .name("midi-panic-clear".to_string())
-            .spawn(move || run_output_worker(sink, live_rx, cancel_rx, worker_label, gap))
+            .spawn(move || run_output_worker(sink, live_rx, cancel_rx, worker_label, gap, profile))
             .map_err(|error| format!("Failed to start MIDI panic-clear worker: {error}"))?;
 
         Ok(Self {
@@ -169,17 +207,24 @@ fn run_output_worker<S: MidiOutputSink>(
     cancel_rx: Receiver<()>,
     device_label: String,
     gap: Duration,
+    profile: MidiOutputOpenProfile,
 ) {
-    let mut schedule = PanicClearSchedule::new(Instant::now(), gap);
-    let mut completion_logged = false;
-    tracing::info!(
-        "panic-clear [{}]: scheduled {} messages / {} bytes, {}-byte chunks, {} ms gap",
-        device_label,
-        PANIC_CLEAR_MESSAGE_COUNT,
-        PANIC_CLEAR_TOTAL_BYTES,
-        PANIC_CLEAR_MESSAGE_BYTES,
-        gap.as_millis()
-    );
+    let mut schedule = PanicClearSchedule::new(Instant::now(), gap, profile);
+    let mut completion_logged = !profile.sends_automatic_clear();
+    match profile {
+        MidiOutputOpenProfile::PacedClear => tracing::info!(
+            "panic-clear [{}]: scheduled {} messages / {} bytes, {}-byte chunks, {} ms gap",
+            device_label,
+            PANIC_CLEAR_MESSAGE_COUNT,
+            PANIC_CLEAR_TOTAL_BYTES,
+            PANIC_CLEAR_MESSAGE_BYTES,
+            gap.as_millis()
+        ),
+        MidiOutputOpenProfile::SideEffectFree => tracing::info!(
+            "panic-clear [{}]: disabled by side-effect-free output-open profile",
+            device_label
+        ),
+    }
 
     loop {
         if cancel_rx.try_recv().is_ok() {
@@ -276,7 +321,8 @@ mod tests {
     #[test]
     fn panic_clear_order_and_pacing_stay_below_usb_failure_boundary() {
         let start = Instant::now();
-        let mut schedule = PanicClearSchedule::new(start, PANIC_CLEAR_GAP);
+        let mut schedule =
+            PanicClearSchedule::new(start, PANIC_CLEAR_GAP, MidiOutputOpenProfile::PacedClear);
         let mut now = start;
         let mut sent = Vec::new();
 
@@ -317,7 +363,8 @@ mod tests {
     #[test]
     fn cancelled_schedule_never_emits_stale_clear() {
         let start = Instant::now();
-        let mut schedule = PanicClearSchedule::new(start, PANIC_CLEAR_GAP);
+        let mut schedule =
+            PanicClearSchedule::new(start, PANIC_CLEAR_GAP, MidiOutputOpenProfile::PacedClear);
 
         assert!(matches!(
             schedule.next_action(start + PANIC_CLEAR_GAP, None),
@@ -337,7 +384,8 @@ mod tests {
         let start = Instant::now();
         let due = start + PANIC_CLEAR_GAP;
         let note_on = vec![0x90, 60, 100];
-        let mut schedule = PanicClearSchedule::new(start, PANIC_CLEAR_GAP);
+        let mut schedule =
+            PanicClearSchedule::new(start, PANIC_CLEAR_GAP, MidiOutputOpenProfile::PacedClear);
 
         assert_eq!(
             schedule.next_action(due, Some(note_on.clone())),
@@ -352,6 +400,54 @@ mod tests {
             schedule.next_action(due + PANIC_CLEAR_GAP, None),
             PanicClearAction::Clear { index: 0, .. }
         ));
+    }
+
+    #[test]
+    fn model_15_alsa_client_selects_side_effect_free_profile() {
+        for name in [
+            "MODEL15:MODEL15 MIDI 1 36:0",
+            "MODEL 15:MODEL 15 MIDI 1 36:0",
+            "model15",
+        ] {
+            assert_eq!(
+                MidiOutputOpenProfile::for_device_name(name),
+                MidiOutputOpenProfile::SideEffectFree,
+                "unexpected profile for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_device_names_retain_paced_clear_profile() {
+        for name in [
+            "MPD232:MPD232 MIDI 1 20:0",
+            "EP-133:EP-133 MIDI 1 40:0",
+            "OTHER:MODEL15 MIDI 1 36:0",
+            "MODEL15 Clone:MODEL15 MIDI 1 36:0",
+            "MODEL150:MODEL150 MIDI 1 36:0",
+        ] {
+            assert_eq!(
+                MidiOutputOpenProfile::for_device_name(name),
+                MidiOutputOpenProfile::PacedClear,
+                "unexpected profile for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn side_effect_free_schedule_emits_no_automatic_clear() {
+        let start = Instant::now();
+        let mut schedule = PanicClearSchedule::new(
+            start,
+            PANIC_CLEAR_GAP,
+            MidiOutputOpenProfile::SideEffectFree,
+        );
+
+        assert_eq!(
+            schedule.next_action(start + PANIC_CLEAR_GAP * 100, None),
+            PanicClearAction::Complete
+        );
+        assert_eq!(schedule.sent(), 0);
     }
 
     #[cfg(feature = "midi")]
@@ -369,6 +465,70 @@ mod tests {
             }
         }
 
+        struct ChannelSink(Sender<Vec<u8>>);
+
+        impl MidiOutputSink for ChannelSink {
+            fn send(&mut self, message: &[u8]) -> Result<(), String> {
+                self.0
+                    .send(message.to_vec())
+                    .map_err(|error| error.to_string())
+            }
+        }
+
+        #[test]
+        fn side_effect_free_worker_sends_only_live_messages() {
+            let (sent_tx, sent_rx) = crossbeam_channel::unbounded();
+            let output = PacedPanicClearOutput::spawn(
+                ChannelSink(sent_tx),
+                "MODEL15".to_string(),
+                Duration::ZERO,
+                MidiOutputOpenProfile::SideEffectFree,
+            )
+            .unwrap();
+
+            assert!(sent_rx.recv_timeout(Duration::from_millis(20)).is_err());
+
+            let note_on = vec![0x90, 60, 100];
+            output.send(&note_on).unwrap();
+            assert_eq!(
+                sent_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+                note_on
+            );
+            assert!(sent_rx.try_recv().is_err());
+            drop(output);
+            assert!(sent_rx.try_recv().is_err());
+        }
+
+        #[test]
+        fn paced_clear_worker_still_sends_the_complete_clear() {
+            let (sent_tx, sent_rx) = crossbeam_channel::unbounded();
+            let output = PacedPanicClearOutput::spawn(
+                ChannelSink(sent_tx),
+                "EP-133".to_string(),
+                Duration::ZERO,
+                MidiOutputOpenProfile::PacedClear,
+            )
+            .unwrap();
+
+            let sent: Vec<Vec<u8>> = (0..PANIC_CLEAR_MESSAGE_COUNT)
+                .map(|_| sent_rx.recv_timeout(Duration::from_secs(1)).unwrap())
+                .collect();
+            let expected: Vec<Vec<u8>> = (0..16u8)
+                .flat_map(|channel| {
+                    let status = 0xB0 | channel;
+                    [
+                        vec![status, 64, 0],
+                        vec![status, 123, 0],
+                        vec![status, 120, 0],
+                    ]
+                })
+                .collect();
+
+            assert_eq!(sent, expected);
+            assert!(sent_rx.try_recv().is_err());
+            drop(output);
+        }
+
         #[test]
         fn open_is_non_blocking_and_close_reopen_cancels_stale_work() {
             let recorded = Arc::new(Mutex::new(Vec::new()));
@@ -377,6 +537,7 @@ mod tests {
                 sink.clone(),
                 "first".to_string(),
                 Duration::from_secs(60),
+                MidiOutputOpenProfile::PacedClear,
             )
             .unwrap();
 
@@ -388,6 +549,7 @@ mod tests {
                 sink.clone(),
                 "second".to_string(),
                 Duration::from_secs(60),
+                MidiOutputOpenProfile::PacedClear,
             )
             .unwrap();
             second.send(&[0x80, 60, 0]).unwrap();

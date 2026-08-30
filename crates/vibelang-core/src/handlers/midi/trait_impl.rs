@@ -8,8 +8,8 @@ use crate::backend::Backend;
 use crate::midi::open_pipewire_midi2_input;
 use crate::midi::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs,
-    parse_midi_bytes as new_parse_midi_bytes, MidiRecording, MidiRecordingInfo,
-    PacedPanicClearOutput, QueuedMidiEvent, TimestampedMidiEvent,
+    parse_midi_bytes as new_parse_midi_bytes, MidiOutputOpenProfile, MidiRecording,
+    MidiRecordingInfo, PacedPanicClearOutput, QueuedMidiEvent, TimestampedMidiEvent,
 };
 use crate::traits::{Midi, MidiDeviceInfo, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
@@ -289,8 +289,12 @@ impl<B: Backend> Midi for MidiHandler<B> {
         let conn = midi_out
             .connect(port, "vibelang-output")
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI output: {}", e)))?;
-        let conn = PacedPanicClearOutput::new(conn, format!("{} (handler id={})", port_name, id.0))
-            .map_err(Error::MidiError)?;
+        let conn = PacedPanicClearOutput::new(
+            conn,
+            format!("{} (handler id={})", port_name, id.0),
+            MidiOutputOpenProfile::for_device_name(&port_name),
+        )
+        .map_err(Error::MidiError)?;
 
         self.outputs
             .lock()

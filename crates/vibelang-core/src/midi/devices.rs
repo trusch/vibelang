@@ -11,7 +11,7 @@ use std::sync::Arc;
 use super::events::TimestampedMidiEvent;
 use super::parser::parse_midi_bytes;
 use super::queue::{MidiEventQueue, MidiEventSender};
-use super::PacedPanicClearOutput;
+use super::{MidiOutputOpenProfile, PacedPanicClearOutput};
 
 #[cfg(feature = "native")]
 use midir::{MidiInput, MidiInputConnection, MidiOutput};
@@ -343,6 +343,7 @@ impl MidiDeviceManager {
         let connection = PacedPanicClearOutput::new(
             connection,
             format!("{} (device-manager id={})", port_name, id.0),
+            MidiOutputOpenProfile::for_device_name(&port_name),
         )?;
 
         // Store state
