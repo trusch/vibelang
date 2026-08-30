@@ -74,7 +74,7 @@ use crate::midi::send_cc_for_param;
 use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
-use crate::state::{PatternOwner, State};
+use crate::state::{MidiInputRoute, NoteOwner, PatternOwner, State};
 #[cfg(feature = "pipewire-midi2")]
 use crate::traits::Midi;
 #[cfg(feature = "midi")]
@@ -336,7 +336,7 @@ pub struct MidiHandler<B: Backend> {
     runtime_tx: crate::compat::Sender<Message>,
 
     /// Latest voice CC values observed during the current MIDI tick.
-    pending_voice_cc: Mutex<HashMap<(VoiceId, String), f32>>,
+    pending_voice_cc: Mutex<HashMap<(MidiDeviceId, u8, VoiceId, String), f32>>,
 
     /// FIFO of runtime messages that could not be sent because the runtime
     /// channel was full. Drained at the START of the next tick, before new
@@ -954,65 +954,34 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     async fn panic_and_close_input(&self, device_id: MidiDeviceId) {
-        let routing = self.routing_manager.routing();
-        let routing = routing.read().await;
-        let mut target_voices = HashSet::new();
-        target_voices.extend(
-            routing
-                .keyboard_routes
-                .iter()
-                .filter(|route| route.device_id == device_id)
-                .map(|route| route.voice_id),
-        );
-        target_voices.extend(
-            routing
-                .advanced_keyboard_routes
-                .iter()
-                .filter(|route| route.device_id == device_id)
-                .filter_map(|route| route.target_voice),
-        );
-        target_voices.extend(
-            routing
-                .note_routes
-                .iter()
-                .filter(|route| route.device_id == device_id)
-                .filter_map(|route| route.target_voice),
-        );
-        drop(routing);
-
-        let active_notes = {
-            let state = self.state.read().await;
-            target_voices
-                .iter()
-                .flat_map(|voice_id| {
-                    state
-                        .voices
-                        .get(voice_id)
-                        .into_iter()
-                        .flat_map(|voice| voice.note_nodes.keys().copied())
-                        .map(|note| (*voice_id, note))
-                })
-                .collect::<Vec<_>>()
+        let looper_actions = {
+            let mut loopers = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            loopers.disconnect_device(device_id)
         };
-
-        for (voice, note) in active_notes {
-            self.send_runtime_from_tick(
-                Message::Voice(VoiceMessage::NoteOff { voice, note }),
-                true,
-                "input disconnect all-notes-off",
-            );
-        }
+        self.dispatch_looper_actions(looper_actions).await;
+        self.send_runtime_from_tick(
+            Message::Voice(VoiceMessage::DrainMidiInput { device_id }),
+            true,
+            "input disconnect owned-note drain",
+        );
         self.pending_voice_cc
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|(voice, _), _| !target_voices.contains(voice));
+            .retain(|(owned_device, _, _, _), _| *owned_device != device_id);
 
         self.close_legacy_input(device_id);
         tracing::info!(
-            "MIDI input {} disconnected; issued all-notes-off for {} routed voices",
-            device_id.raw(),
-            target_voices.len()
+            "MIDI input {} disconnected; queued owner-selective note cleanup",
+            device_id.raw()
         );
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn panic_input_for_test(&self, device_id: MidiDeviceId) {
+        self.panic_and_close_input(device_id).await;
     }
 
     // ========================================================================
@@ -1302,7 +1271,7 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.tick(current_beat, time_sig_num)
         };
-        self.dispatch_looper_actions(looper_actions);
+        self.dispatch_looper_actions(looper_actions).await;
 
         // Legacy ALSA ports have unstable numeric IDs. Re-resolve logical
         // intents after processing this tick's queued events so a disconnect
@@ -1344,7 +1313,15 @@ impl<B: Backend> MidiHandler<B> {
             msg
         };
 
-        let protected = from_looper || matches!(msg, Message::Voice(VoiceMessage::NoteOff { .. }));
+        let protected = from_looper
+            || matches!(
+                msg,
+                Message::Voice(
+                    VoiceMessage::NoteOff { .. }
+                        | VoiceMessage::NoteOffOwned { .. }
+                        | VoiceMessage::DrainMidiInput { .. }
+                )
+            );
         pending.push_back(PendingRuntimeMessage { msg, protected });
 
         if pending.len() > PENDING_RUNTIME_CAP {
@@ -1454,36 +1431,89 @@ impl<B: Backend> MidiHandler<B> {
                 .unwrap_or_else(|e| e.into_inner());
             mgr.reconcile(configs)
         };
-        self.dispatch_looper_actions(actions);
+        self.dispatch_looper_actions(actions).await;
     }
 
-    /// Dispatch a batch of looper actions to the runtime (non-blocking).
+    /// Release and discard unfinished looper captures after transport stop.
+    pub async fn abort_captures_on_transport_stop(&self) {
+        let actions = {
+            let mut mgr = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            mgr.abort_captures_on_transport_stop()
+        };
+        self.dispatch_looper_actions(actions).await;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn looper_capture_state_for_test(
+        &self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+    ) -> (Option<usize>, usize) {
+        self.looper_manager
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .capture_state_for_test(device_id, channel, note)
+    }
+
+    /// Dispatch a batch of looper actions without awaiting runtime channel capacity.
     ///
     /// Looper messages are dispatched as protected: they are parked (never
     /// dropped) when the runtime channel is full.
-    fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
+    async fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
         for action in actions {
             match action {
                 LooperAction::NoteOn {
+                    device_id,
+                    channel,
                     voice_id,
                     note,
                     velocity,
                 } => {
+                    let voice_amp = self
+                        .state
+                        .read()
+                        .await
+                        .voices
+                        .get(&voice_id)
+                        .and_then(|voice| voice.config.params.get("amp"))
+                        .copied()
+                        .unwrap_or(1.0);
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOn {
+                        Message::Voice(VoiceMessage::NoteOnOwned {
                             voice: voice_id,
                             note,
-                            velocity: velocity as f32 / 127.0,
+                            velocity: voice_amp * (velocity as f32 / 127.0),
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::Looper,
+                            },
                         }),
                         true,
                         "looper note_on",
                     );
                 }
-                LooperAction::NoteOff { voice_id, note } => {
+                LooperAction::NoteOff {
+                    device_id,
+                    channel,
+                    voice_id,
+                    note,
+                } => {
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOff {
+                        Message::Voice(VoiceMessage::NoteOffOwned {
                             voice: voice_id,
                             note,
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::Looper,
+                            },
                         }),
                         true,
                         "looper note_off",
@@ -1628,7 +1658,8 @@ impl<B: Backend> MidiHandler<B> {
 
                 drop(routing);
 
-                self.handle_basic_cc(basic_routes, *value).await;
+                self.handle_basic_cc(device_id, *channel, basic_routes, *value)
+                    .await;
                 if route_advanced_cc {
                     self.handle_advanced_cc(
                         device_id,
@@ -1673,8 +1704,15 @@ impl<B: Backend> MidiHandler<B> {
 
                 drop(routing);
 
-                self.handle_pitch_bend(basic_routes, advanced_routes, advanced_bend_routes, *value)
-                    .await;
+                self.handle_pitch_bend(
+                    device_id,
+                    *channel,
+                    basic_routes,
+                    advanced_routes,
+                    advanced_bend_routes,
+                    *value,
+                )
+                .await;
             }
             // TODO: external MIDI clock sync is unimplemented — Clock/Start/
             // Stop/Continue from devices are only logged and never drive the
@@ -1747,7 +1785,7 @@ impl<B: Backend> MidiHandler<B> {
                     time_sig_num,
                 )
             };
-            self.dispatch_looper_actions(actions);
+            self.dispatch_looper_actions(actions).await;
             return;
         }
 
@@ -1765,10 +1803,16 @@ impl<B: Backend> MidiHandler<B> {
                     velocity
                 );
                 self.send_runtime_from_tick(
-                    Message::Voice(VoiceMessage::NoteOn {
+                    Message::Voice(VoiceMessage::NoteOnOwned {
                         voice: route.voice_id,
                         note,
                         velocity: vel_f32,
+                        owner: NoteOwner::MidiInput {
+                            device_id,
+                            channel,
+                            source_note: note,
+                            route: MidiInputRoute::Keyboard,
+                        },
                     }),
                     false,
                     "keyboard note_on",
@@ -1796,10 +1840,16 @@ impl<B: Backend> MidiHandler<B> {
                         curved_velocity
                     );
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOn {
+                        Message::Voice(VoiceMessage::NoteOnOwned {
                             voice: voice_id,
                             note: transposed_note,
                             velocity: vel,
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::AdvancedKeyboard,
+                            },
                         }),
                         false,
                         "advanced keyboard note_on",
@@ -1846,10 +1896,16 @@ impl<B: Backend> MidiHandler<B> {
                     }
 
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOn {
+                        Message::Voice(VoiceMessage::NoteOnOwned {
                             voice: voice_id,
                             note,
                             velocity: vel_curved,
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::Note,
+                            },
                         }),
                         false,
                         "note route note_on",
@@ -1886,7 +1942,7 @@ impl<B: Backend> MidiHandler<B> {
                     .unwrap_or_else(|e| e.into_inner());
                 mgr.handle_note_off(device_id, channel, note, capture_beat)
             };
-            self.dispatch_looper_actions(actions);
+            self.dispatch_looper_actions(actions).await;
             return;
         }
 
@@ -1897,9 +1953,15 @@ impl<B: Backend> MidiHandler<B> {
             {
                 tracing::debug!("MIDI note_off: voice={}, note={}", route.voice_id.0, note);
                 self.send_runtime_from_tick(
-                    Message::Voice(VoiceMessage::NoteOff {
+                    Message::Voice(VoiceMessage::NoteOffOwned {
                         voice: route.voice_id,
                         note,
+                        owner: NoteOwner::MidiInput {
+                            device_id,
+                            channel,
+                            source_note: note,
+                            route: MidiInputRoute::Keyboard,
+                        },
                     }),
                     false,
                     "keyboard note_off",
@@ -1923,9 +1985,15 @@ impl<B: Backend> MidiHandler<B> {
                         transposed_note
                     );
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOff {
+                        Message::Voice(VoiceMessage::NoteOffOwned {
                             voice: voice_id,
                             note: transposed_note,
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::AdvancedKeyboard,
+                            },
                         }),
                         false,
                         "advanced keyboard note_off",
@@ -1943,9 +2011,15 @@ impl<B: Backend> MidiHandler<B> {
                 if let Some(voice_id) = route.target_voice {
                     tracing::debug!("MIDI note route off: voice={}, note={}", voice_id.0, note);
                     self.send_runtime_from_tick(
-                        Message::Voice(VoiceMessage::NoteOff {
+                        Message::Voice(VoiceMessage::NoteOffOwned {
                             voice: voice_id,
                             note,
+                            owner: NoteOwner::MidiInput {
+                                device_id,
+                                channel,
+                                source_note: note,
+                                route: MidiInputRoute::Note,
+                            },
                         }),
                         false,
                         "note route note_off",
@@ -1955,7 +2029,13 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    async fn handle_basic_cc(&self, basic_routes: Vec<CcRoute>, value: u8) {
+    async fn handle_basic_cc(
+        &self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        basic_routes: Vec<CcRoute>,
+        value: u8,
+    ) {
         // Process basic CC routes
         for route in basic_routes {
             let normalized = value as f32 / 127.0;
@@ -1971,7 +2051,7 @@ impl<B: Backend> MidiHandler<B> {
             );
 
             if let Err(e) = self
-                .apply_cc_to_target(&route.target, &route.param, scaled)
+                .apply_cc_to_target(device_id, channel, &route.target, &route.param, scaled)
                 .await
             {
                 tracing::warn!("Failed to apply CC to {:?}: {}", route.target, e);
@@ -2022,7 +2102,7 @@ impl<B: Backend> MidiHandler<B> {
             );
 
             if let Err(e) = self
-                .apply_cc_to_target(&route.target, &route.param, param_value)
+                .apply_cc_to_target(device_id, channel, &route.target, &route.param, param_value)
                 .await
             {
                 tracing::warn!("Failed to apply MIDI CC to {:?}: {}", route.target, e);
@@ -2032,6 +2112,8 @@ impl<B: Backend> MidiHandler<B> {
 
     async fn handle_pitch_bend(
         &self,
+        device_id: MidiDeviceId,
+        channel: u8,
         basic_routes: Vec<KeyboardRoute>,
         advanced_routes: Vec<KeyboardRouteBuilder>,
         advanced_bend_routes: Vec<CcRouteBuilder>,
@@ -2072,7 +2154,10 @@ impl<B: Backend> MidiHandler<B> {
                     param_value
                 );
 
-                if let Err(e) = self.apply_cc_to_target(target, param, param_value).await {
+                if let Err(e) = self
+                    .apply_cc_to_target(device_id, channel, target, param, param_value)
+                    .await
+                {
                     tracing::warn!("Failed to apply advanced pitch bend to {:?}: {}", target, e);
                 }
             }
@@ -2080,7 +2165,14 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     /// Apply a CC value to a target's parameter.
-    async fn apply_cc_to_target(&self, target: &FadeTarget, param: &str, value: f32) -> Result<()> {
+    async fn apply_cc_to_target(
+        &self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        target: &FadeTarget,
+        param: &str,
+        value: f32,
+    ) -> Result<()> {
         if let FadeTarget::Voice(id) = target {
             let voice_exists = {
                 let state = self.state.read().await;
@@ -2092,7 +2184,7 @@ impl<B: Backend> MidiHandler<B> {
                     .pending_voice_cc
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .insert((*id, param.to_string()), value)
+                    .insert((device_id, channel, *id, param.to_string()), value)
                     .is_some();
                 self.observe_voice_cc(*id, param, replaced);
             }
@@ -2245,7 +2337,7 @@ impl<B: Backend> MidiHandler<B> {
             pending.drain().collect()
         };
 
-        for ((voice_id, param), value) in updates {
+        for ((_device_id, _channel, voice_id, param), value) in updates {
             if let Err(e) = self.apply_voice_cc(voice_id, &param, value).await {
                 tracing::warn!(
                     "Failed to apply MIDI CC to voice {} param '{}': {}",
@@ -2642,10 +2734,16 @@ impl<B: Backend> MidiHandler<B> {
                 velocity.as_f32()
             );
             self.send_runtime_from_tick(
-                Message::Voice(VoiceMessage::NoteOn {
+                Message::Voice(VoiceMessage::NoteOnOwned {
                     voice: route.voice_id,
                     note: transposed_note,
                     velocity: velocity.as_f32(),
+                    owner: NoteOwner::MidiInput {
+                        device_id,
+                        channel: group_channel.channel(),
+                        source_note: note,
+                        route: MidiInputRoute::Midi2Keyboard,
+                    },
                 }),
                 false,
                 "midi2 note_on",
@@ -2691,9 +2789,15 @@ impl<B: Backend> MidiHandler<B> {
                 transposed_note
             );
             self.send_runtime_from_tick(
-                Message::Voice(VoiceMessage::NoteOff {
+                Message::Voice(VoiceMessage::NoteOffOwned {
                     voice: route.voice_id,
                     note: transposed_note,
+                    owner: NoteOwner::MidiInput {
+                        device_id,
+                        channel: group_channel.channel(),
+                        source_note: note,
+                        route: MidiInputRoute::Midi2Keyboard,
+                    },
                 }),
                 false,
                 "midi2 note_off",
@@ -3120,6 +3224,60 @@ mod tests {
         midi.tick().await;
     }
 
+    async fn dispatch_looper_note_on(base_amp: Option<f32>) -> f32 {
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        setup_voice_state(&state).await;
+
+        let backend = Arc::new(MockBackend::new());
+        let voices = VoicesHandler::new(Arc::clone(&backend), Arc::clone(&state));
+        let mut config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        if let Some(base_amp) = base_amp {
+            config.params.insert("amp".to_string(), base_amp);
+        }
+        voices.create(voice_id, config).await.unwrap();
+
+        let (runtime_tx, mut runtime_rx) = channel(4);
+        let handler = MidiHandler::new(backend, state, runtime_tx);
+        handler
+            .dispatch_looper_actions(vec![LooperAction::NoteOn {
+                device_id: MidiDeviceId::new(1),
+                channel: 0,
+                voice_id,
+                note: 60,
+                velocity: 100,
+            }])
+            .await;
+
+        let Message::Voice(VoiceMessage::NoteOnOwned {
+            voice,
+            note,
+            velocity,
+            ..
+        }) = runtime_rx.try_recv().expect("looper live NoteOn")
+        else {
+            panic!("expected looper live NoteOn");
+        };
+        assert_eq!(voice, voice_id);
+        assert_eq!(note, 60);
+        assert!(runtime_rx.try_recv().is_err());
+        velocity
+    }
+
+    #[tokio::test]
+    async fn looper_live_note_on_applies_target_voice_amp_once() {
+        let velocity = dispatch_looper_note_on(Some(0.5)).await;
+
+        assert!((velocity - 0.5 * (100.0 / 127.0)).abs() < f32::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn looper_live_note_on_defaults_missing_voice_amp_to_unity() {
+        let velocity = dispatch_looper_note_on(None).await;
+
+        assert!((velocity - 100.0 / 127.0).abs() < f32::EPSILON);
+    }
+
     #[test]
     fn midi_input_intent_changes_are_part_of_reload_snapshot() {
         let mut before = crate::reload::ScriptState::new();
@@ -3174,11 +3332,19 @@ mod tests {
 
         assert!(matches!(
             runtime_rx.try_recv(),
-            Ok(Message::Voice(VoiceMessage::NoteOn {
+            Ok(Message::Voice(VoiceMessage::NoteOnOwned {
                 voice,
                 note: 60,
                 velocity,
-            })) if voice == note_voice && (velocity - 96.0 / 127.0).abs() < f32::EPSILON
+                owner: NoteOwner::MidiInput {
+                    device_id,
+                    channel: 0,
+                    source_note: 60,
+                    route: MidiInputRoute::AdvancedKeyboard,
+                },
+            })) if voice == note_voice
+                && device_id == intent.device_id
+                && (velocity - 96.0 / 127.0).abs() < f32::EPSILON
         ));
         assert!(runtime_rx.try_recv().is_err());
 
@@ -3196,7 +3362,16 @@ mod tests {
 
         assert!(matches!(
             runtime_rx.try_recv(),
-            Ok(Message::Voice(VoiceMessage::NoteOff { voice, note: 60 })) if voice == note_voice
+            Ok(Message::Voice(VoiceMessage::NoteOffOwned {
+                voice,
+                note: 60,
+                owner: NoteOwner::MidiInput {
+                    device_id,
+                    channel: 0,
+                    source_note: 60,
+                    route: MidiInputRoute::AdvancedKeyboard,
+                },
+            })) if voice == note_voice && device_id == intent.device_id
         ));
         assert!(runtime_rx.try_recv().is_err());
     }
@@ -3967,6 +4142,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn input_disconnect_releases_and_resets_looper_capture() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let handler =
+            MidiHandler::new(Arc::new(MockBackend::new()), Arc::clone(&state), runtime_tx);
+        handler
+            .reconcile_loopers(&[LooperConfig {
+                device_id,
+                voice_id,
+                channel: None,
+                silence_bars: 0.25,
+                quantize_beats: 0.0,
+            }])
+            .await;
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            1,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::NoteOn {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::from_midi1(100),
+            },
+        )));
+        handler.tick().await;
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOnOwned {
+                voice,
+                note: 60,
+                owner: NoteOwner::MidiInput {
+                    device_id: owner_device,
+                    channel: 0,
+                    source_note: 60,
+                    route: MidiInputRoute::Looper,
+                },
+                ..
+            })) if voice == voice_id && owner_device == device_id
+        ));
+
+        handler.panic_and_close_input(device_id).await;
+
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOffOwned {
+                voice,
+                note: 60,
+                owner: NoteOwner::MidiInput {
+                    device_id: owner_device,
+                    channel: 0,
+                    source_note: 60,
+                    route: MidiInputRoute::Looper,
+                },
+            })) if voice == voice_id && owner_device == device_id
+        ));
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::DrainMidiInput { device_id: drained }))
+                if drained == device_id
+        ));
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(100.0);
+        }
+        handler.tick().await;
+        while let Ok(message) = runtime_rx.try_recv() {
+            assert!(
+                !matches!(message, Message::Pattern(PatternMessage::Create { .. })),
+                "a disconnected capture must not finalize into a pattern"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn input_disconnect_retains_other_devices_pending_voice_cc() {
+        let first_device = MidiDeviceId::new(1);
+        let second_device = MidiDeviceId::new(2);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, _runtime_rx) = channel(4);
+        let handler = MidiHandler::new(Arc::new(MockBackend::new()), state, runtime_tx);
+        {
+            let mut pending = handler
+                .pending_voice_cc
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            pending.insert((first_device, 0, voice_id, "cutoff".to_string()), 0.25);
+            pending.insert((second_device, 0, voice_id, "cutoff".to_string()), 0.75);
+        }
+
+        handler.panic_and_close_input(first_device).await;
+
+        let pending = handler
+            .pending_voice_cc
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            pending.get(&(second_device, 0, voice_id, "cutoff".to_string())),
+            Some(&0.75)
+        );
+    }
+
+    #[tokio::test]
     async fn cc_voice_route_updates_note_node_and_future_note_defaults() {
         let device_id = MidiDeviceId::new(1);
         let voice_id = VoiceId::new(7);
@@ -4084,10 +4366,11 @@ mod tests {
             .try_recv()
             .expect("NoteOn should still reach the runtime queue");
         match msg {
-            Message::Voice(VoiceMessage::NoteOn {
+            Message::Voice(VoiceMessage::NoteOnOwned {
                 voice,
                 note,
                 velocity,
+                ..
             }) => {
                 assert_eq!(voice, voice_id);
                 assert_eq!(note, 36);
@@ -4192,13 +4475,13 @@ mod tests {
         let mut offs = 0;
         for (i, msg) in received.iter().enumerate() {
             match msg {
-                Message::Voice(VoiceMessage::NoteOn { voice, note, .. }) => {
+                Message::Voice(VoiceMessage::NoteOnOwned { voice, note, .. }) => {
                     assert_eq!(*voice, voice_id);
                     assert_eq!(*note, 36);
                     assert_eq!(i % 2, 0, "NoteOn overtaken by a NoteOff at index {i}");
                     ons += 1;
                 }
-                Message::Voice(VoiceMessage::NoteOff { voice, note }) => {
+                Message::Voice(VoiceMessage::NoteOffOwned { voice, note, .. }) => {
                     assert_eq!(*voice, voice_id);
                     assert_eq!(*note, 36);
                     assert_eq!(i % 2, 1, "NoteOff overtook its NoteOn at index {i}");
