@@ -8,12 +8,16 @@
 //! - Undo/redo functionality
 //! - Deterministic behavior
 
+#[cfg(feature = "midi")]
+use crate::state::NoteOwner;
 use crate::state::PatternOwner;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
     FadeConfig, FadeTarget, MelodyConfig, PatternConfig, SampleConfig, SequenceConfig, VoiceConfig,
 };
+#[cfg(feature = "midi")]
+use crate::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
@@ -191,6 +195,30 @@ pub enum VoiceMessage {
 
     /// Send a note-off to a voice.
     NoteOff { voice: VoiceId, note: u8 },
+
+    /// Internal note-on carrying physical source ownership.
+    #[cfg(feature = "midi")]
+    #[doc(hidden)]
+    NoteOnOwned {
+        voice: VoiceId,
+        note: u8,
+        velocity: f32,
+        owner: NoteOwner,
+    },
+
+    /// Internal note-off for one exact physical source owner.
+    #[cfg(feature = "midi")]
+    #[doc(hidden)]
+    NoteOffOwned {
+        voice: VoiceId,
+        note: u8,
+        owner: NoteOwner,
+    },
+
+    /// Internal cleanup for all notes owned by one disconnected MIDI input.
+    #[cfg(feature = "midi")]
+    #[doc(hidden)]
+    DrainMidiInput { device_id: MidiDeviceId },
 
     /// Mute or unmute a voice.
     Mute { id: VoiceId, muted: bool },
@@ -654,6 +682,12 @@ impl Message {
                 VoiceMessage::Stop { .. } => "Voice::Stop",
                 VoiceMessage::NoteOn { .. } => "Voice::NoteOn",
                 VoiceMessage::NoteOff { .. } => "Voice::NoteOff",
+                #[cfg(feature = "midi")]
+                VoiceMessage::NoteOnOwned { .. } => "Voice::NoteOnOwned",
+                #[cfg(feature = "midi")]
+                VoiceMessage::NoteOffOwned { .. } => "Voice::NoteOffOwned",
+                #[cfg(feature = "midi")]
+                VoiceMessage::DrainMidiInput { .. } => "Voice::DrainMidiInput",
                 VoiceMessage::Mute { .. } => "Voice::Mute",
                 VoiceMessage::SetParam { .. } => "Voice::SetParam",
             },

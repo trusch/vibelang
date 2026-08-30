@@ -16,6 +16,8 @@ use crate::traits::{
     SampleInfo, SequenceConfig, VoiceConfig,
 };
 use crate::types::FadeId;
+#[cfg(feature = "midi")]
+use crate::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
@@ -1365,12 +1367,66 @@ pub struct State {
 /// (their slot was stolen), most-recently-stolen last.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MidiVoicePool {
+    /// Sounding note per voice slot; `None` is a free slot.
+    #[cfg(feature = "midi")]
+    pub slots: Vec<Option<MidiPoolNote>>,
     /// Sounding `(note, velocity)` per voice slot; `None` is a free slot.
+    #[cfg(not(feature = "midi"))]
     pub slots: Vec<Option<(u8, u8)>>,
+    /// Held notes whose slot was stolen, most-recently-stolen last.
+    #[cfg(feature = "midi")]
+    pub overflow: Vec<MidiPoolNote>,
     /// Held keys whose slot was stolen, most-recently-stolen last.
+    #[cfg(not(feature = "midi"))]
     pub overflow: Vec<(u8, u8)>,
     /// Occupied slot indices, oldest-allocated first (note-steal order).
     pub alloc_order: Vec<usize>,
+}
+
+/// Internal source identity for a live note lifecycle.
+#[cfg(feature = "midi")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum NoteOwner {
+    MidiInput {
+        device_id: MidiDeviceId,
+        channel: u8,
+        source_note: u8,
+        route: MidiInputRoute,
+    },
+    Pattern(PatternId),
+    #[default]
+    Anonymous,
+}
+
+#[cfg(feature = "midi")]
+impl NoteOwner {
+    pub(crate) fn belongs_to_midi_device(self, device_id: MidiDeviceId) -> bool {
+        matches!(self, Self::MidiInput { device_id: owned, .. } if owned == device_id)
+    }
+}
+
+/// Internal route class used to keep independent mappings from sharing note ownership.
+#[cfg(feature = "midi")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MidiInputRoute {
+    Keyboard,
+    AdvancedKeyboard,
+    Note,
+    Looper,
+    Midi2Keyboard,
+}
+
+/// One logical note held by the MIDI voice allocator.
+#[cfg(feature = "midi")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiPoolNote {
+    pub note: u8,
+    pub velocity: u8,
+    pub owner: NoteOwner,
+    pub generation: u64,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.

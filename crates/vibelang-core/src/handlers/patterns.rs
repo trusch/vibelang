@@ -3,6 +3,8 @@
 use crate::backend::Backend;
 use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
+#[cfg(feature = "midi")]
+use crate::state::NoteOwner;
 use crate::state::{PatternOwner, PatternState, State};
 use crate::traits::{PatternConfig, Patterns, Step, Voices};
 use crate::types::{Beat, ParamMap, PatternId, VoiceId};
@@ -439,7 +441,13 @@ impl<B: Backend> PatternsHandler<B> {
                 let velocity = trigger.params.get("amp").copied().unwrap_or(1.0);
                 let tracked_note = self
                     .voices
-                    .note_on_at_owned(trigger.voice_id, note, velocity, Some(trigger.timestamp))
+                    .note_on_at_for_owner(
+                        trigger.voice_id,
+                        note,
+                        velocity,
+                        Some(trigger.timestamp),
+                        NoteOwner::Pattern(trigger.pattern_id),
+                    )
                     .await
                     .ok();
 
@@ -499,12 +507,18 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
     }
 
     async fn delete(&self, id: PatternId) -> Result<()> {
-        let mut state = self.state.write().await;
+        {
+            let mut state = self.state.write().await;
+            state
+                .patterns
+                .remove(&id)
+                .ok_or(Error::PatternNotFound(id))?;
+        }
 
-        state
-            .patterns
-            .remove(&id)
-            .ok_or(Error::PatternNotFound(id))?;
+        #[cfg(feature = "midi")]
+        self.voices
+            .cancel_note_owner(NoteOwner::Pattern(id))
+            .await?;
 
         Ok(())
     }
@@ -535,57 +549,19 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
     }
 
     async fn stop(&self, id: PatternId) -> Result<()> {
-        // Flip `playing` to false inside the lock and capture the voice plus
-        // its currently held notes so we can send note-offs *outside* the
-        // lock. The looper relies on `stop()` actually silencing the loop —
-        // not just disabling the scheduler — because the next `tick()` will
-        // already have queued lookahead note-ons into the dispatch path,
-        // and MIDI sustains held notes until an explicit note-off arrives.
-        // Without this, the previous loop bleeds over the start of the next
-        // recording (audible as "altes Pattern noch da während ich das neue
-        // einspiele").
-        let (voice_id, held_notes) = {
+        {
             let mut state = self.state.write().await;
             let pattern = state
                 .patterns
                 .get_mut(&id)
                 .ok_or(Error::PatternNotFound(id))?;
             pattern.playing = false;
-            let voice_id = pattern.content.voice;
-
-            // Collect every note that's currently sounding for the pattern's
-            // voice. Audio synths track held notes in `voice.note_nodes`;
-            // MIDI-output voices instead push through `state.midi_voice_pool`
-            // (slots + overflow). Without sweeping the pool, the previous
-            // loop's MIDI note-ons stay latched on the external synth — the
-            // pool only releases them when the next note-on for the same
-            // (voice, note) arrives, so the old pattern bleeds into the
-            // pauses of the new recording.
-            let mut held: Vec<u8> = Vec::new();
-            if let Some(vid) = voice_id {
-                if let Some(v) = state.voices.get(&vid) {
-                    held.extend(v.note_nodes.keys().copied());
-                }
-                #[cfg(feature = "midi")]
-                if let Some(pool) = state.midi_voice_pool.get(&vid) {
-                    for slot in &pool.slots {
-                        if let Some((note, _)) = slot {
-                            held.push(*note);
-                        }
-                    }
-                    for (note, _) in &pool.overflow {
-                        held.push(*note);
-                    }
-                }
-            }
-            (voice_id, held)
-        };
-
-        if let Some(vid) = voice_id {
-            for note in held_notes {
-                let _ = self.voices.note_off(vid, note).await;
-            }
         }
+
+        #[cfg(feature = "midi")]
+        self.voices
+            .cancel_note_owner(NoteOwner::Pattern(id))
+            .await?;
 
         Ok(())
     }
@@ -1186,14 +1162,14 @@ mod tests {
                         .slots
                         .iter()
                         .flatten()
-                        .any(|(note, _)| *note == NOTE));
+                        .any(|held| held.note == NOTE));
                 }
 
                 let mut events: Vec<_> = rx.try_iter().collect();
                 let (trace, outstanding) = physical_multiplicity(&events);
                 assert_eq!(
                     trace.iter().map(|event| event.0).collect::<Vec<_>>(),
-                    vec!["off", "on", "on", "off", "off", "on"]
+                    vec!["on", "on", "off", "off", "on"]
                 );
                 assert_eq!(
                     outstanding.get(&(0, NOTE)),

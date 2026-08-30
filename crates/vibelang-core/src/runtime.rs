@@ -535,6 +535,27 @@ impl<B: Backend> Runtime<B> {
                     velocity,
                 } => self.voices.note_on(voice, note, velocity).await,
                 VoiceMessage::NoteOff { voice, note } => self.voices.note_off(voice, note).await,
+                #[cfg(feature = "midi")]
+                VoiceMessage::NoteOnOwned {
+                    voice,
+                    note,
+                    velocity,
+                    owner,
+                } => self
+                    .voices
+                    .note_on_at_for_owner(voice, note, velocity, None, owner)
+                    .await
+                    .map(|_| ()),
+                #[cfg(feature = "midi")]
+                VoiceMessage::NoteOffOwned { voice, note, owner } => {
+                    self.voices
+                        .note_off_at_for_owner(voice, note, owner, None)
+                        .await
+                }
+                #[cfg(feature = "midi")]
+                VoiceMessage::DrainMidiInput { device_id } => {
+                    self.voices.cancel_midi_input_device(device_id).await
+                }
                 VoiceMessage::Mute { id, muted } => self.voices.mute(id, muted).await,
                 VoiceMessage::SetParam { id, param, value } => {
                     self.voices.set_param(id, &param, value).await
@@ -9649,7 +9670,7 @@ mod tests {
                 .slots
                 .iter()
                 .flatten()
-                .any(|(note, _)| *note == NOTE));
+                .any(|held| held.note == NOTE));
 
             harness.note_off(4.2, INPUT_CHANNEL, NOTE).await;
 
@@ -9923,6 +9944,481 @@ mod tests {
                 .values()
                 .any(|pattern| pattern.owner == PatternOwner::Looper));
             harness.assert_physically_balanced(&[FIRST_OUTPUT_CHANNEL]);
+        }
+    }
+
+    #[cfg(feature = "midi")]
+    mod midi_input_disconnect_ownership_integration {
+        use super::*;
+        use crate::message::{GroupMessage, PatternMessage, VoiceMessage};
+        use crate::midi::{
+            Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
+            Velocity,
+        };
+        use crate::reload::MidiKeyboardRoute;
+        use crate::state::PatternOwner;
+        use crate::traits::{PatternConfig, Step, VoiceConfig};
+        use crate::types::{MidiDeviceId, PatternId};
+        use std::collections::HashMap;
+
+        const FIRST_INPUT: u32 = 61;
+        const SECOND_INPUT: u32 = 62;
+        const OUTPUT_DEVICE: u32 = 63;
+        const OUTPUT_CHANNEL: u8 = 9;
+        const VOICE: VoiceId = VoiceId::new(1);
+
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        enum SinkEvent {
+            On { note: u8, velocity: u8 },
+            Off { note: u8 },
+        }
+
+        #[derive(Default)]
+        struct PhysicalMultiplicity(HashMap<(u32, u8, u8), usize>);
+
+        impl PhysicalMultiplicity {
+            fn apply(&mut self, events: &[SinkEvent]) {
+                for event in events {
+                    let note = match event {
+                        SinkEvent::On { note, .. } | SinkEvent::Off { note } => *note,
+                    };
+                    let count = self
+                        .0
+                        .entry((OUTPUT_DEVICE, OUTPUT_CHANNEL, note))
+                        .or_default();
+                    match event {
+                        SinkEvent::On { .. } => *count += 1,
+                        SinkEvent::Off { .. } => *count = count.saturating_sub(1),
+                    }
+                }
+            }
+
+            fn note(&self, note: u8) -> usize {
+                self.0
+                    .get(&(OUTPUT_DEVICE, OUTPUT_CHANNEL, note))
+                    .copied()
+                    .unwrap_or(0)
+            }
+
+            fn assert_balanced(&self) {
+                assert!(
+                    self.0.values().all(|count| *count == 0),
+                    "physical MIDI multiplicity remains after cleanup: {:?}",
+                    self.0
+                );
+            }
+        }
+
+        struct Harness {
+            runtime: Runtime<MockBackend>,
+            physical_rx: crossbeam_channel::Receiver<ScheduledMidiEvent>,
+            sequence: u64,
+        }
+
+        impl Harness {
+            async fn new() -> Self {
+                let mut runtime = Runtime::new(MockBackend);
+                let (physical_tx, physical_rx) = crossbeam_channel::unbounded();
+                runtime
+                    .midi
+                    .output_channels()
+                    .lock()
+                    .unwrap()
+                    .insert(MidiDeviceId::new(OUTPUT_DEVICE), physical_tx);
+
+                runtime
+                    .send(
+                        GroupMessage::Create {
+                            id: GroupId::new(1),
+                            name: "disconnect-ownership".to_string(),
+                            parent: None,
+                        }
+                        .into(),
+                    )
+                    .await
+                    .unwrap();
+                runtime
+                    .send(
+                        VoiceMessage::Create {
+                            id: VOICE,
+                            config: Box::new(
+                                VoiceConfig::new("shared-midi", "", GroupId::new(1))
+                                    .with_midi_output(
+                                        MidiDeviceId::new(OUTPUT_DEVICE),
+                                        OUTPUT_CHANNEL,
+                                    )
+                                    .with_polyphony(8),
+                            ),
+                        }
+                        .into(),
+                    )
+                    .await
+                    .unwrap();
+                runtime.tick().await;
+                runtime
+                    .midi
+                    .apply_basic_keyboard_routes(&[
+                        MidiKeyboardRoute {
+                            device_id: MidiDeviceId::new(FIRST_INPUT),
+                            channel: None,
+                            voice: VOICE,
+                        },
+                        MidiKeyboardRoute {
+                            device_id: MidiDeviceId::new(SECOND_INPUT),
+                            channel: None,
+                            voice: VOICE,
+                        },
+                    ])
+                    .await;
+
+                Self {
+                    runtime,
+                    physical_rx,
+                    sequence: 0,
+                }
+            }
+
+            async fn input(&mut self, device: u32, channel: u8, message: MidiMessage) {
+                self.sequence += 1;
+                assert!(self
+                    .runtime
+                    .midi
+                    .event_sender()
+                    .try_send(TimestampedMidiEvent::new(
+                        self.sequence,
+                        Instant::now(),
+                        MidiDeviceId::new(device),
+                        match message {
+                            MidiMessage::NoteOn { note, velocity, .. } => MidiMessage::NoteOn {
+                                channel: Channel::new(channel),
+                                note,
+                                velocity,
+                            },
+                            MidiMessage::NoteOff { note, velocity, .. } => MidiMessage::NoteOff {
+                                channel: Channel::new(channel),
+                                note,
+                                velocity,
+                            },
+                            other => other,
+                        },
+                    )));
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+            }
+
+            async fn note_on(&mut self, device: u32, channel: u8, note: u8, velocity: u8) {
+                self.input(
+                    device,
+                    channel,
+                    MidiMessage::NoteOn {
+                        channel: Channel::new(channel),
+                        note,
+                        velocity: Velocity::from_midi1(velocity),
+                    },
+                )
+                .await;
+            }
+
+            async fn note_off(&mut self, device: u32, channel: u8, note: u8) {
+                self.input(
+                    device,
+                    channel,
+                    MidiMessage::NoteOff {
+                        channel: Channel::new(channel),
+                        note,
+                        velocity: Velocity::ZERO,
+                    },
+                )
+                .await;
+            }
+
+            async fn disconnect(&mut self, device: u32) {
+                self.runtime
+                    .midi
+                    .panic_input_for_test(MidiDeviceId::new(device))
+                    .await;
+                self.runtime.tick().await;
+            }
+
+            fn drain(&self) -> Vec<SinkEvent> {
+                let mut scheduled: Vec<_> = self.physical_rx.try_iter().enumerate().collect();
+                scheduled.sort_by(|(left_seq, left), (right_seq, right)| {
+                    left.timestamp
+                        .cmp(&right.timestamp)
+                        .then(left_seq.cmp(right_seq))
+                });
+                scheduled
+                    .into_iter()
+                    .map(|(_, scheduled)| match scheduled.event {
+                        QueuedMidiEvent::NoteOn { note, velocity, .. } => {
+                            SinkEvent::On { note, velocity }
+                        }
+                        QueuedMidiEvent::NoteOff { note, .. } => SinkEvent::Off { note },
+                        other => panic!("unexpected physical MIDI event: {other:?}"),
+                    })
+                    .collect()
+            }
+
+            async fn start_script_pattern(&mut self, pattern_id: PatternId, note: u8) {
+                let config = PatternConfig::new("script-survivor", VOICE, Beat::from_f64(4.0))
+                    .with_step(
+                        Step::at(0.0)
+                            .with_param("note", note as f32)
+                            .with_param("amp", 0.25)
+                            .with_param("gate", 2.0),
+                    );
+                self.runtime
+                    .send(
+                        PatternMessage::Create {
+                            id: pattern_id,
+                            config,
+                            owner: PatternOwner::Script,
+                        }
+                        .into(),
+                    )
+                    .await
+                    .unwrap();
+                self.runtime.tick().await;
+                self.runtime
+                    .send(PatternMessage::Start { id: pattern_id }.into())
+                    .await
+                    .unwrap();
+                self.runtime.tick().await;
+            }
+        }
+
+        async fn assert_same_pitch_disconnect_order(first_disconnect: u32) {
+            const NOTE: u8 = 60;
+            let second_disconnect = if first_disconnect == FIRST_INPUT {
+                SECOND_INPUT
+            } else {
+                FIRST_INPUT
+            };
+            let mut harness = Harness::new().await;
+            let mut physical = PhysicalMultiplicity::default();
+
+            harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
+            harness.note_on(SECOND_INPUT, 0, NOTE, 80).await;
+            let live = harness.drain();
+            assert_eq!(
+                live,
+                vec![
+                    SinkEvent::On {
+                        note: NOTE,
+                        velocity: 100,
+                    },
+                    SinkEvent::Off { note: NOTE },
+                    SinkEvent::On {
+                        note: NOTE,
+                        velocity: 80,
+                    },
+                ]
+            );
+            physical.apply(&live);
+            assert_eq!(physical.note(NOTE), 1);
+
+            harness.disconnect(first_disconnect).await;
+            let first_cleanup = harness.drain();
+            physical.apply(&first_cleanup);
+            assert_eq!(
+                physical.note(NOTE),
+                1,
+                "disconnecting input {first_disconnect} truncated the survivor"
+            );
+            if first_disconnect == FIRST_INPUT {
+                assert!(first_cleanup.is_empty());
+            } else {
+                assert_eq!(
+                    first_cleanup,
+                    vec![
+                        SinkEvent::Off { note: NOTE },
+                        SinkEvent::On {
+                            note: NOTE,
+                            velocity: 100,
+                        },
+                    ],
+                    "newest-source cleanup must restore the older owner's final velocity"
+                );
+            }
+
+            harness.disconnect(second_disconnect).await;
+            let final_cleanup = harness.drain();
+            physical.apply(&final_cleanup);
+            assert_eq!(final_cleanup, vec![SinkEvent::Off { note: NOTE }]);
+            physical.assert_balanced();
+
+            harness.note_off(FIRST_INPUT, 0, NOTE).await;
+            harness.note_off(SECOND_INPUT, 0, NOTE).await;
+            assert!(
+                harness.drain().is_empty(),
+                "late physical note-offs after both drains must be idempotent"
+            );
+        }
+
+        #[tokio::test]
+        async fn same_pitch_shared_voice_survives_disconnect_in_both_orders() {
+            assert_same_pitch_disconnect_order(FIRST_INPUT).await;
+            assert_same_pitch_disconnect_order(SECOND_INPUT).await;
+        }
+
+        #[tokio::test]
+        async fn distinct_pitches_on_shared_voice_are_device_isolated() {
+            let mut harness = Harness::new().await;
+            let mut physical = PhysicalMultiplicity::default();
+            harness.note_on(FIRST_INPUT, 0, 60, 100).await;
+            harness.note_on(SECOND_INPUT, 0, 64, 90).await;
+            let live = harness.drain();
+            physical.apply(&live);
+            assert_eq!(physical.note(60), 1);
+            assert_eq!(physical.note(64), 1);
+
+            harness.disconnect(FIRST_INPUT).await;
+            let first_cleanup = harness.drain();
+            assert_eq!(first_cleanup, vec![SinkEvent::Off { note: 60 }]);
+            physical.apply(&first_cleanup);
+            assert_eq!(physical.note(60), 0);
+            assert_eq!(physical.note(64), 1);
+
+            harness.disconnect(SECOND_INPUT).await;
+            let second_cleanup = harness.drain();
+            assert_eq!(second_cleanup, vec![SinkEvent::Off { note: 64 }]);
+            physical.apply(&second_cleanup);
+            physical.assert_balanced();
+        }
+
+        #[tokio::test]
+        async fn note_off_isolated_by_source_channel_on_shared_voice() {
+            const NOTE: u8 = 67;
+            let mut harness = Harness::new().await;
+            let mut physical = PhysicalMultiplicity::default();
+            harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
+            harness.note_on(FIRST_INPUT, 1, NOTE, 70).await;
+            let live = harness.drain();
+            physical.apply(&live);
+            assert_eq!(physical.note(NOTE), 1);
+
+            harness.note_off(FIRST_INPUT, 0, NOTE).await;
+            let first_off = harness.drain();
+            assert!(first_off.is_empty());
+            physical.apply(&first_off);
+            assert_eq!(physical.note(NOTE), 1);
+
+            harness.note_off(FIRST_INPUT, 1, NOTE).await;
+            let second_off = harness.drain();
+            assert_eq!(second_off, vec![SinkEvent::Off { note: NOTE }]);
+            physical.apply(&second_off);
+            physical.assert_balanced();
+        }
+
+        #[tokio::test]
+        async fn script_pattern_survives_input_disconnect_until_its_own_stop() {
+            const NOTE: u8 = 72;
+            const PATTERN: PatternId = PatternId::new(91);
+            let mut harness = Harness::new().await;
+            let mut physical = PhysicalMultiplicity::default();
+
+            harness.start_script_pattern(PATTERN, NOTE).await;
+            harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
+            let live = harness.drain();
+            assert_eq!(
+                live,
+                vec![
+                    SinkEvent::On {
+                        note: NOTE,
+                        velocity: 31,
+                    },
+                    SinkEvent::Off { note: NOTE },
+                    SinkEvent::On {
+                        note: NOTE,
+                        velocity: 100,
+                    },
+                ]
+            );
+            physical.apply(&live);
+
+            harness.disconnect(FIRST_INPUT).await;
+            let disconnect = harness.drain();
+            assert_eq!(
+                disconnect,
+                vec![
+                    SinkEvent::Off { note: NOTE },
+                    SinkEvent::On {
+                        note: NOTE,
+                        velocity: 31,
+                    },
+                ],
+                "disconnect must restore the script pattern without rescaling its velocity"
+            );
+            physical.apply(&disconnect);
+            assert_eq!(physical.note(NOTE), 1);
+            assert!(harness.runtime.state.read().await.patterns[&PATTERN].playing);
+
+            harness
+                .runtime
+                .send(PatternMessage::Stop { id: PATTERN }.into())
+                .await
+                .unwrap();
+            harness.runtime.tick().await;
+            let pattern_stop = harness.drain();
+            assert_eq!(pattern_stop, vec![SinkEvent::Off { note: NOTE }]);
+            physical.apply(&pattern_stop);
+            physical.assert_balanced();
+        }
+
+        async fn assert_pattern_cleanup_preserves_live_input(delete: bool) {
+            const NOTE: u8 = 74;
+            const PATTERN: PatternId = PatternId::new(92);
+            let mut harness = Harness::new().await;
+            let mut physical = PhysicalMultiplicity::default();
+
+            harness.start_script_pattern(PATTERN, NOTE).await;
+            harness.note_on(FIRST_INPUT, 0, NOTE, 100).await;
+            let live = harness.drain();
+            physical.apply(&live);
+            assert_eq!(physical.note(NOTE), 1);
+
+            let message = if delete {
+                PatternMessage::Delete { id: PATTERN }
+            } else {
+                PatternMessage::Stop { id: PATTERN }
+            };
+            harness.runtime.send(message.into()).await.unwrap();
+            harness.runtime.tick().await;
+
+            let cleanup = harness.drain();
+            assert!(
+                cleanup.is_empty(),
+                "pattern cleanup must not cut the newer live-input owner: {cleanup:?}"
+            );
+            physical.apply(&cleanup);
+            assert_eq!(physical.note(NOTE), 1);
+            if delete {
+                assert!(!harness
+                    .runtime
+                    .state
+                    .read()
+                    .await
+                    .patterns
+                    .contains_key(&PATTERN));
+            } else {
+                assert!(!harness.runtime.state.read().await.patterns[&PATTERN].playing);
+            }
+
+            harness.note_off(FIRST_INPUT, 0, NOTE).await;
+            let final_off = harness.drain();
+            assert_eq!(final_off, vec![SinkEvent::Off { note: NOTE }]);
+            physical.apply(&final_off);
+            physical.assert_balanced();
+        }
+
+        #[tokio::test]
+        async fn pattern_stop_drains_only_the_pattern_owner() {
+            assert_pattern_cleanup_preserves_live_input(false).await;
+        }
+
+        #[tokio::test]
+        async fn pattern_delete_drains_only_the_pattern_owner() {
+            assert_pattern_cleanup_preserves_live_input(true).await;
         }
     }
 

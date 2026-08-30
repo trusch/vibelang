@@ -4,7 +4,7 @@ use crate::backend::{AddAction, Backend};
 use crate::compat::{Duration, Instant, RwLock};
 use crate::handlers::default_routes_for_voice;
 #[cfg(feature = "midi")]
-use crate::state::MidiVoicePool;
+use crate::state::{MidiPoolNote, MidiVoicePool, NoteOwner};
 use crate::state::{State, VoiceRole, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{BusId, ControlBusId, NodeId, ParamMap, VoiceId};
@@ -39,6 +39,7 @@ pub type MidiOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMi
 #[derive(Clone, Copy, Debug)]
 /// Ownership needed to balance a lookahead note after logical state changes.
 pub(crate) struct TrackedNoteOn {
+    token_id: u64,
     generation: u64,
     delivery: TrackedNoteDelivery,
 }
@@ -48,20 +49,43 @@ pub(crate) struct TrackedNoteOn {
 enum TrackedNoteDelivery {
     Audio {
         node_id: NodeId,
+        onset_at: Option<Instant>,
     },
     #[cfg(feature = "midi")]
     Midi {
         device_id: MidiDeviceId,
         channel: u8,
         polyphony: usize,
-        lookahead_queued: bool,
+        onset_at: Option<Instant>,
     },
+}
+
+#[cfg(feature = "midi")]
+#[derive(Clone, Copy, Debug)]
+struct TrackedNoteState {
+    voice_id: VoiceId,
+    note: u8,
+    owner: NoteOwner,
+    tracked: TrackedNoteOn,
+    recovery_pending: bool,
+    current_onset_at: Option<Instant>,
+}
+
+#[cfg(feature = "midi")]
+#[derive(Default)]
+struct TrackedNoteRegistry {
+    next_token_id: u64,
+    notes: HashMap<u64, TrackedNoteState>,
 }
 
 #[cfg(feature = "midi")]
 type AudioNoteOn = Option<TrackedNoteOn>;
 #[cfg(not(feature = "midi"))]
 type AudioNoteOn = ();
+#[cfg(feature = "midi")]
+type AudioNoteOwner = NoteOwner;
+#[cfg(not(feature = "midi"))]
+type AudioNoteOwner = ();
 
 /// Extra margin added on top of a voice's release time before its deferred
 /// resources are reclaimed (fallback `/n_free`, route mixers, buses, node
@@ -159,6 +183,22 @@ pub struct VoicesHandler<B: Backend> {
     /// Optional MIDI output channels for sending CC on MIDI voices.
     #[cfg(feature = "midi")]
     midi_outputs: Option<MidiOutputChannels>,
+    #[cfg(feature = "midi")]
+    tracked_notes: Arc<Mutex<TrackedNoteRegistry>>,
+}
+
+impl<B: Backend> Clone for VoicesHandler<B> {
+    fn clone(&self) -> Self {
+        Self {
+            backend: Arc::clone(&self.backend),
+            state: Arc::clone(&self.state),
+            pending_reclaims: Arc::clone(&self.pending_reclaims),
+            #[cfg(feature = "midi")]
+            midi_outputs: self.midi_outputs.clone(),
+            #[cfg(feature = "midi")]
+            tracked_notes: Arc::clone(&self.tracked_notes),
+        }
+    }
 }
 
 impl<B: Backend> VoicesHandler<B> {
@@ -170,6 +210,8 @@ impl<B: Backend> VoicesHandler<B> {
             pending_reclaims: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "midi")]
             midi_outputs: None,
+            #[cfg(feature = "midi")]
+            tracked_notes: Arc::new(Mutex::new(TrackedNoteRegistry::default())),
         }
     }
 
@@ -337,6 +379,122 @@ impl<B: Backend> VoicesHandler<B> {
             .and_then(|guard| guard.get(&device_id).cloned())
     }
 
+    #[cfg(feature = "midi")]
+    fn register_tracked_note(
+        &self,
+        voice_id: VoiceId,
+        note: u8,
+        _velocity: u8,
+        owner: NoteOwner,
+        generation: u64,
+        delivery: TrackedNoteDelivery,
+    ) -> TrackedNoteOn {
+        let mut registry = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let token_id = registry.next_token_id;
+        registry.next_token_id = registry.next_token_id.saturating_add(1).max(1);
+        let tracked = TrackedNoteOn {
+            token_id,
+            generation,
+            delivery,
+        };
+        let current_onset_at = match delivery {
+            TrackedNoteDelivery::Audio { onset_at, .. } => onset_at,
+            TrackedNoteDelivery::Midi { onset_at, .. } => onset_at,
+        };
+        registry.notes.insert(
+            token_id,
+            TrackedNoteState {
+                voice_id,
+                note,
+                owner,
+                tracked,
+                recovery_pending: true,
+                current_onset_at,
+            },
+        );
+        tracked
+    }
+
+    #[cfg(feature = "midi")]
+    fn mark_generation_recovered(&self, generation: u64, recovery_at: Option<Instant>) {
+        let now = Instant::now();
+        let mut registry = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(note) = registry
+            .notes
+            .values_mut()
+            .find(|note| note.tracked.generation == generation)
+        {
+            let covers_onset = match note.current_onset_at {
+                Some(onset_at) => recovery_at.unwrap_or(now) >= onset_at,
+                None => true,
+            };
+            if covers_onset {
+                note.recovery_pending = false;
+            }
+        }
+    }
+
+    #[cfg(feature = "midi")]
+    fn mark_generation_reasserted(&self, generation: u64, onset_at: Option<Instant>) {
+        let mut registry = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(note) = registry
+            .notes
+            .values_mut()
+            .find(|note| note.tracked.generation == generation)
+        {
+            note.recovery_pending = true;
+            note.current_onset_at = onset_at;
+        }
+    }
+
+    #[cfg(feature = "midi")]
+    fn mark_audio_node_recovered(&self, node_id: NodeId, recovery_at: Option<Instant>) {
+        let generation = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .find_map(|note| match note.tracked.delivery {
+                TrackedNoteDelivery::Audio {
+                    node_id: tracked_node,
+                    ..
+                } if tracked_node == node_id => Some(note.tracked.generation),
+                _ => None,
+            });
+        if let Some(generation) = generation {
+            self.mark_generation_recovered(generation, recovery_at);
+        }
+    }
+
+    #[cfg(feature = "midi")]
+    fn latest_owned_token(
+        &self,
+        voice_id: VoiceId,
+        note: u8,
+        owner: NoteOwner,
+    ) -> Option<TrackedNoteOn> {
+        self.tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .filter(|tracked| {
+                tracked.voice_id == voice_id && tracked.note == note && tracked.owner == owner
+            })
+            .max_by_key(|tracked| tracked.tracked.generation)
+            .map(|tracked| tracked.tracked)
+    }
+
     /// Send a single Note-On/Note-Off MIDI event to a device immediately.
     ///
     /// Thin wrapper over [`send_midi_event_at`](Self::send_midi_event_at)
@@ -470,8 +628,9 @@ impl<B: Backend> VoicesHandler<B> {
         polyphony: usize,
         legato: bool,
         at: Option<Instant>,
-    ) -> Result<u64> {
-        let (generation, events) = {
+        owner: NoteOwner,
+    ) -> Result<TrackedNoteOn> {
+        let (generation, transition) = {
             let mut state = self.state.write().await;
             let generation = bump_note_generation(&mut state, id, note);
             if let Some(deadline) = at {
@@ -479,14 +638,25 @@ impl<B: Backend> VoicesHandler<B> {
                     .midi_note_on_deadlines
                     .insert((id, note), (generation, deadline));
             }
-            let events =
-                midi_pool_note_on(&mut state, id, channel, note, velocity, polyphony, legato);
-            (generation, events)
+            let transition = midi_pool_note_on_owned(
+                &mut state, id, channel, note, velocity, polyphony, legato, owner, generation,
+            );
+            (generation, transition)
         };
-        for event in events {
+        if let Some(displaced) = transition.displaced {
+            self.mark_generation_recovered(displaced.generation, at);
+        }
+        let delivery = TrackedNoteDelivery::Midi {
+            device_id,
+            channel,
+            polyphony,
+            onset_at: at,
+        };
+        let tracked = self.register_tracked_note(id, note, velocity, owner, generation, delivery);
+        for event in transition.events {
             let _ = self.send_midi_event_at(device_id, event, at).await;
         }
-        Ok(generation)
+        Ok(tracked)
     }
 
     /// Run the unified voice-allocation pool on note-off: free the released
@@ -630,6 +800,19 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: f32,
         timestamp: Option<Instant>,
     ) -> Result<TrackedNoteOn> {
+        self.note_on_at_for_owner(id, note, velocity, timestamp, NoteOwner::Anonymous)
+            .await
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn note_on_at_for_owner(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        timestamp: Option<Instant>,
+        owner: NoteOwner,
+    ) -> Result<TrackedNoteOn> {
         let (midi_output, midi_channel, polyphony, mono_legato) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -653,20 +836,13 @@ impl<B: Backend> VoicesHandler<B> {
                     polyphony,
                     mono_legato,
                     timestamp,
+                    owner,
                 )
                 .await?;
-            return Ok(TrackedNoteOn {
-                generation,
-                delivery: TrackedNoteDelivery::Midi {
-                    device_id,
-                    channel: midi_channel,
-                    polyphony,
-                    lookahead_queued: timestamp.is_some(),
-                },
-            });
+            return Ok(generation);
         }
 
-        self.note_on_audio_at_owned(id, note, velocity, &ParamMap::new(), timestamp)
+        self.note_on_audio_at_owned(id, note, velocity, &ParamMap::new(), timestamp, owner)
             .await?
             .ok_or(Error::VoiceNotFound(id))
     }
@@ -741,6 +917,7 @@ impl<B: Backend> VoicesHandler<B> {
                     polyphony,
                     mono_legato,
                     timestamp,
+                    NoteOwner::Anonymous,
                 )
                 .await
                 .map(|_| ());
@@ -835,7 +1012,11 @@ impl<B: Backend> VoicesHandler<B> {
         extra_params: &ParamMap,
         at: Option<Instant>,
     ) -> Result<()> {
-        self.note_on_audio_at_owned(id, note, velocity, extra_params, at)
+        #[cfg(feature = "midi")]
+        let owner = NoteOwner::Anonymous;
+        #[cfg(not(feature = "midi"))]
+        let owner = ();
+        self.note_on_audio_at_owned(id, note, velocity, extra_params, at, owner)
             .await
             .map(|_| ())
     }
@@ -847,6 +1028,7 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: f32,
         extra_params: &ParamMap,
         at: Option<Instant>,
+        _owner: AudioNoteOwner,
     ) -> Result<AudioNoteOn> {
         // Gather info and allocate node while holding lock
         let (
@@ -1005,6 +1187,8 @@ impl<B: Backend> VoicesHandler<B> {
         if let Some(old) = old_node {
             if steal_gated {
                 let _ = self.backend.set_param_at(old, "gate", 0.0, at).await;
+                #[cfg(feature = "midi")]
+                self.mark_audio_node_recovered(old, at);
                 self.push_reclaim(PendingVoiceReclaim {
                     requested_at: at.unwrap_or_else(Instant::now),
                     grace: steal_grace,
@@ -1016,6 +1200,8 @@ impl<B: Backend> VoicesHandler<B> {
                 .await;
             } else {
                 self.free_node_if_live(old).await;
+                #[cfg(feature = "midi")]
+                self.mark_audio_node_recovered(old, at);
             }
         }
 
@@ -1041,10 +1227,19 @@ impl<B: Backend> VoicesHandler<B> {
         self.forward_bend_baselines(&bend_baseline_updates).await;
 
         #[cfg(feature = "midi")]
-        return Ok(Some(TrackedNoteOn {
-            generation: _generation,
-            delivery: TrackedNoteDelivery::Audio { node_id },
-        }));
+        let tracked = self.register_tracked_note(
+            id,
+            note,
+            (velocity.clamp(0.0, 1.0) * 127.0) as u8,
+            _owner,
+            _generation,
+            TrackedNoteDelivery::Audio {
+                node_id,
+                onset_at: at,
+            },
+        );
+        #[cfg(feature = "midi")]
+        return Ok(Some(tracked));
 
         #[cfg(not(feature = "midi"))]
         Ok(())
@@ -1064,6 +1259,12 @@ impl<B: Backend> VoicesHandler<B> {
         note: u8,
         timestamp: Option<Instant>,
     ) -> Result<()> {
+        if let Some(tracked) = self.latest_owned_token(id, note, NoteOwner::Anonymous) {
+            return self
+                .finish_tracked_note_on_at(id, note, tracked, timestamp)
+                .await;
+        }
+
         let (midi_output, midi_channel, polyphony) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -1123,6 +1324,24 @@ impl<B: Backend> VoicesHandler<B> {
         generation: u64,
         timestamp: Option<Instant>,
     ) -> Result<()> {
+        let tracked = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .find(|tracked| {
+                tracked.voice_id == id
+                    && tracked.note == note
+                    && tracked.tracked.generation == generation
+            })
+            .map(|tracked| tracked.tracked);
+        if let Some(tracked) = tracked {
+            return self
+                .finish_tracked_note_on_at(id, note, tracked, timestamp)
+                .await;
+        }
+
         enum Release {
             Audio(Option<NodeId>),
             #[cfg(feature = "midi")]
@@ -1182,7 +1401,7 @@ impl<B: Backend> VoicesHandler<B> {
         tracked: TrackedNoteOn,
         deadline: Instant,
     ) -> Result<()> {
-        if let TrackedNoteDelivery::Audio { node_id } = tracked.delivery {
+        if let TrackedNoteDelivery::Audio { node_id, .. } = tracked.delivery {
             self.backend
                 .set_param_at(node_id, "gate", 0.0, Some(deadline))
                 .await
@@ -1198,12 +1417,36 @@ impl<B: Backend> VoicesHandler<B> {
         note: u8,
         tracked: TrackedNoteOn,
     ) -> Result<()> {
-        match tracked.delivery {
-            TrackedNoteDelivery::Audio { node_id } => {
+        self.finish_tracked_note_on_at(id, note, tracked, None)
+            .await
+    }
+
+    #[cfg(feature = "midi")]
+    async fn finish_tracked_note_on_at(
+        &self,
+        _id: VoiceId,
+        _note: u8,
+        tracked: TrackedNoteOn,
+        requested_at: Option<Instant>,
+    ) -> Result<()> {
+        let owned = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .remove(&tracked.token_id);
+        let Some(owned) = owned else {
+            return Ok(());
+        };
+        let id = owned.voice_id;
+        let note = owned.note;
+
+        match owned.tracked.delivery {
+            TrackedNoteDelivery::Audio { node_id, onset_at } => {
                 {
                     let mut state = self.state.write().await;
                     if state.voice_note_generations.get(&(id, note)).copied()
-                        == Some(tracked.generation)
+                        == Some(owned.tracked.generation)
                     {
                         clear_note_generation(&mut state, id, note);
                         if let Some(voice) = state.voices.get_mut(&id) {
@@ -1213,101 +1456,263 @@ impl<B: Backend> VoicesHandler<B> {
                         }
                     }
                 }
-                self.backend
-                    .set_param_at(node_id, "gate", 0.0, None)
-                    .await
-                    .map_err(Error::backend)?;
+                if owned.recovery_pending {
+                    let now = Instant::now();
+                    let recovery_at =
+                        requested_at.or_else(|| onset_at.filter(|onset| *onset > now));
+                    self.backend
+                        .set_param_at(node_id, "gate", 0.0, recovery_at)
+                        .await
+                        .map_err(Error::backend)?;
+                }
             }
             TrackedNoteDelivery::Midi {
                 device_id,
                 channel,
                 polyphony,
-                lookahead_queued,
+                onset_at,
             } => {
-                let recovery_at = Instant::now();
-                let deliveries = {
+                let now = Instant::now();
+                let recovery_at = requested_at.or_else(|| onset_at.filter(|onset| *onset > now));
+                let deferred_recovery_at = requested_at
+                    .is_none()
+                    .then_some(recovery_at)
+                    .flatten()
+                    .filter(|recovery_at| owned.recovery_pending && *recovery_at > now);
+                let (transition, survivor) = {
                     let mut state = self.state.write().await;
-                    match state.voice_note_generations.get(&(id, note)).copied() {
-                        Some(generation) if generation != tracked.generation => {
-                            if !lookahead_queued {
-                                Vec::new()
-                            } else {
-                                // The stale lookahead onset was already handed to the
-                                // physical output queue before logical ownership moved
-                                // to `generation`. Recover that old endpoint, then reset
-                                // and reassert a fresh same-pitch note that is still in a
-                                // sounding pool slot on that same endpoint. One NoteOff
-                                // consumes the old queued onset and the other resets hardware
-                                // whose same-pitch gate cannot distinguish generations; the
-                                // final NoteOn leaves exactly one physical onset owned by the
-                                // fresh generation. A retargeted endpoint stays untouched.
-                                let mut deliveries =
-                                    vec![(device_id, QueuedMidiEvent::NoteOff { channel, note })];
-                                let fresh_onset_is_due = !matches!(
-                                    state.midi_note_on_deadlines.get(&(id, note)),
-                                    Some((queued_generation, deadline))
-                                        if *queued_generation == generation
-                                            && *deadline > recovery_at
-                                );
-                                let fresh_delivery = if fresh_onset_is_due {
-                                    state.voices.get(&id).and_then(|voice| {
-                                        let fresh_device = voice.config.midi_output?;
-                                        let fresh_channel = voice.config.midi_channel;
-                                        if fresh_device != device_id || fresh_channel != channel {
-                                            return None;
-                                        }
-                                        let fresh_velocity = state
-                                            .midi_voice_pool
-                                            .get(&id)?
-                                            .slots
-                                            .iter()
-                                            .flatten()
-                                            .find_map(|(slot_note, velocity)| {
-                                                (*slot_note == note).then_some(*velocity)
-                                            })?;
-                                        Some((fresh_device, fresh_channel, fresh_velocity))
-                                    })
-                                } else {
-                                    None
-                                };
-                                if let Some((fresh_device, fresh_channel, fresh_velocity)) =
-                                    fresh_delivery
-                                {
-                                    deliveries.push((
-                                        fresh_device,
-                                        QueuedMidiEvent::NoteOff {
-                                            channel: fresh_channel,
-                                            note,
-                                        },
-                                    ));
-                                    deliveries.push((
-                                        fresh_device,
-                                        QueuedMidiEvent::NoteOn {
-                                            channel: fresh_channel,
-                                            note,
-                                            velocity: fresh_velocity,
-                                        },
-                                    ));
-                                }
-                                deliveries
-                            }
+                    let transition = midi_pool_note_off_owned(
+                        &mut state,
+                        id,
+                        channel,
+                        note,
+                        polyphony,
+                        owned.owner,
+                        Some(owned.tracked.generation),
+                    );
+                    if state.voice_note_generations.get(&(id, note)).copied()
+                        == Some(owned.tracked.generation)
+                    {
+                        clear_note_generation(&mut state, id, note);
+                        if let Some(revived) = transition.revived.filter(|held| held.note == note) {
+                            state
+                                .voice_note_generations
+                                .insert((id, note), revived.generation);
                         }
-                        Some(_) => {
-                            clear_note_generation(&mut state, id, note);
-                            midi_pool_note_off(&mut state, id, channel, note, polyphony)
-                                .into_iter()
-                                .map(|event| (device_id, event))
-                                .collect()
-                        }
-                        None => vec![(device_id, QueuedMidiEvent::NoteOff { channel, note })],
                     }
+                    let survivor = state.voices.get(&id).and_then(|voice| {
+                        let survivor_device = voice.config.midi_output?;
+                        let survivor_channel = voice.config.midi_channel;
+                        if survivor_device != device_id || survivor_channel != channel {
+                            return None;
+                        }
+                        state
+                            .midi_voice_pool
+                            .get(&id)?
+                            .slots
+                            .iter()
+                            .flatten()
+                            .find(|held| held.note == note)
+                            .copied()
+                    });
+                    (transition, survivor)
                 };
-                for (delivery_device, event) in deliveries {
+
+                if let Some(revived) = transition.revived {
+                    self.mark_generation_reasserted(revived.generation, recovery_at);
+                }
+                if let Some(recovery_at) = deferred_recovery_at {
+                    let voices = self.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep_until(tokio::time::Instant::from_std(recovery_at)).await;
+                        voices
+                            .recover_midi_note_at(id, note, device_id, channel, recovery_at)
+                            .await;
+                    });
+                    return Ok(());
+                }
+                if !transition.events.is_empty() {
+                    for event in transition.events {
+                        let _ = self.send_midi_event_at(device_id, event, recovery_at).await;
+                    }
+                } else if owned.recovery_pending {
+                    // The token was displaced from the logical pool before its
+                    // queued onset was physically recovered. Balance its
+                    // immutable endpoint. If that reset shares the endpoint
+                    // with a due survivor, reset and reassert the survivor at
+                    // its stored final MIDI velocity.
                     let _ = self
-                        .send_midi_event_at(delivery_device, event, Some(recovery_at))
+                        .send_midi_event_at(
+                            device_id,
+                            QueuedMidiEvent::NoteOff { channel, note },
+                            recovery_at,
+                        )
                         .await;
+                    if let Some(survivor) = survivor {
+                        let due = self
+                            .tracked_notes
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .notes
+                            .values()
+                            .find(|candidate| candidate.tracked.generation == survivor.generation)
+                            .is_none_or(|candidate| {
+                                candidate
+                                    .current_onset_at
+                                    .is_none_or(|onset| onset <= recovery_at.unwrap_or(now))
+                            });
+                        if due {
+                            let _ = self
+                                .send_midi_event_at(
+                                    device_id,
+                                    QueuedMidiEvent::NoteOff { channel, note },
+                                    recovery_at,
+                                )
+                                .await;
+                            let _ = self
+                                .send_midi_event_at(
+                                    device_id,
+                                    QueuedMidiEvent::NoteOn {
+                                        channel,
+                                        note,
+                                        velocity: survivor.velocity,
+                                    },
+                                    recovery_at,
+                                )
+                                .await;
+                            self.mark_generation_reasserted(survivor.generation, recovery_at);
+                        }
+                    }
                 }
             }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "midi")]
+    async fn recover_midi_note_at(
+        &self,
+        id: VoiceId,
+        note: u8,
+        device_id: MidiDeviceId,
+        channel: u8,
+        recovery_at: Instant,
+    ) {
+        let _ = self
+            .send_midi_event_at(
+                device_id,
+                QueuedMidiEvent::NoteOff { channel, note },
+                Some(recovery_at),
+            )
+            .await;
+
+        let survivor = {
+            let state = self.state.read().await;
+            state.voices.get(&id).and_then(|voice| {
+                if voice.config.midi_output != Some(device_id)
+                    || voice.config.midi_channel != channel
+                {
+                    return None;
+                }
+                state
+                    .midi_voice_pool
+                    .get(&id)?
+                    .slots
+                    .iter()
+                    .flatten()
+                    .find(|held| held.note == note)
+                    .copied()
+            })
+        };
+        let Some(survivor) = survivor else {
+            return;
+        };
+        let due = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .find(|candidate| candidate.tracked.generation == survivor.generation)
+            .is_none_or(|candidate| {
+                candidate
+                    .current_onset_at
+                    .is_none_or(|onset| onset <= recovery_at)
+            });
+        if !due {
+            return;
+        }
+
+        let _ = self
+            .send_midi_event_at(
+                device_id,
+                QueuedMidiEvent::NoteOff { channel, note },
+                Some(recovery_at),
+            )
+            .await;
+        let _ = self
+            .send_midi_event_at(
+                device_id,
+                QueuedMidiEvent::NoteOn {
+                    channel,
+                    note,
+                    velocity: survivor.velocity,
+                },
+                Some(recovery_at),
+            )
+            .await;
+        self.mark_generation_reasserted(survivor.generation, Some(recovery_at));
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn note_off_at_for_owner(
+        &self,
+        id: VoiceId,
+        note: u8,
+        owner: NoteOwner,
+        timestamp: Option<Instant>,
+    ) -> Result<()> {
+        let Some(tracked) = self.latest_owned_token(id, note, owner) else {
+            return Ok(());
+        };
+        self.finish_tracked_note_on_at(id, note, tracked, timestamp)
+            .await
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn cancel_note_owner(&self, owner: NoteOwner) -> Result<()> {
+        let mut tracked: Vec<_> = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .filter(|tracked| tracked.owner == owner)
+            .map(|tracked| tracked.tracked)
+            .collect();
+        tracked.sort_by_key(|tracked| std::cmp::Reverse(tracked.generation));
+        for tracked in tracked {
+            self.finish_tracked_note_on(VoiceId::new(0), 0, tracked)
+                .await?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn cancel_midi_input_device(&self, device_id: MidiDeviceId) -> Result<()> {
+        let mut tracked: Vec<_> = self
+            .tracked_notes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .notes
+            .values()
+            .filter(|tracked| tracked.owner.belongs_to_midi_device(device_id))
+            .map(|tracked| tracked.tracked)
+            .collect();
+        tracked.sort_by_key(|tracked| std::cmp::Reverse(tracked.generation));
+        for tracked in tracked {
+            self.finish_tracked_note_on(VoiceId::new(0), 0, tracked)
+                .await?;
         }
         Ok(())
     }
@@ -1913,6 +2318,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                         polyphony,
                         mono_legato,
                         None,
+                        NoteOwner::Anonymous,
                     )
                     .await
                     .map(|_| ());
@@ -1924,26 +2330,10 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn note_off(&self, id: VoiceId, note: u8) -> Result<()> {
-        // Check for MIDI output first — route through the voice-allocation pool.
         #[cfg(feature = "midi")]
-        {
-            let (midi_output, midi_channel, polyphony) = {
-                let state = self.state.read().await;
-                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-                (
-                    voice.config.midi_output,
-                    voice.config.midi_channel,
-                    voice.config.polyphony as usize,
-                )
-            };
+        return self.note_off_at(id, note, None).await;
 
-            if let Some(device_id) = midi_output {
-                return self
-                    .midi_pool_note_off(id, device_id, midi_channel, note, polyphony, None)
-                    .await;
-            }
-        }
-
+        #[cfg(not(feature = "midi"))]
         self.note_off_audio_at(id, note, None).await
     }
 
@@ -2106,6 +2496,16 @@ fn midi_pool_entry(state: &mut State, id: VoiceId, n: usize) -> &mut MidiVoicePo
 /// pushed to the overflow stack and the events are `NoteOff(stolen)` (skipped
 /// when `legato`, so portamento synths slur) then `NoteOn(new)`.
 #[cfg(feature = "midi")]
+#[derive(Default)]
+struct MidiPoolTransition {
+    events: Vec<QueuedMidiEvent>,
+    displaced: Option<MidiPoolNote>,
+    released: Option<MidiPoolNote>,
+    revived: Option<MidiPoolNote>,
+}
+
+#[cfg(feature = "midi")]
+#[cfg_attr(not(test), allow(dead_code))]
 fn midi_pool_note_on(
     state: &mut State,
     id: VoiceId,
@@ -2115,63 +2515,111 @@ fn midi_pool_note_on(
     n: usize,
     legato: bool,
 ) -> Vec<QueuedMidiEvent> {
+    midi_pool_note_on_owned(
+        state,
+        id,
+        channel,
+        note,
+        velocity,
+        n,
+        legato,
+        NoteOwner::Anonymous,
+        0,
+    )
+    .events
+}
+
+#[cfg(feature = "midi")]
+#[allow(clippy::too_many_arguments)]
+fn midi_pool_note_on_owned(
+    state: &mut State,
+    id: VoiceId,
+    channel: u8,
+    note: u8,
+    velocity: u8,
+    n: usize,
+    legato: bool,
+    owner: NoteOwner,
+    generation: u64,
+) -> MidiPoolTransition {
     let pool = midi_pool_entry(state, id, n);
+    let incoming = MidiPoolNote {
+        note,
+        velocity,
+        owner,
+        generation,
+    };
 
     // 1. Already sounding in a slot → balance the previous physical onset,
     // retrigger at the same deadline, and refresh allocation order.
     if let Some(slot) = pool
         .slots
         .iter()
-        .position(|s| matches!(s, Some((sn, _)) if *sn == note))
+        .position(|s| s.is_some_and(|held| held.note == note))
     {
-        pool.slots[slot] = Some((note, velocity));
+        let displaced = pool.slots[slot].replace(incoming);
+        if displaced.is_some_and(|held| held.owner != owner) {
+            pool.overflow.push(displaced.expect("checked above"));
+        }
         pool.alloc_order.retain(|&i| i != slot);
         pool.alloc_order.push(slot);
-        return vec![
-            QueuedMidiEvent::NoteOff { channel, note },
-            QueuedMidiEvent::NoteOn {
-                channel,
-                note,
-                velocity,
-            },
-        ];
+        return MidiPoolTransition {
+            events: vec![
+                QueuedMidiEvent::NoteOff { channel, note },
+                QueuedMidiEvent::NoteOn {
+                    channel,
+                    note,
+                    velocity,
+                },
+            ],
+            displaced,
+            ..MidiPoolTransition::default()
+        };
     }
 
-    // Re-pressing a held-but-stolen note: drop the stale overflow entry so it
-    // is not tracked twice once it lands in a slot.
-    pool.overflow.retain(|&(n_, _)| n_ != note);
+    // Re-pressing the same owner's held-but-stolen note supersedes that
+    // logical press. Other owners remain eligible for revival.
+    pool.overflow
+        .retain(|held| held.note != note || held.owner != owner);
 
     // 2. Free slot → assign directly.
     if let Some(slot) = pool.slots.iter().position(|s| s.is_none()) {
-        pool.slots[slot] = Some((note, velocity));
+        pool.slots[slot] = Some(incoming);
         pool.alloc_order.push(slot);
-        return vec![QueuedMidiEvent::NoteOn {
-            channel,
-            note,
-            velocity,
-        }];
+        return MidiPoolTransition {
+            events: vec![QueuedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            }],
+            ..MidiPoolTransition::default()
+        };
     }
 
     // 3. All slots full → steal the oldest-allocated slot.
     let Some(&slot) = pool.alloc_order.first() else {
         // Degenerate zero-slot pool (shouldn't happen — polyphony >= 1).
-        return vec![QueuedMidiEvent::NoteOn {
-            channel,
-            note,
-            velocity,
-        }];
+        return MidiPoolTransition {
+            events: vec![QueuedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            }],
+            ..MidiPoolTransition::default()
+        };
     };
     let mut events = Vec::new();
-    if let Some((stolen_note, stolen_vel)) = pool.slots[slot] {
-        pool.overflow.push((stolen_note, stolen_vel));
+    let displaced = pool.slots[slot];
+    if let Some(stolen) = displaced {
+        pool.overflow.push(stolen);
         if !legato {
             events.push(QueuedMidiEvent::NoteOff {
                 channel,
-                note: stolen_note,
+                note: stolen.note,
             });
         }
     }
-    pool.slots[slot] = Some((note, velocity));
+    pool.slots[slot] = Some(incoming);
     pool.alloc_order.remove(0);
     pool.alloc_order.push(slot);
     events.push(QueuedMidiEvent::NoteOn {
@@ -2179,7 +2627,11 @@ fn midi_pool_note_on(
         note,
         velocity,
     });
-    events
+    MidiPoolTransition {
+        events,
+        displaced: (!legato).then_some(displaced).flatten(),
+        ..MidiPoolTransition::default()
+    }
 }
 
 /// Unified voice-allocation pool: note-off side.
@@ -2204,17 +2656,44 @@ fn midi_pool_note_off(
     note: u8,
     n: usize,
 ) -> Vec<QueuedMidiEvent> {
+    let mut transition =
+        midi_pool_note_off_owned(state, id, channel, note, n, NoteOwner::Anonymous, None);
+    if transition.released.is_none() {
+        transition
+            .events
+            .push(QueuedMidiEvent::NoteOff { channel, note });
+    }
+    transition.events
+}
+
+#[cfg(feature = "midi")]
+#[allow(clippy::too_many_arguments)]
+fn midi_pool_note_off_owned(
+    state: &mut State,
+    id: VoiceId,
+    channel: u8,
+    note: u8,
+    n: usize,
+    owner: NoteOwner,
+    generation: Option<u64>,
+) -> MidiPoolTransition {
     let pool = midi_pool_entry(state, id, n);
     let mut events = Vec::new();
+    let matches = |held: &MidiPoolNote| {
+        held.note == note
+            && held.owner == owner
+            && generation.is_none_or(|generation| held.generation == generation)
+    };
 
     if let Some(slot) = pool
         .slots
         .iter()
-        .position(|s| matches!(s, Some((sn, _)) if *sn == note))
+        .position(|slot| slot.as_ref().is_some_and(&matches))
     {
-        pool.slots[slot] = None;
+        let released = pool.slots[slot].take();
         pool.alloc_order.retain(|&i| i != slot);
-        if let Some((rev_note, rev_vel)) = pool.overflow.pop() {
+        let revived = pool.overflow.pop();
+        if let Some(revived) = revived {
             // Return-to-held: bring the most-recently-stolen still-held note
             // back into this slot. Emit an explicit NoteOff for the released
             // note *before* the revived note's NoteOn — even on a mono
@@ -2225,17 +2704,23 @@ fn midi_pool_note_off(
             // gate stays open forever. The pre-NoteOff retriggers the envelope
             // on the fallback, which is the expected non-legato behaviour.
             events.push(QueuedMidiEvent::NoteOff { channel, note });
-            pool.slots[slot] = Some((rev_note, rev_vel));
+            pool.slots[slot] = Some(revived);
             pool.alloc_order.push(slot);
             tracing::debug!(
                 "MIDI pool: note_off voice={:?} note={} → slot {} freed, revived held note {} (vel {}); \
                  explicit NoteOff for released note; overflow now {} held, slots={:?}",
-                id, note, slot, rev_note, rev_vel, pool.overflow.len(), pool.slots,
+                id,
+                note,
+                slot,
+                revived.note,
+                revived.velocity,
+                pool.overflow.len(),
+                pool.slots,
             );
             events.push(QueuedMidiEvent::NoteOn {
                 channel,
-                note: rev_note,
-                velocity: rev_vel,
+                note: revived.note,
+                velocity: revived.velocity,
             });
         } else {
             tracing::debug!(
@@ -2249,10 +2734,20 @@ fn midi_pool_note_off(
             );
             events.push(QueuedMidiEvent::NoteOff { channel, note });
         }
-    } else if pool.overflow.iter().any(|&(n_, _)| n_ == note) {
+        let empty = pool.overflow.is_empty() && pool.slots.iter().all(|slot| slot.is_none());
+        if empty {
+            state.midi_voice_pool.remove(&id);
+        }
+        return MidiPoolTransition {
+            events,
+            released,
+            revived,
+            ..MidiPoolTransition::default()
+        };
+    } else if let Some(index) = pool.overflow.iter().rposition(matches) {
         // Held-but-stolen note released → drop it from the overflow stack. Its
         // original NoteOn was already matched by a NoteOff at steal time.
-        pool.overflow.retain(|&(n_, _)| n_ != note);
+        let released = pool.overflow.remove(index);
         tracing::debug!(
             "MIDI pool: note_off voice={:?} note={} → was held-but-stolen, dropped from overflow; \
              overflow now {} held, slots={:?}",
@@ -2261,26 +2756,21 @@ fn midi_pool_note_off(
             pool.overflow.len(),
             pool.slots,
         );
-    } else {
-        // Untracked note released. We have no record of it sounding, but the
-        // device might — emit a defensive NoteOff so a desync can't leave the
-        // gate stuck open.
-        tracing::debug!(
-            "MIDI pool: note_off voice={:?} note={} → UNTRACKED (pool desync?); \
-             emitting defensive NoteOff; overflow {} held, slots={:?}",
-            id,
-            note,
-            pool.overflow.len(),
-            pool.slots,
-        );
-        events.push(QueuedMidiEvent::NoteOff { channel, note });
+        let empty = pool.overflow.is_empty() && pool.slots.iter().all(|slot| slot.is_none());
+        if empty {
+            state.midi_voice_pool.remove(&id);
+        }
+        return MidiPoolTransition {
+            released: Some(released),
+            ..MidiPoolTransition::default()
+        };
     }
 
-    let empty = pool.overflow.is_empty() && pool.slots.iter().all(|s| s.is_none());
+    let empty = pool.overflow.is_empty() && pool.slots.iter().all(|slot| slot.is_none());
     if empty {
         state.midi_voice_pool.remove(&id);
     }
-    events
+    MidiPoolTransition::default()
 }
 
 /// Tear down the voice-allocation pool for `id` (voice stop / delete / reload):
@@ -2290,8 +2780,11 @@ fn midi_pool_clear(state: &mut State, id: VoiceId, channel: u8) -> Vec<QueuedMid
     let mut events = Vec::new();
     if let Some(pool) = state.midi_voice_pool.remove(&id) {
         for idx in pool.alloc_order {
-            if let Some((note, _)) = pool.slots[idx] {
-                events.push(QueuedMidiEvent::NoteOff { channel, note });
+            if let Some(note) = pool.slots[idx] {
+                events.push(QueuedMidiEvent::NoteOff {
+                    channel,
+                    note: note.note,
+                });
             }
         }
     }
@@ -2313,7 +2806,7 @@ fn midi_pool_resize(state: &mut State, id: VoiceId, channel: u8, n: usize) -> Ve
     }
 
     // Sounding notes, oldest-allocated first.
-    let sounding: Vec<(u8, u8)> = pool
+    let sounding: Vec<MidiPoolNote> = pool
         .alloc_order
         .iter()
         .filter_map(|&i| pool.slots.get(i).copied().flatten())
@@ -2321,8 +2814,11 @@ fn midi_pool_resize(state: &mut State, id: VoiceId, channel: u8, n: usize) -> Ve
 
     let mut events = Vec::new();
     let keep_from = sounding.len().saturating_sub(n);
-    for &(note, _) in &sounding[..keep_from] {
-        events.push(QueuedMidiEvent::NoteOff { channel, note });
+    for note in &sounding[..keep_from] {
+        events.push(QueuedMidiEvent::NoteOff {
+            channel,
+            note: note.note,
+        });
     }
     let kept = &sounding[keep_from..];
 
@@ -4159,7 +4655,8 @@ mod tests {
                 let s = state.read().await;
                 let pool = &s.midi_voice_pool[&v];
                 assert_eq!(pool.slots.len(), 1);
-                assert_eq!(pool.slots[0], Some((64, 127)));
+                let held = pool.slots[0].expect("newest note remains sounding");
+                assert_eq!((held.note, held.velocity), (64, 127));
             }
 
             // The surviving note still releases cleanly afterwards.
@@ -4183,7 +4680,8 @@ mod tests {
                 let s = state.read().await;
                 let pool = &s.midi_voice_pool[&v];
                 assert_eq!(pool.slots.len(), 3);
-                assert_eq!(pool.slots[0], Some((64, 127)));
+                let held = pool.slots[0].expect("stolen note remains sounding");
+                assert_eq!((held.note, held.velocity), (64, 127));
             }
         }
     }

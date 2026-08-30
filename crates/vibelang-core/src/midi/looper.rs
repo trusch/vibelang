@@ -57,12 +57,19 @@ impl LooperInstance {
 pub enum LooperAction {
     /// Pass a note-on through to the voice (during capture).
     NoteOn {
+        device_id: MidiDeviceId,
+        channel: u8,
         voice_id: VoiceId,
         note: u8,
         velocity: u8,
     },
     /// Pass a note-off through to the voice.
-    NoteOff { voice_id: VoiceId, note: u8 },
+    NoteOff {
+        device_id: MidiDeviceId,
+        channel: u8,
+        voice_id: VoiceId,
+        note: u8,
+    },
     /// Stop a looping pattern.
     StopPattern { pattern_id: PatternId },
     /// Start a new looping pattern from a completed recording.
@@ -259,6 +266,8 @@ impl LooperManager {
                     last_note_off_beat: None,
                 };
                 actions.push(LooperAction::NoteOn {
+                    device_id,
+                    channel,
                     voice_id,
                     note,
                     velocity,
@@ -267,6 +276,8 @@ impl LooperManager {
             LooperPhase::Capturing { .. } => {
                 inst.recording.record_note_on(note, velocity, channel, beat);
                 actions.push(LooperAction::NoteOn {
+                    device_id,
+                    channel,
                     voice_id,
                     note,
                     velocity,
@@ -288,6 +299,8 @@ impl LooperManager {
                     last_note_off_beat: None,
                 };
                 actions.push(LooperAction::NoteOn {
+                    device_id,
+                    channel,
                     voice_id,
                     note,
                     velocity,
@@ -338,7 +351,12 @@ impl LooperManager {
             };
         }
 
-        vec![LooperAction::NoteOff { voice_id, note }]
+        vec![LooperAction::NoteOff {
+            device_id,
+            channel,
+            voice_id,
+            note,
+        }]
     }
 
     /// Called every runtime tick. Detects silence and triggers playback conversion.
@@ -387,7 +405,9 @@ impl LooperManager {
                 actions.extend(
                     orphaned
                         .iter()
-                        .map(|(note, _channel)| LooperAction::NoteOff {
+                        .map(|(note, channel)| LooperAction::NoteOff {
+                            device_id: inst.config.device_id,
+                            channel: *channel,
                             voice_id: inst.config.voice_id,
                             note: *note,
                         }),
@@ -479,17 +499,14 @@ fn teardown_actions(instance: &LooperInstance) -> Vec<LooperAction> {
 }
 
 fn capturing_teardown_actions(instance: &LooperInstance) -> Vec<LooperAction> {
-    let mut notes: Vec<u8> = instance
-        .recording
-        .pending_note_keys()
-        .into_iter()
-        .map(|(note, _channel)| note)
-        .collect();
+    let mut notes = instance.recording.pending_note_keys();
     notes.sort_unstable();
     notes.dedup();
     notes
         .into_iter()
-        .map(|note| LooperAction::NoteOff {
+        .map(|(note, channel)| LooperAction::NoteOff {
+            device_id: instance.config.device_id,
+            channel,
             voice_id: instance.config.voice_id,
             note,
         })
@@ -878,7 +895,7 @@ mod tests {
 
         assert!(actions.iter().any(|action| matches!(
             action,
-            LooperAction::NoteOff { voice_id, note: 60 } if *voice_id == VoiceId::new(7)
+            LooperAction::NoteOff { voice_id, note: 60, .. } if *voice_id == VoiceId::new(7)
         )));
     }
 
@@ -896,7 +913,7 @@ mod tests {
 
         assert!(actions.iter().any(|action| matches!(
             action,
-            LooperAction::NoteOff { voice_id, note: 60 } if *voice_id == VoiceId::new(7)
+            LooperAction::NoteOff { voice_id, note: 60, .. } if *voice_id == VoiceId::new(7)
         )));
     }
 
@@ -913,11 +930,11 @@ mod tests {
                 .iter()
                 .filter(|action| matches!(
                     action,
-                    LooperAction::NoteOff { voice_id, note: 60 }
+                    LooperAction::NoteOff { voice_id, note: 60, .. }
                         if *voice_id == VoiceId::new(7)
                 ))
                 .count(),
-            1
+            2
         );
         assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
     }
@@ -933,6 +950,43 @@ mod tests {
             |action| matches!(action, LooperAction::StopPattern { pattern_id: stopped } if *stopped == pattern_id)
         ));
         assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
+    }
+
+    #[test]
+    fn disconnect_resets_only_the_selected_device_looper_and_pattern() {
+        let first_config = make_config(1, 7);
+        let second_config = make_config(2, 7);
+        let first_device = first_config.device_id;
+        let second_device = second_config.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[first_config, second_config]);
+
+        manager.handle_note_on(first_device, 0, 60, 100, 0.0, 4);
+        let second_pattern = record_single_note_loop(&mut manager, second_device, 64, 0.0);
+
+        let actions = manager.disconnect_device(first_device);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            LooperAction::NoteOff {
+                device_id,
+                voice_id,
+                note: 60,
+                ..
+            } if *device_id == first_device && *voice_id == VoiceId::new(7)
+        )));
+        assert!(
+            actions.iter().all(|action| !matches!(
+                action,
+                LooperAction::StopPattern { pattern_id } if *pattern_id == second_pattern
+            )),
+            "disconnecting D1 must not stop D2's playing pattern"
+        );
+        assert!(matches!(phase(&manager, first_device), LooperPhase::Idle));
+        assert!(matches!(
+            phase(&manager, second_device),
+            LooperPhase::Playing { pattern_id, .. } if pattern_id == second_pattern
+        ));
     }
 
     #[test]
@@ -956,7 +1010,7 @@ mod tests {
         let releases: Vec<_> = actions
             .iter()
             .filter_map(|action| match action {
-                LooperAction::NoteOff { voice_id, note } => Some((*voice_id, *note)),
+                LooperAction::NoteOff { voice_id, note, .. } => Some((*voice_id, *note)),
                 _ => None,
             })
             .collect();
@@ -985,7 +1039,8 @@ mod tests {
             [LooperAction::NoteOn {
                 voice_id,
                 note: 60,
-                velocity: 110
+                velocity: 110,
+                ..
             }] if *voice_id == VoiceId::new(7)
         ));
         assert!(manager
@@ -999,7 +1054,7 @@ mod tests {
         let fresh_off = manager.handle_note_off(capture_config.device_id, 0, 60, 1_000.2);
         assert!(matches!(
             fresh_off.as_slice(),
-            [LooperAction::NoteOff { voice_id, note: 60 }]
+            [LooperAction::NoteOff { voice_id, note: 60, .. }]
                 if *voice_id == VoiceId::new(7)
         ));
         assert_eq!(manager.instances[&capture_key].recording.pending_count(), 0);
