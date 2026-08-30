@@ -8,8 +8,8 @@ use crate::backend::Backend;
 use crate::midi::open_pipewire_midi2_input;
 use crate::midi::{
     is_pipewire_midi_input_id, list_pipewire_midi2_inputs,
-    parse_midi_bytes as new_parse_midi_bytes, MidiRecording, MidiRecordingInfo, QueuedMidiEvent,
-    TimestampedMidiEvent,
+    parse_midi_bytes as new_parse_midi_bytes, send_panic_clear, MidiRecording, MidiRecordingInfo,
+    QueuedMidiEvent, TimestampedMidiEvent,
 };
 use crate::traits::{Midi, MidiDeviceInfo, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
@@ -290,28 +290,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
             .connect(port, "vibelang-output")
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI output: {}", e)))?;
 
-        // Panic-clear any zombie notes left on the device from a previous
-        // session (e.g., crash, kill -9, or service restart while the looper
-        // was playing). Without this, the previous PID's last note_on is
-        // still held on the external synth and we have no way to send the
-        // matching note_off — manifests as a stuck tone on startup.
-        //
-        // Layered approach for maximum robustness:
-        //   1. CC 64 (Sustain Pedal) = 0  — release any latched sustain.
-        //   2. Explicit Note-Off for every note 0..128 — works on every
-        //      synth, including Behringer Model 15 which ignores CC 123.
-        //   3. CC 123 (All Notes Off) — short-circuit on conforming synths.
-        // Per channel × 16 channels = ~2KB of MIDI per device open. ~70ms
-        // serial latency on 31.25 kbit/s real DIN; trivial over USB.
-        for ch in 0..16u8 {
-            let cc_status = 0xB0 | ch;
-            let off_status = 0x80 | ch;
-            let _ = conn.send(&[cc_status, 64, 0]); // Sustain Off
-            for note in 0..=127u8 {
-                let _ = conn.send(&[off_status, note, 0]);
-            }
-            let _ = conn.send(&[cc_status, 123, 0]); // All Notes Off
-        }
+        send_panic_clear(|message| {
+            let _ = conn.send(message);
+        });
 
         self.outputs
             .lock()

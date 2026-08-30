@@ -11,6 +11,7 @@ use std::sync::Arc;
 use super::events::TimestampedMidiEvent;
 use super::parser::parse_midi_bytes;
 use super::queue::{MidiEventQueue, MidiEventSender};
+use super::send_panic_clear;
 
 #[cfg(feature = "native")]
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -340,19 +341,9 @@ impl MidiDeviceManager {
             .connect(port, "vibelang-output")
             .map_err(|e| format!("Failed to connect MIDI output: {}", e))?;
 
-        // Panic-clear any zombie notes left on the device from a previous
-        // session — see comment at the parallel site in
-        // `handlers/midi/trait_impl.rs::open_output` for the rationale.
-        // Layered: Sustain Off, explicit Note-Off 0..128, then CC 123.
-        for ch in 0..16u8 {
-            let cc_status = 0xB0 | ch;
-            let off_status = 0x80 | ch;
-            let _ = connection.send(&[cc_status, 64, 0]);
-            for note in 0..=127u8 {
-                let _ = connection.send(&[off_status, note, 0]);
-            }
-            let _ = connection.send(&[cc_status, 123, 0]);
-        }
+        send_panic_clear(|message| {
+            let _ = connection.send(message);
+        });
 
         // Store state
         let mut outputs = self.outputs.write();

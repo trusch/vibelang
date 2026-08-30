@@ -93,6 +93,7 @@ mod hotplug;
 pub mod looper;
 mod mpe;
 mod nrpn;
+mod panic_clear;
 mod parser;
 mod per_note_state;
 #[cfg(feature = "pipewire-midi2")]
@@ -117,6 +118,7 @@ pub use constants::{
     decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, trigger_ids,
     MidiData, MidiTriggerType,
 };
+pub(crate) use panic_clear::send_panic_clear;
 pub use realtime::{
     MidiDeviceSender, MidiRealtimeConfig, MidiRealtimeService, MidiRealtimeStats, QueuedMidiEvent,
     ScheduledMidiEvent,
