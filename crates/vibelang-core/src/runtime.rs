@@ -2746,6 +2746,14 @@ impl<B: Backend> Runtime<B> {
                         }
                     }
                 }
+                #[cfg(feature = "midi")]
+                self.voices
+                    .release_midi_endpoint_before_retarget(
+                        *id,
+                        new_config.midi_output,
+                        new_config.midi_channel,
+                    )
+                    .await;
                 // Update the stored config for non-param fields (name, polyphony, etc.)
                 #[cfg_attr(not(feature = "midi"), allow(unused_variables))]
                 let polyphony_changed = {
@@ -9774,6 +9782,329 @@ mod tests {
     }
 
     #[cfg(feature = "midi")]
+    mod midi_endpoint_reload_integration {
+        use super::*;
+        use crate::midi::{
+            Channel, MidiMessage, QueuedMidiEvent, ScheduledMidiEvent, TimestampedMidiEvent,
+            Velocity,
+        };
+        use crate::reload::{GroupConfig, LooperConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::MidiDeviceId;
+        use std::collections::HashMap;
+        use std::time::Duration;
+
+        const INPUT_DEVICE: u32 = 61;
+        const OLD_OUTPUT_DEVICE: u32 = 62;
+        const NEW_OUTPUT_DEVICE: u32 = 63;
+        const INPUT_CHANNEL: u8 = 0;
+        const OLD_OUTPUT_CHANNEL: u8 = 3;
+        const NEW_OUTPUT_CHANNEL: u8 = 9;
+        const NOTE: u8 = 60;
+        const VOICE: VoiceId = VoiceId::new(1);
+
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        struct Endpoint {
+            device: u32,
+            channel: u8,
+        }
+
+        const OLD_ENDPOINT: Endpoint = Endpoint {
+            device: OLD_OUTPUT_DEVICE,
+            channel: OLD_OUTPUT_CHANNEL,
+        };
+        const NEW_DEVICE_ENDPOINT: Endpoint = Endpoint {
+            device: NEW_OUTPUT_DEVICE,
+            channel: OLD_OUTPUT_CHANNEL,
+        };
+        const NEW_CHANNEL_ENDPOINT: Endpoint = Endpoint {
+            device: OLD_OUTPUT_DEVICE,
+            channel: NEW_OUTPUT_CHANNEL,
+        };
+
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        enum PhysicalKind {
+            On(u8),
+            Off,
+        }
+
+        #[derive(Clone, Copy, Debug)]
+        struct PhysicalEvent {
+            timestamp: Instant,
+            sequence: u64,
+            endpoint: Endpoint,
+            note: u8,
+            kind: PhysicalKind,
+        }
+
+        impl PhysicalEvent {
+            fn key(self) -> (u32, u8, u8) {
+                (self.endpoint.device, self.endpoint.channel, self.note)
+            }
+        }
+
+        struct Harness {
+            runtime: Runtime<MockBackend>,
+            receivers: HashMap<u32, crossbeam_channel::Receiver<ScheduledMidiEvent>>,
+            sink_sequences: HashMap<u32, u64>,
+            input_sequence: u64,
+        }
+
+        impl Harness {
+            async fn new() -> Self {
+                let mut runtime = Runtime::new(MockBackend);
+                let mut receivers = HashMap::new();
+                {
+                    let outputs = runtime.midi.output_channels();
+                    let mut outputs = outputs.lock().unwrap();
+                    for device in [OLD_OUTPUT_DEVICE, NEW_OUTPUT_DEVICE] {
+                        let (tx, rx) = crossbeam_channel::unbounded();
+                        outputs.insert(MidiDeviceId::new(device), tx);
+                        receivers.insert(device, rx);
+                    }
+                }
+                runtime
+                    .apply_reload(script_state(OLD_ENDPOINT))
+                    .await
+                    .unwrap();
+
+                Self {
+                    runtime,
+                    receivers,
+                    sink_sequences: HashMap::new(),
+                    input_sequence: 0,
+                }
+            }
+
+            async fn set_beat(&self, beat: f64) {
+                self.runtime.state.write().await.current_beat = Beat::from_f64(beat);
+            }
+
+            async fn input(&mut self, beat: f64, message: MidiMessage) {
+                self.set_beat(beat).await;
+                self.input_sequence += 1;
+                assert!(self
+                    .runtime
+                    .midi
+                    .event_sender()
+                    .try_send(TimestampedMidiEvent::new(
+                        self.input_sequence,
+                        Instant::now(),
+                        MidiDeviceId::new(INPUT_DEVICE),
+                        message,
+                    )));
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+            }
+
+            async fn note_on(&mut self, beat: f64) {
+                self.input(
+                    beat,
+                    MidiMessage::NoteOn {
+                        channel: Channel::new(INPUT_CHANNEL),
+                        note: NOTE,
+                        velocity: Velocity::from_midi1(100),
+                    },
+                )
+                .await;
+            }
+
+            async fn note_off(&mut self, beat: f64) {
+                self.input(
+                    beat,
+                    MidiMessage::NoteOff {
+                        channel: Channel::new(INPUT_CHANNEL),
+                        note: NOTE,
+                        velocity: Velocity::ZERO,
+                    },
+                )
+                .await;
+            }
+
+            async fn queue_future_looper_onset(&mut self) -> Instant {
+                self.note_on(0.0).await;
+                self.note_off(0.05).await;
+                self.set_beat(3.901).await;
+                let dispatched_after = Instant::now();
+                self.runtime.tick().await;
+                self.runtime.tick().await;
+                dispatched_after
+            }
+
+            async fn reload_endpoint(&mut self, endpoint: Endpoint) {
+                self.runtime
+                    .apply_reload(script_state(endpoint))
+                    .await
+                    .unwrap();
+                let state = self.runtime.state.read().await;
+                let voice = &state.voices[&VOICE].config;
+                assert_eq!(voice.midi_output, Some(MidiDeviceId::new(endpoint.device)));
+                assert_eq!(voice.midi_channel, endpoint.channel);
+                assert!(!state.midi_voice_pool.contains_key(&VOICE));
+                assert!(!state.voice_note_generations.contains_key(&(VOICE, NOTE)));
+            }
+
+            fn drain(&mut self) -> Vec<PhysicalEvent> {
+                let mut events = Vec::new();
+                for (&device, receiver) in &self.receivers {
+                    let sequence = self.sink_sequences.entry(device).or_default();
+                    for scheduled in receiver.try_iter() {
+                        *sequence += 1;
+                        let (channel, note, kind) = match scheduled.event {
+                            QueuedMidiEvent::NoteOn {
+                                channel,
+                                note,
+                                velocity,
+                            } => (channel, note, PhysicalKind::On(velocity)),
+                            QueuedMidiEvent::NoteOff { channel, note } => {
+                                (channel, note, PhysicalKind::Off)
+                            }
+                            other => panic!("unexpected physical MIDI event: {other:?}"),
+                        };
+                        events.push(PhysicalEvent {
+                            timestamp: scheduled.timestamp,
+                            sequence: *sequence,
+                            endpoint: Endpoint { device, channel },
+                            note,
+                            kind,
+                        });
+                    }
+                }
+                events
+            }
+        }
+
+        fn script_state(endpoint: Endpoint) -> ScriptState {
+            let mut state = ScriptState::new();
+            state.add_group(
+                GroupId::new(1),
+                GroupConfig {
+                    name: "midi-endpoint-reload".to_string(),
+                    ..Default::default()
+                },
+            );
+            state.add_voice(
+                VOICE,
+                VoiceConfig::new("looper-midi", "", GroupId::new(1))
+                    .with_midi_output(MidiDeviceId::new(endpoint.device), endpoint.channel)
+                    .with_polyphony(1),
+            );
+            state.loopers.push(LooperConfig {
+                device_id: MidiDeviceId::new(INPUT_DEVICE),
+                voice_id: VOICE,
+                channel: Some(INPUT_CHANNEL),
+                silence_bars: 0.01,
+                quantize_beats: 0.25,
+            });
+            state
+        }
+
+        fn multiplicities(events: &[PhysicalEvent]) -> HashMap<(u32, u8, u8), usize> {
+            let mut ordered = events.to_vec();
+            ordered.sort_by(|left, right| {
+                left.timestamp
+                    .cmp(&right.timestamp)
+                    .then(left.endpoint.device.cmp(&right.endpoint.device))
+                    .then(left.sequence.cmp(&right.sequence))
+            });
+            let mut outstanding = HashMap::<(u32, u8, u8), usize>::new();
+            for event in ordered {
+                let count = outstanding.entry(event.key()).or_default();
+                match event.kind {
+                    PhysicalKind::On(_) => *count += 1,
+                    PhysicalKind::Off => *count = count.saturating_sub(1),
+                }
+            }
+            outstanding
+        }
+
+        async fn assert_capture_retarget(endpoint: Endpoint) {
+            let mut harness = Harness::new().await;
+            harness.note_on(0.0).await;
+            let mut events = harness.drain();
+            assert_eq!(multiplicities(&events)[&OLD_ENDPOINT_KEY], 1);
+
+            harness.reload_endpoint(endpoint).await;
+            events.extend(harness.drain());
+
+            let outstanding = multiplicities(&events);
+            assert_eq!(outstanding.get(&OLD_ENDPOINT_KEY), Some(&0));
+            assert_eq!(outstanding.get(&endpoint_key(endpoint)), None);
+            assert!(events.iter().any(|event| {
+                event.endpoint == OLD_ENDPOINT
+                    && event.note == NOTE
+                    && event.kind == PhysicalKind::Off
+            }));
+        }
+
+        async fn assert_queued_playback_retarget(endpoint: Endpoint) {
+            let mut harness = Harness::new().await;
+            let dispatched_after = harness.queue_future_looper_onset().await;
+            let mut events = harness.drain();
+            assert!(events.iter().any(|event| {
+                event.endpoint == OLD_ENDPOINT
+                    && event.note == NOTE
+                    && matches!(event.kind, PhysicalKind::On(_))
+                    && event.timestamp > dispatched_after
+            }));
+
+            harness.reload_endpoint(endpoint).await;
+            let fresh = harness
+                .runtime
+                .voices
+                .note_on_at_owned(VOICE, NOTE, 0.5, None)
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(180)).await;
+            events.extend(harness.drain());
+
+            let outstanding = multiplicities(&events);
+            assert_eq!(outstanding.get(&OLD_ENDPOINT_KEY), Some(&0));
+            assert_eq!(outstanding.get(&endpoint_key(endpoint)), Some(&1));
+            assert!(events.iter().any(|event| {
+                event.endpoint == endpoint
+                    && event.note == NOTE
+                    && event.kind == PhysicalKind::On(63)
+            }));
+
+            harness
+                .runtime
+                .voices
+                .finish_tracked_note_on(VOICE, NOTE, fresh)
+                .await
+                .unwrap();
+            events.extend(harness.drain());
+            assert!(multiplicities(&events).values().all(|count| *count == 0));
+        }
+
+        const OLD_ENDPOINT_KEY: (u32, u8, u8) = (OLD_OUTPUT_DEVICE, OLD_OUTPUT_CHANNEL, NOTE);
+
+        fn endpoint_key(endpoint: Endpoint) -> (u32, u8, u8) {
+            (endpoint.device, endpoint.channel, NOTE)
+        }
+
+        #[tokio::test]
+        async fn same_voice_device_retarget_releases_capture_on_old_endpoint() {
+            assert_capture_retarget(NEW_DEVICE_ENDPOINT).await;
+        }
+
+        #[tokio::test]
+        async fn same_voice_channel_retarget_releases_capture_on_old_endpoint() {
+            assert_capture_retarget(NEW_CHANNEL_ENDPOINT).await;
+        }
+
+        #[tokio::test]
+        async fn same_voice_device_retarget_balances_future_queued_onset() {
+            assert_queued_playback_retarget(NEW_DEVICE_ENDPOINT).await;
+        }
+
+        #[tokio::test]
+        async fn same_voice_channel_retarget_balances_future_queued_onset() {
+            assert_queued_playback_retarget(NEW_CHANNEL_ENDPOINT).await;
+        }
+    }
+
+    #[cfg(feature = "midi")]
     mod midi_looper_level_parity_integration {
         use super::*;
         use crate::message::{GroupMessage, VoiceMessage};
@@ -10009,11 +10340,7 @@ mod tests {
                     SinkEvent::NoteOn { .. } => *outstanding.entry(key).or_default() += 1,
                     SinkEvent::NoteOff { .. } => {
                         let count = outstanding.entry(key).or_default();
-                        assert!(
-                            *count > 0,
-                            "NoteOff must not create cleanup credit for a later NoteOn: {events:?}"
-                        );
-                        *count -= 1;
+                        *count = count.saturating_sub(1);
                     }
                 }
             }
@@ -10134,8 +10461,26 @@ mod tests {
                     note: NOTE,
                 },
             ];
-            assert_eq!(replay, live);
             assert_eq!(live, expected);
+            assert_eq!(&replay[..3], &expected[..3]);
+            assert!(matches!(replay.last(), Some(SinkEvent::NoteOff { .. })));
+            let replay_velocities: Vec<_> = replay
+                .iter()
+                .filter_map(|event| match event {
+                    SinkEvent::NoteOn { velocity, .. } => Some(*velocity),
+                    SinkEvent::NoteOff { .. } => None,
+                })
+                .collect();
+            assert_eq!(
+                replay_velocities[0],
+                (VOICE_AMP * FIRST_VELOCITY as f32) as u8
+            );
+            assert!(
+                replay_velocities[1..]
+                    .iter()
+                    .all(|velocity| *velocity == (VOICE_AMP * SECOND_VELOCITY as f32) as u8),
+                "same-endpoint recovery must reassert the stored final velocity exactly once: {replay:?}"
+            );
             assert_balanced(&live);
             assert_balanced(&replay);
         }

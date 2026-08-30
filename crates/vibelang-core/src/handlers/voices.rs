@@ -541,6 +541,41 @@ impl<B: Backend> VoicesHandler<B> {
         Ok(())
     }
 
+    /// Release a MIDI voice through its current endpoint before reload exposes
+    /// a different output device or channel.
+    #[cfg(feature = "midi")]
+    pub(crate) async fn release_midi_endpoint_before_retarget(
+        &self,
+        id: VoiceId,
+        new_output: Option<MidiDeviceId>,
+        new_channel: u8,
+    ) {
+        let cleanup = {
+            let mut state = self.state.write().await;
+            let Some(voice) = state.voices.get(&id) else {
+                return;
+            };
+            let old_output = voice.config.midi_output;
+            let old_channel = voice.config.midi_channel;
+
+            if (old_output, old_channel) == (new_output, new_channel) {
+                return;
+            }
+
+            let Some(device_id) = old_output else {
+                return;
+            };
+            clear_voice_note_generations(&mut state, id);
+            let events = midi_pool_clear(&mut state, id, old_channel);
+            (device_id, events)
+        };
+
+        let (device_id, events) = cleanup;
+        for event in events {
+            let _ = self.send_midi_event_now(device_id, event).await;
+        }
+    }
+
     /// Lookahead-aware note-on.
     ///
     /// MIDI voices enqueue the note on the device's output thread with the
@@ -3742,6 +3777,82 @@ mod tests {
 
             handler.note_off(v, 60).await.unwrap();
             assert_eq!(drained(&fresh_rx), vec![("off", 9, 60, 0)]);
+        }
+
+        #[tokio::test]
+        async fn retarget_release_flushes_old_endpoint_before_config_mutation() {
+            let (handler, state, old_rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+            let old_device = MidiDeviceId::new(DEV as u32);
+            let new_device = MidiDeviceId::new(DEV as u32 + 1);
+
+            handler.note_on_at_owned(v, 60, 0.5, None).await.unwrap();
+            assert_eq!(drained(&old_rx), vec![("on", 0, 60, 63)]);
+
+            handler
+                .release_midi_endpoint_before_retarget(v, Some(new_device), 9)
+                .await;
+
+            {
+                let state = state.read().await;
+                let voice = &state.voices[&v];
+                assert_eq!(voice.config.midi_output, Some(old_device));
+                assert_eq!(voice.config.midi_channel, 0);
+                assert!(!state.midi_voice_pool.contains_key(&v));
+                assert!(!state.voice_note_generations.contains_key(&(v, 60)));
+                assert!(!state.midi_note_on_deadlines.contains_key(&(v, 60)));
+            }
+            assert_eq!(drained(&old_rx), vec![("off", 0, 60, 0)]);
+
+            let mut state = state.write().await;
+            let voice = state.voices.get_mut(&v).unwrap();
+            voice.config.midi_output = Some(new_device);
+            voice.config.midi_channel = 9;
+        }
+
+        #[tokio::test]
+        async fn retarget_release_treats_some_to_none_as_old_endpoint_cleanup() {
+            let (handler, state, old_rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on_at_owned(v, 60, 1.0, None).await.unwrap();
+            let _ = drained(&old_rx);
+            handler
+                .release_midi_endpoint_before_retarget(v, None, 0)
+                .await;
+
+            assert_eq!(drained(&old_rx), vec![("off", 0, 60, 0)]);
+            let state = state.read().await;
+            assert!(!state.midi_voice_pool.contains_key(&v));
+            assert!(!state.voice_note_generations.contains_key(&(v, 60)));
+        }
+
+        #[tokio::test]
+        async fn unchanged_endpoint_does_not_drain_pool_or_generations() {
+            let (handler, state, old_rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            let tracked = handler.note_on_at_owned(v, 60, 0.5, None).await.unwrap();
+            let _ = drained(&old_rx);
+            handler
+                .release_midi_endpoint_before_retarget(v, Some(MidiDeviceId::new(DEV as u32)), 0)
+                .await;
+
+            assert!(drained(&old_rx).is_empty());
+            {
+                let state = state.read().await;
+                assert!(state.midi_voice_pool.contains_key(&v));
+                assert_eq!(
+                    state.voice_note_generations.get(&(v, 60)),
+                    Some(&tracked.generation)
+                );
+            }
+
+            handler
+                .finish_tracked_note_on(v, 60, tracked)
+                .await
+                .unwrap();
+            assert_eq!(drained(&old_rx), vec![("off", 0, 60, 0)]);
         }
 
         /// Dispatching a full tick's batch of future-timestamped MIDI notes
