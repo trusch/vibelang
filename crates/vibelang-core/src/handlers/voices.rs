@@ -35,6 +35,33 @@ use std::sync::Mutex;
 #[cfg(feature = "midi")]
 pub type MidiOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>;
 
+#[cfg(feature = "midi")]
+#[derive(Clone, Copy, Debug)]
+/// Ownership needed to balance a lookahead note after logical state changes.
+pub(crate) struct TrackedNoteOn {
+    generation: u64,
+    delivery: TrackedNoteDelivery,
+}
+
+#[cfg(feature = "midi")]
+#[derive(Clone, Copy, Debug)]
+enum TrackedNoteDelivery {
+    Audio {
+        node_id: NodeId,
+    },
+    #[cfg(feature = "midi")]
+    Midi {
+        device_id: MidiDeviceId,
+        channel: u8,
+        polyphony: usize,
+    },
+}
+
+#[cfg(feature = "midi")]
+type AudioNoteOn = Option<TrackedNoteOn>;
+#[cfg(not(feature = "midi"))]
+type AudioNoteOn = ();
+
 /// Extra margin added on top of a voice's release time before its deferred
 /// resources are reclaimed (fallback `/n_free`, route mixers, buses, node
 /// IDs). Covers OSC latency plus the envelope's asymptotic tail.
@@ -549,6 +576,19 @@ impl<B: Backend> VoicesHandler<B> {
         velocity: f32,
         timestamp: Option<Instant>,
     ) -> Result<u64> {
+        self.note_on_at_owned(id, note, velocity, timestamp)
+            .await
+            .map(|tracked| tracked.generation)
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn note_on_at_owned(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        timestamp: Option<Instant>,
+    ) -> Result<TrackedNoteOn> {
         let (midi_output, midi_channel, polyphony, mono_legato) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -562,7 +602,7 @@ impl<B: Backend> VoicesHandler<B> {
 
         if let Some(device_id) = midi_output {
             let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
-            return self
+            let generation = self
                 .midi_pool_note_on(
                     id,
                     device_id,
@@ -573,12 +613,20 @@ impl<B: Backend> VoicesHandler<B> {
                     mono_legato,
                     timestamp,
                 )
-                .await;
+                .await?;
+            return Ok(TrackedNoteOn {
+                generation,
+                delivery: TrackedNoteDelivery::Midi {
+                    device_id,
+                    channel: midi_channel,
+                    polyphony,
+                },
+            });
         }
 
-        self.note_on_audio_at(id, note, velocity, &ParamMap::new(), timestamp)
-            .await?;
-        self.current_note_generation(id, note).await
+        self.note_on_audio_at_owned(id, note, velocity, &ParamMap::new(), timestamp)
+            .await?
+            .ok_or(Error::VoiceNotFound(id))
     }
 
     /// Lookahead-aware note-on with per-note voice parameters.
@@ -745,9 +793,23 @@ impl<B: Backend> VoicesHandler<B> {
         extra_params: &ParamMap,
         at: Option<Instant>,
     ) -> Result<()> {
+        self.note_on_audio_at_owned(id, note, velocity, extra_params, at)
+            .await
+            .map(|_| ())
+    }
+
+    async fn note_on_audio_at_owned(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        extra_params: &ParamMap,
+        at: Option<Instant>,
+    ) -> Result<AudioNoteOn> {
         // Gather info and allocate node while holding lock
         let (
             node_id,
+            _generation,
             add_target,
             add_action,
             synthdef,
@@ -840,6 +902,9 @@ impl<B: Backend> VoicesHandler<B> {
                 let Some(spawn) =
                     crate::handlers::sfz_note_spawn_params(&mut state, sfz_id, note, velocity)
                 else {
+                    #[cfg(feature = "midi")]
+                    return Ok(None); // no matching region — skip, don't play buffer 0
+                    #[cfg(not(feature = "midi"))]
                     return Ok(()); // no matching region — skip, don't play buffer 0
                 };
                 synthdef = spawn.synthdef.to_string();
@@ -853,7 +918,7 @@ impl<B: Backend> VoicesHandler<B> {
             }
 
             let node_id = state.alloc_node_id()?;
-            bump_note_generation(&mut state, id, note);
+            let generation = bump_note_generation(&mut state, id, note);
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
@@ -875,6 +940,7 @@ impl<B: Backend> VoicesHandler<B> {
 
             (
                 node_id,
+                generation,
                 add_target,
                 add_action,
                 synthdef,
@@ -932,6 +998,13 @@ impl<B: Backend> VoicesHandler<B> {
             .map_err(Error::backend)?;
         self.forward_bend_baselines(&bend_baseline_updates).await;
 
+        #[cfg(feature = "midi")]
+        return Ok(Some(TrackedNoteOn {
+            generation: _generation,
+            delivery: TrackedNoteDelivery::Audio { node_id },
+        }));
+
+        #[cfg(not(feature = "midi"))]
         Ok(())
     }
 
@@ -1062,13 +1135,69 @@ impl<B: Backend> VoicesHandler<B> {
     }
 
     #[cfg(feature = "midi")]
-    async fn current_note_generation(&self, id: VoiceId, note: u8) -> Result<u64> {
-        let state = self.state.read().await;
-        state
-            .voice_note_generations
-            .get(&(id, note))
-            .copied()
-            .ok_or(Error::VoiceNotFound(id))
+    pub(crate) async fn arm_tracked_audio_note_off(
+        &self,
+        tracked: TrackedNoteOn,
+        deadline: Instant,
+    ) -> Result<()> {
+        if let TrackedNoteDelivery::Audio { node_id } = tracked.delivery {
+            self.backend
+                .set_param_at(node_id, "gate", 0.0, Some(deadline))
+                .await
+                .map_err(Error::backend)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "midi")]
+    pub(crate) async fn finish_tracked_note_on(
+        &self,
+        id: VoiceId,
+        note: u8,
+        tracked: TrackedNoteOn,
+    ) -> Result<()> {
+        match tracked.delivery {
+            TrackedNoteDelivery::Audio { node_id } => {
+                {
+                    let mut state = self.state.write().await;
+                    if state.voice_note_generations.get(&(id, note)).copied()
+                        == Some(tracked.generation)
+                    {
+                        state.voice_note_generations.remove(&(id, note));
+                        if let Some(voice) = state.voices.get_mut(&id) {
+                            if voice.note_nodes.get(&note).copied() == Some(node_id) {
+                                voice.note_nodes.remove(&note);
+                            }
+                        }
+                    }
+                }
+                self.backend
+                    .set_param_at(node_id, "gate", 0.0, None)
+                    .await
+                    .map_err(Error::backend)?;
+            }
+            TrackedNoteDelivery::Midi {
+                device_id,
+                channel,
+                polyphony,
+            } => {
+                let events = {
+                    let mut state = self.state.write().await;
+                    match state.voice_note_generations.get(&(id, note)).copied() {
+                        Some(generation) if generation != tracked.generation => Vec::new(),
+                        Some(_) => {
+                            state.voice_note_generations.remove(&(id, note));
+                            midi_pool_note_off(&mut state, id, channel, note, polyphony)
+                        }
+                        None => vec![QueuedMidiEvent::NoteOff { channel, note }],
+                    }
+                };
+                for event in events {
+                    let _ = self.send_midi_event_now(device_id, event).await;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -3386,6 +3515,25 @@ mod tests {
                 .note_off_at_if_generation(v, 60, fresh_generation, None)
                 .await
                 .unwrap();
+            assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
+        }
+
+        #[tokio::test]
+        async fn tracked_gate_finish_does_not_release_active_same_pitch_retrigger() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            let stale = handler.note_on_at_owned(v, 60, 1.0, None).await.unwrap();
+            let fresh = handler.note_on_at_owned(v, 60, 0.5, None).await.unwrap();
+            assert_eq!(drained(&rx), vec![("on", 0, 60, 127), ("on", 0, 60, 63)]);
+
+            handler.finish_tracked_note_on(v, 60, stale).await.unwrap();
+            assert!(
+                drained(&rx).is_empty(),
+                "the stale gate must not cut the active same-pitch retrigger"
+            );
+
+            handler.finish_tracked_note_on(v, 60, fresh).await.unwrap();
             assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
         }
 

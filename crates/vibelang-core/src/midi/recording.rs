@@ -294,6 +294,12 @@ impl MidiRecording {
         self.pending_notes.len()
     }
 
+    /// Note/channel pairs whose physical note-ons are still owned by this
+    /// recording and therefore need cleanup if the recording is discarded.
+    pub fn pending_note_keys(&self) -> Vec<(u8, u8)> {
+        self.pending_notes.keys().copied().collect()
+    }
+
     /// Latest recorded note-on beat, relative to the recording start.
     pub fn last_note_on_beat(&self) -> Option<Beat> {
         self.notes

@@ -107,8 +107,8 @@ impl LooperManager {
     /// Reconcile instances against the new set of configs.
     ///
     /// - New `(device_id, channel)` keys → insert a fresh LooperInstance.
-    /// - Removed keys → remove (returning StopPattern if Playing).
-    /// - Changed configs for an existing key → stop any active pattern and reset.
+    /// - Removed keys → release capture notes or stop the active pattern, then remove.
+    /// - Changed configs → release/stop the old target before resetting the instance.
     /// - Unchanged configs → preserve phase/recording/pattern ownership.
     pub fn reconcile(&mut self, configs: &[LooperConfig]) -> Vec<LooperAction> {
         let mut actions = Vec::new();
@@ -122,10 +122,7 @@ impl LooperManager {
             if incoming.contains_key(key) {
                 true
             } else {
-                // If it was playing, stop the pattern.
-                if let LooperPhase::Playing { pattern_id, .. } = instance.phase {
-                    actions.push(LooperAction::StopPattern { pattern_id });
-                }
+                actions.extend(teardown_actions(instance));
                 false
             }
         });
@@ -136,9 +133,7 @@ impl LooperManager {
                 .entry(config.key())
                 .and_modify(|inst| {
                     if inst.config != *config {
-                        if let LooperPhase::Playing { pattern_id, .. } = inst.phase {
-                            actions.push(LooperAction::StopPattern { pattern_id });
-                        }
+                        actions.extend(teardown_actions(inst));
                         *inst = LooperInstance::new(config.clone());
                     }
                 })
@@ -146,6 +141,38 @@ impl LooperManager {
         }
 
         actions
+    }
+
+    /// Reset loopers owned by a disconnected input while preserving their
+    /// declarations for a later reconnect. Captured live notes are released
+    /// and playing patterns are stopped before instance state is discarded.
+    pub fn disconnect_device(&mut self, device_id: MidiDeviceId) -> Vec<LooperAction> {
+        let mut actions = Vec::new();
+        for (key, instance) in &mut self.instances {
+            if key.device_id != device_id {
+                continue;
+            }
+            actions.extend(teardown_actions(instance));
+            let loop_count = instance.loop_count;
+            *instance = LooperInstance::new(instance.config.clone());
+            instance.loop_count = loop_count;
+        }
+        actions
+    }
+
+    /// Target voices whose ownership must be included in an input panic.
+    pub fn voices_for_device(&self, device_id: MidiDeviceId) -> Vec<VoiceId> {
+        let mut voices = Vec::new();
+        for instance in self
+            .instances
+            .values()
+            .filter(|instance| instance.config.device_id == device_id)
+        {
+            if !voices.contains(&instance.config.voice_id) {
+                voices.push(instance.config.voice_id);
+            }
+        }
+        voices
     }
 
     fn key_for_event(&self, device_id: MidiDeviceId, channel: u8) -> Option<LooperKey> {
@@ -386,6 +413,32 @@ impl LooperManager {
         }
 
         actions
+    }
+}
+
+fn teardown_actions(instance: &LooperInstance) -> Vec<LooperAction> {
+    match instance.phase {
+        LooperPhase::Playing { pattern_id, .. } => {
+            vec![LooperAction::StopPattern { pattern_id }]
+        }
+        LooperPhase::Capturing { .. } => {
+            let mut notes: Vec<u8> = instance
+                .recording
+                .pending_note_keys()
+                .into_iter()
+                .map(|(note, _channel)| note)
+                .collect();
+            notes.sort_unstable();
+            notes.dedup();
+            notes
+                .into_iter()
+                .map(|note| LooperAction::NoteOff {
+                    voice_id: instance.config.voice_id,
+                    note,
+                })
+                .collect()
+        }
+        LooperPhase::Idle => Vec::new(),
     }
 }
 
@@ -760,6 +813,72 @@ mod tests {
             .iter()
             .any(|a| matches!(a, LooperAction::StopPattern { .. })));
         assert!(!manager.has_device(device_id));
+    }
+
+    #[test]
+    fn reconcile_removal_releases_notes_owned_by_capturing_looper() {
+        let (mut manager, device_id) = setup(make_config(1, 7));
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+
+        let actions = manager.reconcile(&[]);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            LooperAction::NoteOff { voice_id, note: 60 } if *voice_id == VoiceId::new(7)
+        )));
+    }
+
+    #[test]
+    fn reconcile_retarget_releases_old_capturing_voice() {
+        let config = make_config(1, 7);
+        let device_id = config.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config.clone()]);
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+
+        let mut retargeted = config;
+        retargeted.voice_id = VoiceId::new(8);
+        let actions = manager.reconcile(&[retargeted]);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            LooperAction::NoteOff { voice_id, note: 60 } if *voice_id == VoiceId::new(7)
+        )));
+    }
+
+    #[test]
+    fn disconnect_releases_capture_and_resets_looper() {
+        let (mut manager, device_id) = setup(make_config(1, 7));
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_on(device_id, 1, 60, 100, 0.5, 4);
+
+        let actions = manager.disconnect_device(device_id);
+
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(
+                    action,
+                    LooperAction::NoteOff { voice_id, note: 60 }
+                        if *voice_id == VoiceId::new(7)
+                ))
+                .count(),
+            1
+        );
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
+    }
+
+    #[test]
+    fn disconnect_stops_playing_pattern_and_resets_looper() {
+        let (mut manager, device_id) = setup(make_config(1, 7));
+        let pattern_id = record_single_note_loop(&mut manager, device_id, 60, 0.0);
+
+        let actions = manager.disconnect_device(device_id);
+
+        assert!(actions.iter().any(
+            |action| matches!(action, LooperAction::StopPattern { pattern_id: stopped } if *stopped == pattern_id)
+        ));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
     }
 
     #[test]

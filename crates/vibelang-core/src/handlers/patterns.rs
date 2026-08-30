@@ -437,24 +437,19 @@ impl<B: Backend> PatternsHandler<B> {
             #[cfg(feature = "midi")]
             if let Some(note) = trigger.note {
                 let velocity = trigger.params.get("amp").copied().unwrap_or(1.0);
-                let note_generation = self
+                let tracked_note = self
                     .voices
-                    .note_on_at_tracked(trigger.voice_id, note, velocity, Some(trigger.timestamp))
+                    .note_on_at_owned(trigger.voice_id, note, velocity, Some(trigger.timestamp))
                     .await
                     .ok();
 
-                // Schedule the matching note-off after the step's gate. Without
-                // this, MIDI sustains the note forever — the polyphony pool
-                // only evicts it when the NEXT note-on for the same voice
-                // arrives, so the loop's last note hangs for the full loop
-                // period. Fire-and-forget tokio task; if the pattern is
-                // stopped in the meantime, `stop()` already sweeps held notes,
-                // so the redundant note-off here is benign (or no-op if the
-                // pattern was deleted).
-                if let (Some(gate), Some(note_generation)) = (trigger.gate_dur, note_generation) {
+                // Retain the physical delivery token until the gate deadline.
+                // A stop can sweep logical pool/node ownership before a future
+                // lookahead onset actually sounds; the token still releases
+                // that queued onset afterward. A newer same-pitch MIDI
+                // generation remains protected from the stale release.
+                if let (Some(gate), Some(tracked_note)) = (trigger.gate_dur, tracked_note) {
                     let voices = self.voices.clone();
-                    let state = self.state.clone();
-                    let pattern_id = trigger.pattern_id;
                     let voice_id = trigger.voice_id;
                     // Anchor the release to the note-on's scheduled start,
                     // not to dispatch time: audio-voice note-ons are now
@@ -462,21 +457,15 @@ impl<B: Backend> PatternsHandler<B> {
                     // so sleeping a bare `gate` here would release up to a
                     // full lookahead window early.
                     let off_deadline = trigger.timestamp + gate;
+                    let _ = voices
+                        .arm_tracked_audio_note_off(tracked_note, off_deadline)
+                        .await;
                     tokio::spawn(async move {
                         tokio::time::sleep_until(tokio::time::Instant::from_std(off_deadline))
                             .await;
-                        let still_playing = state
-                            .read()
-                            .await
-                            .patterns
-                            .get(&pattern_id)
-                            .map(|p| p.playing)
-                            .unwrap_or(false);
-                        if still_playing {
-                            let _ = voices
-                                .note_off_at_if_generation(voice_id, note, note_generation, None)
-                                .await;
-                        }
+                        let _ = voices
+                            .finish_tracked_note_on(voice_id, note, tracked_note)
+                            .await;
                     });
                 }
             } else {
@@ -1029,6 +1018,151 @@ mod tests {
                 calls[0].1.is_none(),
                 "immediate triggers must not carry a schedule deadline"
             );
+        }
+
+        mod midi_gate_cleanup {
+            use super::*;
+            use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+            use crate::types::MidiDeviceId;
+            use std::collections::{HashMap, HashSet};
+
+            const MIDI_DEVICE: u32 = 7;
+            const NOTE: u8 = 60;
+
+            async fn setup() -> (
+                Arc<VoicesHandler<SchedulingBackend>>,
+                PatternsHandler<SchedulingBackend>,
+                VoiceId,
+                PatternId,
+                crossbeam_channel::Receiver<ScheduledMidiEvent>,
+            ) {
+                let backend = Arc::new(SchedulingBackend::new());
+                let state = Arc::new(RwLock::new(State::default()));
+                {
+                    let mut state = state.write().await;
+                    let group_id = GroupId::new(1);
+                    state.groups.insert(
+                        group_id,
+                        GroupState {
+                            id: group_id,
+                            name: "TestGroup".to_string(),
+                            parent: None,
+                            node_id: NodeId(100),
+                            audio_bus: BusId(16),
+                            link_synth_node_id: None,
+                            muted: false,
+                            soloed: false,
+                            params: ParamMap::new(),
+                            output_bus: None,
+                            output_channels: None,
+                        },
+                    );
+                }
+
+                let (tx, rx) = crossbeam_channel::unbounded();
+                let mut outputs = HashMap::new();
+                outputs.insert(MidiDeviceId::new(MIDI_DEVICE), tx);
+                let mut voices = VoicesHandler::new(backend, state.clone());
+                voices.set_midi_outputs(Arc::new(std::sync::Mutex::new(outputs)));
+                let voices = Arc::new(voices);
+
+                let voice_id = VoiceId::new(1);
+                voices
+                    .create(
+                        voice_id,
+                        VoiceConfig::new("midi", "", GroupId::new(1))
+                            .with_midi_output(MidiDeviceId::new(MIDI_DEVICE), 0),
+                    )
+                    .await
+                    .expect("MIDI voice creation");
+
+                let pattern_id = PatternId::new(1);
+                let handler = PatternsHandler::new(state, voices.clone());
+                let mut params = ParamMap::new();
+                params.insert("note".to_string(), NOTE as f32);
+                params.insert("amp".to_string(), 1.0);
+                params.insert("gate".to_string(), 0.05);
+                handler
+                    .create(
+                        pattern_id,
+                        PatternConfig {
+                            name: "queued-midi-note".to_string(),
+                            voice: Some(voice_id),
+                            steps: vec![Step {
+                                beat: Beat::from_f64(0.05),
+                                params,
+                            }],
+                            length: Beat::from_f64(4.0),
+                            swing: 0.0,
+                        },
+                    )
+                    .await
+                    .expect("pattern creation");
+                handler.start(pattern_id).await.expect("pattern start");
+
+                (voices, handler, voice_id, pattern_id, rx)
+            }
+
+            fn physically_sounding(
+                rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
+            ) -> HashSet<(u8, u8)> {
+                let mut events: Vec<_> = rx.try_iter().enumerate().collect();
+                events.sort_by(|(left_seq, left), (right_seq, right)| {
+                    left.timestamp
+                        .cmp(&right.timestamp)
+                        .then(left_seq.cmp(right_seq))
+                });
+
+                let mut sounding = HashSet::new();
+                for (_, scheduled) in events {
+                    match scheduled.event {
+                        QueuedMidiEvent::NoteOn { channel, note, .. } => {
+                            sounding.insert((channel, note));
+                        }
+                        QueuedMidiEvent::NoteOff { channel, note } => {
+                            sounding.remove(&(channel, note));
+                        }
+                        other => panic!("unexpected MIDI event: {other:?}"),
+                    }
+                }
+                sounding
+            }
+
+            #[tokio::test]
+            async fn stop_balances_note_on_already_queued_in_lookahead() {
+                let (_voices, handler, _voice_id, pattern_id, rx) = setup().await;
+
+                handler.tick(Beat::ZERO).await;
+                handler.stop(pattern_id).await.expect("pattern stop");
+                tokio::time::sleep(Duration::from_millis(80)).await;
+
+                assert!(
+                    physically_sounding(&rx).is_empty(),
+                    "the post-stop scheduled onset must still receive a physical note-off"
+                );
+            }
+
+            #[tokio::test]
+            async fn same_pitch_replacement_released_before_queued_onset_still_balances() {
+                let (voices, handler, voice_id, pattern_id, rx) = setup().await;
+
+                handler.tick(Beat::ZERO).await;
+                handler.stop(pattern_id).await.expect("pattern stop");
+                voices
+                    .note_on(voice_id, NOTE, 1.0)
+                    .await
+                    .expect("replacement note-on");
+                voices
+                    .note_off(voice_id, NOTE)
+                    .await
+                    .expect("replacement note-off");
+                tokio::time::sleep(Duration::from_millis(80)).await;
+
+                assert!(
+                    physically_sounding(&rx).is_empty(),
+                    "the old scheduled onset must not outlive an earlier same-pitch replacement off"
+                );
+            }
         }
     }
 }

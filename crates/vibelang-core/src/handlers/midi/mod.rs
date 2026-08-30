@@ -724,20 +724,50 @@ impl<B: Backend> MidiHandler<B> {
         );
         drop(routing);
 
-        let active_notes = {
-            let state = self.state.read().await;
-            target_voices
-                .iter()
-                .flat_map(|voice_id| {
-                    state
-                        .voices
-                        .get(voice_id)
-                        .into_iter()
-                        .flat_map(|voice| voice.note_nodes.keys().copied())
-                        .map(|note| (*voice_id, note))
-                })
-                .collect::<Vec<_>>()
+        let looper_actions = {
+            let mut loopers = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            target_voices.extend(loopers.voices_for_device(device_id));
+            loopers.disconnect_device(device_id)
         };
+
+        let mut active_notes = HashSet::new();
+        let mut pattern_actions = Vec::new();
+        for action in looper_actions {
+            match action {
+                LooperAction::NoteOff { voice_id, note } => {
+                    active_notes.insert((voice_id, note));
+                }
+                action => pattern_actions.push(action),
+            }
+        }
+        self.dispatch_looper_actions(pattern_actions);
+
+        {
+            let state = self.state.read().await;
+            for voice_id in &target_voices {
+                if let Some(voice) = state.voices.get(voice_id) {
+                    active_notes.extend(
+                        voice
+                            .note_nodes
+                            .keys()
+                            .copied()
+                            .map(|note| (*voice_id, note)),
+                    );
+                }
+                if let Some(pool) = state.midi_voice_pool.get(voice_id) {
+                    active_notes.extend(
+                        pool.slots
+                            .iter()
+                            .flatten()
+                            .map(|(note, _)| (*voice_id, *note)),
+                    );
+                    active_notes.extend(pool.overflow.iter().map(|(note, _)| (*voice_id, *note)));
+                }
+            }
+        }
 
         for (voice, note) in active_notes {
             self.send_runtime_from_tick(
@@ -2917,6 +2947,61 @@ mod tests {
             gate < 0.65,
             "gate {gate} should stay near the timestamp-derived duration"
         );
+    }
+
+    #[tokio::test]
+    async fn input_disconnect_releases_and_resets_looper_capture() {
+        let device_id = MidiDeviceId::new(1);
+        let voice_id = VoiceId::new(7);
+        let state = Arc::new(RwLock::new(State::default()));
+        let (runtime_tx, mut runtime_rx) = channel(32);
+        let handler =
+            MidiHandler::new(Arc::new(MockBackend::new()), Arc::clone(&state), runtime_tx);
+        handler
+            .reconcile_loopers(&[LooperConfig {
+                device_id,
+                voice_id,
+                channel: None,
+                silence_bars: 0.25,
+                quantize_beats: 0.0,
+            }])
+            .await;
+
+        assert!(handler.event_sender().try_send(TimestampedMidiEvent::new(
+            1,
+            Instant::now(),
+            device_id,
+            NewMidiMessage::NoteOn {
+                channel: Channel::new(0),
+                note: 60,
+                velocity: Velocity::from_midi1(100),
+            },
+        )));
+        handler.tick().await;
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOn { voice, note: 60, .. }))
+                if voice == voice_id
+        ));
+
+        handler.panic_and_close_input(device_id).await;
+
+        assert!(matches!(
+            runtime_rx.try_recv(),
+            Ok(Message::Voice(VoiceMessage::NoteOff { voice, note: 60 }))
+                if voice == voice_id
+        ));
+        {
+            let mut state = state.write().await;
+            state.current_beat = Beat::from_f64(100.0);
+        }
+        handler.tick().await;
+        while let Ok(message) = runtime_rx.try_recv() {
+            assert!(
+                !matches!(message, Message::Pattern(PatternMessage::Create { .. })),
+                "a disconnected capture must not finalize into a pattern"
+            );
+        }
     }
 
     #[tokio::test]
